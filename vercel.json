@@ -1,0 +1,17 @@
+{
+  "regions": ["lhr1"],
+  "crons": [
+    {
+      "path": "/api/fpl/sync",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/scores/poll",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/games/process",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
