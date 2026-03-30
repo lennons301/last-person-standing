@@ -29,22 +29,45 @@ npm run db:seed      # Seed database with dev data
 
 ```
 src/
-  app/              # Next.js App Router pages and API routes
-    api/auth/       # Better Auth API route handler
-  components/       # React components (shadcn/ui in components/ui/)
+  app/
+    (auth)/                   # Public auth pages (login, signup)
+    (app)/                    # Authenticated pages (home, games, picks)
+      games/                  # Game list, create, detail, admin, progress
+      pick/[gameId]/[mode]/   # Unified pick page
+    api/
+      auth/[...all]/          # Better Auth handler
+      fpl/sync/               # FPL data sync (cron)
+      scores/poll/            # Live scores polling (cron)
+      games/                  # Game CRUD + processing (cron)
+      picks/                  # Pick submission
+  components/
+    ui/                       # shadcn/ui primitives (@base-ui/react, NOT Radix)
+    providers.tsx             # Theme + Toaster
+    features/
+      navigation/             # Navbar, user menu
+      games/                  # Game card, list, create form, join button
+      picks/                  # Pick selector, fixture row, team badge
+      leaderboard/            # Adaptive leaderboard
+      progress/               # Elimination grid
+      admin/                  # Player management
   lib/
-    auth.ts         # Better Auth server config
-    auth-client.ts  # Better Auth client
-    db.ts           # Drizzle + postgres.js connection
-    schema/         # Drizzle schema definitions
-      auth.ts       # Better Auth tables (user, session, account, verification)
-      domain.ts     # App tables (teams, gameweeks, fixtures, games, picks, etc.)
-      index.ts      # Re-exports
-    utils.ts        # cn() utility
+    auth.ts                   # Better Auth server config
+    auth-client.ts            # Better Auth client
+    auth-helpers.ts           # getSession() (cached), requireSession() (redirect)
+    db.ts                     # Drizzle + postgres.js connection
+    types.ts                  # Inferred types from Drizzle schema
+    schema/                   # Drizzle schema (auth.ts, domain.ts, index.ts)
+    game-logic/               # Pure functions: classic, turbo, escalating, cup, gameweeks, prizes
+    picks/                    # Pick validation
+    fpl/                      # FPL API client + Drizzle sync
+    scores/                   # Scores provider interface + stub
+    utils.ts                  # cn() utility
+  proxy.ts                    # Next.js 16 route protection (replaces middleware.ts)
 drizzle/
-  seed.ts           # Seed script for dev data
-drizzle.config.ts   # Drizzle Kit config
-docker-compose.yml  # Local Postgres 17
+  seed.ts                     # Seed script for dev data
+scripts/
+  migrate-data.ts             # One-time migration from old Supabase DB (skeleton)
+vercel.json                   # Region (lhr1) + cron schedules
 ```
 
 ## Key Conventions
@@ -57,6 +80,7 @@ docker-compose.yml  # Local Postgres 17
 ### Secrets
 - Doppler is source of truth — never create .env.local with secrets
 - Required secrets in Doppler (dev): DATABASE_URL, BETTER_AUTH_SECRET, NEXT_PUBLIC_APP_URL
+- CRON_SECRET required for cron API routes in deployed environments
 - .env.example contains templates for reference
 
 ### Database
@@ -66,11 +90,41 @@ docker-compose.yml  # Local Postgres 17
 - Seed: `drizzle/seed.ts`
 - Authorization enforced in TypeScript, not Postgres RLS
 
+### Types
+- Import types from `@/lib/types`, not from schema files directly
+- Types are Drizzle-inferred (`$inferSelect`/`$inferInsert`) — camelCase properties
+- `numeric` columns (entryFee, stake) are `string` in TypeScript, not `number`
+- `settings` (jsonb) is typed via `GameSettings` interface in types.ts
+
 ### Auth
 - Config: `src/lib/auth.ts` (server), `src/lib/auth-client.ts` (client)
 - API route: `src/app/api/auth/[...all]/route.ts`
-- Server: `auth.api.getSession({ headers: await headers() })`
+- Server components: use `getSession()` (cached) or `requireSession()` (redirects) from `@/lib/auth-helpers`
+- API routes: use `auth.api.getSession({ headers: request.headers })` from `@/lib/auth`
 - Client: `useSession`, `signIn`, `signUp`, `signOut` from `@/lib/auth-client`
+
+### Route Protection
+- `src/proxy.ts` redirects unauthenticated users to `/login` (Next.js 16 proxy, export name is `proxy`)
+- Public routes: `/login`, `/signup`, `/api/auth/*`
+- Cron routes (`/api/fpl/*`, `/api/scores/*`, `/api/games/process`) authenticate via `CRON_SECRET` header, not session
+
+### Game Logic
+- Pure functions in `src/lib/game-logic/` — no DB dependencies, fully tested with Vitest
+- Classic: team must win outright (draw = elimination)
+- Turbo: predict home/draw/away, 1 point per correct
+- Escalating: same as classic with increasing stakes
+- Cup: bracket-based, side-picking on real PL fixtures
+
+### UI Components
+- shadcn/ui uses `@base-ui/react` (NOT Radix) — `asChild` prop is NOT available on Button
+- Use `buttonVariants` from `@/components/ui/button` for styled Links
+- Dark mode by default via `next-themes` (ThemeProvider in providers.tsx)
+- Toast notifications via `sonner` (`toast` import)
+
+### API Routes
+- Cron routes: authenticate with `Authorization: Bearer ${CRON_SECRET}`
+- User routes: authenticate with Better Auth session
+- All params are Promises in Next.js 16: `const { id } = await params`
 
 ## Platform Context
 
