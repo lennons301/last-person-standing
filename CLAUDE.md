@@ -73,9 +73,15 @@ vercel.json                   # Region (lhr1) + cron schedules
 ## Key Conventions
 
 ### Local Development
-- Local Postgres 17 via docker compose: `docker compose up -d`
-- All commands run via Doppler: `doppler run -- npm run dev`
-- Setup: `docker compose up -d && doppler run -- npm run db:push && doppler run -- npm run db:seed`
+- Local Postgres 17 via docker compose
+- All commands run via Doppler
+- First-time setup:
+  ```bash
+  docker compose up -d              # Start local Postgres 17
+  doppler run -- npm run db:push    # Push schema to local DB
+  doppler run -- npm run db:seed    # Seed dev data
+  doppler run -- npm run dev        # Start Next.js dev server
+  ```
 
 ### Secrets
 - Doppler is source of truth — never create .env.local with secrets
