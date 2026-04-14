@@ -1,2 +1,4 @@
-// Schema modules will be added in subsequent tasks
-export {}
+export * from './auth'
+export * from './competition'
+export * from './game'
+export * from './payment'
