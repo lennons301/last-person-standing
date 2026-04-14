@@ -1,0 +1,41 @@
+{
+	"name": "last-person-standing",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"dev": "next dev --turbopack",
+		"build": "next build",
+		"start": "next start",
+		"lint": "biome check --write .",
+		"typecheck": "tsc --noEmit",
+		"prepare": "husky"
+	},
+	"lint-staged": {
+		"*.{js,ts,jsx,tsx,json,css}": "biome check --write --no-errors-on-unmatched"
+	},
+	"dependencies": {
+		"better-auth": "^1.6.3",
+		"clsx": "^2.1.1",
+		"drizzle-orm": "^0.45.2",
+		"next": "16.2.3",
+		"postgres": "^3.4.9",
+		"react": "19.2.4",
+		"react-dom": "19.2.4",
+		"tailwind-merge": "^3.5.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.12",
+		"@tailwindcss/postcss": "^4",
+		"@types/node": "^20.19.39",
+		"@types/react": "^19",
+		"@types/react-dom": "^19",
+		"@vitejs/plugin-react": "^6.0.1",
+		"drizzle-kit": "^0.31.10",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.4.0",
+		"tailwindcss": "^4",
+		"tsx": "^4.21.0",
+		"typescript": "^5",
+		"vitest": "^4.1.4"
+	}
+}
