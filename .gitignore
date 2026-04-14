@@ -30,9 +30,6 @@ next-env.d.ts
 .DS_Store
 *.pem
 
-# drizzle
-drizzle/
-
 # tooling
 .superpowers/
 .worktrees/
