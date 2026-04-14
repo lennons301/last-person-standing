@@ -44,7 +44,7 @@ export type PaymentStatus = Payment['status']
 
 // -- Mode config types --
 
-export type ClassicModeConfig = {}
+export type ClassicModeConfig = Record<string, never>
 
 export interface TurboModeConfig {
 	numberOfPicks?: number // default 10

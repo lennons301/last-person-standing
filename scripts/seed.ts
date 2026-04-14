@@ -99,13 +99,18 @@ async function seed() {
 		['SOU', 'MUN'],
 	]
 
-	const fixtureValues = matchups.map(([home, away]) => ({
-		roundId: rounds[1].id,
-		homeTeamId: teamMap.get(home)!.id,
-		awayTeamId: teamMap.get(away)!.id,
-		kickoff: new Date(Date.now() + 86400000),
-		status: 'scheduled' as const,
-	}))
+	const fixtureValues = matchups.map(([home, away]) => {
+		const homeTeam = teamMap.get(home)
+		const awayTeam = teamMap.get(away)
+		if (!homeTeam || !awayTeam) throw new Error(`Team not found: ${home} or ${away}`)
+		return {
+			roundId: rounds[1].id,
+			homeTeamId: homeTeam.id,
+			awayTeamId: awayTeam.id,
+			kickoff: new Date(Date.now() + 86400000),
+			status: 'scheduled' as const,
+		}
+	})
 
 	await db.insert(fixture).values(fixtureValues)
 	console.log(`Created ${fixtureValues.length} fixtures for ${rounds[1].name}`)
