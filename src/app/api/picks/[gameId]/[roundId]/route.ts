@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { validateClassicPick, validateTurboPicks } from '@/lib/picks/validate'
-import { fixture, round } from '@/lib/schema/competition'
+import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
 type Params = Promise<{ gameId: string; roundId: string }>
