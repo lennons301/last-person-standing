@@ -1,24 +1,20 @@
-import { determineFixtureOutcome } from './common'
-
 export interface CupPickInput {
 	confidenceRank: number
-	predictedResult: 'home_win' | 'draw' | 'away_win'
+	pickedTeam: 'home' | 'away'
 	homeScore: number
 	awayScore: number
-	tierDifference: number
+	tierDifference: number // from HOME team perspective: positive = home higher tier
 }
 
 export interface CupPickResult {
 	confidenceRank: number
-	correct: boolean
-	lifeGained: boolean
-	lifeLost: boolean
-	savedByDraw: boolean
+	result: 'win' | 'draw_success' | 'saved_by_life' | 'loss' | 'restricted'
+	livesGained: number
 	goalsCounted: number
+	restricted: boolean
 }
 
 export interface CupResult {
-	livesChange: number
 	finalLives: number
 	eliminated: boolean
 	pickResults: CupPickResult[]
@@ -27,62 +23,79 @@ export interface CupResult {
 export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): CupResult {
 	const sorted = [...picks].sort((a, b) => a.confidenceRank - b.confidenceRank)
 	let currentLives = startingLives
-	let livesChange = 0
-	let eliminated = false
+	let streakBroken = false
 	const pickResults: CupPickResult[] = []
 
 	for (const pick of sorted) {
-		if (eliminated) {
+		const tierDiffFromPicked =
+			pick.pickedTeam === 'home' ? pick.tierDifference : -pick.tierDifference
+
+		if (tierDiffFromPicked > 1) {
 			pickResults.push({
 				confidenceRank: pick.confidenceRank,
-				correct: false,
-				lifeGained: false,
-				lifeLost: false,
-				savedByDraw: false,
+				result: 'restricted',
+				livesGained: 0,
 				goalsCounted: 0,
+				restricted: true,
 			})
 			continue
 		}
 
-		const actualOutcome = determineFixtureOutcome(pick.homeScore, pick.awayScore)
-		const correct = actualOutcome === pick.predictedResult
-		const isHighTierMismatch = pick.tierDifference >= 2
-		const isDraw = actualOutcome === 'draw'
-		const goalsCounted = pick.tierDifference === -1 ? 0 : pick.homeScore + pick.awayScore
+		const pickedTeamGoals = pick.pickedTeam === 'home' ? pick.homeScore : pick.awayScore
+		const opponentGoals = pick.pickedTeam === 'home' ? pick.awayScore : pick.homeScore
+		const pickedTeamWon = pickedTeamGoals > opponentGoals
+		const isDraw = pickedTeamGoals === opponentGoals
 
-		let lifeGained = false
-		let lifeLost = false
-		let savedByDraw = false
+		let result: CupPickResult['result'] = 'loss'
+		let livesGained = 0
+		let goalsCounted = 0
 
-		if (correct) {
-			if (isHighTierMismatch) {
-				lifeGained = true
-				currentLives++
-				livesChange++
+		if (pickedTeamWon) {
+			result = 'win'
+			if (tierDiffFromPicked !== 1) {
+				goalsCounted = pickedTeamGoals
 			}
-		} else if (isDraw && isHighTierMismatch) {
-			savedByDraw = true
-		} else {
-			if (currentLives > 0) {
-				lifeLost = true
-				currentLives--
-				livesChange--
+			if (tierDiffFromPicked < 0) {
+				livesGained = Math.abs(tierDiffFromPicked)
+				currentLives += livesGained
+			}
+		} else if (isDraw) {
+			if (tierDiffFromPicked <= -1) {
+				result = 'draw_success'
+				goalsCounted = pickedTeamGoals
+				if (tierDiffFromPicked <= -2) {
+					livesGained = 1
+					currentLives += 1
+				}
 			} else {
-				eliminated = true
-				lifeLost = true
-				livesChange--
+				if (!streakBroken && currentLives > 0) {
+					result = 'saved_by_life'
+					currentLives--
+					goalsCounted = pickedTeamGoals
+				} else {
+					result = 'loss'
+					streakBroken = true
+				}
+			}
+		} else {
+			if (!streakBroken && currentLives > 0) {
+				result = 'saved_by_life'
+				currentLives--
+				goalsCounted = pickedTeamGoals
+			} else {
+				result = 'loss'
+				streakBroken = true
 			}
 		}
 
 		pickResults.push({
 			confidenceRank: pick.confidenceRank,
-			correct,
-			lifeGained,
-			lifeLost,
-			savedByDraw,
+			result,
+			livesGained,
 			goalsCounted,
+			restricted: false,
 		})
 	}
 
-	return { livesChange, finalLives: Math.max(0, currentLives), eliminated, pickResults }
+	return { finalLives: currentLives, eliminated: streakBroken, pickResults }
 }
