@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateClassicPick, validateTurboPicks } from './validate'
+import { validateClassicPick, validateCupPicks, validateTurboPicks } from './validate'
 
 describe('validateClassicPick', () => {
 	const base = {
@@ -118,5 +118,59 @@ describe('validateTurboPicks', () => {
 			valid: false,
 			reason: 'Player is not alive',
 		})
+	})
+})
+
+describe('validateCupPicks', () => {
+	const base = {
+		playerStatus: 'alive' as const,
+		roundStatus: 'open' as const,
+		deadline: new Date(Date.now() + 3600000),
+		now: new Date(),
+		numberOfPicks: 2,
+		fixtures: [
+			{ fixtureId: 'f1', tierDifference: 3 },
+			{ fixtureId: 'f2', tierDifference: 0 },
+		],
+	}
+
+	it('rejects pick where picked team is >1 tier above opponent', () => {
+		const result = validateCupPicks({
+			...base,
+			picks: [
+				{ fixtureId: 'f1', confidenceRank: 1, predictedResult: 'home_win', pickedTeam: 'home' },
+				{ fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
+			],
+		})
+		expect(result).toEqual({
+			valid: false,
+			reason: 'Cannot pick a team more than 1 tier above their opponent (fixture f1)',
+		})
+	})
+
+	it('accepts underdog picks at any tier gap', () => {
+		const result = validateCupPicks({
+			...base,
+			picks: [
+				{ fixtureId: 'f1', confidenceRank: 1, predictedResult: 'away_win', pickedTeam: 'away' },
+				{ fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
+			],
+		})
+		expect(result).toEqual({ valid: true })
+	})
+
+	it('accepts pick where picked team is 1 tier above', () => {
+		const result = validateCupPicks({
+			...base,
+			fixtures: [
+				{ fixtureId: 'f1', tierDifference: 1 },
+				{ fixtureId: 'f2', tierDifference: 0 },
+			],
+			picks: [
+				{ fixtureId: 'f1', confidenceRank: 1, predictedResult: 'home_win', pickedTeam: 'home' },
+				{ fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
+			],
+		})
+		expect(result).toEqual({ valid: true })
 	})
 })

@@ -38,6 +38,67 @@ export interface TurboPicksValidation {
 	picks: TurboPickEntry[]
 }
 
+export interface CupPickEntry {
+	fixtureId: string
+	confidenceRank: number
+	predictedResult: 'home_win' | 'draw' | 'away_win'
+	pickedTeam: 'home' | 'away'
+}
+
+export interface CupFixtureInfo {
+	fixtureId: string
+	tierDifference: number
+}
+
+export interface CupPicksValidation {
+	playerStatus: 'alive' | 'eliminated' | 'winner'
+	roundStatus: 'upcoming' | 'open' | 'active' | 'completed'
+	deadline: Date | null
+	now: Date
+	numberOfPicks: number
+	fixtures: CupFixtureInfo[]
+	picks: CupPickEntry[]
+}
+
+export function validateCupPicks(input: CupPicksValidation): ValidationResult {
+	if (input.playerStatus !== 'alive') return { valid: false, reason: 'Player is not alive' }
+	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }
+	if (input.deadline && input.now > input.deadline)
+		return { valid: false, reason: 'Deadline has passed' }
+	if (input.picks.length !== input.numberOfPicks)
+		return {
+			valid: false,
+			reason: `Expected ${input.numberOfPicks} picks, got ${input.picks.length}`,
+		}
+
+	const fixtureSet = new Set(input.picks.map((p) => p.fixtureId))
+	if (fixtureSet.size !== input.picks.length)
+		return { valid: false, reason: 'Duplicate fixture in picks' }
+
+	const ranks = input.picks.map((p) => p.confidenceRank).sort((a, b) => a - b)
+	const expected = Array.from({ length: input.numberOfPicks }, (_, i) => i + 1)
+	if (JSON.stringify(ranks) !== JSON.stringify(expected))
+		return { valid: false, reason: 'Confidence ranks must be unique sequential integers from 1' }
+
+	const fixtureMap = new Map(input.fixtures.map((f) => [f.fixtureId, f]))
+
+	for (const pick of input.picks) {
+		const fixture = fixtureMap.get(pick.fixtureId)
+		if (!fixture) return { valid: false, reason: `Invalid fixture ID: ${pick.fixtureId}` }
+
+		const tierDiffFromPicked =
+			pick.pickedTeam === 'home' ? fixture.tierDifference : -fixture.tierDifference
+		if (tierDiffFromPicked > 1) {
+			return {
+				valid: false,
+				reason: `Cannot pick a team more than 1 tier above their opponent (fixture ${pick.fixtureId})`,
+			}
+		}
+	}
+
+	return { valid: true }
+}
+
 export function validateTurboPicks(input: TurboPicksValidation): ValidationResult {
 	if (input.playerStatus !== 'alive') return { valid: false, reason: 'Player is not alive' }
 	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }

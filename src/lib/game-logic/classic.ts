@@ -16,12 +16,14 @@ export interface ClassicFixture {
 export interface ClassicRoundInput {
 	players: ClassicPlayerPick[]
 	fixtures: ClassicFixture[]
+	isStartingRound?: boolean
 }
 
 export interface ClassicPlayerResult {
 	gamePlayerId: string
 	result: PickResult
 	eliminated: boolean
+	goalsScored: number
 }
 
 export interface ClassicRoundOutput {
@@ -38,7 +40,12 @@ export function processClassicRound(input: ClassicRoundInput): ClassicRoundOutpu
 	const results: ClassicPlayerResult[] = input.players.map((player) => {
 		const fixture = fixturesByTeam.get(player.pickedTeamId)
 		if (!fixture) {
-			return { gamePlayerId: player.gamePlayerId, result: 'loss' as const, eliminated: true }
+			return {
+				gamePlayerId: player.gamePlayerId,
+				result: 'loss' as const,
+				eliminated: true,
+				goalsScored: 0,
+			}
 		}
 		const result = determinePickResult({
 			pickedTeamId: player.pickedTeamId,
@@ -47,7 +54,14 @@ export function processClassicRound(input: ClassicRoundInput): ClassicRoundOutpu
 			homeScore: fixture.homeScore,
 			awayScore: fixture.awayScore,
 		})
-		return { gamePlayerId: player.gamePlayerId, result, eliminated: result !== 'win' }
+		const pickedHome = player.pickedTeamId === fixture.homeTeamId
+		const goalsScored = result === 'win' ? (pickedHome ? fixture.homeScore : fixture.awayScore) : 0
+		return {
+			gamePlayerId: player.gamePlayerId,
+			result,
+			eliminated: result !== 'win' && !input.isStartingRound,
+			goalsScored,
+		}
 	})
 
 	return { results }
