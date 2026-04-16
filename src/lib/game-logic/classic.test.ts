@@ -100,3 +100,32 @@ describe('first gameweek exemption', () => {
 		expect(result.results[0].eliminated).toBe(true)
 	})
 })
+
+describe('goals tracking on wins', () => {
+	it('tracks picked team goals on a home win', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 3, 1)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].goalsScored).toBe(3)
+	})
+
+	it('tracks picked team goals on an away win', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'liverpool' }],
+			fixtures: [makeFixture('wolves', 'liverpool', 0, 4)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].goalsScored).toBe(4)
+	})
+
+	it('sets goals to 0 on loss', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].goalsScored).toBe(0)
+	})
+})
