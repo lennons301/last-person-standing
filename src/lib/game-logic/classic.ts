@@ -16,6 +16,7 @@ export interface ClassicFixture {
 export interface ClassicRoundInput {
 	players: ClassicPlayerPick[]
 	fixtures: ClassicFixture[]
+	isStartingRound?: boolean
 }
 
 export interface ClassicPlayerResult {
@@ -47,7 +48,11 @@ export function processClassicRound(input: ClassicRoundInput): ClassicRoundOutpu
 			homeScore: fixture.homeScore,
 			awayScore: fixture.awayScore,
 		})
-		return { gamePlayerId: player.gamePlayerId, result, eliminated: result !== 'win' }
+		return {
+			gamePlayerId: player.gamePlayerId,
+			result,
+			eliminated: result !== 'win' && !input.isStartingRound,
+		}
 	})
 
 	return { results }

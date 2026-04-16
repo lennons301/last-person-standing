@@ -66,3 +66,37 @@ describe('processClassicRound', () => {
 		expect(processClassicRound({ players: [], fixtures: [] }).results).toEqual([])
 	})
 })
+
+describe('first gameweek exemption', () => {
+	it('does not eliminate on loss in starting round', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+			isStartingRound: true,
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('loss')
+		expect(result.results[0].eliminated).toBe(false)
+	})
+
+	it('does not eliminate on draw in starting round', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 1, 1)],
+			isStartingRound: true,
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('draw')
+		expect(result.results[0].eliminated).toBe(false)
+	})
+
+	it('still eliminates on loss after starting round', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+			isStartingRound: false,
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].eliminated).toBe(true)
+	})
+})
