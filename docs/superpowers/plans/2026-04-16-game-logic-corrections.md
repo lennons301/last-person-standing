@@ -16,295 +16,22 @@
 
 All discrepancies originate from the design spec being written from high-level descriptions rather than reading the old app's actual code. The existing tests pass because they test the wrong spec.
 
----
+## Execution Order
 
-### Task 1: Fix Turbo Goals Counting
+Hardest and riskiest first, glue code after, verification last:
 
-**Issue:** Turbo mode currently counts `homeScore + awayScore` for all correct picks. The old app counts differently per prediction type:
-- `home_win` prediction correct → count `homeScore` only
-- `away_win` prediction correct → count `awayScore` only
-- `draw` prediction correct → count `homeScore + awayScore`
-
-**Files:**
-- Modify: `src/lib/game-logic/turbo.test.ts`
-- Modify: `src/lib/game-logic/turbo.ts`
-
-- [ ] **Step 1: Write failing tests for correct goals counting**
-
-Add to `src/lib/game-logic/turbo.test.ts`:
-
-```typescript
-describe('goals counting per prediction type', () => {
-  it('counts only home goals for correct home_win prediction', () => {
-    const picks = [makePick(1, 'home_win', 3, 1)]
-    const result = evaluateTurboPicks(picks)
-    expect(result.goalsInStreak).toBe(3) // home goals only, not 4
-  })
-
-  it('counts only away goals for correct away_win prediction', () => {
-    const picks = [makePick(1, 'away_win', 1, 4)]
-    const result = evaluateTurboPicks(picks)
-    expect(result.goalsInStreak).toBe(4) // away goals only, not 5
-  })
-
-  it('counts both goals for correct draw prediction', () => {
-    const picks = [makePick(1, 'draw', 2, 2)]
-    const result = evaluateTurboPicks(picks)
-    expect(result.goalsInStreak).toBe(4) // both goals
-  })
-
-  it('counts goals correctly across mixed streak', () => {
-    const picks = [
-      makePick(1, 'home_win', 3, 0), // correct, goals: 3 (home only)
-      makePick(2, 'draw', 1, 1),     // correct, goals: 2 (both)
-      makePick(3, 'away_win', 0, 2), // correct, goals: 2 (away only)
-    ]
-    const result = evaluateTurboPicks(picks)
-    expect(result.streak).toBe(3)
-    expect(result.goalsInStreak).toBe(7) // 3 + 2 + 2
-  })
-})
-```
-
-- [ ] **Step 2: Run tests, verify failures**
-
-Run: `pnpm exec vitest run src/lib/game-logic/turbo.test.ts`
-Expected: New tests FAIL (goals counting is wrong)
-
-- [ ] **Step 3: Fix the implementation**
-
-In `src/lib/game-logic/turbo.ts`, change the goals calculation in `evaluateTurboPicks`:
-
-Replace:
-```typescript
-const goals = pick.homeScore + pick.awayScore
-```
-
-With:
-```typescript
-let goals = 0
-if (correct) {
-  if (pick.predictedResult === 'home_win') goals = pick.homeScore
-  else if (pick.predictedResult === 'away_win') goals = pick.awayScore
-  else goals = pick.homeScore + pick.awayScore // draw: both
-}
-```
-
-Also update the `pickResults` to return the correct goals value.
-
-- [ ] **Step 4: Fix existing test that assumed wrong goals counting**
-
-The existing test "counts goals across full streak" uses total goals. Update it:
-```typescript
-it('counts goals across full streak with correct per-type counting', () => {
-  const picks = [
-    makePick(1, 'home_win', 2, 0), // correct, home goals: 2
-    makePick(2, 'away_win', 1, 3), // correct, away goals: 3
-    makePick(3, 'draw', 2, 2),     // correct, both goals: 4
-  ]
-  const result = evaluateTurboPicks(picks)
-  expect(result.streak).toBe(3)
-  expect(result.goalsInStreak).toBe(9) // 2 + 3 + 4
-})
-```
-
-- [ ] **Step 5: Run all turbo tests, verify pass**
-
-Run: `pnpm exec vitest run src/lib/game-logic/turbo.test.ts`
-Expected: ALL tests PASS
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/lib/game-logic/turbo.ts src/lib/game-logic/turbo.test.ts
-git commit -m "fix: turbo goals counting — home/away/draw counted differently per prediction type"
-```
+1. Cup mode rewrite (biggest, most complex, 9 discrepancies)
+2. Cup pick validation (depends on cup rewrite)
+3. Turbo goals fix (independent, straightforward)
+4. Classic first-gameweek exemption (independent, straightforward)
+5. Classic goals tracking (independent, straightforward)
+6. Update process-round.ts (depends on all above)
+7. Full verification
+8. Independent review
 
 ---
 
-### Task 2: Add Classic First-Gameweek Exemption
-
-**Issue:** The old app has a "rebuy" rule: non-wins in the starting gameweek don't eliminate players. Our implementation always eliminates on non-win.
-
-**Files:**
-- Modify: `src/lib/game-logic/classic.test.ts`
-- Modify: `src/lib/game-logic/classic.ts`
-
-- [ ] **Step 1: Write failing tests**
-
-Add to `src/lib/game-logic/classic.test.ts`:
-
-```typescript
-describe('first gameweek exemption', () => {
-  it('does not eliminate on loss in starting round', () => {
-    const input: ClassicRoundInput = {
-      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
-      fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
-      isStartingRound: true,
-    }
-    const result = processClassicRound(input)
-    expect(result.results[0].result).toBe('loss')
-    expect(result.results[0].eliminated).toBe(false)
-  })
-
-  it('does not eliminate on draw in starting round', () => {
-    const input: ClassicRoundInput = {
-      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
-      fixtures: [makeFixture('arsenal', 'chelsea', 1, 1)],
-      isStartingRound: true,
-    }
-    const result = processClassicRound(input)
-    expect(result.results[0].result).toBe('draw')
-    expect(result.results[0].eliminated).toBe(false)
-  })
-
-  it('still eliminates on loss after starting round', () => {
-    const input: ClassicRoundInput = {
-      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
-      fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
-      isStartingRound: false,
-    }
-    const result = processClassicRound(input)
-    expect(result.results[0].eliminated).toBe(true)
-  })
-})
-```
-
-- [ ] **Step 2: Run tests, verify failures**
-
-Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
-Expected: FAIL — `isStartingRound` not in the interface
-
-- [ ] **Step 3: Fix the implementation**
-
-Add `isStartingRound` to `ClassicRoundInput`:
-```typescript
-export interface ClassicRoundInput {
-  players: ClassicPlayerPick[]
-  fixtures: ClassicFixture[]
-  isStartingRound?: boolean
-}
-```
-
-Update the elimination logic in `processClassicRound`:
-```typescript
-return {
-  gamePlayerId: player.gamePlayerId,
-  result,
-  eliminated: result !== 'win' && !input.isStartingRound,
-}
-```
-
-- [ ] **Step 4: Update existing tests to pass `isStartingRound: false`**
-
-All existing tests assume non-starting round behaviour. Add `isStartingRound: false` to their inputs (or leave undefined since `!undefined` is `true`, which means elimination still happens — verify this works).
-
-Actually: `!input.isStartingRound` where `isStartingRound` is `undefined` → `!undefined` → `true`, so elimination happens. Existing tests work without changes.
-
-- [ ] **Step 5: Run all classic tests, verify pass**
-
-Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
-Expected: ALL tests PASS
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/lib/game-logic/classic.ts src/lib/game-logic/classic.test.ts
-git commit -m "fix: add first-gameweek exemption (rebuy) to classic mode"
-```
-
----
-
-### Task 3: Add Classic Goals Tracking and All-Eliminated Tiebreaker
-
-**Issue:** Classic mode doesn't track goals on winning picks and has no logic for when all players are eliminated simultaneously (winner determined by total goals from winning picks).
-
-**Files:**
-- Modify: `src/lib/game-logic/classic.test.ts`
-- Modify: `src/lib/game-logic/classic.ts`
-
-- [ ] **Step 1: Write failing tests**
-
-Add to `src/lib/game-logic/classic.test.ts`:
-
-```typescript
-describe('goals tracking on wins', () => {
-  it('tracks picked team goals on a win', () => {
-    const input: ClassicRoundInput = {
-      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
-      fixtures: [makeFixture('arsenal', 'chelsea', 3, 1)],
-    }
-    const result = processClassicRound(input)
-    expect(result.results[0].goalsScored).toBe(3) // picked team (home) goals
-  })
-
-  it('tracks away team goals when picking away winner', () => {
-    const input: ClassicRoundInput = {
-      players: [{ gamePlayerId: 'p1', pickedTeamId: 'liverpool' }],
-      fixtures: [makeFixture('wolves', 'liverpool', 0, 4)],
-    }
-    const result = processClassicRound(input)
-    expect(result.results[0].goalsScored).toBe(4)
-  })
-
-  it('sets goals to 0 on loss', () => {
-    const input: ClassicRoundInput = {
-      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
-      fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
-    }
-    const result = processClassicRound(input)
-    expect(result.results[0].goalsScored).toBe(0)
-  })
-})
-```
-
-- [ ] **Step 2: Run tests, verify failures**
-
-Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
-Expected: FAIL — `goalsScored` not in output
-
-- [ ] **Step 3: Fix the implementation**
-
-Add `goalsScored` to `ClassicPlayerResult`:
-```typescript
-export interface ClassicPlayerResult {
-  gamePlayerId: string
-  result: PickResult
-  eliminated: boolean
-  goalsScored: number
-}
-```
-
-Update the result mapping to calculate goals:
-```typescript
-const pickedHome = player.pickedTeamId === fixture.homeTeamId
-const goalsScored = result === 'win'
-  ? (pickedHome ? fixture.homeScore : fixture.awayScore)
-  : 0
-
-return {
-  gamePlayerId: player.gamePlayerId,
-  result,
-  eliminated: result !== 'win' && !input.isStartingRound,
-  goalsScored,
-}
-```
-
-- [ ] **Step 4: Run all classic tests, verify pass**
-
-Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
-Expected: ALL tests PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/lib/game-logic/classic.ts src/lib/game-logic/classic.test.ts
-git commit -m "fix: track goals on winning classic picks for tiebreaker"
-```
-
----
-
-### Task 4: Rewrite Cup Mode
+### Task 1: Rewrite Cup Mode
 
 **Issue:** Cup mode has 9 discrepancies — effectively needs a full rewrite. The fundamental problem is that `tierDifference` needs to be relative to the picked side, not the fixture. The old app stores tier_difference from the home perspective and inverts it based on which team was picked.
 
@@ -343,189 +70,109 @@ function makePick(
 }
 
 describe('evaluateCupPicks', () => {
-  // === PICK RESTRICTIONS ===
-
   describe('pick restrictions', () => {
     it('rejects picks where picked team is >1 tier above opponent', () => {
-      // Home is +2 tier, picking home → tierDiffFromPicked = +2 → INVALID
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 3, 0, 2)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 3, 0, 2)], 0)
       expect(result.pickResults[0].restricted).toBe(true)
     })
 
     it('allows picks where picked team is exactly 1 tier above', () => {
-      // Home is +1 tier, picking home → tierDiffFromPicked = +1 → valid, no goals
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 3, 0, 1)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 3, 0, 1)], 0)
       expect(result.pickResults[0].restricted).toBe(false)
     })
 
     it('allows underdog picks', () => {
-      // Home is +3 tier, picking away → tierDiffFromPicked = -3 → underdog, valid
-      const result = evaluateCupPicks(
-        [makePick(1, 'away', 0, 2, 3)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'away', 0, 2, 3)], 0)
       expect(result.pickResults[0].restricted).toBe(false)
     })
   })
 
-  // === LIVES EARNED ON WIN ===
-
   describe('lives earned on win', () => {
     it('earns lives proportional to tier gap when underdog wins', () => {
-      // Home +3, picking away → tierDiffFromPicked = -3, away wins
-      const result = evaluateCupPicks(
-        [makePick(1, 'away', 0, 2, 3)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'away', 0, 2, 3)], 0)
       expect(result.pickResults[0].livesGained).toBe(3)
       expect(result.finalLives).toBe(3)
     })
 
     it('earns 1 life when 1-tier underdog wins', () => {
-      // Home +1, picking away → tierDiffFromPicked = -1, away wins
-      const result = evaluateCupPicks(
-        [makePick(1, 'away', 0, 1, 1)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'away', 0, 1, 1)], 0)
       expect(result.pickResults[0].livesGained).toBe(1)
     })
 
     it('earns 0 lives when same-tier team wins', () => {
-      // Same tier, picking home → tierDiffFromPicked = 0, home wins
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 2, 0, 0)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 2, 0, 0)], 0)
       expect(result.pickResults[0].livesGained).toBe(0)
     })
 
     it('earns 0 lives when 1-tier favourite wins', () => {
-      // Home +1, picking home → tierDiffFromPicked = +1, home wins
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 2, 0, 1)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 2, 0, 1)], 0)
       expect(result.pickResults[0].livesGained).toBe(0)
     })
   })
 
-  // === DRAW HANDLING ===
-
   describe('draw handling', () => {
     it('draw is success when picked team is underdog (tierDiffFromPicked <= -1)', () => {
-      // Home +2, picking away → tierDiffFromPicked = -2, draw
-      const result = evaluateCupPicks(
-        [makePick(1, 'away', 1, 1, 2)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'away', 1, 1, 2)], 0)
       expect(result.pickResults[0].result).toBe('draw_success')
       expect(result.eliminated).toBe(false)
     })
 
     it('draw earns exactly 1 life when tierDiffFromPicked <= -2', () => {
-      // Home +3, picking away → tierDiffFromPicked = -3, draw
-      const result = evaluateCupPicks(
-        [makePick(1, 'away', 1, 1, 3)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'away', 1, 1, 3)], 0)
       expect(result.pickResults[0].livesGained).toBe(1) // exactly 1, not 3
     })
 
     it('draw earns 0 lives when tierDiffFromPicked = -1', () => {
-      // Home +1, picking away → tierDiffFromPicked = -1, draw
-      const result = evaluateCupPicks(
-        [makePick(1, 'away', 1, 1, 1)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'away', 1, 1, 1)], 0)
       expect(result.pickResults[0].result).toBe('draw_success')
       expect(result.pickResults[0].livesGained).toBe(0)
     })
 
     it('draw is a loss when picked team is favourite or same tier', () => {
-      // Same tier, picking home, draw → loss
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 1, 1, 0)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 1, 1, 0)], 0)
       expect(result.pickResults[0].result).toBe('loss')
       expect(result.eliminated).toBe(true)
     })
 
     it('draw loss can be saved by life', () => {
-      // Same tier, picking home, draw → loss, but has life
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 1, 1, 0)],
-        1,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 1, 1, 0)], 1)
       expect(result.pickResults[0].result).toBe('saved_by_life')
       expect(result.finalLives).toBe(0)
       expect(result.eliminated).toBe(false)
     })
   })
 
-  // === GOALS COUNTING ===
-
   describe('goals counting', () => {
     it('counts picked team goals on win (home pick)', () => {
-      // Home wins 3-1, picking home
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 3, 1, 0)],
-        0,
-      )
-      expect(result.pickResults[0].goalsCounted).toBe(3) // home goals only
+      const result = evaluateCupPicks([makePick(1, 'home', 3, 1, 0)], 0)
+      expect(result.pickResults[0].goalsCounted).toBe(3)
     })
 
     it('counts picked team goals on win (away pick)', () => {
-      // Away wins 1-4, picking away
-      const result = evaluateCupPicks(
-        [makePick(1, 'away', 1, 4, 0)],
-        0,
-      )
-      expect(result.pickResults[0].goalsCounted).toBe(4) // away goals only
+      const result = evaluateCupPicks([makePick(1, 'away', 1, 4, 0)], 0)
+      expect(result.pickResults[0].goalsCounted).toBe(4)
     })
 
     it('does NOT count goals when tierDiffFromPicked = 1 (slight favourite)', () => {
-      // Home +1, picking home → tierDiffFromPicked = +1, home wins 3-0
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 3, 0, 1)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 3, 0, 1)], 0)
       expect(result.pickResults[0].goalsCounted).toBe(0)
     })
 
     it('counts goals when saved by life', () => {
-      // Loss but saved by life — goals still count
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 1, 3, 0)],
-        1,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 1, 3, 0)], 1)
       expect(result.pickResults[0].result).toBe('saved_by_life')
-      expect(result.pickResults[0].goalsCounted).toBe(1) // home goals
+      expect(result.pickResults[0].goalsCounted).toBe(1)
     })
   })
 
-  // === STREAK AND ELIMINATION ===
-
   describe('streak and elimination', () => {
     it('eliminates on loss with no lives', () => {
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 0, 2, 0)],
-        0,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 0, 2, 0)], 0)
       expect(result.eliminated).toBe(true)
     })
 
     it('saves with life on loss when lives available', () => {
-      const result = evaluateCupPicks(
-        [makePick(1, 'home', 0, 2, 0)],
-        1,
-      )
+      const result = evaluateCupPicks([makePick(1, 'home', 0, 2, 0)], 1)
       expect(result.pickResults[0].result).toBe('saved_by_life')
       expect(result.eliminated).toBe(false)
       expect(result.finalLives).toBe(0)
@@ -534,7 +181,7 @@ describe('evaluateCupPicks', () => {
     it('streak broken prevents further life spending', () => {
       const picks = [
         makePick(1, 'home', 0, 2, 0), // loss, no lives → streak broken
-        makePick(2, 'home', 0, 1, 0), // loss, streak already broken → loss
+        makePick(2, 'home', 0, 1, 0), // loss, streak already broken
       ]
       const result = evaluateCupPicks(picks, 0)
       expect(result.pickResults[0].result).toBe('loss')
@@ -565,8 +212,6 @@ describe('evaluateCupPicks', () => {
         makePick(1, 'away', 0, 2, 3), // win +3 lives (processed first)
       ]
       const result = evaluateCupPicks(picks, 0)
-      // Pick 1 (rank 1): win, earn 3 lives → 3 lives
-      // Pick 2 (rank 2): loss, spend 1 life → 2 lives
       expect(result.eliminated).toBe(false)
       expect(result.finalLives).toBe(2)
     })
@@ -613,7 +258,6 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
   const pickResults: CupPickResult[] = []
 
   for (const pick of sorted) {
-    // Calculate tier diff from picked team's perspective
     const tierDiffFromPicked =
       pick.pickedTeam === 'home' ? pick.tierDifference : -pick.tierDifference
 
@@ -642,30 +286,22 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
 
     if (pickedTeamWon) {
       result = 'win'
-
-      // Goals: count picked team's goals UNLESS tierDiffFromPicked = 1 (slight favourite)
       if (tierDiffFromPicked !== 1) {
         goalsCounted = pickedTeamGoals
       }
-
-      // Lives: earn abs(tierDiffFromPicked) when underdog (tierDiffFromPicked < 0)
       if (tierDiffFromPicked < 0) {
         livesGained = Math.abs(tierDiffFromPicked)
         currentLives += livesGained
       }
     } else if (isDraw) {
       if (tierDiffFromPicked <= -1) {
-        // Draw is a success for underdogs
         result = 'draw_success'
         goalsCounted = pickedTeamGoals
-
-        // Earn exactly 1 life if 2+ tiers below
         if (tierDiffFromPicked <= -2) {
           livesGained = 1
           currentLives += 1
         }
       } else {
-        // Draw is a loss for favourites/same tier
         if (!streakBroken && currentLives > 0) {
           result = 'saved_by_life'
           currentLives--
@@ -676,7 +312,6 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
         }
       }
     } else {
-      // Loss
       if (!streakBroken && currentLives > 0) {
         result = 'saved_by_life'
         currentLives--
@@ -696,11 +331,7 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
     })
   }
 
-  return {
-    finalLives: currentLives,
-    eliminated: streakBroken,
-    pickResults,
-  }
+  return { finalLives: currentLives, eliminated: streakBroken, pickResults }
 }
 ```
 
@@ -715,7 +346,7 @@ Expected: ALL tests PASS
 git add src/lib/game-logic/cup.ts src/lib/game-logic/cup.test.ts
 git commit -m "fix: rewrite cup mode to match old app rules
 
-- tierDifference now from home perspective, inverted per picked side
+- tierDifference from home perspective, inverted per picked side
 - Lives proportional to tier gap (not always +1)
 - Draw success for underdogs, draw loss for favourites
 - Pick restriction: can't pick team >1 tier above opponent
@@ -726,7 +357,7 @@ git commit -m "fix: rewrite cup mode to match old app rules
 
 ---
 
-### Task 5: Add Cup Pick Validation
+### Task 2: Add Cup Pick Validation
 
 **Issue:** No validation that prevents picking a team >1 tier above their opponent.
 
@@ -747,8 +378,8 @@ describe('validateCupPicks', () => {
     now: new Date(),
     numberOfPicks: 2,
     fixtures: [
-      { fixtureId: 'f1', tierDifference: 3 },  // home +3 tiers
-      { fixtureId: 'f2', tierDifference: 0 },  // same tier
+      { fixtureId: 'f1', tierDifference: 3 },
+      { fixtureId: 'f2', tierDifference: 0 },
     ],
   }
 
@@ -757,7 +388,6 @@ describe('validateCupPicks', () => {
       ...base,
       picks: [
         { fixtureId: 'f1', confidenceRank: 1, predictedResult: 'home_win', pickedTeam: 'home' },
-        // home is +3, picking home → tierDiffFromPicked = +3 → INVALID
         { fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
       ],
     })
@@ -767,10 +397,7 @@ describe('validateCupPicks', () => {
   it('accepts pick where picked team is 1 tier above', () => {
     const result = validateCupPicks({
       ...base,
-      fixtures: [
-        { fixtureId: 'f1', tierDifference: 1 },
-        { fixtureId: 'f2', tierDifference: 0 },
-      ],
+      fixtures: [{ fixtureId: 'f1', tierDifference: 1 }, { fixtureId: 'f2', tierDifference: 0 }],
       picks: [
         { fixtureId: 'f1', confidenceRank: 1, predictedResult: 'home_win', pickedTeam: 'home' },
         { fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
@@ -784,7 +411,6 @@ describe('validateCupPicks', () => {
       ...base,
       picks: [
         { fixtureId: 'f1', confidenceRank: 1, predictedResult: 'away_win', pickedTeam: 'away' },
-        // home +3, picking away → tierDiffFromPicked = -3 → underdog, valid
         { fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
       ],
     })
@@ -810,7 +436,7 @@ export interface CupPickEntry {
 
 export interface CupFixtureInfo {
   fixtureId: string
-  tierDifference: number // from home perspective
+  tierDifference: number
 }
 
 export interface CupPicksValidation {
@@ -869,31 +495,303 @@ git commit -m "fix: add cup pick validation — restrict picking heavy favourite
 
 ---
 
+### Task 3: Fix Turbo Goals Counting
+
+**Issue:** Turbo mode currently counts `homeScore + awayScore` for all correct picks. The old app counts differently per prediction type:
+- `home_win` prediction correct → count `homeScore` only
+- `away_win` prediction correct → count `awayScore` only
+- `draw` prediction correct → count `homeScore + awayScore`
+
+**Files:**
+- Modify: `src/lib/game-logic/turbo.test.ts`
+- Modify: `src/lib/game-logic/turbo.ts`
+
+- [ ] **Step 1: Write failing tests for correct goals counting**
+
+Add to `src/lib/game-logic/turbo.test.ts`:
+
+```typescript
+describe('goals counting per prediction type', () => {
+  it('counts only home goals for correct home_win prediction', () => {
+    const picks = [makePick(1, 'home_win', 3, 1)]
+    const result = evaluateTurboPicks(picks)
+    expect(result.goalsInStreak).toBe(3)
+  })
+
+  it('counts only away goals for correct away_win prediction', () => {
+    const picks = [makePick(1, 'away_win', 1, 4)]
+    const result = evaluateTurboPicks(picks)
+    expect(result.goalsInStreak).toBe(4)
+  })
+
+  it('counts both goals for correct draw prediction', () => {
+    const picks = [makePick(1, 'draw', 2, 2)]
+    const result = evaluateTurboPicks(picks)
+    expect(result.goalsInStreak).toBe(4)
+  })
+
+  it('counts goals correctly across mixed streak', () => {
+    const picks = [
+      makePick(1, 'home_win', 3, 0),
+      makePick(2, 'draw', 1, 1),
+      makePick(3, 'away_win', 0, 2),
+    ]
+    const result = evaluateTurboPicks(picks)
+    expect(result.streak).toBe(3)
+    expect(result.goalsInStreak).toBe(7)
+  })
+})
+```
+
+- [ ] **Step 2: Run tests, verify failures**
+
+Run: `pnpm exec vitest run src/lib/game-logic/turbo.test.ts`
+Expected: New tests FAIL
+
+- [ ] **Step 3: Fix the implementation**
+
+In `src/lib/game-logic/turbo.ts`, replace the goals calculation:
+
+```typescript
+let goals = 0
+if (correct) {
+  if (pick.predictedResult === 'home_win') goals = pick.homeScore
+  else if (pick.predictedResult === 'away_win') goals = pick.awayScore
+  else goals = pick.homeScore + pick.awayScore
+}
+```
+
+- [ ] **Step 4: Fix existing test that assumed wrong goals counting**
+
+Update the "counts goals across full streak" test:
+```typescript
+it('counts goals across full streak with correct per-type counting', () => {
+  const picks = [
+    makePick(1, 'home_win', 2, 0),
+    makePick(2, 'away_win', 1, 3),
+    makePick(3, 'draw', 2, 2),
+  ]
+  const result = evaluateTurboPicks(picks)
+  expect(result.streak).toBe(3)
+  expect(result.goalsInStreak).toBe(9) // 2 + 3 + 4
+})
+```
+
+- [ ] **Step 5: Run all turbo tests, verify pass**
+
+Run: `pnpm exec vitest run src/lib/game-logic/turbo.test.ts`
+Expected: ALL tests PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/lib/game-logic/turbo.ts src/lib/game-logic/turbo.test.ts
+git commit -m "fix: turbo goals counting — home/away/draw counted differently per prediction type"
+```
+
+---
+
+### Task 4: Add Classic First-Gameweek Exemption
+
+**Issue:** The old app has a "rebuy" rule: non-wins in the starting gameweek don't eliminate players. Our implementation always eliminates on non-win.
+
+**Files:**
+- Modify: `src/lib/game-logic/classic.test.ts`
+- Modify: `src/lib/game-logic/classic.ts`
+
+- [ ] **Step 1: Write failing tests**
+
+Add to `src/lib/game-logic/classic.test.ts`:
+
+```typescript
+describe('first gameweek exemption', () => {
+  it('does not eliminate on loss in starting round', () => {
+    const input: ClassicRoundInput = {
+      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+      fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+      isStartingRound: true,
+    }
+    const result = processClassicRound(input)
+    expect(result.results[0].result).toBe('loss')
+    expect(result.results[0].eliminated).toBe(false)
+  })
+
+  it('does not eliminate on draw in starting round', () => {
+    const input: ClassicRoundInput = {
+      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+      fixtures: [makeFixture('arsenal', 'chelsea', 1, 1)],
+      isStartingRound: true,
+    }
+    const result = processClassicRound(input)
+    expect(result.results[0].result).toBe('draw')
+    expect(result.results[0].eliminated).toBe(false)
+  })
+
+  it('still eliminates on loss after starting round', () => {
+    const input: ClassicRoundInput = {
+      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+      fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+      isStartingRound: false,
+    }
+    const result = processClassicRound(input)
+    expect(result.results[0].eliminated).toBe(true)
+  })
+})
+```
+
+- [ ] **Step 2: Run tests, verify failures**
+
+Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
+Expected: FAIL
+
+- [ ] **Step 3: Fix the implementation**
+
+Add `isStartingRound` to `ClassicRoundInput`:
+```typescript
+export interface ClassicRoundInput {
+  players: ClassicPlayerPick[]
+  fixtures: ClassicFixture[]
+  isStartingRound?: boolean
+}
+```
+
+Update elimination logic:
+```typescript
+eliminated: result !== 'win' && !input.isStartingRound,
+```
+
+- [ ] **Step 4: Run all classic tests, verify pass**
+
+Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
+Expected: ALL tests PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/lib/game-logic/classic.ts src/lib/game-logic/classic.test.ts
+git commit -m "fix: add first-gameweek exemption (rebuy) to classic mode"
+```
+
+---
+
+### Task 5: Add Classic Goals Tracking
+
+**Issue:** Classic mode doesn't track goals on winning picks. The old app uses total goals from winning picks as tiebreaker when all players are eliminated simultaneously.
+
+**Files:**
+- Modify: `src/lib/game-logic/classic.test.ts`
+- Modify: `src/lib/game-logic/classic.ts`
+
+- [ ] **Step 1: Write failing tests**
+
+Add to `src/lib/game-logic/classic.test.ts`:
+
+```typescript
+describe('goals tracking on wins', () => {
+  it('tracks picked team goals on a home win', () => {
+    const input: ClassicRoundInput = {
+      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+      fixtures: [makeFixture('arsenal', 'chelsea', 3, 1)],
+    }
+    const result = processClassicRound(input)
+    expect(result.results[0].goalsScored).toBe(3)
+  })
+
+  it('tracks picked team goals on an away win', () => {
+    const input: ClassicRoundInput = {
+      players: [{ gamePlayerId: 'p1', pickedTeamId: 'liverpool' }],
+      fixtures: [makeFixture('wolves', 'liverpool', 0, 4)],
+    }
+    const result = processClassicRound(input)
+    expect(result.results[0].goalsScored).toBe(4)
+  })
+
+  it('sets goals to 0 on loss', () => {
+    const input: ClassicRoundInput = {
+      players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+      fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+    }
+    const result = processClassicRound(input)
+    expect(result.results[0].goalsScored).toBe(0)
+  })
+})
+```
+
+- [ ] **Step 2: Run tests, verify failures**
+
+Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
+Expected: FAIL — `goalsScored` not in output
+
+- [ ] **Step 3: Fix the implementation**
+
+Add `goalsScored` to `ClassicPlayerResult` and calculate it:
+```typescript
+export interface ClassicPlayerResult {
+  gamePlayerId: string
+  result: PickResult
+  eliminated: boolean
+  goalsScored: number
+}
+```
+
+```typescript
+const pickedHome = player.pickedTeamId === fixture.homeTeamId
+const goalsScored = result === 'win'
+  ? (pickedHome ? fixture.homeScore : fixture.awayScore)
+  : 0
+
+return {
+  gamePlayerId: player.gamePlayerId,
+  result,
+  eliminated: result !== 'win' && !input.isStartingRound,
+  goalsScored,
+}
+```
+
+- [ ] **Step 4: Run all classic tests, verify pass**
+
+Run: `pnpm exec vitest run src/lib/game-logic/classic.test.ts`
+Expected: ALL tests PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/lib/game-logic/classic.ts src/lib/game-logic/classic.test.ts
+git commit -m "fix: track goals on winning classic picks for tiebreaker"
+```
+
+---
+
 ### Task 6: Update process-round.ts for Corrected Interfaces
 
-**Issue:** The round processing orchestrator uses the old cup interface. It also needs updating for classic goals tracking.
+**Issue:** The round processing orchestrator uses the old cup interface and doesn't pass `isStartingRound` for classic or track goals.
 
 **Files:**
 - Modify: `src/lib/game/process-round.ts`
 
 - [ ] **Step 1: Update cup processing to use new interface**
 
-The cup section of `processGameRound` needs to:
-- Pass `pickedTeam` (home/away) to `evaluateCupPicks` instead of `predictedResult`
-- Use the new `CupPickInput` interface
-- Store `result` values including `draw_success` and `restricted`
+The cup section needs to:
+- Pass `pickedTeam` ('home'/'away') to `evaluateCupPicks` instead of `predictedResult`
+- Use the new `CupPickInput` interface with `pickedTeam` field
+- Store result values including `draw_success` and `restricted`
 - Update `livesRemaining` correctly
 
-- [ ] **Step 2: Update classic processing to track goals**
+- [ ] **Step 2: Update classic processing**
 
-The classic section needs to use the updated `ClassicPlayerResult.goalsScored`.
+- Pass `isStartingRound` (compare game's starting round with current round)
+- Store `goalsScored` from the result
 
-- [ ] **Step 3: Verify typecheck passes**
+- [ ] **Step 3: Update turbo processing**
+
+Goals are now calculated per prediction type inside `evaluateTurboPicks` — verify `process-round.ts` stores them correctly.
+
+- [ ] **Step 4: Verify typecheck passes**
 
 Run: `pnpm exec tsc --noEmit`
 Expected: No errors
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/game/process-round.ts
@@ -931,9 +829,9 @@ Expected: Build succeeds
 ### Task 8: Independent Review
 
 Dispatch an independent reviewer who:
-1. Reads the old app's game logic (stored procedures and UI code)
-2. Reads the new app's corrected game logic
-3. Verifies every rule matches
+1. Reads the old app's game logic (stored procedures and UI code) at ~/code/premier-league-survivor-picks
+2. Reads the new app's corrected game logic at ~/code/last-person-standing/src/lib/game-logic/
+3. Verifies every rule matches — line by line
 4. Reports any remaining discrepancies
 
-This reviewer should NOT have seen this plan — they verify independently.
+This reviewer must NOT have seen this plan — they verify independently from source.
