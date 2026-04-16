@@ -6,7 +6,11 @@ import { calculateTurboStandings, evaluateTurboPicks } from '@/lib/game-logic/tu
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
-export async function processGameRound(gameId: string, roundId: string) {
+export async function processGameRound(
+	gameId: string,
+	roundId: string,
+	options?: { isStartingRound?: boolean },
+) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
 		with: { players: true },
@@ -48,13 +52,20 @@ export async function processGameRound(gameId: string, roundId: string) {
 			}
 		})
 
-		const result = processClassicRound({ players: playerPicks, fixtures: completedFixtures })
+		const result = processClassicRound({
+			players: playerPicks,
+			fixtures: completedFixtures,
+			isStartingRound: options?.isStartingRound,
+		})
 
 		// Update picks and player statuses
 		for (const pr of result.results) {
 			const playerPick = allPicks.find((pk) => pk.gamePlayerId === pr.gamePlayerId)
 			if (playerPick) {
-				await db.update(pick).set({ result: pr.result }).where(eq(pick.id, playerPick.id))
+				await db
+					.update(pick)
+					.set({ result: pr.result, goalsScored: pr.goalsScored })
+					.where(eq(pick.id, playerPick.id))
 			}
 			if (pr.eliminated) {
 				await db
@@ -110,13 +121,14 @@ export async function processGameRound(gameId: string, roundId: string) {
 	if (gameData.gameMode === 'cup') {
 		let eliminations = 0
 		for (const player of alivePlayers) {
-			const playerPicks = allPicks
+			const playerCupPicks = allPicks
 				.filter((pk) => pk.gamePlayerId === player.id)
 				.map((pk) => {
 					const f = roundData.fixtures.find((fx) => fx.id === pk.fixtureId)
+					const pickedTeam: 'home' | 'away' = pk.teamId === f?.homeTeamId ? 'home' : 'away'
 					return {
 						confidenceRank: pk.confidenceRank ?? 0,
-						predictedResult: (pk.predictedResult ?? 'draw') as 'home_win' | 'draw' | 'away_win',
+						pickedTeam,
 						homeScore: f?.homeScore ?? 0,
 						awayScore: f?.awayScore ?? 0,
 						tierDifference: 0, // TODO: store tier_difference on fixture in cup competitions
@@ -124,7 +136,7 @@ export async function processGameRound(gameId: string, roundId: string) {
 				})
 
 			const startingLives = player.livesRemaining
-			const result = evaluateCupPicks(playerPicks, startingLives)
+			const result = evaluateCupPicks(playerCupPicks, startingLives)
 
 			await db
 				.update(gamePlayer)
@@ -144,16 +156,19 @@ export async function processGameRound(gameId: string, roundId: string) {
 					(pk) => pk.gamePlayerId === player.id && pk.confidenceRank === pr.confidenceRank,
 				)
 				if (matchingPick) {
+					// Map cup result to DB pick_result enum
+					const dbResult =
+						pr.result === 'win'
+							? ('win' as const)
+							: pr.result === 'draw_success'
+								? ('draw' as const)
+								: pr.result === 'saved_by_life'
+									? ('saved_by_life' as const)
+									: ('loss' as const) // 'loss' and 'restricted' both map to 'loss'
 					await db
 						.update(pick)
 						.set({
-							result: pr.correct
-								? 'win'
-								: pr.savedByDraw
-									? 'draw'
-									: pr.lifeLost
-										? 'saved_by_life'
-										: 'loss',
+							result: dbResult,
 							goalsScored: pr.goalsCounted,
 						})
 						.where(eq(pick.id, matchingPick.id))
