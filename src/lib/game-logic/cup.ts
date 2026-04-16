@@ -62,7 +62,7 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
 		} else if (isDraw) {
 			if (tierDiffFromPicked <= -1) {
 				result = 'draw_success'
-				goalsCounted = pickedTeamGoals
+				// Goals NOT counted on draw_success (matches old app stored procedure)
 				if (tierDiffFromPicked <= -2) {
 					livesGained = 1
 					currentLives += 1

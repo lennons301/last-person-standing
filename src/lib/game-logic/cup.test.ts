@@ -65,6 +65,13 @@ describe('evaluateCupPicks', () => {
 			expect(result.pickResults[0].livesGained).toBe(1)
 		})
 
+		it('draw_success does NOT count goals (matches old app)', () => {
+			// Away picks underdog, 2-2 draw. Draw success but 0 goals for tiebreaker.
+			const result = evaluateCupPicks([makePick(1, 'away', 2, 2, 3)], 0)
+			expect(result.pickResults[0].result).toBe('draw_success')
+			expect(result.pickResults[0].goalsCounted).toBe(0)
+		})
+
 		it('draw earns 0 lives when tierDiffFromPicked = -1', () => {
 			const result = evaluateCupPicks([makePick(1, 'away', 1, 1, 1)], 0)
 			expect(result.pickResults[0].result).toBe('draw_success')
