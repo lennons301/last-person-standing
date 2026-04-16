@@ -24,7 +24,12 @@ export function evaluateTurboPicks(picks: TurboPickInput[]): TurboResult {
 	const pickResults = sorted.map((pick) => {
 		const actualOutcome = determineFixtureOutcome(pick.homeScore, pick.awayScore)
 		const correct = actualOutcome === pick.predictedResult
-		const goals = pick.homeScore + pick.awayScore
+		let goals = 0
+		if (correct) {
+			if (pick.predictedResult === 'home_win') goals = pick.homeScore
+			else if (pick.predictedResult === 'away_win') goals = pick.awayScore
+			else goals = pick.homeScore + pick.awayScore
+		}
 		if (!streakBroken && correct) {
 			streak++
 			goalsInStreak += goals

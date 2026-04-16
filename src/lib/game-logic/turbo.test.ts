@@ -35,9 +35,9 @@ describe('evaluateTurboPicks', () => {
 		const picks = [makePick(1, 'home_win', 3, 1), makePick(2, 'home_win', 0, 2)]
 		const result = evaluateTurboPicks(picks)
 		expect(result.streak).toBe(1)
-		expect(result.goalsInStreak).toBe(4)
+		expect(result.goalsInStreak).toBe(3)
 	})
-	it('counts goals across full streak', () => {
+	it('counts goals across full streak with correct per-type counting', () => {
 		const picks = [
 			makePick(1, 'home_win', 2, 0),
 			makePick(2, 'away_win', 1, 3),
@@ -45,7 +45,7 @@ describe('evaluateTurboPicks', () => {
 		]
 		const result = evaluateTurboPicks(picks)
 		expect(result.streak).toBe(3)
-		expect(result.goalsInStreak).toBe(10)
+		expect(result.goalsInStreak).toBe(9)
 	})
 	it('handles empty picks', () => {
 		expect(evaluateTurboPicks([]).streak).toBe(0)
@@ -57,6 +57,37 @@ describe('evaluateTurboPicks', () => {
 			makePick(2, 'away_win', 0, 1),
 		]
 		expect(evaluateTurboPicks(picks).streak).toBe(3)
+	})
+})
+
+describe('goals counting per prediction type', () => {
+	it('counts only home goals for correct home_win prediction', () => {
+		const picks = [makePick(1, 'home_win', 3, 1)]
+		const result = evaluateTurboPicks(picks)
+		expect(result.goalsInStreak).toBe(3)
+	})
+
+	it('counts only away goals for correct away_win prediction', () => {
+		const picks = [makePick(1, 'away_win', 1, 4)]
+		const result = evaluateTurboPicks(picks)
+		expect(result.goalsInStreak).toBe(4)
+	})
+
+	it('counts both goals for correct draw prediction', () => {
+		const picks = [makePick(1, 'draw', 2, 2)]
+		const result = evaluateTurboPicks(picks)
+		expect(result.goalsInStreak).toBe(4)
+	})
+
+	it('counts goals correctly across mixed streak', () => {
+		const picks = [
+			makePick(1, 'home_win', 3, 0),
+			makePick(2, 'draw', 1, 1),
+			makePick(3, 'away_win', 0, 2),
+		]
+		const result = evaluateTurboPicks(picks)
+		expect(result.streak).toBe(3)
+		expect(result.goalsInStreak).toBe(7)
 	})
 })
 
