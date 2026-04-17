@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 
-const publicPaths = ['/login', '/signup', '/api/auth']
+const publicPaths = ['/auth', '/api/auth']
 
 export const config = {
 	matcher: ['/((?!_next/static|_next/image|favicon.ico|public).*)'],
@@ -22,7 +22,7 @@ export async function proxy(request: NextRequest) {
 	})
 
 	if (!session) {
-		const loginUrl = new URL('/login', request.nextUrl.origin)
+		const loginUrl = new URL('/auth', request.nextUrl.origin)
 		loginUrl.searchParams.set('callbackUrl', pathname)
 		return NextResponse.redirect(loginUrl)
 	}
