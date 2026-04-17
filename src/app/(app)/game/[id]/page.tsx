@@ -1,8 +1,14 @@
 import { notFound } from 'next/navigation'
 import { ClassicPick } from '@/components/picks/classic-pick'
+import { TurboPick } from '@/components/picks/turbo-pick'
 import { ProgressGrid } from '@/components/standings/progress-grid'
 import { requireSession } from '@/lib/auth-helpers'
-import { getClassicPickData, getGameDetail, getProgressGridData } from '@/lib/game/detail-queries'
+import {
+	getClassicPickData,
+	getGameDetail,
+	getProgressGridData,
+	getTurboPickData,
+} from '@/lib/game/detail-queries'
 
 export default async function GameDetailPage({ params }: { params: Promise<{ id: string }> }) {
 	const session = await requireSession()
@@ -20,12 +26,22 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 		)
 	}
 
-	const pickData =
+	const classicPickData =
 		game.currentRound && game.myMembership && game.gameMode === 'classic'
 			? await getClassicPickData(game.id, game.currentRound.id, game.myMembership.id)
 			: null
 
+	const turboPickData =
+		game.currentRound && game.myMembership && game.gameMode === 'turbo'
+			? await getTurboPickData(game.id, game.currentRound.id, game.myMembership.id)
+			: null
+
+	const numberOfPicks =
+		(game as unknown as { modeConfig?: { numberOfPicks?: number } }).modeConfig?.numberOfPicks ?? 10
+
 	const gridData = await getProgressGridData(game.id)
+
+	const isAlive = game.myMembership?.status === 'alive'
 
 	return (
 		<div>
@@ -38,32 +54,42 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 
 			<div className="grid grid-cols-1 md:grid-cols-[1fr_400px] gap-6">
 				<div>
-					{game.gameMode === 'classic' ? (
-						pickData && game.currentRound && game.myMembership?.status === 'alive' ? (
+					{game.currentRound && isAlive ? (
+						game.gameMode === 'classic' && classicPickData ? (
 							<ClassicPick
 								gameId={game.id}
 								roundId={game.currentRound.id}
-								roundName={pickData.roundName}
-								deadline={pickData.deadline}
-								fixtures={pickData.fixtures}
-								usedTeamsByRound={pickData.usedTeamsByRound}
-								existingPickTeamId={pickData.existingPickTeamId}
+								roundName={classicPickData.roundName}
+								deadline={classicPickData.deadline}
+								fixtures={classicPickData.fixtures}
+								usedTeamsByRound={classicPickData.usedTeamsByRound}
+								existingPickTeamId={classicPickData.existingPickTeamId}
+							/>
+						) : game.gameMode === 'turbo' && turboPickData ? (
+							<TurboPick
+								gameId={game.id}
+								roundId={game.currentRound.id}
+								roundName={turboPickData.roundName}
+								deadline={turboPickData.deadline}
+								fixtures={turboPickData.fixtures}
+								existingPicks={turboPickData.existingPicks}
+								numberOfPicks={numberOfPicks}
 							/>
 						) : (
 							<div className="p-6 rounded-lg border border-border bg-card text-center text-muted-foreground">
-								{game.myMembership?.status === 'eliminated'
-									? 'You have been eliminated from this game.'
-									: game.status === 'completed'
-										? 'This game has ended.'
-										: 'Waiting for the next round.'}
+								<p className="font-display text-lg font-semibold mb-1">
+									{game.gameMode[0].toUpperCase() + game.gameMode.slice(1)} mode
+								</p>
+								<p className="text-sm">The pick interface for this mode is coming soon.</p>
 							</div>
 						)
 					) : (
 						<div className="p-6 rounded-lg border border-border bg-card text-center text-muted-foreground">
-							<p className="font-display text-lg font-semibold mb-1">
-								{game.gameMode[0].toUpperCase() + game.gameMode.slice(1)} mode
-							</p>
-							<p className="text-sm">The pick interface for this mode is coming soon.</p>
+							{game.myMembership?.status === 'eliminated'
+								? 'You have been eliminated from this game.'
+								: game.status === 'completed'
+									? 'This game has ended.'
+									: 'Waiting for the next round.'}
 						</div>
 					)}
 				</div>

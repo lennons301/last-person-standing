@@ -95,6 +95,50 @@ function formatKickoff(date: Date): string {
 	return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
+export async function getTurboPickData(gameId: string, roundId: string, gamePlayerId: string) {
+	const roundData = await db.query.round.findFirst({
+		where: eq(round.id, roundId),
+		with: {
+			fixtures: { with: { homeTeam: true, awayTeam: true } },
+		},
+	})
+	if (!roundData) return null
+
+	const existingPicks = await db.query.pick.findMany({
+		where: and(
+			eq(pick.gameId, gameId),
+			eq(pick.gamePlayerId, gamePlayerId),
+			eq(pick.roundId, roundId),
+		),
+	})
+
+	const fixtures = roundData.fixtures.map((f) => ({
+		id: f.id,
+		home: {
+			id: f.homeTeamId,
+			name: f.homeTeam.name,
+			shortName: f.homeTeam.shortName,
+		},
+		away: {
+			id: f.awayTeamId,
+			name: f.awayTeam.name,
+			shortName: f.awayTeam.shortName,
+		},
+		kickoff: f.kickoff ? formatKickoff(f.kickoff) : null,
+	}))
+
+	return {
+		roundName: roundData.name ?? `GW${roundData.number}`,
+		deadline: roundData.deadline,
+		fixtures,
+		existingPicks: existingPicks.map((p) => ({
+			fixtureId: p.fixtureId ?? '',
+			confidenceRank: p.confidenceRank ?? 0,
+			predictedResult: (p.predictedResult ?? 'home_win') as 'home_win' | 'draw' | 'away_win',
+		})),
+	}
+}
+
 export async function getProgressGridData(gameId: string) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
