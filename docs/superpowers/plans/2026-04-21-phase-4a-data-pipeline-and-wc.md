@@ -2255,10 +2255,93 @@ git commit -m "chore: format and lint"
 
 These belong in 4b / 4c / 5, not this plan:
 - Client-side match-day UI that consumes `/api/games/[id]/live`.
-- Automated deadline-reminder delivery (email / WhatsApp auto-send) — 4a only writes a log line.
+- Automated deadline-reminder delivery (email / WhatsApp auto-send) — 4a only writes a log line. `enqueueDeadlineReminder` exists but has no caller until 4b.
 - The `event` table migration — 4b.
 - Cup-mode tier indicator UI — 4b.
 - Paid rebuys + admin UX + Satori share variants — 4c.
+
+---
+
+## Post-merge operational checklist
+
+This is the cumulative set of operational steps needed to take the app from "code merged on main" to "running in a target environment." Earlier phases implicitly assumed most of these — this list consolidates them so nothing is missed. Each item is tagged with its origin phase.
+
+### External accounts / services (one-time per organisation)
+
+- [ ] **Neon (serverless Postgres)** [Phase 1] — create project; database in **EU (London)** region to minimise latency from Vercel lhr1; copy connection string.
+- [ ] **Doppler** [Phase 1] — create project + configs (dev/staging/prod); install Doppler's Vercel integration and link the project so env vars auto-populate on deploy.
+- [ ] **Vercel** [Phase 1] — link GitHub repo; set deployment region to **lhr1**; production branch = `main`; confirm framework auto-detected as Next.js.
+- [ ] **football-data.org** [Phase 4a] — register at https://www.football-data.org, confirm email, generate free-tier API key.
+- [ ] **Upstash QStash** [Phase 4a] — create account + namespace; capture the token and both signing keys. Free tier (500 messages/day) is sufficient for this app's scale.
+
+### Environment variables
+
+Set in Doppler and sync to Vercel via the integration. Cumulative list:
+
+| Variable | Origin | Used by |
+|---|---|---|
+| `DATABASE_URL` | Phase 1 | all DB access |
+| `BETTER_AUTH_SECRET` | Phase 1 | session signing |
+| `BETTER_AUTH_URL` | Phase 1 | cookie scope, auth redirects |
+| `CRON_SECRET` | Phase 4a | Vercel cron + GitHub Actions auth |
+| `FOOTBALL_DATA_API_KEY` | Phase 4a | daily-sync + poll-scores for football-data.org competitions |
+| `QSTASH_TOKEN` | Phase 4a | publishing QStash messages |
+| `QSTASH_CURRENT_SIGNING_KEY` | Phase 4a | QStash webhook signature verification |
+| `QSTASH_NEXT_SIGNING_KEY` | Phase 4a | QStash key-rotation support |
+| `VERCEL_URL` | Phase 4a | QStash callback URL base (Vercel auto-populates in prod; set manually only when exercising QStash from local dev) |
+
+GitHub Actions repo-level secrets (Settings → Secrets and Variables → Actions):
+
+| Secret | Origin | Used by |
+|---|---|---|
+| `CRON_SECRET` | Phase 4a | `.github/workflows/live-scores.yml` |
+| `VERCEL_PROD_URL` | Phase 4a | `.github/workflows/live-scores.yml` — full https URL of production |
+
+Local-dev counterparts live in `.env.local` (gitignored).
+
+### Per-environment bootstrap (run once per env)
+
+- [ ] **Apply migrations:** `pnpm exec drizzle-kit migrate` against the target `DATABASE_URL`. Idempotent; safe to re-run.
+- [ ] **Seed real competitions:** `FOOTBALL_DATA_API_KEY=<key> just bootstrap-competitions` — creates PL 25/26 (FPL-sourced) and WC 2026 (football-data.org), populates teams/rounds/fixtures, applies WC pot assignments. Idempotent. Must run before opening any real games to players. For the World Cup launch, run **before 11 June 2026**.
+
+Local dev additionally uses `just db-seed` (Phase 1) which seeds dummy users + games for testing. Don't run that against production.
+
+### Post-deploy smoke tests
+
+- [ ] **Auth flow:** sign up a test user on `https://<deployment-url>/signup`; confirm the user row lands in the `user` table.
+- [ ] **Daily sync:** `curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<url>/api/cron/daily-sync` → expect 200 with a `competitions` array.
+- [ ] **Poll-scores short-circuit:** `curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<url>/api/cron/poll-scores` outside a match window → expect `{ "updated": 0, "reason": "no-active-fixtures" | "no-active-rounds" }`.
+- [ ] **Fail-closed auth:** `curl -X POST https://<url>/api/cron/daily-sync` (no header) → 401. Cross-check Vercel logs show no cron secret leak.
+- [ ] **QStash webhook:** publish a test message from the QStash dashboard targeting `/api/cron/qstash-handler`; confirm signature-verified processing in Vercel logs.
+- [ ] **Bootstrap result:** after `just bootstrap-competitions`, verify DB has `competition` rows for PL 25/26 and WC 2026; ≥ 20 PL teams + 48 WC teams; ≥ 1 round per competition.
+
+### Go-live day (first match window)
+
+- [ ] Confirm `.github/workflows/live-scores.yml` is enabled and running (Actions tab should show runs every 5 minutes).
+- [ ] At kickoff of the first real fixture, check that `poll-scores` transitions from `no-active-fixtures` to `{ "updated": N }` within ~5 minutes.
+- [ ] After the final fixture of a round finishes, confirm a QStash `process_round` message is enqueued (visible in QStash dashboard), and within ~2 minutes the round status flips to `completed` and eliminations are applied.
+- [ ] End-to-end manual test: create a game, invite a second user, both make picks, watch live scores update, let round auto-process.
+
+### Known limitations for Phase 4a launch
+
+Document these for anyone using the app; they are Phase 4b/4c/5 work:
+
+- **Payment processing:** Manual only. No Mangopay / Stripe integration. Entry fees are a display value; actual money movement is off-platform. Phase 4b adds player-claim + admin-confirm tracking; Phase 5 adds Mangopay. Do not launch paid games until that flow is in place, or restrict to trusted-circle games with off-platform settlement.
+- **Notifications:** Deadline reminders enqueue helper exists but has no caller; `writeEvent` logs to `console.info` only. No email / WhatsApp / push delivery in 4a. Phase 4b adds the event table and manual WhatsApp-share; Phase 5 automates.
+- **Mobile polish:** App functions on mobile but is not breakpoint-optimised. Phase 4c delivers polish.
+- **Live match-day UI:** The `GET /api/games/[id]/live` endpoint exists but no client component consumes it. Phase 4c builds the match-day view.
+- **WC data accuracy:**
+  - `WC_2026_POTS[*].footballDataId` values are empty strings pending first daily-sync; `applyPotAssignments` is a no-op until they're backfilled. Plan a second bootstrap pass after the first daily-sync populates team IDs.
+  - Spot-check Norway's pot assignment against FIFA.com — one reviewer flagged uncertainty (implementer found three sources agreeing on Pot 3, but verify if cup-mode gameplay hinges on it).
+  - Six Pot 4 slots are marked `tbd: true` for playoff winners; those resolved in March 2026 playoffs so can be backfilled post-merge.
+- **Better Auth email verification:** Signup does not verify email ownership. Acceptable for a trusted-circle launch; tighten before open signup.
+- **Round stage heuristic:** `wcRoundStage(roundNumber)` assumes rounds 1–3 are group and 4+ are knockout. Correct for football-data.org's current WC matchday numbering but fragile. Add a `round.stage` column if a second group_knockout competition (e.g. Champions League) is added before 4b.
+
+### Deprecations to clean up
+
+- **`/api/cron/sync-fpl`** [Phase 2] — duplicates what `daily-sync` now does for the FPL competition. Decide in Phase 4b whether to remove the endpoint or keep as a manual-trigger escape hatch.
+
+---
 
 ## Self-review checklist
 
