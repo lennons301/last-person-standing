@@ -601,3 +601,53 @@ export async function getProgressGridData(
 
 	return { rounds, players, aliveCount, eliminatedCount, pot }
 }
+
+export async function getLivePayload(gameId: string, viewerUserId: string) {
+	const gameData = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: {
+			currentRound: { with: { fixtures: { with: { homeTeam: true, awayTeam: true } } } },
+			players: true,
+		},
+	})
+	if (!gameData) return null
+
+	const picksInRound = gameData.currentRoundId
+		? await db.query.pick.findMany({
+				where: and(eq(pick.gameId, gameId), eq(pick.roundId, gameData.currentRoundId)),
+			})
+		: []
+
+	const fixtures = (gameData.currentRound?.fixtures ?? []).map((f) => ({
+		id: f.id,
+		kickoff: f.kickoff,
+		homeScore: f.homeScore,
+		awayScore: f.awayScore,
+		status: f.status,
+		homeShort: f.homeTeam.shortName,
+		awayShort: f.awayTeam.shortName,
+	}))
+
+	return {
+		gameId: gameData.id,
+		gameMode: gameData.gameMode,
+		roundId: gameData.currentRoundId,
+		fixtures,
+		picks: picksInRound.map((p) => ({
+			gamePlayerId: p.gamePlayerId,
+			fixtureId: p.fixtureId,
+			teamId: p.teamId,
+			confidenceRank: p.confidenceRank,
+			predictedResult: p.predictedResult,
+			result: p.result,
+		})),
+		players: gameData.players.map((p) => ({
+			id: p.id,
+			userId: p.userId,
+			status: p.status,
+			livesRemaining: p.livesRemaining,
+		})),
+		viewerUserId,
+		updatedAt: new Date().toISOString(),
+	}
+}
