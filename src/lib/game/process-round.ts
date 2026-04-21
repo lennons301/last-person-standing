@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { processClassicRound } from '@/lib/game-logic/classic'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { calculateTurboStandings, evaluateTurboPicks } from '@/lib/game-logic/turbo'
+import { computeWcClassicAutoElims, type WcFixture } from '@/lib/game-logic/wc-classic'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
@@ -13,7 +14,7 @@ export async function processGameRound(
 ) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
-		with: { players: true },
+		with: { players: true, competition: true },
 	})
 	if (!gameData) throw new Error(`Game ${gameId} not found`)
 
@@ -75,7 +76,69 @@ export async function processGameRound(
 			}
 		}
 
-		return { processed: true, eliminations: result.results.filter((r) => r.eliminated).length }
+		let eliminations = result.results.filter((r) => r.eliminated).length
+
+		if (gameData.competition.type === 'group_knockout') {
+			const allRounds = await db.query.round.findMany({
+				where: eq(round.competitionId, gameData.competitionId),
+				with: { fixtures: true },
+			})
+			const finishedKnockoutFixtures: WcFixture[] = allRounds.flatMap((r) =>
+				r.fixtures.map((f) => ({
+					id: f.id,
+					roundId: r.id,
+					homeTeamId: f.homeTeamId,
+					awayTeamId: f.awayTeamId,
+					homeScore: f.homeScore,
+					awayScore: f.awayScore,
+					status: f.status,
+					stage: r.number <= 3 ? ('group' as const) : ('knockout' as const),
+				})),
+			)
+			const remainingRounds = allRounds
+				.filter((r) => r.status !== 'completed')
+				.map((r) => ({
+					id: r.id,
+					fixtures: r.fixtures.map((f) => ({
+						id: f.id,
+						roundId: r.id,
+						homeTeamId: f.homeTeamId,
+						awayTeamId: f.awayTeamId,
+						homeScore: f.homeScore,
+						awayScore: f.awayScore,
+						status: f.status,
+						stage: r.number <= 3 ? ('group' as const) : ('knockout' as const),
+					})),
+				}))
+
+			// Reload alive players after the classic updates above
+			const aliveAfter = await db.query.gamePlayer.findMany({
+				where: and(eq(gamePlayer.gameId, gameId), eq(gamePlayer.status, 'alive')),
+			})
+			const picksForAlive = await db.query.pick.findMany({
+				where: eq(pick.gameId, gameId),
+			})
+			const alivePlayersForAutoElim = aliveAfter.map((p) => ({
+				gamePlayerId: p.id,
+				usedTeamIds: picksForAlive.filter((pk) => pk.gamePlayerId === p.id).map((pk) => pk.teamId),
+			}))
+
+			const autoElims = computeWcClassicAutoElims({
+				alivePlayers: alivePlayersForAutoElim,
+				remainingRounds,
+				finishedKnockoutFixtures,
+			})
+
+			for (const ae of autoElims) {
+				await db
+					.update(gamePlayer)
+					.set({ status: 'eliminated', eliminatedRoundId: roundId })
+					.where(eq(gamePlayer.id, ae.gamePlayerId))
+			}
+			eliminations += autoElims.length
+		}
+
+		return { processed: true, eliminations }
 	}
 
 	if (gameData.gameMode === 'turbo') {

@@ -2,11 +2,16 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { validateWcClassicPick } from '@/lib/game-logic/wc-classic'
 import { validateClassicPick, validateTurboPicks } from '@/lib/picks/validate'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
 type Params = Promise<{ gameId: string; roundId: string }>
+
+function wcRoundStage(roundNumber: number): 'group' | 'knockout' {
+	return roundNumber <= 3 ? 'group' : 'knockout'
+}
 
 export async function GET(_request: Request, { params }: { params: Params }) {
 	await requireSession()
@@ -28,6 +33,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	// Get game and player
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
+		with: { competition: true },
 	})
 	if (!gameData) {
 		return NextResponse.json({ error: 'Game not found' }, { status: 404 })
@@ -74,6 +80,43 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
 		if (!validation.valid) {
 			return NextResponse.json({ error: validation.reason }, { status: 400 })
+		}
+
+		if (gameData.competition.type === 'group_knockout') {
+			// Load all rounds + fixtures for the competition to check tournament elimination
+			const allRounds = await db.query.round.findMany({
+				where: eq(round.competitionId, gameData.competitionId),
+				with: { fixtures: true },
+			})
+			const finishedKnockoutFixtures = allRounds.flatMap((r) =>
+				r.fixtures.map((f) => ({
+					id: f.id,
+					roundId: r.id,
+					homeTeamId: f.homeTeamId,
+					awayTeamId: f.awayTeamId,
+					homeScore: f.homeScore,
+					awayScore: f.awayScore,
+					status: f.status,
+					stage: wcRoundStage(r.number),
+				})),
+			)
+			const wcResult = validateWcClassicPick({
+				teamId,
+				roundFixtures: roundData.fixtures.map((f) => ({
+					id: f.id,
+					roundId: f.roundId,
+					homeTeamId: f.homeTeamId,
+					awayTeamId: f.awayTeamId,
+					homeScore: f.homeScore,
+					awayScore: f.awayScore,
+					status: f.status,
+					stage: wcRoundStage(roundData.number),
+				})),
+				finishedKnockoutFixtures,
+			})
+			if (!wcResult.valid) {
+				return NextResponse.json({ error: wcResult.reason }, { status: 400 })
+			}
 		}
 
 		// Find the fixture this team is in
