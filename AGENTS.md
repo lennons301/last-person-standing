@@ -65,6 +65,22 @@ drizzle/                  # Generated migrations
 - **Testing**: Vitest for unit tests. Game logic lives in pure functions for easy testing. Tests run against local Postgres in CI.
 - **Linting**: Biome for linting + formatting. Pre-commit hook via husky + lint-staged.
 
+## Environment variables
+
+Local dev uses `.env.local`; production uses Doppler. Variables:
+- `DATABASE_URL` — Postgres connection string.
+- `BETTER_AUTH_SECRET` — Better Auth session secret.
+- `BETTER_AUTH_URL` — app URL used for cookie scope.
+- `CRON_SECRET` — shared secret for GitHub Actions and Vercel cron auth.
+- `FOOTBALL_DATA_API_KEY` — football-data.org API key (free tier).
+- `QSTASH_TOKEN` — Upstash QStash client token.
+- `QSTASH_CURRENT_SIGNING_KEY` and `QSTASH_NEXT_SIGNING_KEY` — QStash webhook signature verification.
+- `VERCEL_URL` — deployment URL used as the QStash callback base. Populated automatically in Vercel builds; set manually in dev if you want to exercise QStash locally.
+
+GitHub Actions secrets (repo-level):
+- `CRON_SECRET` — same value as above.
+- `VERCEL_PROD_URL` — full https URL of the Vercel production deployment.
+
 ## Platform Context
 
 Platform standards and choices: see ~/code/platform/
