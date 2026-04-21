@@ -130,19 +130,29 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		await db.delete(pick).where(inArray(pick.id, existingIds))
 	}
 
+	// For turbo/cup, derive a valid teamId from the fixture + prediction.
+	// teamId has a FK to team.id and is NOT NULL, so we pick the home team for
+	// home_win/draw and the away team for away_win.
+	const fixtureLookup = new Map(roundData.fixtures.map((f) => [f.id, f]))
+
 	const newPicks = await db
 		.insert(pick)
 		.values(
 			pickEntries.map(
-				(entry: { fixtureId: string; confidenceRank: number; predictedResult: string }) => ({
-					gameId,
-					gamePlayerId: player.id,
-					roundId,
-					teamId: entry.fixtureId, // For turbo/cup, teamId stores the fixture context
-					fixtureId: entry.fixtureId,
-					confidenceRank: entry.confidenceRank,
-					predictedResult: entry.predictedResult,
-				}),
+				(entry: { fixtureId: string; confidenceRank: number; predictedResult: string }) => {
+					const fx = fixtureLookup.get(entry.fixtureId)
+					if (!fx) throw new Error(`Fixture ${entry.fixtureId} not found`)
+					const teamId = entry.predictedResult === 'away_win' ? fx.awayTeamId : fx.homeTeamId
+					return {
+						gameId,
+						gamePlayerId: player.id,
+						roundId,
+						teamId,
+						fixtureId: entry.fixtureId,
+						confidenceRank: entry.confidenceRank,
+						predictedResult: entry.predictedResult,
+					}
+				},
 			),
 		)
 		.returning()

@@ -1,7 +1,9 @@
 'use client'
 
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
 import { FixtureRow, type FixtureTeamInfo } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
@@ -19,7 +21,7 @@ interface ClassicPickProps {
 	roundName: string
 	deadline: Date | null
 	fixtures: ClassicPickFixture[]
-	usedTeamsByRound: Record<string, string> // teamId -> "GW18"
+	usedTeamsByRound: Record<string, string>
 	existingPickTeamId: string | null
 }
 
@@ -36,6 +38,8 @@ export function ClassicPick({
 	const [selectedTeamId, setSelectedTeamId] = useState<string | null>(existingPickTeamId)
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
+	// Collapse fixtures by default if a pick is already locked in
+	const [expanded, setExpanded] = useState(!existingPickTeamId)
 
 	function handlePick(fixture: ClassicPickFixture, side: 'home' | 'away') {
 		const teamId = side === 'home' ? fixture.home.id : fixture.away.id
@@ -59,6 +63,8 @@ export function ClassicPick({
 			setError(body.error ?? 'Failed to submit pick')
 			return
 		}
+		// After submission, collapse the fixtures view
+		setExpanded(false)
 		router.refresh()
 	}
 
@@ -69,15 +75,80 @@ export function ClassicPick({
 		selectedFixture?.home.id === selectedTeamId ? selectedFixture?.home : selectedFixture?.away
 	const selectedSide = selectedFixture?.home.id === selectedTeamId ? 'home' : 'away'
 
+	// Find the fixture for the existing (locked) pick
+	const lockedFixture = existingPickTeamId
+		? fixtures.find((f) => f.home.id === existingPickTeamId || f.away.id === existingPickTeamId)
+		: null
+	const lockedTeam = lockedFixture
+		? lockedFixture.home.id === existingPickTeamId
+			? lockedFixture.home
+			: lockedFixture.away
+		: null
+	const lockedOpponent = lockedFixture
+		? lockedFixture.home.id === existingPickTeamId
+			? lockedFixture.away
+			: lockedFixture.home
+		: null
+	const lockedSide = lockedFixture && lockedFixture.home.id === existingPickTeamId ? 'H' : 'A'
+
+	// Collapsed mode: show a summary with toggle to expand
+	if (!expanded && existingPickTeamId && lockedTeam && lockedOpponent) {
+		return (
+			<div className="rounded-lg border border-[var(--alive)]/40 bg-[var(--alive-bg)] p-4">
+				<div className="flex items-center justify-between flex-wrap gap-3">
+					<div className="flex items-center gap-3">
+						<TeamBadge shortName={lockedTeam.shortName} size="lg" />
+						<div>
+							<div className="text-xs uppercase tracking-wide text-[var(--alive)] font-semibold">
+								{roundName} · picks locked
+							</div>
+							<div className="font-display text-lg font-semibold">
+								{lockedTeam.name}{' '}
+								<span className="text-sm text-muted-foreground font-normal">
+									vs {lockedOpponent.name} ({lockedSide})
+								</span>
+							</div>
+						</div>
+					</div>
+					<div className="flex items-center gap-2">
+						{deadline && (
+							<span className="text-xs font-medium text-muted-foreground">
+								⏱ {formatDeadline(deadline)}
+							</span>
+						)}
+						<button
+							type="button"
+							onClick={() => setExpanded(true)}
+							className="text-xs font-semibold px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted flex items-center gap-1"
+						>
+							Change pick <ChevronDown className="h-3 w-3" />
+						</button>
+					</div>
+				</div>
+			</div>
+		)
+	}
+
 	return (
 		<div className="space-y-2">
 			<div className="flex justify-between items-baseline mb-3">
 				<h2 className="font-display text-xl font-semibold">{roundName}</h2>
-				{deadline && (
-					<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
-						⏱ {formatDeadline(deadline)}
-					</span>
-				)}
+				<div className="flex items-center gap-2">
+					{deadline && (
+						<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
+							⏱ {formatDeadline(deadline)}
+						</span>
+					)}
+					{existingPickTeamId && (
+						<button
+							type="button"
+							onClick={() => setExpanded(false)}
+							className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1"
+						>
+							Collapse <ChevronUp className="h-3 w-3" />
+						</button>
+					)}
+				</div>
 			</div>
 
 			{fixtures.map((fixture) => {

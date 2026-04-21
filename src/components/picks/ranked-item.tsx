@@ -11,8 +11,8 @@ export interface RankedPick {
 	id: string
 	rank: number
 	fixtureId: string
-	homeTeam: { shortName: string; name: string }
-	awayTeam: { shortName: string; name: string }
+	homeTeam: { shortName: string; name: string; badgeUrl?: string | null }
+	awayTeam: { shortName: string; name: string; badgeUrl?: string | null }
 	prediction: Prediction
 }
 
@@ -56,7 +56,7 @@ export function RankedItem({
 			ref={setNodeRef}
 			style={{ transform: CSS.Transform.toString(transform), transition }}
 			className={cn(
-				'flex items-center gap-2 bg-card border border-border rounded-lg px-2 py-2 mb-1',
+				'flex items-center gap-3 bg-card border border-border rounded-lg px-3 py-2.5 mb-1.5',
 				isDragging && 'opacity-50 border-dashed',
 			)}
 		>
@@ -68,51 +68,61 @@ export function RankedItem({
 				style={{ touchAction: 'none' }}
 				aria-label="Drag to reorder"
 			>
-				<GripVertical className="h-4 w-4" />
+				<GripVertical className="h-5 w-5" />
 			</button>
 			<div
 				className={cn(
-					'w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold text-background shrink-0',
+					'w-8 h-8 rounded-md flex items-center justify-center text-sm font-bold text-background shrink-0',
 					pick.rank <= 3 ? 'bg-[var(--alive)]' : 'bg-foreground',
 				)}
 			>
 				{pick.rank}
 			</div>
-			<div className="flex items-center gap-1.5 flex-1 min-w-0 text-sm">
-				<TeamBadge shortName={pick.homeTeam.shortName} size="sm" />
-				<span className="font-semibold truncate">{pick.homeTeam.name}</span>
-				<span className="text-[0.6rem] text-muted-foreground">v</span>
-				<span className="font-semibold truncate">{pick.awayTeam.name}</span>
-				<TeamBadge shortName={pick.awayTeam.shortName} size="sm" />
+			<div className="flex items-center gap-2 flex-1 min-w-0">
+				<TeamBadge
+					shortName={pick.homeTeam.shortName}
+					badgeUrl={pick.homeTeam.badgeUrl}
+					size="md"
+				/>
+				<span className="font-semibold text-sm truncate">{pick.homeTeam.name}</span>
+				<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide px-1">
+					vs
+				</span>
+				<span className="font-semibold text-sm truncate">{pick.awayTeam.name}</span>
+				<TeamBadge
+					shortName={pick.awayTeam.shortName}
+					badgeUrl={pick.awayTeam.badgeUrl}
+					size="md"
+				/>
 			</div>
 			<button
 				type="button"
 				onClick={onChangePrediction}
 				className={cn(
-					'text-[0.65rem] font-bold px-2 py-0.5 rounded shrink-0',
+					'text-xs font-bold px-2.5 py-1 rounded shrink-0',
 					PRED_COLOUR[pick.prediction],
 				)}
 			>
 				{PRED_LABEL[pick.prediction]}
 			</button>
-			<div className="flex flex-col gap-px shrink-0">
+			<div className="flex flex-col gap-0.5 shrink-0">
 				<button
 					type="button"
 					onClick={onMoveUp}
 					disabled={isFirst}
-					className="border border-border rounded p-0.5 disabled:opacity-30 hover:bg-muted"
+					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted"
 					aria-label="Move up"
 				>
-					<ChevronUp className="h-3 w-3" />
+					<ChevronUp className="h-3.5 w-3.5" />
 				</button>
 				<button
 					type="button"
 					onClick={onMoveDown}
 					disabled={isLast}
-					className="border border-border rounded p-0.5 disabled:opacity-30 hover:bg-muted"
+					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted"
 					aria-label="Move down"
 				>
-					<ChevronDown className="h-3 w-3" />
+					<ChevronDown className="h-3.5 w-3.5" />
 				</button>
 			</div>
 			<button
@@ -121,7 +131,7 @@ export function RankedItem({
 				className="text-muted-foreground hover:text-[var(--eliminated)] p-1 shrink-0"
 				aria-label="Remove"
 			>
-				<X className="h-3.5 w-3.5" />
+				<X className="h-4 w-4" />
 			</button>
 		</div>
 	)

@@ -1,9 +1,10 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import type { ClassicPickFixture } from '@/components/picks/classic-pick'
+import type { FormResult } from '@/components/picks/form-dots'
 import type { GridCell, GridPlayer, GridRound } from '@/components/standings/progress-grid'
 import { db } from '@/lib/db'
 import { calculatePot } from '@/lib/game-logic/prizes'
-import { round } from '@/lib/schema/competition'
+import { fixture, round } from '@/lib/schema/competition'
 import { game, pick } from '@/lib/schema/game'
 
 export async function getGameDetail(gameId: string, userId: string) {
@@ -43,11 +44,65 @@ export async function getGameDetail(gameId: string, userId: string) {
 	}
 }
 
+/**
+ * Compute a team's form from their last N finished fixtures across the competition.
+ */
+async function computeTeamForms(
+	teamIds: string[],
+	competitionId: string,
+	beforeRoundNumber: number,
+	lastN = 6,
+): Promise<Map<string, FormResult[]>> {
+	if (teamIds.length === 0) return new Map()
+
+	// Get all finished fixtures for this competition in rounds before the target round
+	const finished = await db
+		.select({
+			homeTeamId: fixture.homeTeamId,
+			awayTeamId: fixture.awayTeamId,
+			homeScore: fixture.homeScore,
+			awayScore: fixture.awayScore,
+			roundNumber: round.number,
+		})
+		.from(fixture)
+		.innerJoin(round, eq(round.id, fixture.roundId))
+		.where(
+			and(
+				eq(round.competitionId, competitionId),
+				eq(fixture.status, 'finished'),
+				lt(round.number, beforeRoundNumber),
+				or(inArray(fixture.homeTeamId, teamIds), inArray(fixture.awayTeamId, teamIds)),
+			),
+		)
+		.orderBy(desc(round.number))
+
+	const map = new Map<string, FormResult[]>()
+	for (const row of finished) {
+		if (row.homeScore == null || row.awayScore == null) continue
+		const home = row.homeScore
+		const away = row.awayScore
+		for (const teamId of [row.homeTeamId, row.awayTeamId]) {
+			if (!teamIds.includes(teamId)) continue
+			const list = map.get(teamId) ?? []
+			if (list.length >= lastN) continue
+			const isHome = teamId === row.homeTeamId
+			let result: FormResult
+			if (home === away) result = 'D'
+			else if (isHome) result = home > away ? 'W' : 'L'
+			else result = away > home ? 'W' : 'L'
+			list.push(result)
+			map.set(teamId, list)
+		}
+	}
+	return map
+}
+
 export async function getClassicPickData(gameId: string, roundId: string, gamePlayerId: string) {
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
 		with: {
 			fixtures: { with: { homeTeam: true, awayTeam: true } },
+			competition: true,
 		},
 	})
 
@@ -67,17 +122,27 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 
 	const currentPick = myPreviousPicks.find((p) => p.roundId === roundId)
 
+	// Build team IDs and fetch form data
+	const teamIds = Array.from(
+		new Set(roundData.fixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId])),
+	)
+	const formMap = await computeTeamForms(teamIds, roundData.competitionId, roundData.number)
+
 	const fixtures: ClassicPickFixture[] = roundData.fixtures.map((f) => ({
 		id: f.id,
 		home: {
 			id: f.homeTeamId,
 			name: f.homeTeam.name,
 			shortName: f.homeTeam.shortName,
+			badgeUrl: f.homeTeam.badgeUrl,
+			form: formMap.get(f.homeTeamId),
 		},
 		away: {
 			id: f.awayTeamId,
 			name: f.awayTeam.name,
 			shortName: f.awayTeam.shortName,
+			badgeUrl: f.awayTeam.badgeUrl,
+			form: formMap.get(f.awayTeamId),
 		},
 		kickoff: f.kickoff ? formatKickoff(f.kickoff) : null,
 	}))
@@ -92,7 +157,12 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 }
 
 function formatKickoff(date: Date): string {
-	return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+	// e.g. "Sat 17 Jan · 15:00"
+	const day = date.toLocaleDateString('en-GB', { weekday: 'short' })
+	const dayOfMonth = date.getDate()
+	const month = date.toLocaleDateString('en-GB', { month: 'short' })
+	const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+	return `${day} ${dayOfMonth} ${month} · ${time}`
 }
 
 export async function getTurboPickData(gameId: string, roundId: string, gamePlayerId: string) {
@@ -100,6 +170,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 		where: eq(round.id, roundId),
 		with: {
 			fixtures: { with: { homeTeam: true, awayTeam: true } },
+			competition: true,
 		},
 	})
 	if (!roundData) return null
@@ -112,17 +183,26 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 		),
 	})
 
+	const teamIds = Array.from(
+		new Set(roundData.fixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId])),
+	)
+	const formMap = await computeTeamForms(teamIds, roundData.competitionId, roundData.number)
+
 	const fixtures = roundData.fixtures.map((f) => ({
 		id: f.id,
 		home: {
 			id: f.homeTeamId,
 			name: f.homeTeam.name,
 			shortName: f.homeTeam.shortName,
+			badgeUrl: f.homeTeam.badgeUrl,
+			form: formMap.get(f.homeTeamId),
 		},
 		away: {
 			id: f.awayTeamId,
 			name: f.awayTeam.name,
 			shortName: f.awayTeam.shortName,
+			badgeUrl: f.awayTeam.badgeUrl,
+			form: formMap.get(f.awayTeamId),
 		},
 		kickoff: f.kickoff ? formatKickoff(f.kickoff) : null,
 	}))
@@ -139,7 +219,246 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 	}
 }
 
-export async function getProgressGridData(gameId: string) {
+export async function getTurboStandingsData(
+	gameId: string,
+	viewerUserId?: string,
+	options?: { hideOpenRoundPicks?: boolean },
+) {
+	const gameData = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: {
+			players: true,
+			currentRound: true,
+			competition: {
+				with: {
+					rounds: { orderBy: (r, { asc }) => asc(r.number) },
+				},
+			},
+			picks: {
+				with: {
+					fixture: { with: { homeTeam: true, awayTeam: true } },
+					round: true,
+				},
+			},
+		},
+	})
+	if (!gameData) return null
+
+	const viewerGamePlayerId = viewerUserId
+		? gameData.players.find((p) => p.userId === viewerUserId)?.id
+		: undefined
+
+	const { user } = await import('@/lib/schema/auth')
+	const userRows =
+		gameData.players.length > 0
+			? await db
+					.select({ id: user.id, name: user.name })
+					.from(user)
+					.where(
+						inArray(
+							user.id,
+							gameData.players.map((p) => p.userId),
+						),
+					)
+			: []
+	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
+
+	// Turbo is a single-gameweek game — only surface the round this game is tied to.
+	const visibleRounds = gameData.currentRound ? [gameData.currentRound] : []
+
+	// Precompute each player's streak progression so we can mark streak-breaker cells
+	// at the fixture level in the ladder view.
+	const playerStreakBreakRank = new Map<string, number | null>() // playerId -> rank where streak broke, or null
+	for (const p of gameData.players) {
+		const picks = gameData.picks
+			.filter((pk) => pk.gamePlayerId === p.id && pk.roundId === gameData.currentRoundId)
+			.sort((a, b) => (a.confidenceRank ?? 99) - (b.confidenceRank ?? 99))
+		let broken: number | null = null
+		for (const pk of picks) {
+			if (pk.result !== 'win' && pk.result !== 'pending') {
+				broken = pk.confidenceRank ?? null
+				break
+			}
+		}
+		playerStreakBreakRank.set(p.id, broken)
+	}
+
+	return {
+		rounds: visibleRounds.map((r) => {
+			const isRoundOpen = r.status !== 'completed'
+
+			const players = gameData.players.map((p) => {
+				const playerPicks = gameData.picks
+					.filter((pk) => pk.gamePlayerId === p.id && pk.roundId === r.id)
+					.sort((a, b) => (a.confidenceRank ?? 99) - (b.confidenceRank ?? 99))
+
+				const isOwnPick = viewerGamePlayerId === p.id
+				const hideCells = isRoundOpen && (options?.hideOpenRoundPicks || !isOwnPick)
+
+				// Compute streak + goals from this player's picks (only for completed rounds)
+				let streak = 0
+				let goals = 0
+				if (!isRoundOpen) {
+					let broken = false
+					for (const pk of playerPicks) {
+						if (broken) continue
+						if (pk.result === 'win') {
+							streak++
+							goals += pk.goalsScored ?? 0
+						} else {
+							broken = true
+						}
+					}
+				}
+
+				const cells = playerPicks.map((pk) => {
+					const homeShort = pk.fixture?.homeTeam?.shortName ?? '?'
+					const awayShort = pk.fixture?.awayTeam?.shortName ?? '?'
+					const scorePart =
+						pk.fixture?.homeScore != null && pk.fixture.awayScore != null
+							? `${pk.fixture.homeScore}-${pk.fixture.awayScore}`
+							: undefined
+					const prediction = (pk.predictedResult ?? 'draw') as 'home_win' | 'draw' | 'away_win'
+
+					let result: 'win' | 'loss' | 'pending' | 'hidden'
+					if (hideCells) result = 'hidden'
+					else if (pk.result === 'win') result = 'win'
+					else if (pk.result === 'loss') result = 'loss'
+					else result = 'pending'
+
+					return {
+						rank: pk.confidenceRank ?? 0,
+						homeShort,
+						awayShort,
+						prediction,
+						result,
+						opponentScore: scorePart,
+						goalsCounted: pk.goalsScored ?? 0,
+					}
+				})
+
+				return {
+					id: p.id,
+					name: userNames.get(p.userId) ?? 'Player',
+					picks: cells,
+					streak,
+					goals,
+					hasSubmitted: playerPicks.length > 0,
+				}
+			})
+
+			// Fixture-level ladder view: one row per fixture, each with predictions broken down
+			const fixtureMap = new Map<
+				string,
+				{
+					id: string
+					home: { shortName: string; name: string; badgeUrl?: string | null }
+					away: { shortName: string; name: string; badgeUrl?: string | null }
+					kickoff: Date | null
+					homeScore: number | null
+					awayScore: number | null
+					actualOutcome: 'home_win' | 'draw' | 'away_win' | null
+					avgRank: number
+					predictions: Array<{
+						playerId: string
+						playerName: string
+						prediction: 'home_win' | 'draw' | 'away_win'
+						rank: number
+						correct: boolean | null
+						streakBroken: boolean
+						hidden: boolean
+					}>
+				}
+			>()
+
+			for (const p of gameData.players) {
+				const playerName = userNames.get(p.userId) ?? 'Player'
+				const isOwnPick = viewerGamePlayerId === p.id
+				const streakBreakRank = playerStreakBreakRank.get(p.id)
+				const hideThisPlayerInOpenRound = isRoundOpen && (options?.hideOpenRoundPicks || !isOwnPick)
+
+				const playerPicks = gameData.picks.filter(
+					(pk) => pk.gamePlayerId === p.id && pk.roundId === r.id,
+				)
+
+				for (const pk of playerPicks) {
+					if (!pk.fixture || !pk.fixtureId) continue
+					let entry = fixtureMap.get(pk.fixtureId)
+					if (!entry) {
+						const hs = pk.fixture.homeScore
+						const as = pk.fixture.awayScore
+						let actualOutcome: 'home_win' | 'draw' | 'away_win' | null = null
+						if (hs != null && as != null) {
+							actualOutcome = hs > as ? 'home_win' : as > hs ? 'away_win' : 'draw'
+						}
+						entry = {
+							id: pk.fixtureId,
+							home: {
+								shortName: pk.fixture.homeTeam?.shortName ?? '?',
+								name: pk.fixture.homeTeam?.name ?? '?',
+								badgeUrl: pk.fixture.homeTeam?.badgeUrl,
+							},
+							away: {
+								shortName: pk.fixture.awayTeam?.shortName ?? '?',
+								name: pk.fixture.awayTeam?.name ?? '?',
+								badgeUrl: pk.fixture.awayTeam?.badgeUrl,
+							},
+							kickoff: pk.fixture.kickoff,
+							homeScore: hs,
+							awayScore: as,
+							actualOutcome,
+							avgRank: 0,
+							predictions: [],
+						}
+						fixtureMap.set(pk.fixtureId, entry)
+					}
+					const prediction = (pk.predictedResult ?? 'draw') as 'home_win' | 'draw' | 'away_win'
+					const correct = entry.actualOutcome == null ? null : entry.actualOutcome === prediction
+					const rank = pk.confidenceRank ?? 0
+					const streakBroken = streakBreakRank === rank
+					entry.predictions.push({
+						playerId: p.id,
+						playerName,
+						prediction,
+						rank,
+						correct,
+						streakBroken,
+						hidden: hideThisPlayerInOpenRound,
+					})
+				}
+			}
+
+			// Compute average rank across predictions, then sort fixtures by it so the
+			// ladder reads in "most collectively important" order.
+			const fixtures = Array.from(fixtureMap.values()).map((f) => ({
+				...f,
+				avgRank:
+					f.predictions.length > 0
+						? f.predictions.reduce((s, p) => s + p.rank, 0) / f.predictions.length
+						: 99,
+			}))
+			fixtures.sort((a, b) => a.avgRank - b.avgRank)
+
+			return {
+				id: r.id,
+				number: r.number,
+				name: r.name ?? `GW${r.number}`,
+				status: (isRoundOpen ? (r.status === 'open' ? 'open' : 'active') : 'completed') as
+					| 'open'
+					| 'active'
+					| 'completed',
+				players,
+				fixtures,
+			}
+		}),
+	}
+}
+
+export async function getProgressGridData(
+	gameId: string,
+	viewerUserId?: string,
+	options?: { hideAllCurrentPicks?: boolean },
+) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
 		with: {
@@ -149,11 +468,23 @@ export async function getProgressGridData(gameId: string) {
 					rounds: { orderBy: (r, { asc }) => asc(r.number) },
 				},
 			},
-			picks: { with: { team: true, round: true } },
+			picks: {
+				with: {
+					team: true,
+					round: true,
+					fixture: { with: { homeTeam: true, awayTeam: true } },
+				},
+			},
 		},
 	})
 
 	if (!gameData) return null
+
+	// Identify the viewer's gamePlayer so we can still show them their own current pick,
+	// while hiding other players' picks for in-progress (not completed) rounds.
+	const viewerGamePlayerId = viewerUserId
+		? gameData.players.find((p) => p.userId === viewerUserId)?.id
+		: undefined
 
 	const completedAndCurrentRounds = gameData.competition.rounds.filter(
 		(r) => r.status !== 'upcoming',
@@ -163,6 +494,7 @@ export async function getProgressGridData(gameId: string) {
 		id: r.id,
 		number: r.number,
 		name: r.name ?? `GW${r.number}`,
+		isStartingRound: r.number === 1,
 	}))
 
 	// Get user names for players
@@ -197,20 +529,58 @@ export async function getProgressGridData(gameId: string) {
 					continue
 				}
 			}
+			const round = gameData.competition.rounds.find((cr) => cr.id === r.id)
+			const isRoundOpen = round?.status !== 'completed'
+			const isOwnPick = viewerGamePlayerId && thePick?.gamePlayerId === viewerGamePlayerId
+			// If the round is open and either the viewer isn't the picker or the caller
+			// has requested a shared-view (hide everything current) — hide the team info.
+			const hideTeam = isRoundOpen && (options?.hideAllCurrentPicks || !isOwnPick)
+
 			if (!thePick) {
+				// Always show "?" for players who haven't picked yet — acts as a nudge.
 				cellsByRoundId[r.id] = { result: 'no_pick' }
 				continue
 			}
-			const resultMap: Record<string, GridCell['result']> = {
-				win: 'win',
-				loss: 'loss',
-				draw: 'draw',
-				pending: 'pending',
-				saved_by_life: 'pending',
+
+			// In an open round, if we should hide others' picks: show "locked" to indicate
+			// "pick is in but hidden". The viewer's own pick is still visible unless
+			// hideAllCurrentPicks is set (share-image mode).
+			if (hideTeam) {
+				cellsByRoundId[r.id] = { result: 'locked' }
+				continue
 			}
+
+			// In classic, draws eliminate after the starting round — render them as losses.
+			// The starting round is round number 1 (first gameweek exemption).
+			let resultForCell: GridCell['result']
+			if (thePick.result === 'win') resultForCell = 'win'
+			else if (thePick.result === 'loss') resultForCell = 'loss'
+			else if (thePick.result === 'draw') resultForCell = r.number === 1 ? 'draw_exempt' : 'loss'
+			else if (thePick.result === 'saved_by_life') resultForCell = 'saved'
+			else resultForCell = 'pending'
+
+			let opponentShortName: string | undefined
+			let homeAway: 'H' | 'A' | undefined
+			let score: string | undefined
+			if (thePick.fixture) {
+				const pickedHome = thePick.teamId === thePick.fixture.homeTeamId
+				homeAway = pickedHome ? 'H' : 'A'
+				opponentShortName = pickedHome
+					? thePick.fixture.awayTeam?.shortName
+					: thePick.fixture.homeTeam?.shortName
+				if (thePick.fixture.homeScore != null && thePick.fixture.awayScore != null) {
+					score = pickedHome
+						? `${thePick.fixture.homeScore}-${thePick.fixture.awayScore}`
+						: `${thePick.fixture.awayScore}-${thePick.fixture.homeScore}`
+				}
+			}
+
 			cellsByRoundId[r.id] = {
-				result: resultMap[thePick.result] ?? 'pending',
+				result: resultForCell,
 				teamShortName: thePick.team?.shortName,
+				opponentShortName,
+				homeAway,
+				score,
 			}
 		}
 

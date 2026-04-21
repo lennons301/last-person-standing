@@ -1,9 +1,9 @@
-import { eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { generateInviteCode } from '@/lib/game/invite-code'
-import { competition } from '@/lib/schema/competition'
+import { competition, round } from '@/lib/schema/competition'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -59,6 +59,16 @@ export async function POST(request: Request) {
 
 	const inviteCode = generateInviteCode()
 
+	// Link to the competition's earliest non-completed round so the game
+	// has somewhere to start. If none exist the game just waits.
+	const firstRound = await db.query.round.findFirst({
+		where: and(
+			eq(round.competitionId, competitionId),
+			inArray(round.status, ['open', 'active', 'upcoming']),
+		),
+		orderBy: [asc(round.number)],
+	})
+
 	const [newGame] = await db
 		.insert(game)
 		.values({
@@ -70,7 +80,8 @@ export async function POST(request: Request) {
 			entryFee: entryFee ?? null,
 			maxPlayers: maxPlayers ?? null,
 			inviteCode,
-			status: 'open',
+			status: firstRound ? 'active' : 'open',
+			currentRoundId: firstRound?.id ?? null,
 		})
 		.returning()
 

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { GameCard } from '@/components/game/game-card'
+import { PastGamesSection } from '@/components/game/past-games-section'
 import { Button } from '@/components/ui/button'
 import { requireSession } from '@/lib/auth-helpers'
 import { getMyGames } from '@/lib/game/queries'
@@ -44,16 +45,7 @@ export default async function DashboardPage() {
 				))}
 			</div>
 
-			{inactiveGames.length > 0 && (
-				<div className="space-y-3">
-					<h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mt-6">
-						Past games
-					</h2>
-					{inactiveGames.map((g) => (
-						<GameCard key={g.id} game={g} />
-					))}
-				</div>
-			)}
+			<PastGamesSection games={inactiveGames} />
 		</div>
 	)
 }
