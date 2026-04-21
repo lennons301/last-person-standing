@@ -1,3 +1,4 @@
+import type { competition } from '@/lib/schema/competition'
 import type {
 	AdapterFixture,
 	AdapterFixtureScore,
@@ -7,6 +8,22 @@ import type {
 } from './types'
 
 const BASE_URL = 'https://api.football-data.org/v4'
+
+/**
+ * Resolve the football-data.org competition code for a competition row.
+ *
+ * Returns the explicit `externalId` when present, or falls back to `'PL'`
+ * for FPL-sourced competitions (which effectively mirror the Premier
+ * League on football-data.org). Returns `null` when no code can be
+ * determined, in which case the competition cannot be dispatched.
+ */
+export function resolveFootballDataCode(
+	comp: Pick<typeof competition.$inferSelect, 'externalId' | 'dataSource'>,
+): string | null {
+	if (comp.externalId) return comp.externalId
+	if (comp.dataSource === 'fpl') return 'PL'
+	return null
+}
 
 interface FdMatch {
 	id: number

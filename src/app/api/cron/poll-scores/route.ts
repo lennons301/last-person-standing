@@ -1,6 +1,6 @@
 import { eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { FootballDataAdapter } from '@/lib/data/football-data'
+import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
 import { hasActiveFixture } from '@/lib/data/match-window'
 import { db } from '@/lib/db'
 import { fixture, round } from '@/lib/schema/competition'
@@ -22,9 +22,17 @@ export async function POST(request: Request) {
 		with: { currentRound: true, competition: true },
 	})
 
-	const activeRoundIds = [
-		...new Set(activeGames.map((g) => g.currentRoundId).filter((id): id is string => id != null)),
-	]
+	// A game is dispatchable if it has a current round AND its competition
+	// maps to a football-data.org code. Any later gating (live-window,
+	// dispatch loop) must agree on this set.
+	const dispatchableGames = activeGames.flatMap((g) => {
+		if (!g.currentRoundId) return []
+		const code = resolveFootballDataCode(g.competition)
+		if (!code) return []
+		return [{ roundId: g.currentRoundId, code }]
+	})
+
+	const activeRoundIds = [...new Set(dispatchableGames.map((g) => g.roundId))]
 
 	if (activeRoundIds.length === 0) {
 		return NextResponse.json({ updated: 0, reason: 'no-active-rounds' })
@@ -40,18 +48,15 @@ export async function POST(request: Request) {
 		return NextResponse.json({ updated: 0, reason: 'no-active-fixtures' })
 	}
 
-	let totalUpdated = 0
-
 	// One adapter per competition external code — WC and PL may both be active.
 	const competitionsByExternalCode = new Map<string, string[]>()
-	for (const g of activeGames) {
-		if (!g.currentRoundId) continue
-		const code = g.competition.externalId ?? (g.competition.dataSource === 'fpl' ? 'PL' : null)
-		if (!code) continue
+	for (const { roundId, code } of dispatchableGames) {
 		const list = competitionsByExternalCode.get(code) ?? []
-		if (!list.includes(g.currentRoundId)) list.push(g.currentRoundId)
+		if (!list.includes(roundId)) list.push(roundId)
 		competitionsByExternalCode.set(code, list)
 	}
+
+	let totalUpdated = 0
 
 	for (const [code, roundIds] of competitionsByExternalCode) {
 		const adapter = new FootballDataAdapter(code, apiKey)
