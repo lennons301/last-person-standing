@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter } from '@/lib/data/fpl'
 import type { CompetitionAdapter } from '@/lib/data/types'
@@ -161,7 +161,22 @@ export async function syncCompetition(
 }
 
 export async function applyPotAssignments(competitionId: string): Promise<void> {
-	const teams = await db.query.team.findMany({})
+	const rounds = await db.query.round.findMany({
+		where: eq(round.competitionId, competitionId),
+		with: { fixtures: true },
+	})
+	const teamIds = new Set<string>()
+	for (const r of rounds) {
+		for (const f of r.fixtures) {
+			teamIds.add(f.homeTeamId)
+			teamIds.add(f.awayTeamId)
+		}
+	}
+	if (teamIds.size === 0) return
+
+	const teams = await db.query.team.findMany({
+		where: inArray(team.id, [...teamIds]),
+	})
 	for (const t of teams) {
 		const fdId = (t.externalIds as Record<string, string | number> | null)?.football_data
 		if (!fdId) continue
@@ -174,7 +189,6 @@ export async function applyPotAssignments(competitionId: string): Promise<void> 
 			})
 			.where(eq(team.id, t.id))
 	}
-	void competitionId
 }
 
 function adapterFor(comp: CompetitionRow, opts: BootstrapOptions): CompetitionAdapter | null {

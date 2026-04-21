@@ -5,6 +5,7 @@ const {
 	dbQueryTeamFindFirst,
 	dbQueryTeamFindMany,
 	dbQueryRoundFindFirst,
+	dbQueryRoundFindMany,
 	dbQueryFixtureFindFirst,
 	dbInsertFn,
 	dbUpdateFn,
@@ -17,6 +18,7 @@ const {
 	dbQueryTeamFindFirst: vi.fn(),
 	dbQueryTeamFindMany: vi.fn().mockResolvedValue([]),
 	dbQueryRoundFindFirst: vi.fn(),
+	dbQueryRoundFindMany: vi.fn().mockResolvedValue([]),
 	dbQueryFixtureFindFirst: vi.fn(),
 	dbInsertFn: vi.fn(() => ({
 		values: vi.fn(() => ({
@@ -37,7 +39,7 @@ vi.mock('@/lib/db', () => ({
 		query: {
 			competition: { findFirst: dbQueryCompetitionFindFirst },
 			team: { findFirst: dbQueryTeamFindFirst, findMany: dbQueryTeamFindMany },
-			round: { findFirst: dbQueryRoundFindFirst },
+			round: { findFirst: dbQueryRoundFindFirst, findMany: dbQueryRoundFindMany },
 			fixture: { findFirst: dbQueryFixtureFindFirst },
 		},
 		insert: dbInsertFn,
@@ -66,6 +68,7 @@ describe('bootstrapCompetitions', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		dbQueryTeamFindMany.mockResolvedValue([])
+		dbQueryRoundFindMany.mockResolvedValue([])
 	})
 
 	it('creates PL and WC competitions when they do not exist', async () => {
