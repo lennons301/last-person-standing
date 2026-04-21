@@ -48,3 +48,6 @@ db-reset:
     docker compose up -d
     just db-migrate
     just db-seed
+
+bootstrap-competitions:
+    pnpm exec tsx scripts/bootstrap-competitions.ts
