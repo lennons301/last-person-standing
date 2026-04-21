@@ -65,6 +65,9 @@ async function syncInline(
 		}
 	}
 
+	// Fetch teams once per competition sync and reuse for all fixture lookups.
+	const allTeams = await db.query.team.findMany({})
+
 	const adapterRounds = await adapter.fetchRounds()
 	for (const ar of adapterRounds) {
 		const existingRound = await db.query.round.findFirst({
@@ -95,7 +98,6 @@ async function syncInline(
 		}
 
 		for (const af of ar.fixtures) {
-			const allTeams = await db.query.team.findMany({})
 			const home = allTeams.find(
 				(t) =>
 					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===

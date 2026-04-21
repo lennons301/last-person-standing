@@ -56,12 +56,13 @@ describe('daily-sync route', () => {
 		vi.mocked(db.query.competition.findMany).mockResolvedValue([
 			{ id: 'c1', dataSource: 'fpl', externalId: null },
 		] as never)
-		await POST(
+		const res = await POST(
 			new Request('http://x', {
 				method: 'POST',
 				headers: { authorization: 'Bearer test-secret' },
 			}),
 		)
+		expect(res.status).toBe(200)
 		expect(fplFetchTeams).toHaveBeenCalled()
 		expect(fplFetchRounds).toHaveBeenCalled()
 	})
@@ -70,12 +71,13 @@ describe('daily-sync route', () => {
 		vi.mocked(db.query.competition.findMany).mockResolvedValue([
 			{ id: 'c2', dataSource: 'football_data', externalId: 'WC' },
 		] as never)
-		await POST(
+		const res = await POST(
 			new Request('http://x', {
 				method: 'POST',
 				headers: { authorization: 'Bearer test-secret' },
 			}),
 		)
+		expect(res.status).toBe(200)
 		expect(fdFetchTeams).toHaveBeenCalled()
 		expect(fdFetchRounds).toHaveBeenCalled()
 	})
