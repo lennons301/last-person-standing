@@ -5,8 +5,11 @@ import { db } from '@/lib/db'
 import { competition, fixture, round, team } from '@/lib/schema/competition'
 
 export async function POST(request: Request) {
-	const authHeader = request.headers.get('authorization')
-	if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+	const secret = process.env.CRON_SECRET
+	if (!secret) {
+		return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 })
+	}
+	if (request.headers.get('authorization') !== `Bearer ${secret}`) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 	}
 
