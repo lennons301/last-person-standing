@@ -1,5 +1,7 @@
 # Phase 4a: Data Pipeline + World Cup Competition Implementation Plan
 
+> ⚠️ **Before running any of this in production:** Phase 4a code merges to `main` but does not auto-deploy anywhere — the repo is not yet linked to Vercel, there's no staging environment, and Doppler / Sentry aren't wired. **Phase 4.5 (Production Launch Foundation)** is the next plan and must land before Phase 4a (or anything after it) is live. See the "Post-merge operational checklist" at the bottom of this file for the full admin-prereq list; Phase 4.5 turns those into executable tasks.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace seeded dev data with a real data pipeline that keeps PL 25/26 and WC 2026 fresh during match windows, and add the World Cup competition with its classic-mode auto-elimination rule.

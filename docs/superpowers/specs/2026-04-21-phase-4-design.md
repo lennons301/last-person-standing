@@ -4,7 +4,13 @@
 
 Phase 4 is the pre-release completion phase. It delivers the data pipeline that makes the app live, the remaining game-mode UI, the match-day experience, admin tools, paid rebuys, and payment tracking. By the end of Phase 4 the app is ready for real users to run real games across the 2025/26 Premier League season and the 2026 World Cup.
 
-Phase 4 is split into three sub-plans that can be implemented in order: **4a** (data pipeline + WC competition), **4b** (cup mode UI + pick planner + payment flow), **4c** (match day live + admin UX + rebuys + share templates + mobile polish).
+Phase 4 is split into four sub-plans:
+1. **4a** (data pipeline + WC competition) — **done**
+2. **4.5** (production launch foundation) — **next**; inserted after 4a because the app currently has no live environment, CI/CD, or observability. Once 4.5 lands, every subsequent sub-phase ships via the CI/CD pipeline rather than as a dormant branch
+3. **4b** (cup mode UI + pick planner + payment flow)
+4. **4c** (match day live + admin UX + rebuys + share templates + mobile polish)
+
+Phase 4.5 is not a feature phase — it brings the project into conformance with the platform's `standards/ci-cd.md`, `standards/environments.md`, `choices/secrets-provider.md`, and `choices/observability.md`, and deploys Phase 4a to real environments. It has its own design spec at `2026-04-22-phase-4-5-production-launch-design.md` (once written).
 
 ---
 

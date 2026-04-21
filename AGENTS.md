@@ -64,6 +64,7 @@ drizzle/                  # Generated migrations
 - **Secrets**: Doppler is the production secrets source. Local dev uses `.env.local` (gitignored).
 - **Testing**: Vitest for unit tests. Game logic lives in pure functions for easy testing. Tests run against local Postgres in CI.
 - **Linting**: Biome for linting + formatting. Pre-commit hook via husky + lint-staged.
+- **Phase completions ride CI/CD** (from Phase 4.5 onwards): a phase is not "done" until its branch has merged to `main`, CI has passed, and the resulting deployment has landed on staging and production via Vercel's GitHub integration. No manual deploy steps. If a phase's definition of done can't go through the pipeline, the pipeline is what's broken — fix it before declaring the phase complete.
 
 ## Environment variables
 
