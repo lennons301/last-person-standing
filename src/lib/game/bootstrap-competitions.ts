@@ -1,0 +1,188 @@
+import { and, eq } from 'drizzle-orm'
+import { FootballDataAdapter } from '@/lib/data/football-data'
+import { FplAdapter } from '@/lib/data/fpl'
+import type { CompetitionAdapter } from '@/lib/data/types'
+import { WC_2026_POTS } from '@/lib/data/wc-pots'
+import { db } from '@/lib/db'
+import { competition, fixture, round, team } from '@/lib/schema/competition'
+
+export interface BootstrapOptions {
+	footballDataApiKey?: string
+}
+
+type CompetitionRow = typeof competition.$inferSelect
+
+export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<void> {
+	let pl = await db.query.competition.findFirst({
+		where: and(eq(competition.dataSource, 'fpl'), eq(competition.season, '2025/26')),
+	})
+	if (!pl) {
+		const [created] = await db
+			.insert(competition)
+			.values({
+				name: 'Premier League 2025/26',
+				type: 'league',
+				dataSource: 'fpl',
+				season: '2025/26',
+				status: 'active',
+			})
+			.returning()
+		pl = created
+	}
+
+	let wc = await db.query.competition.findFirst({
+		where: and(eq(competition.dataSource, 'football_data'), eq(competition.externalId, 'WC')),
+	})
+	if (!wc) {
+		const [created] = await db
+			.insert(competition)
+			.values({
+				name: 'FIFA World Cup 2026',
+				type: 'group_knockout',
+				dataSource: 'football_data',
+				externalId: 'WC',
+				season: '2026',
+				status: 'active',
+			})
+			.returning()
+		wc = created
+	}
+
+	await syncCompetition(pl, opts)
+	await syncCompetition(wc, opts)
+	await applyPotAssignments(wc.id)
+}
+
+export async function syncCompetition(
+	comp: CompetitionRow,
+	opts: BootstrapOptions,
+): Promise<{ rounds: number; fixtures: number }> {
+	const adapter = adapterFor(comp, opts)
+	if (!adapter) return { rounds: 0, fixtures: 0 }
+
+	const key = comp.dataSource === 'fpl' ? 'fpl' : 'football_data'
+	const adapterTeams = await adapter.fetchTeams()
+	for (const at of adapterTeams) {
+		const existing = await db.query.team.findFirst({ where: eq(team.name, at.name) })
+		if (existing) {
+			await db
+				.update(team)
+				.set({
+					badgeUrl: at.badgeUrl ?? existing.badgeUrl,
+					externalIds: { ...(existing.externalIds ?? {}), [key]: at.externalId },
+				})
+				.where(eq(team.id, existing.id))
+		} else {
+			await db.insert(team).values({
+				name: at.name,
+				shortName: at.shortName,
+				badgeUrl: at.badgeUrl,
+				externalIds: { [key]: at.externalId },
+			})
+		}
+	}
+
+	const allTeams = await db.query.team.findMany({})
+
+	const adapterRounds = await adapter.fetchRounds()
+	let totalFixtures = 0
+	for (const ar of adapterRounds) {
+		const existingRound = await db.query.round.findFirst({
+			where: and(eq(round.competitionId, comp.id), eq(round.number, ar.number)),
+		})
+		let roundId: string
+		if (existingRound) {
+			roundId = existingRound.id
+			await db
+				.update(round)
+				.set({
+					name: ar.name,
+					deadline: ar.deadline,
+					status: ar.finished ? 'completed' : existingRound.status,
+				})
+				.where(eq(round.id, existingRound.id))
+		} else {
+			const [created] = await db
+				.insert(round)
+				.values({
+					competitionId: comp.id,
+					number: ar.number,
+					name: ar.name,
+					deadline: ar.deadline,
+					status: ar.finished ? 'completed' : 'upcoming',
+				})
+				.returning()
+			roundId = created.id
+		}
+
+		for (const af of ar.fixtures) {
+			const home = allTeams.find(
+				(t) =>
+					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
+					af.homeTeamExternalId,
+			)
+			const away = allTeams.find(
+				(t) =>
+					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
+					af.awayTeamExternalId,
+			)
+			if (!home || !away) continue
+
+			const existingFixture = await db.query.fixture.findFirst({
+				where: eq(fixture.externalId, af.externalId),
+			})
+			if (existingFixture) {
+				await db
+					.update(fixture)
+					.set({
+						kickoff: af.kickoff,
+						status: af.status,
+						homeScore: af.homeScore,
+						awayScore: af.awayScore,
+					})
+					.where(eq(fixture.id, existingFixture.id))
+			} else {
+				await db.insert(fixture).values({
+					roundId,
+					homeTeamId: home.id,
+					awayTeamId: away.id,
+					kickoff: af.kickoff,
+					status: af.status,
+					homeScore: af.homeScore,
+					awayScore: af.awayScore,
+					externalId: af.externalId,
+				})
+				totalFixtures++
+			}
+		}
+	}
+
+	return { rounds: adapterRounds.length, fixtures: totalFixtures }
+}
+
+export async function applyPotAssignments(competitionId: string): Promise<void> {
+	const teams = await db.query.team.findMany({})
+	for (const t of teams) {
+		const fdId = (t.externalIds as Record<string, string | number> | null)?.football_data
+		if (!fdId) continue
+		const entry = WC_2026_POTS.find((p) => p.footballDataId === String(fdId))
+		if (!entry) continue
+		await db
+			.update(team)
+			.set({
+				externalIds: { ...(t.externalIds ?? {}), fifa_pot: entry.pot },
+			})
+			.where(eq(team.id, t.id))
+	}
+	void competitionId
+}
+
+function adapterFor(comp: CompetitionRow, opts: BootstrapOptions): CompetitionAdapter | null {
+	if (comp.dataSource === 'fpl') return new FplAdapter()
+	if (comp.dataSource === 'football_data') {
+		if (!opts.footballDataApiKey) return null
+		if (!comp.externalId) return null
+		return new FootballDataAdapter(comp.externalId, opts.footballDataApiKey)
+	}
+	return null
+}
