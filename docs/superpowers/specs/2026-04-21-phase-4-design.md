@@ -4,13 +4,15 @@
 
 Phase 4 is the pre-release completion phase. It delivers the data pipeline that makes the app live, the remaining game-mode UI, the match-day experience, admin tools, paid rebuys, and payment tracking. By the end of Phase 4 the app is ready for real users to run real games across the 2025/26 Premier League season and the 2026 World Cup.
 
-Phase 4 is split into four sub-plans:
+Phase 4 is split into four sub-plans, executed in order:
 1. **4a** (data pipeline + WC competition) — **done**
-2. **4.5** (production launch foundation) — **next**; inserted after 4a because the app currently has no live environment, CI/CD, or observability. Once 4.5 lands, every subsequent sub-phase ships via the CI/CD pipeline rather than as a dormant branch
-3. **4b** (cup mode UI + pick planner + payment flow)
-4. **4c** (match day live + admin UX + rebuys + share templates + mobile polish)
+2. **4b** (cup mode UI + pick planner + payment flow)
+3. **4c** (match day live + admin UX + rebuys + share templates + mobile polish)
+4. **4.5** (production launch) — the last sub-phase, executed after 4c
 
-Phase 4.5 is not a feature phase — it brings the project into conformance with the platform's `standards/ci-cd.md`, `standards/environments.md`, `choices/secrets-provider.md`, and `choices/observability.md`, and deploys Phase 4a to real environments. It has its own design spec at `2026-04-22-phase-4-5-production-launch-design.md` (once written).
+Phase 4.5 is not a feature phase — it brings the project into conformance with the platform's `standards/ci-cd.md`, `standards/environments.md`, `choices/secrets-provider.md`, and `choices/observability.md`, and does the first real deploy of everything built in Phases 1–4c. It runs as a big-bang at the end of Phase 4 because the app is inherently private (nobody finds the URL unless invited) and there are no users to serve before the WC kicks off 11 June 2026 — so there's no prior moment where having a live environment would create value.
+
+From Phase 4.5 onwards, every phase completion rides CI/CD to staging and production (no manual deploys). Phases 4a, 4b, and 4c merge to `main` as dormant branches without triggering any deploy; Phase 4.5 is what brings everything accumulated to life. Its design spec will be written when Phase 4b starts so decisions there can inform the launch plan.
 
 ---
 

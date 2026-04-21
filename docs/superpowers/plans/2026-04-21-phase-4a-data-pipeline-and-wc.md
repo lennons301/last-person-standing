@@ -1,6 +1,6 @@
 # Phase 4a: Data Pipeline + World Cup Competition Implementation Plan
 
-> ⚠️ **Before running any of this in production:** Phase 4a code merges to `main` but does not auto-deploy anywhere — the repo is not yet linked to Vercel, there's no staging environment, and Doppler / Sentry aren't wired. **Phase 4.5 (Production Launch Foundation)** is the next plan and must land before Phase 4a (or anything after it) is live. See the "Post-merge operational checklist" at the bottom of this file for the full admin-prereq list; Phase 4.5 turns those into executable tasks.
+> ⚠️ **Phase 4a code merges to `main` as a dormant branch.** The repo isn't yet linked to Vercel, there's no staging environment, and Doppler / Sentry aren't wired — none of this runs anywhere yet. That's deliberate: Phase 4.5 is the big-bang launch phase at the *end* of Phase 4 (after 4b and 4c), which brings everything accumulated to life in one go. The "Post-merge operational checklist" at the bottom of this file is the raw input for Phase 4.5's design; it is NOT a list of things to do now.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
