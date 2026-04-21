@@ -142,6 +142,7 @@ export async function processGameRound(
 			eliminations += autoElims.length
 		}
 
+		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
 		return { processed: true, eliminations }
 	}
 
@@ -182,6 +183,7 @@ export async function processGameRound(
 		}
 
 		const standings = calculateTurboStandings(playerResults)
+		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
 		return { processed: true, eliminations: 0, standings }
 	}
 
@@ -243,6 +245,7 @@ export async function processGameRound(
 			}
 		}
 
+		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
 		return { processed: true, eliminations }
 	}
 

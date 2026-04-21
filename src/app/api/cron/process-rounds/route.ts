@@ -40,11 +40,6 @@ export async function POST(request: Request) {
 
 		const result = await processGameRound(g.id, g.currentRoundId)
 		results.push({ gameId: g.id, ...result })
-
-		// If round was processed, mark it as completed
-		if (result.processed) {
-			await db.update(round).set({ status: 'completed' }).where(eq(round.id, g.currentRoundId))
-		}
 	}
 
 	return NextResponse.json({ processed: results })
