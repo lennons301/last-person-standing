@@ -5,6 +5,7 @@ vi.mock('@/lib/db', () => ({
 		query: {
 			game: { findMany: vi.fn() },
 			round: { findFirst: vi.fn() },
+			fixture: { findMany: vi.fn() },
 		},
 		select: vi.fn(),
 		update: vi.fn(),
@@ -13,6 +14,10 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/data/match-window', () => ({
 	hasActiveFixture: vi.fn(() => false),
+}))
+
+vi.mock('@/lib/data/qstash', () => ({
+	enqueueProcessRound: vi.fn().mockResolvedValue(undefined),
 }))
 
 const footballDataAdapterCtor = vi.fn()
@@ -35,6 +40,7 @@ vi.mock('@/lib/data/football-data', async () => {
 })
 
 import { hasActiveFixture } from '@/lib/data/match-window'
+import { enqueueProcessRound } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
 import { POST } from './route'
 
@@ -52,6 +58,8 @@ describe('poll-scores short-circuit', () => {
 		process.env.FOOTBALL_DATA_API_KEY = 'fd-key'
 		// Default: hasActiveFixture short-circuits unless overridden per test.
 		vi.mocked(hasActiveFixture).mockReturnValue(false)
+		// Default round-fixtures lookup: not all finished — prevents stray enqueues.
+		vi.mocked(db.query.fixture.findMany).mockResolvedValue([{ status: 'live' }] as never)
 	})
 
 	it('returns 401 when auth missing', async () => {
@@ -114,6 +122,39 @@ describe('poll-scores short-circuit', () => {
 		expect(db.update).toHaveBeenCalled()
 		expect(setMock).toHaveBeenCalledTimes(2)
 		expect(body).toEqual({ updated: 2 })
+	})
+
+	it('enqueues process_round when the last fixture transitions to finished', async () => {
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			{
+				id: 'game-1',
+				currentRoundId: 'r1',
+				competition: { externalId: 'PL', dataSource: 'football_data' },
+			},
+		] as never)
+		vi.mocked(db.select).mockReturnValue({
+			from: () => ({
+				where: () => Promise.resolve([{ id: 'fx-1-internal', status: 'live', roundId: 'r1' }]),
+			}),
+		} as never)
+		vi.mocked(hasActiveFixture).mockReturnValue(true)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({ id: 'r1', number: 7 } as never)
+		fetchLiveScoresMock.mockResolvedValue([
+			{ externalId: 'fx-1', homeScore: 2, awayScore: 1, status: 'finished' },
+		])
+		// All fixtures in r1 are finished — triggers enqueue.
+		vi.mocked(db.query.fixture.findMany).mockResolvedValue([
+			{ status: 'finished' },
+			{ status: 'finished' },
+		] as never)
+		const whereMock = vi.fn().mockResolvedValue(undefined)
+		const setMock = vi.fn(() => ({ where: whereMock }))
+		vi.mocked(db.update).mockReturnValue({ set: setMock } as never)
+
+		await POST(authedRequest())
+
+		expect(enqueueProcessRound).toHaveBeenCalledTimes(1)
+		expect(enqueueProcessRound).toHaveBeenCalledWith('game-1', 'r1')
 	})
 
 	it('constructs one adapter per distinct competition code', async () => {

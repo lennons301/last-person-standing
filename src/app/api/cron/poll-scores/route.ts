@@ -2,6 +2,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
 import { hasActiveFixture } from '@/lib/data/match-window'
+import { enqueueProcessRound } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
 import { fixture, round } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
@@ -29,10 +30,10 @@ export async function POST(request: Request) {
 		if (!g.currentRoundId) return []
 		const code = resolveFootballDataCode(g.competition)
 		if (!code) return []
-		return [{ roundId: g.currentRoundId, code }]
+		return [{ id: g.id, currentRoundId: g.currentRoundId, code }]
 	})
 
-	const activeRoundIds = [...new Set(dispatchableGames.map((g) => g.roundId))]
+	const activeRoundIds = [...new Set(dispatchableGames.map((g) => g.currentRoundId))]
 
 	if (activeRoundIds.length === 0) {
 		return NextResponse.json({ updated: 0, reason: 'no-active-rounds' })
@@ -50,9 +51,9 @@ export async function POST(request: Request) {
 
 	// One adapter per competition external code — WC and PL may both be active.
 	const competitionsByExternalCode = new Map<string, string[]>()
-	for (const { roundId, code } of dispatchableGames) {
+	for (const { currentRoundId, code } of dispatchableGames) {
 		const list = competitionsByExternalCode.get(code) ?? []
-		if (!list.includes(roundId)) list.push(roundId)
+		if (!list.includes(currentRoundId)) list.push(currentRoundId)
 		competitionsByExternalCode.set(code, list)
 	}
 
@@ -63,8 +64,17 @@ export async function POST(request: Request) {
 		for (const roundId of roundIds) {
 			const roundData = await db.query.round.findFirst({ where: eq(round.id, roundId) })
 			if (!roundData) continue
-			const scores = await adapter.fetchLiveScores(roundData.number)
-			for (const score of scores) {
+
+			const scoresUpdates = await adapter.fetchLiveScores(roundData.number)
+			const transitionedFixtureIds: string[] = []
+
+			for (const score of scoresUpdates) {
+				const [existing] = await db
+					.select({ id: fixture.id, status: fixture.status })
+					.from(fixture)
+					.where(eq(fixture.externalId, score.externalId))
+				if (!existing) continue
+
 				await db
 					.update(fixture)
 					.set({
@@ -72,8 +82,25 @@ export async function POST(request: Request) {
 						awayScore: score.awayScore,
 						status: score.status,
 					})
-					.where(eq(fixture.externalId, score.externalId))
+					.where(eq(fixture.id, existing.id))
+
+				if (existing.status !== 'finished' && score.status === 'finished') {
+					transitionedFixtureIds.push(existing.id)
+				}
 				totalUpdated++
+			}
+
+			if (transitionedFixtureIds.length > 0) {
+				const roundFixtures = await db.query.fixture.findMany({
+					where: eq(fixture.roundId, roundId),
+				})
+				const allFinished = roundFixtures.every((f) => f.status === 'finished')
+				if (allFinished) {
+					const gamesForRound = dispatchableGames.filter((g) => g.currentRoundId === roundId)
+					for (const g of gamesForRound) {
+						await enqueueProcessRound(g.id, roundId)
+					}
+				}
 			}
 		}
 	}
