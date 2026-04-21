@@ -1,3 +1,7 @@
+export function wcRoundStage(roundNumber: number): 'group' | 'knockout' {
+	return roundNumber <= 3 ? 'group' : 'knockout'
+}
+
 export interface WcFixture {
 	id: string
 	roundId: string

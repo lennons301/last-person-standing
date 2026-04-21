@@ -3,7 +3,11 @@ import { db } from '@/lib/db'
 import { processClassicRound } from '@/lib/game-logic/classic'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { calculateTurboStandings, evaluateTurboPicks } from '@/lib/game-logic/turbo'
-import { computeWcClassicAutoElims, type WcFixture } from '@/lib/game-logic/wc-classic'
+import {
+	computeWcClassicAutoElims,
+	type WcFixture,
+	wcRoundStage,
+} from '@/lib/game-logic/wc-classic'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
@@ -92,11 +96,11 @@ export async function processGameRound(
 					homeScore: f.homeScore,
 					awayScore: f.awayScore,
 					status: f.status,
-					stage: r.number <= 3 ? ('group' as const) : ('knockout' as const),
+					stage: wcRoundStage(r.number),
 				})),
 			)
 			const remainingRounds = allRounds
-				.filter((r) => r.status !== 'completed')
+				.filter((r) => r.status !== 'completed' && r.id !== roundId)
 				.map((r) => ({
 					id: r.id,
 					fixtures: r.fixtures.map((f) => ({
@@ -107,7 +111,7 @@ export async function processGameRound(
 						homeScore: f.homeScore,
 						awayScore: f.awayScore,
 						status: f.status,
-						stage: r.number <= 3 ? ('group' as const) : ('knockout' as const),
+						stage: wcRoundStage(r.number),
 					})),
 				}))
 

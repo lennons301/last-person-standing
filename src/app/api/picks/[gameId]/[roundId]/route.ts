@@ -2,16 +2,12 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
-import { validateWcClassicPick } from '@/lib/game-logic/wc-classic'
+import { validateWcClassicPick, wcRoundStage } from '@/lib/game-logic/wc-classic'
 import { validateClassicPick, validateTurboPicks } from '@/lib/picks/validate'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
 type Params = Promise<{ gameId: string; roundId: string }>
-
-function wcRoundStage(roundNumber: number): 'group' | 'knockout' {
-	return roundNumber <= 3 ? 'group' : 'knockout'
-}
 
 export async function GET(_request: Request, { params }: { params: Params }) {
 	await requireSession()
