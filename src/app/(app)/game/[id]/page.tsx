@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { GameDetailView } from '@/components/game/game-detail-view'
 import { ClassicPick } from '@/components/picks/classic-pick'
+import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
+import { CupPickForm } from '@/components/picks/cup-pick-form'
 import { TurboPick } from '@/components/picks/turbo-pick'
 import { requireSession } from '@/lib/auth-helpers'
 import {
@@ -10,6 +12,23 @@ import {
 	getTurboPickData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
+
+// TODO(task-7): replace with computeTierDifference from '@/lib/game-logic/cup-tier'.
+// Kept inline here so Task 6 doesn't depend on Task 7's helper landing first.
+type TeamWithExternalIds = {
+	externalIds: Record<string, string | number> | null | undefined
+}
+function computeTierDifference(
+	home: TeamWithExternalIds,
+	away: TeamWithExternalIds,
+	competitionType: 'league' | 'knockout' | 'group_knockout',
+): number {
+	if (competitionType !== 'group_knockout') return 0
+	const homePot = Number(home.externalIds?.fifa_pot)
+	const awayPot = Number(away.externalIds?.fifa_pot)
+	if (!Number.isFinite(homePot) || !Number.isFinite(awayPot)) return 0
+	return homePot - awayPot
+}
 
 export default async function GameDetailPage({ params }: { params: Promise<{ id: string }> }) {
 	const session = await requireSession()
@@ -36,8 +55,11 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 			? await getTurboPickData(game.id, game.currentRound.id, game.myMembership.id)
 			: null
 
-	const numberOfPicks =
-		(game as unknown as { modeConfig?: { numberOfPicks?: number } }).modeConfig?.numberOfPicks ?? 10
+	const modeConfig = (
+		game as unknown as { modeConfig?: { numberOfPicks?: number; startingLives?: number } }
+	).modeConfig
+	const numberOfPicks = modeConfig?.numberOfPicks ?? 10
+	const startingLives = modeConfig?.startingLives ?? 3
 
 	const classicGrid =
 		game.gameMode === 'classic' ? await getProgressGridData(game.id, session.user.id) : null
@@ -46,6 +68,43 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 
 	const isAlive = game.myMembership?.status === 'alive'
 	const aliveCount = game.players.filter((p) => p.status === 'alive').length
+
+	// Build cup pick props inline from the data already fetched by getGameDetail.
+	// (Kept here rather than in detail-queries.ts because all source fields are already loaded.)
+	let cupFixtures: CupPickFixture[] = []
+	let cupInitialSlots: CupPickSlot[] = []
+	if (game.gameMode === 'cup' && game.currentRound && game.myMembership) {
+		cupFixtures = game.currentRound.fixtures.map((f) => ({
+			id: f.id,
+			homeTeamId: f.homeTeamId,
+			awayTeamId: f.awayTeamId,
+			homeShort: f.homeTeam.shortName,
+			homeName: f.homeTeam.name,
+			homeColor: f.homeTeam.primaryColor,
+			homeBadgeUrl: f.homeTeam.badgeUrl,
+			awayShort: f.awayTeam.shortName,
+			awayName: f.awayTeam.name,
+			awayColor: f.awayTeam.primaryColor,
+			awayBadgeUrl: f.awayTeam.badgeUrl,
+			kickoff: f.kickoff,
+			tierDifference: computeTierDifference(f.homeTeam, f.awayTeam, game.competition.type),
+		}))
+
+		const myPlayerId = game.myMembership.id
+		cupInitialSlots = game.picks
+			.filter(
+				(p) =>
+					p.gamePlayerId === myPlayerId &&
+					p.roundId === game.currentRound?.id &&
+					p.fixtureId != null &&
+					p.confidenceRank != null,
+			)
+			.map((p) => ({
+				confidenceRank: p.confidenceRank as number,
+				fixtureId: p.fixtureId as string,
+				pickedSide: (p.predictedResult === 'away_win' ? 'away' : 'home') as 'home' | 'away',
+			}))
+	}
 
 	const pickSection =
 		game.currentRound && isAlive ? (
@@ -68,6 +127,18 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 					fixtures={turboPickData.fixtures}
 					existingPicks={turboPickData.existingPicks}
 					numberOfPicks={numberOfPicks}
+				/>
+			) : game.gameMode === 'cup' && game.myMembership ? (
+				<CupPickForm
+					gameId={game.id}
+					roundId={game.currentRound.id}
+					fixtures={cupFixtures}
+					numberOfPicks={numberOfPicks}
+					livesRemaining={game.myMembership.livesRemaining}
+					maxLives={startingLives}
+					initialSlots={cupInitialSlots}
+					deadline={game.currentRound.deadline}
+					readonly={game.status !== 'open'}
 				/>
 			) : (
 				<div className="p-4 rounded-lg border border-border bg-card text-sm text-muted-foreground">
