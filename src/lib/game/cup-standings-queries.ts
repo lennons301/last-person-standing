@@ -1,0 +1,182 @@
+import { and, eq, inArray } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { computeTierDifference } from '@/lib/game-logic/cup-tier'
+import { pick } from '@/lib/schema/game'
+
+export interface CupStandingsPick {
+	gamePlayerId: string
+	confidenceRank: number
+	fixtureId: string
+	homeShort: string
+	awayShort: string
+	pickedTeamId: string
+	pickedSide: 'home' | 'away'
+	tierDifference: number // from picked side
+	result: 'win' | 'saved_by_life' | 'loss' | 'pending' | 'hidden' | 'restricted'
+	livesGained: number
+	livesSpent: number
+	goalsCounted: number
+}
+
+export interface CupStandingsPlayer {
+	id: string
+	userId: string
+	name: string
+	status: 'alive' | 'eliminated' | 'winner'
+	livesRemaining: number
+	streak: number
+	goals: number
+	hasSubmitted: boolean
+	eliminatedRoundNumber: number | null
+	picks: CupStandingsPick[]
+}
+
+export interface CupStandingsData {
+	gameId: string
+	roundId: string
+	roundNumber: number
+	roundStatus: 'open' | 'active' | 'completed'
+	maxLives: number
+	numberOfPicks: number
+	players: CupStandingsPlayer[]
+}
+
+export async function getCupStandingsData(
+	gameId: string,
+	viewerUserId: string,
+): Promise<CupStandingsData | null> {
+	const g = await db.query.game.findFirst({
+		where: (t, { eq: eqOp }) => eqOp(t.id, gameId),
+		with: {
+			competition: true,
+			currentRound: {
+				with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
+			},
+			players: true,
+		},
+	})
+	if (!g?.currentRound) return null
+
+	const allPicks = await db.query.pick.findMany({
+		where: and(eq(pick.gameId, gameId), eq(pick.roundId, g.currentRound.id)),
+	})
+
+	// User-name lookup — mirror the pattern in getTurboStandingsData.
+	const { user } = await import('@/lib/schema/auth')
+	const userRows =
+		g.players.length > 0
+			? await db
+					.select({ id: user.id, name: user.name })
+					.from(user)
+					.where(
+						inArray(
+							user.id,
+							g.players.map((p) => p.userId),
+						),
+					)
+			: []
+	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
+
+	const hideOpenPicks = g.currentRound.status === 'open'
+
+	const players: CupStandingsPlayer[] = g.players.map((p) => {
+		const isViewer = p.userId === viewerUserId
+		const myPicks = allPicks.filter((pk) => pk.gamePlayerId === p.id)
+		const picks: CupStandingsPick[] = myPicks.map((pk) => {
+			const fx = g.currentRound?.fixtures.find((f) => f.id === pk.fixtureId)
+			if (!fx) {
+				// Shouldn't happen — pick referencing a fixture not in the round — but
+				// be defensive rather than throwing at the query layer.
+				return {
+					gamePlayerId: p.id,
+					confidenceRank: pk.confidenceRank ?? 0,
+					fixtureId: pk.fixtureId ?? '',
+					homeShort: '?',
+					awayShort: '?',
+					pickedTeamId: pk.teamId,
+					pickedSide: 'home' as const,
+					tierDifference: 0,
+					result: 'pending' as const,
+					livesGained: 0,
+					livesSpent: 0,
+					goalsCounted: pk.goalsScored ?? 0,
+				}
+			}
+			const pickedSide: 'home' | 'away' = pk.teamId === fx.homeTeamId ? 'home' : 'away'
+			const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
+			const tierFromPicked = pickedSide === 'home' ? tierFromHome : -tierFromHome
+			const hidden = hideOpenPicks && !isViewer
+			const mapped = mapPickResult(pk.result)
+			return {
+				gamePlayerId: p.id,
+				confidenceRank: pk.confidenceRank ?? 0,
+				fixtureId: fx.id,
+				homeShort: fx.homeTeam.shortName,
+				awayShort: fx.awayTeam.shortName,
+				pickedTeamId: pk.teamId,
+				pickedSide,
+				tierDifference: tierFromPicked,
+				result: hidden ? 'hidden' : mapped,
+				livesGained: hidden ? 0 : computeLivesGained(pk, tierFromPicked),
+				livesSpent: hidden ? 0 : computeLivesSpent(pk),
+				goalsCounted: pk.goalsScored ?? 0,
+			}
+		})
+		const streak = computeStreak(picks)
+		return {
+			id: p.id,
+			userId: p.userId,
+			name: userNames.get(p.userId) ?? 'Player',
+			status: p.status,
+			livesRemaining: p.livesRemaining,
+			streak,
+			goals: picks.reduce((sum, pk) => sum + pk.goalsCounted, 0),
+			hasSubmitted: myPicks.length > 0,
+			eliminatedRoundNumber: null,
+			picks,
+		}
+	})
+
+	return {
+		gameId: g.id,
+		roundId: g.currentRound.id,
+		roundNumber: g.currentRound.number,
+		roundStatus: g.currentRound.status as 'open' | 'active' | 'completed',
+		maxLives: (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 3,
+		numberOfPicks: (g.modeConfig as { numberOfPicks?: number } | null)?.numberOfPicks ?? 6,
+		players,
+	}
+}
+
+export function mapPickResult(r: string): 'win' | 'saved_by_life' | 'loss' | 'pending' {
+	switch (r) {
+		case 'win':
+		case 'draw':
+			return 'win'
+		case 'saved_by_life':
+			return 'saved_by_life'
+		case 'loss':
+			return 'loss'
+		default:
+			return 'pending'
+	}
+}
+
+export function computeLivesGained(pk: { result: string }, tierFromPicked: number): number {
+	if (pk.result !== 'win') return 0
+	if (tierFromPicked <= -2) return Math.abs(tierFromPicked)
+	return 0
+}
+
+export function computeLivesSpent(pk: { result: string }): number {
+	return pk.result === 'saved_by_life' ? 1 : 0
+}
+
+export function computeStreak(picks: CupStandingsPick[]): number {
+	let streak = 0
+	for (const p of [...picks].sort((a, b) => a.confidenceRank - b.confidenceRank)) {
+		if (p.result === 'win' || p.result === 'saved_by_life') streak++
+		else break
+	}
+	return streak
+}
