@@ -1,87 +1,117 @@
-import { describe, it, expect } from "vitest"
-import { scoreTurboPicks, rankTurboPlayers } from "./turbo"
-import type { Pick, Fixture } from "@/lib/types"
+import { describe, expect, it } from 'vitest'
+import type { TurboPickInput } from './turbo'
+import { calculateTurboStandings, evaluateTurboPicks } from './turbo'
 
-function makePick(overrides: Partial<Pick> = {}): Pick {
-  return {
-    id: "pick-1",
-    gameId: "game-1",
-    playerId: "player-1",
-    gameweekId: 1,
-    teamId: 1,
-    fixtureId: 1,
-    mode: "turbo",
-    prediction: "home",
-    stake: null,
-    cupRound: null,
-    result: "pending",
-    createdAt: new Date("2025-01-01T00:00:00Z"),
-    ...overrides,
-  }
+function makePick(
+	rank: number,
+	predicted: 'home_win' | 'draw' | 'away_win',
+	homeScore: number,
+	awayScore: number,
+): TurboPickInput {
+	return { confidenceRank: rank, predictedResult: predicted, homeScore, awayScore }
 }
 
-function makeFixture(overrides: Partial<Fixture> = {}): Fixture {
-  return {
-    id: 1,
-    gameweekId: 1,
-    homeTeamId: 1,
-    awayTeamId: 2,
-    homeScore: 2,
-    awayScore: 1,
-    kickoff: new Date("2025-01-01T15:00:00Z"),
-    started: true,
-    finished: true,
-    ...overrides,
-  }
-}
-
-describe("scoreTurboPicks", () => {
-  it("awards won for correct home prediction", () => {
-    const picks = [makePick({ prediction: "home", fixtureId: 1 })]
-    const fixtures = [makeFixture({ homeScore: 2, awayScore: 0 })]
-    const results = scoreTurboPicks(picks, fixtures)
-    expect(results[0].result).toBe("won")
-  })
-
-  it("awards won for correct draw prediction", () => {
-    const picks = [makePick({ prediction: "draw", fixtureId: 1 })]
-    const fixtures = [makeFixture({ homeScore: 1, awayScore: 1 })]
-    const results = scoreTurboPicks(picks, fixtures)
-    expect(results[0].result).toBe("won")
-  })
-
-  it("awards won for correct away prediction", () => {
-    const picks = [makePick({ prediction: "away", fixtureId: 1 })]
-    const fixtures = [makeFixture({ homeScore: 0, awayScore: 2 })]
-    const results = scoreTurboPicks(picks, fixtures)
-    expect(results[0].result).toBe("won")
-  })
-
-  it("marks lost for incorrect prediction", () => {
-    const picks = [makePick({ prediction: "home", fixtureId: 1 })]
-    const fixtures = [makeFixture({ homeScore: 0, awayScore: 2 })]
-    const results = scoreTurboPicks(picks, fixtures)
-    expect(results[0].result).toBe("lost")
-  })
-
-  it("keeps pending when scores not available", () => {
-    const picks = [makePick({ prediction: "home", fixtureId: 1 })]
-    const fixtures = [makeFixture({ homeScore: null, awayScore: null })]
-    const results = scoreTurboPicks(picks, fixtures)
-    expect(results[0].result).toBe("pending")
-  })
+describe('evaluateTurboPicks', () => {
+	it('calculates perfect streak when all correct', () => {
+		const picks = [
+			makePick(1, 'home_win', 2, 0),
+			makePick(2, 'away_win', 0, 1),
+			makePick(3, 'draw', 1, 1),
+		]
+		expect(evaluateTurboPicks(picks).streak).toBe(3)
+	})
+	it('stops streak at first incorrect prediction', () => {
+		const picks = [
+			makePick(1, 'home_win', 2, 0),
+			makePick(2, 'home_win', 0, 1),
+			makePick(3, 'home_win', 3, 0),
+		]
+		expect(evaluateTurboPicks(picks).streak).toBe(1)
+	})
+	it('returns streak 0 when first is wrong', () => {
+		expect(evaluateTurboPicks([makePick(1, 'away_win', 2, 0)]).streak).toBe(0)
+	})
+	it('counts goals in streak only', () => {
+		const picks = [makePick(1, 'home_win', 3, 1), makePick(2, 'home_win', 0, 2)]
+		const result = evaluateTurboPicks(picks)
+		expect(result.streak).toBe(1)
+		expect(result.goalsInStreak).toBe(3)
+	})
+	it('counts goals across full streak with correct per-type counting', () => {
+		const picks = [
+			makePick(1, 'home_win', 2, 0),
+			makePick(2, 'away_win', 1, 3),
+			makePick(3, 'draw', 2, 2),
+		]
+		const result = evaluateTurboPicks(picks)
+		expect(result.streak).toBe(3)
+		expect(result.goalsInStreak).toBe(9)
+	})
+	it('handles empty picks', () => {
+		expect(evaluateTurboPicks([]).streak).toBe(0)
+	})
+	it('sorts by confidence rank before evaluating', () => {
+		const picks = [
+			makePick(3, 'draw', 1, 1),
+			makePick(1, 'home_win', 2, 0),
+			makePick(2, 'away_win', 0, 1),
+		]
+		expect(evaluateTurboPicks(picks).streak).toBe(3)
+	})
 })
 
-describe("rankTurboPlayers", () => {
-  it("ranks players by correct predictions descending", () => {
-    const picks = [
-      makePick({ playerId: "p1", fixtureId: 1, result: "won" }),
-      makePick({ playerId: "p1", fixtureId: 2, result: "won" }),
-      makePick({ playerId: "p2", fixtureId: 1, result: "won" }),
-      makePick({ playerId: "p2", fixtureId: 2, result: "lost" }),
-    ]
-    const rankings = rankTurboPlayers(picks)
-    expect(rankings[0]).toEqual({ playerId: "p1", points: 2 })
-    expect(rankings[1]).toEqual({ playerId: "p2", points: 1 })
-  })
+describe('goals counting per prediction type', () => {
+	it('counts only home goals for correct home_win prediction', () => {
+		const picks = [makePick(1, 'home_win', 3, 1)]
+		const result = evaluateTurboPicks(picks)
+		expect(result.goalsInStreak).toBe(3)
+	})
+
+	it('counts only away goals for correct away_win prediction', () => {
+		const picks = [makePick(1, 'away_win', 1, 4)]
+		const result = evaluateTurboPicks(picks)
+		expect(result.goalsInStreak).toBe(4)
+	})
+
+	it('counts both goals for correct draw prediction', () => {
+		const picks = [makePick(1, 'draw', 2, 2)]
+		const result = evaluateTurboPicks(picks)
+		expect(result.goalsInStreak).toBe(4)
+	})
+
+	it('counts goals correctly across mixed streak', () => {
+		const picks = [
+			makePick(1, 'home_win', 3, 0),
+			makePick(2, 'draw', 1, 1),
+			makePick(3, 'away_win', 0, 2),
+		]
+		const result = evaluateTurboPicks(picks)
+		expect(result.streak).toBe(3)
+		expect(result.goalsInStreak).toBe(7)
+	})
+})
+
+describe('calculateTurboStandings', () => {
+	it('ranks by streak descending', () => {
+		const standings = calculateTurboStandings([
+			{ gamePlayerId: 'p1', streak: 3, goalsInStreak: 5 },
+			{ gamePlayerId: 'p2', streak: 5, goalsInStreak: 2 },
+		])
+		expect(standings[0].gamePlayerId).toBe('p2')
+	})
+	it('breaks ties by goals', () => {
+		const standings = calculateTurboStandings([
+			{ gamePlayerId: 'p1', streak: 3, goalsInStreak: 5 },
+			{ gamePlayerId: 'p2', streak: 3, goalsInStreak: 8 },
+		])
+		expect(standings[0].gamePlayerId).toBe('p2')
+	})
+	it('assigns positions', () => {
+		const standings = calculateTurboStandings([
+			{ gamePlayerId: 'p1', streak: 5, goalsInStreak: 10 },
+			{ gamePlayerId: 'p2', streak: 3, goalsInStreak: 8 },
+		])
+		expect(standings[0].position).toBe(1)
+		expect(standings[1].position).toBe(2)
+	})
 })

@@ -1,26 +1,52 @@
-import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { db } from "@/lib/db"
-import { gamePlayers } from "@/lib/schema/domain"
+import { eq } from 'drizzle-orm'
+import { NextResponse } from 'next/server'
+import { requireSession } from '@/lib/auth-helpers'
+import { db } from '@/lib/db'
+import { game, gamePlayer } from '@/lib/schema/game'
+import { payment } from '@/lib/schema/payment'
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params
-  const session = await auth.api.getSession({ headers: request.headers })
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+	const session = await requireSession()
+	const { id } = await params
 
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+	const gameData = await db.query.game.findFirst({
+		where: eq(game.id, id),
+		with: { players: true },
+	})
 
-  try {
-    await db.insert(gamePlayers).values({
-      gameId: id,
-      playerId: session.user.id,
-    })
-    return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: "Already in this game" }, { status: 400 })
-  }
+	if (!gameData) {
+		return NextResponse.json({ error: 'Game not found' }, { status: 404 })
+	}
+
+	if (gameData.status !== 'open') {
+		return NextResponse.json({ error: 'Game is not accepting new players' }, { status: 400 })
+	}
+
+	if (gameData.maxPlayers && gameData.players.length >= gameData.maxPlayers) {
+		return NextResponse.json({ error: 'Game is full' }, { status: 400 })
+	}
+
+	const existing = gameData.players.find((p) => p.userId === session.user.id)
+	if (existing) {
+		return NextResponse.json({ error: 'Already a member of this game' }, { status: 400 })
+	}
+
+	const [player] = await db
+		.insert(gamePlayer)
+		.values({
+			gameId: id,
+			userId: session.user.id,
+		})
+		.returning()
+
+	// Create payment record if entry fee is set
+	if (gameData.entryFee) {
+		await db.insert(payment).values({
+			gameId: id,
+			userId: session.user.id,
+			amount: gameData.entryFee,
+		})
+	}
+
+	return NextResponse.json(player, { status: 201 })
 }

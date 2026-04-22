@@ -1,146 +1,131 @@
-import { describe, it, expect } from "vitest"
-import {
-  evaluateClassicPicks,
-  determineClassicWinner,
-} from "./classic"
-import type { Pick, Fixture, GamePlayer } from "@/lib/types"
+import { describe, expect, it } from 'vitest'
+import type { ClassicRoundInput } from './classic'
+import { processClassicRound } from './classic'
 
-function makePick(overrides: Partial<Pick> = {}): Pick {
-  return {
-    id: "pick-1",
-    gameId: "game-1",
-    playerId: "player-1",
-    gameweekId: 1,
-    teamId: 1,
-    fixtureId: 1,
-    mode: "classic",
-    prediction: null,
-    stake: null,
-    cupRound: null,
-    result: "pending",
-    createdAt: new Date("2025-01-01T00:00:00Z"),
-    ...overrides,
-  }
+function makeFixture(homeTeamId: string, awayTeamId: string, homeScore: number, awayScore: number) {
+	return { id: `f-${homeTeamId}-${awayTeamId}`, homeTeamId, awayTeamId, homeScore, awayScore }
 }
 
-function makeFixture(overrides: Partial<Fixture> = {}): Fixture {
-  return {
-    id: 1,
-    gameweekId: 1,
-    homeTeamId: 1,
-    awayTeamId: 2,
-    homeScore: 2,
-    awayScore: 1,
-    kickoff: new Date("2025-01-01T15:00:00Z"),
-    started: true,
-    finished: true,
-    ...overrides,
-  }
-}
+describe('processClassicRound', () => {
+	it('marks player as win when picked team wins at home', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 2, 0)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('win')
+		expect(result.results[0].eliminated).toBe(false)
+	})
 
-function makeGamePlayer(overrides: Partial<GamePlayer> = {}): GamePlayer {
-  return {
-    id: "gp-1",
-    gameId: "game-1",
-    playerId: "player-1",
-    status: "alive",
-    eliminatedAtGameweek: null,
-    joinedAt: new Date("2025-01-01T00:00:00Z"),
-    ...overrides,
-  }
-}
+	it('marks player as win when picked team wins away', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'liverpool' }],
+			fixtures: [makeFixture('wolves', 'liverpool', 0, 3)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('win')
+		expect(result.results[0].eliminated).toBe(false)
+	})
 
-describe("evaluateClassicPicks", () => {
-  it("marks pick as won when picked team wins at home", () => {
-    const picks = [makePick({ teamId: 1, fixtureId: 1 })]
-    const fixtures = [
-      makeFixture({ id: 1, homeTeamId: 1, awayTeamId: 2, homeScore: 2, awayScore: 1 }),
-    ]
-    const results = evaluateClassicPicks(picks, fixtures)
-    expect(results[0].result).toBe("won")
-  })
+	it('eliminates player when picked team draws', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 1, 1)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('draw')
+		expect(result.results[0].eliminated).toBe(true)
+	})
 
-  it("marks pick as won when picked team wins away", () => {
-    const picks = [makePick({ teamId: 2, fixtureId: 1 })]
-    const fixtures = [
-      makeFixture({ id: 1, homeTeamId: 1, awayTeamId: 2, homeScore: 0, awayScore: 1 }),
-    ]
-    const results = evaluateClassicPicks(picks, fixtures)
-    expect(results[0].result).toBe("won")
-  })
+	it('eliminates player when picked team loses', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('loss')
+		expect(result.results[0].eliminated).toBe(true)
+	})
 
-  it("marks pick as lost when picked team loses", () => {
-    const picks = [makePick({ teamId: 2, fixtureId: 1 })]
-    const fixtures = [
-      makeFixture({ id: 1, homeTeamId: 1, awayTeamId: 2, homeScore: 3, awayScore: 0 }),
-    ]
-    const results = evaluateClassicPicks(picks, fixtures)
-    expect(results[0].result).toBe("lost")
-  })
+	it('processes multiple players in same round', () => {
+		const input: ClassicRoundInput = {
+			players: [
+				{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' },
+				{ gamePlayerId: 'p2', pickedTeamId: 'chelsea' },
+				{ gamePlayerId: 'p3', pickedTeamId: 'wolves' },
+			],
+			fixtures: [makeFixture('arsenal', 'chelsea', 2, 0), makeFixture('wolves', 'liverpool', 1, 1)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results.find((r) => r.gamePlayerId === 'p1')?.eliminated).toBe(false)
+		expect(result.results.find((r) => r.gamePlayerId === 'p2')?.eliminated).toBe(true)
+		expect(result.results.find((r) => r.gamePlayerId === 'p3')?.eliminated).toBe(true)
+	})
 
-  it("marks pick as lost on a draw (classic: must win)", () => {
-    const picks = [makePick({ teamId: 1, fixtureId: 1 })]
-    const fixtures = [
-      makeFixture({ id: 1, homeTeamId: 1, awayTeamId: 2, homeScore: 1, awayScore: 1 }),
-    ]
-    const results = evaluateClassicPicks(picks, fixtures)
-    expect(results[0].result).toBe("lost")
-  })
-
-  it("keeps pick as pending when fixture has no scores", () => {
-    const picks = [makePick({ teamId: 1, fixtureId: 1 })]
-    const fixtures = [
-      makeFixture({ id: 1, homeScore: null, awayScore: null, finished: false }),
-    ]
-    const results = evaluateClassicPicks(picks, fixtures)
-    expect(results[0].result).toBe("pending")
-  })
-
-  it("finds the correct fixture for each pick", () => {
-    const picks = [
-      makePick({ id: "p1", teamId: 1, fixtureId: 1 }),
-      makePick({ id: "p2", playerId: "player-2", teamId: 3, fixtureId: 2 }),
-    ]
-    const fixtures = [
-      makeFixture({ id: 1, homeTeamId: 1, awayTeamId: 2, homeScore: 2, awayScore: 0 }),
-      makeFixture({ id: 2, homeTeamId: 3, awayTeamId: 4, homeScore: 0, awayScore: 1 }),
-    ]
-    const results = evaluateClassicPicks(picks, fixtures)
-    expect(results[0].result).toBe("won")
-    expect(results[1].result).toBe("lost")
-  })
+	it('returns empty results for empty input', () => {
+		expect(processClassicRound({ players: [], fixtures: [] }).results).toEqual([])
+	})
 })
 
-describe("determineClassicWinner", () => {
-  it("returns no winner when multiple players alive", () => {
-    const players = [
-      makeGamePlayer({ playerId: "p1", status: "alive" }),
-      makeGamePlayer({ playerId: "p2", status: "alive" }),
-    ]
-    expect(determineClassicWinner(players)).toBeNull()
-  })
+describe('first gameweek exemption', () => {
+	it('does not eliminate on loss in starting round', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+			isStartingRound: true,
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('loss')
+		expect(result.results[0].eliminated).toBe(false)
+	})
 
-  it("returns single winner", () => {
-    const players = [
-      makeGamePlayer({ playerId: "p1", status: "alive" }),
-      makeGamePlayer({ playerId: "p2", status: "eliminated" }),
-      makeGamePlayer({ playerId: "p3", status: "eliminated" }),
-    ]
-    const result = determineClassicWinner(players)
-    expect(result).toEqual({ winners: ["p1"], isSplit: false })
-  })
+	it('does not eliminate on draw in starting round', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 1, 1)],
+			isStartingRound: true,
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].result).toBe('draw')
+		expect(result.results[0].eliminated).toBe(false)
+	})
 
-  it("returns split when all remaining eliminated in same gameweek", () => {
-    const players = [
-      makeGamePlayer({ playerId: "p1", status: "eliminated", eliminatedAtGameweek: 5 }),
-      makeGamePlayer({ playerId: "p2", status: "eliminated", eliminatedAtGameweek: 5 }),
-      makeGamePlayer({ playerId: "p3", status: "eliminated", eliminatedAtGameweek: 3 }),
-    ]
-    const result = determineClassicWinner(players)
-    expect(result).toEqual({ winners: ["p1", "p2"], isSplit: true })
-  })
+	it('still eliminates on loss after starting round', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+			isStartingRound: false,
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].eliminated).toBe(true)
+	})
+})
 
-  it("returns null when no players at all", () => {
-    expect(determineClassicWinner([])).toBeNull()
-  })
+describe('goals tracking on wins', () => {
+	it('tracks picked team goals on a home win', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 3, 1)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].goalsScored).toBe(3)
+	})
+
+	it('tracks picked team goals on an away win', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'liverpool' }],
+			fixtures: [makeFixture('wolves', 'liverpool', 0, 4)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].goalsScored).toBe(4)
+	})
+
+	it('sets goals to 0 on loss', () => {
+		const input: ClassicRoundInput = {
+			players: [{ gamePlayerId: 'p1', pickedTeamId: 'arsenal' }],
+			fixtures: [makeFixture('arsenal', 'chelsea', 0, 2)],
+		}
+		const result = processClassicRound(input)
+		expect(result.results[0].goalsScored).toBe(0)
+	})
 })

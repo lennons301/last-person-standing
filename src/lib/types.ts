@@ -1,50 +1,58 @@
-import type {
-  teams,
-  gameweeks,
-  fixtures,
-  games,
-  gamePlayers,
-  gameGameweeks,
-  picks,
-  cupFixtures,
-  gameWinners,
-  gameModeEnum,
-  gameStatusEnum,
-  playerStatusEnum,
-  gameweekStatusEnum,
-  pickResultEnum,
-} from "./schema/domain"
-import type { user } from "./schema/auth"
+import type { user } from './schema/auth'
+import type { competition, fixture, round, team, teamForm } from './schema/competition'
+import type { game, gamePlayer, pick, plannedPick } from './schema/game'
+import type { payment, payout } from './schema/payment'
 
-// Row types (what you get back from a SELECT)
-export type Team = typeof teams.$inferSelect
-export type Gameweek = typeof gameweeks.$inferSelect
-export type Fixture = typeof fixtures.$inferSelect
-export type Game = typeof games.$inferSelect
-export type GamePlayer = typeof gamePlayers.$inferSelect
-export type GameGameweek = typeof gameGameweeks.$inferSelect
-export type Pick = typeof picks.$inferSelect
-export type CupFixture = typeof cupFixtures.$inferSelect
-export type GameWinner = typeof gameWinners.$inferSelect
+// -- Inferred select types --
+
 export type User = typeof user.$inferSelect
+export type Competition = typeof competition.$inferSelect
+export type Round = typeof round.$inferSelect
+export type Team = typeof team.$inferSelect
+export type Fixture = typeof fixture.$inferSelect
+export type TeamForm = typeof teamForm.$inferSelect
+export type Game = typeof game.$inferSelect
+export type GamePlayer = typeof gamePlayer.$inferSelect
+export type Pick = typeof pick.$inferSelect
+export type PlannedPick = typeof plannedPick.$inferSelect
+export type Payment = typeof payment.$inferSelect
+export type Payout = typeof payout.$inferSelect
 
-// Insert types (what you pass to INSERT)
-export type NewTeam = typeof teams.$inferInsert
-export type NewGameweek = typeof gameweeks.$inferInsert
-export type NewFixture = typeof fixtures.$inferInsert
-export type NewGame = typeof games.$inferInsert
-export type NewGamePlayer = typeof gamePlayers.$inferInsert
-export type NewPick = typeof picks.$inferInsert
+// -- Inferred insert types --
 
-// Enum value types
-export type GameMode = (typeof gameModeEnum.enumValues)[number]
-export type GameStatus = (typeof gameStatusEnum.enumValues)[number]
-export type PlayerStatus = (typeof playerStatusEnum.enumValues)[number]
-export type GameweekStatus = (typeof gameweekStatusEnum.enumValues)[number]
-export type PickResult = (typeof pickResultEnum.enumValues)[number]
+export type NewCompetition = typeof competition.$inferInsert
+export type NewRound = typeof round.$inferInsert
+export type NewTeam = typeof team.$inferInsert
+export type NewFixture = typeof fixture.$inferInsert
+export type NewGame = typeof game.$inferInsert
+export type NewGamePlayer = typeof gamePlayer.$inferInsert
+export type NewPick = typeof pick.$inferInsert
+export type NewPlannedPick = typeof plannedPick.$inferInsert
+export type NewPayment = typeof payment.$inferInsert
+export type NewPayout = typeof payout.$inferInsert
 
-// Game settings (typed from the jsonb column)
-export interface GameSettings {
-  maxPlayers?: number
-  allowRebuys?: boolean
+// -- Enum value types --
+
+export type CompetitionType = Competition['type']
+export type RoundStatus = Round['status']
+export type FixtureStatus = Fixture['status']
+export type GameMode = Game['gameMode']
+export type GameStatus = Game['status']
+export type PlayerStatus = GamePlayer['status']
+export type PickResult = Pick['result']
+export type PaymentStatus = Payment['status']
+
+// -- Mode config types --
+
+export type ClassicModeConfig = Record<string, never>
+
+export interface TurboModeConfig {
+	numberOfPicks?: number // default 10
 }
+
+export interface CupModeConfig {
+	startingLives?: number // default 0
+	numberOfPicks?: number // default 10
+}
+
+export type ModeConfig = ClassicModeConfig | TurboModeConfig | CupModeConfig

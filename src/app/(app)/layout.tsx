@@ -1,17 +1,12 @@
-import { requireSession } from "@/lib/auth-helpers"
-import { Navbar } from "@/components/features/navigation/navbar"
+import { Navbar } from '@/components/nav/navbar'
+import { requireSession } from '@/lib/auth-helpers'
 
-export default async function AppLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const session = await requireSession()
-
-  return (
-    <>
-      <Navbar displayName={session.user.name ?? session.user.email} />
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
-    </>
-  )
+export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+	const session = await requireSession()
+	return (
+		<>
+			<Navbar userName={session.user.name} userId={session.user.id} />
+			<main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+		</>
+	)
 }

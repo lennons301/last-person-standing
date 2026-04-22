@@ -1,64 +1,68 @@
-import type { Pick, Fixture, GamePlayer, PickResult } from "@/lib/types"
+import { determinePickResult, type PickResult } from './common'
 
-interface EvaluatedPick extends Pick {
-  result: PickResult
+export interface ClassicPlayerPick {
+	gamePlayerId: string
+	pickedTeamId: string
 }
 
-function didTeamWin(teamId: number, fixture: Fixture): boolean | null {
-  if (fixture.homeScore === null || fixture.awayScore === null) return null
-  if (fixture.homeTeamId === teamId) return fixture.homeScore > fixture.awayScore
-  if (fixture.awayTeamId === teamId) return fixture.awayScore > fixture.homeScore
-  return null
+export interface ClassicFixture {
+	id: string
+	homeTeamId: string
+	awayTeamId: string
+	homeScore: number
+	awayScore: number
 }
 
-export function evaluateClassicPicks(
-  picks: Pick[],
-  fixtures: Fixture[]
-): EvaluatedPick[] {
-  const fixtureMap = new Map(fixtures.map((f) => [f.id, f]))
-
-  return picks.map((pick) => {
-    const fixture = fixtureMap.get(pick.fixtureId!)
-    if (!fixture) return { ...pick, result: "pending" as const }
-
-    const won = didTeamWin(pick.teamId, fixture)
-    if (won === null) return { ...pick, result: "pending" as const }
-
-    return { ...pick, result: won ? ("won" as const) : ("lost" as const) }
-  })
+export interface ClassicRoundInput {
+	players: ClassicPlayerPick[]
+	fixtures: ClassicFixture[]
+	isStartingRound?: boolean
 }
 
-interface WinnerResult {
-  winners: string[]
-  isSplit: boolean
+export interface ClassicPlayerResult {
+	gamePlayerId: string
+	result: PickResult
+	eliminated: boolean
+	goalsScored: number
 }
 
-export function determineClassicWinner(
-  players: GamePlayer[]
-): WinnerResult | null {
-  if (players.length === 0) return null
+export interface ClassicRoundOutput {
+	results: ClassicPlayerResult[]
+}
 
-  const alive = players.filter((p) => p.status === "alive")
+export function processClassicRound(input: ClassicRoundInput): ClassicRoundOutput {
+	const fixturesByTeam = new Map<string, ClassicFixture>()
+	for (const f of input.fixtures) {
+		fixturesByTeam.set(f.homeTeamId, f)
+		fixturesByTeam.set(f.awayTeamId, f)
+	}
 
-  if (alive.length === 1) {
-    return { winners: [alive[0].playerId], isSplit: false }
-  }
+	const results: ClassicPlayerResult[] = input.players.map((player) => {
+		const fixture = fixturesByTeam.get(player.pickedTeamId)
+		if (!fixture) {
+			return {
+				gamePlayerId: player.gamePlayerId,
+				result: 'loss' as const,
+				eliminated: true,
+				goalsScored: 0,
+			}
+		}
+		const result = determinePickResult({
+			pickedTeamId: player.pickedTeamId,
+			homeTeamId: fixture.homeTeamId,
+			awayTeamId: fixture.awayTeamId,
+			homeScore: fixture.homeScore,
+			awayScore: fixture.awayScore,
+		})
+		const pickedHome = player.pickedTeamId === fixture.homeTeamId
+		const goalsScored = result === 'win' ? (pickedHome ? fixture.homeScore : fixture.awayScore) : 0
+		return {
+			gamePlayerId: player.gamePlayerId,
+			result,
+			eliminated: result !== 'win' && !input.isStartingRound,
+			goalsScored,
+		}
+	})
 
-  if (alive.length > 1) return null
-
-  // All eliminated — find who was eliminated last (highest gameweek)
-  const maxGw = Math.max(
-    ...players
-      .filter((p) => p.eliminatedAtGameweek !== null)
-      .map((p) => p.eliminatedAtGameweek!)
-  )
-
-  const lastEliminated = players.filter(
-    (p) => p.eliminatedAtGameweek === maxGw
-  )
-
-  return {
-    winners: lastEliminated.map((p) => p.playerId),
-    isSplit: lastEliminated.length > 1,
-  }
+	return { results }
 }

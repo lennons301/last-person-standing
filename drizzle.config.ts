@@ -1,10 +1,11 @@
-import { defineConfig } from "drizzle-kit"
+import { defineConfig } from 'drizzle-kit'
 
 export default defineConfig({
-  schema: ["./src/lib/schema/auth.ts", "./src/lib/schema/domain.ts"],
-  out: "./drizzle",
-  dialect: "postgresql",
-  dbCredentials: {
-    url: process.env.DATABASE_URL!,
-  },
+	dialect: 'postgresql',
+	schema: './src/lib/schema/index.ts',
+	out: './drizzle',
+	dbCredentials: {
+		// biome-ignore lint/style/noNonNullAssertion: required at config level
+		url: process.env.DATABASE_URL!,
+	},
 })
