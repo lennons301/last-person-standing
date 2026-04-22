@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { GameHeader } from '@/components/game/game-header'
 import { ShareDialog } from '@/components/game/share-dialog'
+import { CupStandings } from '@/components/standings/cup-standings'
 import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/standings/progress-grid'
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
+import type { CupLadderData } from '@/lib/game/cup-standings-queries'
 
 interface GameDetailViewProps {
 	game: {
@@ -31,6 +33,7 @@ interface GameDetailViewProps {
 		rounds: TurboRoundSummary[]
 		numberOfPicks: number
 	} | null
+	cupStandings?: CupLadderData | null
 }
 
 export function GameDetailView({
@@ -38,6 +41,7 @@ export function GameDetailView({
 	pickSection,
 	classicGrid,
 	turboStandings,
+	cupStandings,
 }: GameDetailViewProps) {
 	const [shareOpen, setShareOpen] = useState(false)
 	const inviteUrl =
@@ -79,6 +83,8 @@ export function GameDetailView({
 					onShare={() => setShareOpen(true)}
 				/>
 			)}
+
+			{cupStandings && <CupStandings data={cupStandings} onShare={() => setShareOpen(true)} />}
 
 			<ShareDialog
 				open={shareOpen}

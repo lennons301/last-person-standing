@@ -5,6 +5,7 @@ import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
 import { TurboPick } from '@/components/picks/turbo-pick'
 import { requireSession } from '@/lib/auth-helpers'
+import { getCupLadderData } from '@/lib/game/cup-standings-queries'
 import {
 	getClassicPickData,
 	getGameDetail,
@@ -49,6 +50,8 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 		game.gameMode === 'classic' ? await getProgressGridData(game.id, session.user.id) : null
 	const turboStandingsData =
 		game.gameMode === 'turbo' ? await getTurboStandingsData(game.id, session.user.id) : null
+	const cupStandingsData =
+		game.gameMode === 'cup' ? await getCupLadderData(game.id, session.user.id) : null
 
 	const isAlive = game.myMembership?.status === 'alive'
 	const aliveCount = game.players.filter((p) => p.status === 'alive').length
@@ -158,6 +161,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 			turboStandings={
 				turboStandingsData ? { rounds: turboStandingsData.rounds, numberOfPicks } : null
 			}
+			cupStandings={cupStandingsData}
 		/>
 	)
 }
