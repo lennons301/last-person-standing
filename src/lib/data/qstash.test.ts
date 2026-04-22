@@ -8,7 +8,7 @@ vi.mock('@upstash/qstash', () => ({
 	}),
 }))
 
-import { enqueueDeadlineReminder, enqueueProcessRound } from './qstash'
+import { enqueueAutoSubmit, enqueueDeadlineReminder, enqueueProcessRound } from './qstash'
 
 describe('qstash helpers', () => {
 	beforeEach(() => {
@@ -37,6 +37,19 @@ describe('qstash helpers', () => {
 			gameId: 'game-1',
 			roundId: 'round-1',
 			window: '24h',
+		})
+		expect(call.notBefore).toBe(Math.floor(notBefore.getTime() / 1000))
+	})
+
+	it('enqueues an auto-submit at the given timestamp', async () => {
+		const notBefore = new Date('2026-06-11T12:00:00Z')
+		await enqueueAutoSubmit('gp-1', 'r-1', 't-1', notBefore)
+		const call = publishJSONMock.mock.calls[0][0]
+		expect(call.body).toEqual({
+			type: 'auto_submit',
+			gamePlayerId: 'gp-1',
+			roundId: 'r-1',
+			teamId: 't-1',
 		})
 		expect(call.notBefore).toBe(Math.floor(notBefore.getTime() / 1000))
 	})
