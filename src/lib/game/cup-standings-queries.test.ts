@@ -19,11 +19,14 @@ vi.mock('@/lib/db', () => ({
 const { findFirstMock } = mocks
 
 import {
+	type CupLadderBacker,
 	type CupStandingsPick,
+	type CupStandingsPlayer,
 	computeLivesGained,
 	computeLivesSpent,
 	computeStreak,
 	getCupStandingsData,
+	isCrucial,
 	mapPickResult,
 } from './cup-standings-queries'
 
@@ -125,5 +128,81 @@ describe('computeStreak', () => {
 
 	it('breaks on pending', () => {
 		expect(computeStreak([makePick(1, 'win'), makePick(2, 'pending')])).toBe(1)
+	})
+})
+
+describe('isCrucial', () => {
+	const makeBacker = (
+		playerId: string,
+		confidenceRank = 1,
+		result: CupLadderBacker['result'] = 'pending',
+	): CupLadderBacker => ({
+		playerId,
+		playerName: playerId,
+		confidenceRank,
+		result,
+		livesGained: 0,
+		livesSpent: 0,
+	})
+
+	const makePlayer = (id: string, livesRemaining: number): CupStandingsPlayer => ({
+		id,
+		userId: `user-${id}`,
+		name: id,
+		status: 'alive',
+		livesRemaining,
+		streak: 0,
+		goals: 0,
+		hasSubmitted: true,
+		eliminatedRoundNumber: null,
+		picks: [],
+	})
+
+	it('is not crucial once the fixture has played', () => {
+		expect(
+			isCrucial(
+				{ actualOutcome: 'home_win' },
+				{ homeBackers: [makeBacker('p1')], awayBackers: [makeBacker('p2')] },
+				[makePlayer('p1', 2), makePlayer('p2', 2)],
+			),
+		).toBe(false)
+	})
+
+	it('is crucial when backers split across both sides', () => {
+		expect(
+			isCrucial(
+				{ actualOutcome: null },
+				{ homeBackers: [makeBacker('p1')], awayBackers: [makeBacker('p2')] },
+				[makePlayer('p1', 2), makePlayer('p2', 2)],
+			),
+		).toBe(true)
+	})
+
+	it('is crucial when a no-lives player has staked a pick on it', () => {
+		expect(
+			isCrucial(
+				{ actualOutcome: null },
+				{ homeBackers: [makeBacker('p1'), makeBacker('p2')], awayBackers: [] },
+				[makePlayer('p1', 0), makePlayer('p2', 2)],
+			),
+		).toBe(true)
+	})
+
+	it('is not crucial when everyone is on the same side and has lives', () => {
+		expect(
+			isCrucial(
+				{ actualOutcome: null },
+				{ homeBackers: [makeBacker('p1'), makeBacker('p2')], awayBackers: [] },
+				[makePlayer('p1', 2), makePlayer('p2', 2)],
+			),
+		).toBe(false)
+	})
+
+	it('is not crucial when the fixture has no backers at all', () => {
+		expect(
+			isCrucial({ actualOutcome: null }, { homeBackers: [], awayBackers: [] }, [
+				makePlayer('p1', 0),
+			]),
+		).toBe(false)
 	})
 })

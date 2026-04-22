@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { determineFixtureOutcome } from '@/lib/game-logic/common'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { pick } from '@/lib/schema/game'
 
@@ -39,6 +40,35 @@ export interface CupStandingsData {
 	maxLives: number
 	numberOfPicks: number
 	players: CupStandingsPlayer[]
+}
+
+export interface CupLadderBacker {
+	playerId: string
+	playerName: string
+	confidenceRank: number
+	result: 'win' | 'saved_by_life' | 'loss' | 'pending' | 'hidden' | 'upset-pending' | 'last-life'
+	livesGained: number
+	livesSpent: number
+}
+
+export interface CupLadderFixture {
+	id: string
+	homeTeam: { shortName: string; name: string; badgeUrl: string | null; color: string | null }
+	awayTeam: { shortName: string; name: string; badgeUrl: string | null; color: string | null }
+	kickoff: Date | null
+	homeScore: number | null
+	awayScore: number | null
+	tierDifference: number
+	plusN: number
+	heart: boolean
+	actualOutcome: 'home_win' | 'draw' | 'away_win' | null
+	homeBackers: CupLadderBacker[]
+	awayBackers: CupLadderBacker[]
+	crucial: boolean
+}
+
+export interface CupLadderData extends CupStandingsData {
+	fixtures: CupLadderFixture[]
 }
 
 export async function getCupStandingsData(
@@ -179,4 +209,111 @@ export function computeStreak(picks: CupStandingsPick[]): number {
 		else break
 	}
 	return streak
+}
+
+/**
+ * A fixture is "crucial" for the cup ladder when it hasn't played yet AND
+ * either splits the backing table (at least one player on each side) OR has
+ * at least one no-lives-remaining player's pick on it.
+ */
+export function isCrucial(
+	fixture: { actualOutcome: 'home_win' | 'draw' | 'away_win' | null },
+	backers: { homeBackers: CupLadderBacker[]; awayBackers: CupLadderBacker[] },
+	players: CupStandingsPlayer[],
+): boolean {
+	if (fixture.actualOutcome != null) return false
+	const homeCount = backers.homeBackers.length
+	const awayCount = backers.awayBackers.length
+	if (homeCount >= 1 && awayCount >= 1) return true
+	const allBackers = [...backers.homeBackers, ...backers.awayBackers]
+	for (const b of allBackers) {
+		const player = players.find((p) => p.id === b.playerId)
+		if (player && player.livesRemaining === 0) return true
+	}
+	return false
+}
+
+export async function getCupLadderData(
+	gameId: string,
+	viewerUserId: string,
+): Promise<CupLadderData | null> {
+	const base = await getCupStandingsData(gameId, viewerUserId)
+	if (!base) return null
+
+	// Re-fetch the round fixtures so we have team details + scores.
+	const g = await db.query.game.findFirst({
+		where: (t, { eq: eqOp }) => eqOp(t.id, gameId),
+		with: {
+			competition: true,
+			currentRound: {
+				with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
+			},
+		},
+	})
+	if (!g?.currentRound) return null
+
+	const fixturesRaw = g.currentRound.fixtures
+
+	const fixtures: CupLadderFixture[] = fixturesRaw.map((fx) => {
+		const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
+		const plusN = Math.abs(tierFromHome)
+		const heart = plusN >= 2
+
+		const actualOutcome: 'home_win' | 'draw' | 'away_win' | null =
+			fx.homeScore != null && fx.awayScore != null
+				? determineFixtureOutcome(fx.homeScore, fx.awayScore)
+				: null
+
+		const homeBackers: CupLadderBacker[] = []
+		const awayBackers: CupLadderBacker[] = []
+
+		for (const player of base.players) {
+			for (const pk of player.picks) {
+				if (pk.fixtureId !== fx.id) continue
+				const backer: CupLadderBacker = {
+					playerId: player.id,
+					playerName: player.name,
+					confidenceRank: pk.confidenceRank,
+					result: pk.result === 'restricted' ? 'pending' : pk.result,
+					livesGained: pk.livesGained,
+					livesSpent: pk.livesSpent,
+				}
+				if (pk.pickedSide === 'home') homeBackers.push(backer)
+				else awayBackers.push(backer)
+			}
+		}
+
+		const crucial = isCrucial({ actualOutcome }, { homeBackers, awayBackers }, base.players)
+
+		return {
+			id: fx.id,
+			homeTeam: {
+				shortName: fx.homeTeam.shortName,
+				name: fx.homeTeam.name,
+				badgeUrl: fx.homeTeam.badgeUrl ?? null,
+				color: fx.homeTeam.primaryColor ?? null,
+			},
+			awayTeam: {
+				shortName: fx.awayTeam.shortName,
+				name: fx.awayTeam.name,
+				badgeUrl: fx.awayTeam.badgeUrl ?? null,
+				color: fx.awayTeam.primaryColor ?? null,
+			},
+			kickoff: fx.kickoff ?? null,
+			homeScore: fx.homeScore ?? null,
+			awayScore: fx.awayScore ?? null,
+			tierDifference: tierFromHome,
+			plusN,
+			heart,
+			actualOutcome,
+			homeBackers,
+			awayBackers,
+			crucial,
+		}
+	})
+
+	return {
+		...base,
+		fixtures,
+	}
 }
