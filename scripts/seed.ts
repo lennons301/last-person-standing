@@ -393,15 +393,24 @@ async function seed() {
 			turboRoundNumber: 6, // completed round — full standings
 			turboState: 'completed',
 		},
+		{
+			name: 'Cup Tuesday (GW7)',
+			mode: 'cup',
+			creatorEmail: 'dev@example.com',
+			players: ['dev@example.com', 'dave@example.com', 'mike@example.com', 'rich@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 7, // reuse the turbo seed's single-round model
+			turboState: 'live',
+		},
 	]
 
 	for (const seed of gameSeeds) {
 		const creatorId = userIds[seed.creatorEmail]
 
-		// Turbo games are tied to a single specific round; classic uses the open round.
+		// Turbo/Cup games are tied to a single specific round; classic uses the open round.
 		let gameRoundId = openRound.id
 		let gameStatus: 'setup' | 'open' | 'active' | 'completed' = 'active'
-		if (seed.mode === 'turbo' && seed.turboRoundNumber) {
+		if ((seed.mode === 'turbo' || seed.mode === 'cup') && seed.turboRoundNumber) {
 			const r = rounds.find((x) => x.number === seed.turboRoundNumber)
 			if (r) {
 				gameRoundId = r.id
@@ -416,7 +425,12 @@ async function seed() {
 				createdBy: creatorId,
 				competitionId: pl.id,
 				gameMode: seed.mode,
-				modeConfig: seed.mode === 'classic' ? {} : { numberOfPicks: 10 },
+				modeConfig:
+					seed.mode === 'classic'
+						? {}
+						: seed.mode === 'turbo'
+							? { numberOfPicks: 10 }
+							: { startingLives: 3, numberOfPicks: 6 },
 				entryFee: seed.entryFee ?? null,
 				inviteCode: generateInviteCode(),
 				status: gameStatus,
@@ -429,7 +443,12 @@ async function seed() {
 			const userId = userIds[email]
 			const [gp] = await db
 				.insert(gamePlayer)
-				.values({ gameId: newGame.id, userId, status: 'alive' })
+				.values({
+					gameId: newGame.id,
+					userId,
+					status: 'alive',
+					livesRemaining: seed.mode === 'cup' ? 3 : 0,
+				})
 				.returning()
 			playerRowsByEmail[email] = { id: gp.id, userId }
 
@@ -619,6 +638,61 @@ async function seed() {
 						gameId: newGame.id,
 						gamePlayerId: playerRow.id,
 						roundId: turboRound.id,
+						teamId: f.homeTeamId,
+						fixtureId: f.id,
+						confidenceRank: i + 1,
+						predictedResult,
+						result,
+						goalsScored: goals,
+					})
+				}
+			}
+		}
+
+		if (seed.mode === 'cup') {
+			// Cup is single-week with ranked picks — seed picks only for this game's specific round.
+			// Cup mode will functionally behave like turbo (since dev runs against PL with tier diff = 0).
+			const cupRound = rounds.find((r) => r.id === gameRoundId)
+			if (!cupRound) continue
+			const roundFixtures = fixturesByRound.get(cupRound.id) ?? []
+			const isCompleted = seed.turboState === 'completed'
+			const numberOfPicksToSeed = 6 // from modeConfig.numberOfPicks
+
+			for (const email of seed.players) {
+				const playerRow = playerRowsByEmail[email]
+				// For a live game, only some players have submitted picks yet —
+				// everyone else shows as "no pick" so we can see the nudge UX.
+				// Always skip the viewer (dev user) so they can actually make picks.
+				const isViewer = email === 'dev@example.com'
+				const shouldSubmit = isCompleted || (!isViewer && rng() < 0.65)
+				if (!shouldSubmit) continue
+
+				for (let i = 0; i < Math.min(numberOfPicksToSeed, roundFixtures.length); i++) {
+					const f = roundFixtures[i]
+					const predIdx = (i + cupRound.number + email.length) % 3
+					const predictedResult = predIdx === 0 ? 'home_win' : predIdx === 1 ? 'draw' : 'away_win'
+
+					let result: 'win' | 'loss' | 'pending' = isCompleted ? 'loss' : 'pending'
+					let goals = 0
+					if (isCompleted && f.homeScore != null && f.awayScore != null) {
+						const actual =
+							f.homeScore === f.awayScore
+								? 'draw'
+								: f.homeScore > f.awayScore
+									? 'home_win'
+									: 'away_win'
+						if (actual === predictedResult) {
+							result = 'win'
+							if (predictedResult === 'home_win') goals = f.homeScore
+							else if (predictedResult === 'away_win') goals = f.awayScore
+							else goals = f.homeScore + f.awayScore
+						}
+					}
+
+					await db.insert(pick).values({
+						gameId: newGame.id,
+						gamePlayerId: playerRow.id,
+						roundId: cupRound.id,
 						teamId: f.homeTeamId,
 						fixtureId: f.id,
 						confidenceRank: i + 1,
