@@ -12,23 +12,7 @@ import {
 	getTurboPickData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
-
-// TODO(task-7): replace with computeTierDifference from '@/lib/game-logic/cup-tier'.
-// Kept inline here so Task 6 doesn't depend on Task 7's helper landing first.
-type TeamWithExternalIds = {
-	externalIds: Record<string, string | number> | null | undefined
-}
-function computeTierDifference(
-	home: TeamWithExternalIds,
-	away: TeamWithExternalIds,
-	competitionType: 'league' | 'knockout' | 'group_knockout',
-): number {
-	if (competitionType !== 'group_knockout') return 0
-	const homePot = Number(home.externalIds?.fifa_pot)
-	const awayPot = Number(away.externalIds?.fifa_pot)
-	if (!Number.isFinite(homePot) || !Number.isFinite(awayPot)) return 0
-	return homePot - awayPot
-}
+import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 
 export default async function GameDetailPage({ params }: { params: Promise<{ id: string }> }) {
 	const session = await requireSession()
