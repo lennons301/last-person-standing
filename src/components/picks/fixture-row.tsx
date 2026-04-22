@@ -1,8 +1,12 @@
 'use client'
 
+import type React from 'react'
 import { cn } from '@/lib/utils'
 import { FormDots, type FormResult } from './form-dots'
+import { HeartIcon } from './heart-icon'
+import { PlusNBadge } from './plus-n-badge'
 import { TeamBadge } from './team-badge'
+import { TierPips } from './tier-pips'
 
 export interface FixtureTeamInfo {
 	id: string
@@ -12,6 +16,14 @@ export interface FixtureTeamInfo {
 	form?: FormResult[]
 	leaguePosition?: number | null
 }
+
+export type SideState =
+	| { kind: 'current' }
+	| { kind: 'tentative' }
+	| { kind: 'auto-locked' }
+	| { kind: 'restricted'; reason?: string }
+	| { kind: 'used'; label: string }
+	| { kind: 'planned-elsewhere'; label: string }
 
 export interface FixtureRowProps {
 	home: FixtureTeamInfo
@@ -24,6 +36,14 @@ export interface FixtureRowProps {
 	onPickAway?: () => void
 	disabledSide?: 'home' | 'away' | 'both' | null
 	disabledReason?: string
+	// Tier strip (per-fixture annotations)
+	tierValue?: number
+	tierMax?: 3 | 5
+	plusN?: number
+	showHeart?: boolean
+	// Per-side state
+	homeState?: SideState
+	awayState?: SideState
 }
 
 export function FixtureRow({
@@ -37,49 +57,69 @@ export function FixtureRow({
 	onPickAway,
 	disabledSide,
 	disabledReason,
+	tierValue,
+	tierMax,
+	plusN,
+	showHeart,
+	homeState,
+	awayState,
 }: FixtureRowProps) {
 	const isFullyUsed = usedSide === 'both'
+	const showTierStrip = tierValue != null || plusN != null || showHeart
 
 	return (
-		<div
-			className={cn(
-				'rounded-lg border border-border bg-card flex items-stretch transition-all overflow-hidden',
-				isFullyUsed && 'opacity-30 pointer-events-none',
+		<div className={cn(isFullyUsed && 'opacity-30 pointer-events-none')}>
+			{showTierStrip && (
+				<div className="flex items-center gap-2 mb-2 text-[11px] text-muted-foreground">
+					{showHeart && <HeartIcon size={13} />}
+					{tierValue != null && (
+						<TierPips value={tierValue as 0 | 1 | 2 | 3 | 4 | 5} max={tierMax} />
+					)}
+					{plusN != null && <PlusNBadge value={plusN} />}
+					{kickoff && <span className="ml-auto">{kickoff}</span>}
+				</div>
 			)}
-		>
-			<TeamPickButton
-				team={home}
-				side="home"
-				selected={selectedSide === 'home'}
-				used={usedSide === 'home'}
-				disabled={disabledSide === 'home' || disabledSide === 'both'}
-				disabledReason={disabledReason}
-				onClick={onPickHome}
-			/>
-			<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[64px] bg-muted/30 border-l border-r border-border">
-				<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
-					vs
-				</span>
-				{kickoff && (
-					<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
-						{kickoff}
+			<div
+				className={cn(
+					'rounded-lg border border-border bg-card flex items-stretch transition-all overflow-hidden',
+				)}
+			>
+				<TeamPickButton
+					team={home}
+					side="home"
+					selected={selectedSide === 'home'}
+					used={usedSide === 'home'}
+					disabled={disabledSide === 'home' || disabledSide === 'both'}
+					disabledReason={disabledReason}
+					state={homeState}
+					onClick={onPickHome}
+				/>
+				<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[64px] bg-muted/30 border-l border-r border-border">
+					<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+						vs
+					</span>
+					{kickoff && !showTierStrip && (
+						<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
+							{kickoff}
+						</span>
+					)}
+				</div>
+				<TeamPickButton
+					team={away}
+					side="away"
+					selected={selectedSide === 'away'}
+					used={usedSide === 'away'}
+					disabled={disabledSide === 'away' || disabledSide === 'both'}
+					disabledReason={disabledReason}
+					state={awayState}
+					onClick={onPickAway}
+				/>
+				{usedLabel && (
+					<span className="text-[0.7rem] text-muted-foreground px-2 self-center shrink-0">
+						{usedLabel}
 					</span>
 				)}
 			</div>
-			<TeamPickButton
-				team={away}
-				side="away"
-				selected={selectedSide === 'away'}
-				used={usedSide === 'away'}
-				disabled={disabledSide === 'away' || disabledSide === 'both'}
-				disabledReason={disabledReason}
-				onClick={onPickAway}
-			/>
-			{usedLabel && (
-				<span className="text-[0.7rem] text-muted-foreground px-2 self-center shrink-0">
-					{usedLabel}
-				</span>
-			)}
 		</div>
 	)
 }
@@ -91,12 +131,25 @@ interface TeamPickButtonProps {
 	used: boolean
 	disabled: boolean
 	disabledReason?: string
+	state?: SideState
 	onClick?: () => void
 }
 
-function TeamPickButton({ team, side, selected, used, disabled, onClick }: TeamPickButtonProps) {
-	const clickable = !!onClick && !disabled && !used
+function TeamPickButton({
+	team,
+	side,
+	selected,
+	used,
+	disabled,
+	state,
+	onClick,
+}: TeamPickButtonProps) {
+	const stateBlocksClick =
+		state?.kind === 'restricted' || state?.kind === 'used' || state?.kind === 'planned-elsewhere'
+	const clickable = !!onClick && !disabled && !used && !stateBlocksClick
 	const isHome = side === 'home'
+	const stateCls = sideClass(state)
+	const chip = sideChip(state)
 
 	/*
 	 * Layout goal: symmetric, badge nearest the centre "vs" divider.
@@ -115,6 +168,7 @@ function TeamPickButton({ team, side, selected, used, disabled, onClick }: TeamP
 				selected && 'bg-[var(--alive-bg)] ring-2 ring-[var(--alive)] ring-inset',
 				used && 'opacity-30 line-through',
 				disabled && !used && 'opacity-50 cursor-not-allowed',
+				stateCls,
 			)}
 		>
 			<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="lg" />
@@ -130,9 +184,62 @@ function TeamPickButton({ team, side, selected, used, disabled, onClick }: TeamP
 					)}
 					{team.form && team.form.length > 0 && <FormDots results={team.form} size="md" />}
 				</div>
+				{chip && <div className={cn('flex', isHome ? 'justify-end' : 'justify-start')}>{chip}</div>}
 			</div>
 		</button>
 	)
+}
+
+function sideClass(state?: SideState): string {
+	if (!state) return ''
+	switch (state.kind) {
+		case 'current':
+			return 'border-[var(--alive)] bg-[var(--alive-bg)]'
+		case 'tentative':
+			return 'border-2 border-dashed border-[#7c3aed] bg-[#f5f3ff]'
+		case 'auto-locked':
+			return 'border-2 border-[#7c3aed] bg-[#ede9fe]'
+		case 'restricted':
+			return 'opacity-40 cursor-not-allowed'
+		case 'used':
+		case 'planned-elsewhere':
+			return 'opacity-40 cursor-not-allowed line-through'
+	}
+}
+
+function sideChip(state?: SideState): React.ReactNode {
+	if (!state) return null
+	switch (state.kind) {
+		case 'current':
+			return (
+				<span className="text-[9px] bg-[var(--alive-bg)] text-[var(--alive)] px-1.5 py-0.5 rounded font-bold">
+					CURRENT
+				</span>
+			)
+		case 'tentative':
+			return (
+				<span className="text-[9px] bg-[#ddd6fe] text-[#5b21b6] px-1.5 py-0.5 rounded font-bold">
+					TENTATIVE
+				</span>
+			)
+		case 'auto-locked':
+			return (
+				<span className="text-[9px] bg-[#7c3aed] text-white px-1.5 py-0.5 rounded font-bold">
+					🔒 AUTO
+				</span>
+			)
+		case 'restricted':
+			return (
+				<span className="text-[9px] text-muted-foreground">{state.reason ?? 'Restricted'}</span>
+			)
+		case 'used':
+		case 'planned-elsewhere':
+			return (
+				<span className="text-[9px] bg-muted text-foreground/70 px-1.5 py-0.5 rounded font-bold">
+					{state.label}
+				</span>
+			)
+	}
 }
 
 function ordinal(n: number): string {
