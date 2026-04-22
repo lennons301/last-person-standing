@@ -90,3 +90,8 @@ jobs:
       DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
       BETTER_AUTH_SECRET: ci-build-secret
       BETTER_AUTH_URL: http://localhost:3000
+      QSTASH_TOKEN: ci-build-placeholder
+      QSTASH_CURRENT_SIGNING_KEY: ci-build-placeholder
+      QSTASH_NEXT_SIGNING_KEY: ci-build-placeholder
+      CRON_SECRET: ci-build-placeholder
+      FOOTBALL_DATA_API_KEY: ci-build-placeholder
