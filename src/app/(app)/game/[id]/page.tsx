@@ -8,6 +8,7 @@ import { requireSession } from '@/lib/auth-helpers'
 import { getCupLadderData } from '@/lib/game/cup-standings-queries'
 import {
 	getClassicPickData,
+	getClassicPlannerData,
 	getGameDetail,
 	getProgressGridData,
 	getTurboPickData,
@@ -33,6 +34,11 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 	const classicPickData =
 		game.currentRound && game.myMembership && game.gameMode === 'classic'
 			? await getClassicPickData(game.id, game.currentRound.id, game.myMembership.id)
+			: null
+
+	const classicPlannerData =
+		game.myMembership && game.gameMode === 'classic'
+			? await getClassicPlannerData(game.id, game.myMembership.id, game.currentRound?.id ?? null)
 			: null
 
 	const turboPickData =
@@ -104,6 +110,8 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 					fixtures={classicPickData.fixtures}
 					usedTeamsByRound={classicPickData.usedTeamsByRound}
 					existingPickTeamId={classicPickData.existingPickTeamId}
+					chain={classicPlannerData?.chain}
+					futureRounds={classicPlannerData?.futureRounds}
 				/>
 			) : game.gameMode === 'turbo' && turboPickData ? (
 				<TurboPick

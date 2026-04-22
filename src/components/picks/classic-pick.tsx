@@ -2,9 +2,12 @@
 
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { ChainRibbon, type ChainSlot } from '@/components/picks/chain-ribbon'
+import { PlannerRound } from '@/components/picks/planner-round'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
+import type { ChainSummary, PlannerRoundInput } from '@/lib/game/classic-planner-view'
 import { FixtureRow, type FixtureTeamInfo } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
 
@@ -15,6 +18,12 @@ export interface ClassicPickFixture {
 	kickoff: string | null
 }
 
+export interface ClassicPickPlanHandlers {
+	onPlan: (roundId: string, teamId: string, autoSubmit: boolean) => Promise<void>
+	onRemove: (roundId: string) => Promise<void>
+	onToggleAuto: (roundId: string, autoSubmit: boolean) => Promise<void>
+}
+
 interface ClassicPickProps {
 	gameId: string
 	roundId: string
@@ -23,6 +32,9 @@ interface ClassicPickProps {
 	fixtures: ClassicPickFixture[]
 	usedTeamsByRound: Record<string, string>
 	existingPickTeamId: string | null
+	chain?: { slots: ChainSlot[]; summary: ChainSummary }
+	futureRounds?: PlannerRoundInput[]
+	planHandlers?: ClassicPickPlanHandlers
 }
 
 export function ClassicPick({
@@ -33,6 +45,9 @@ export function ClassicPick({
 	fixtures,
 	usedTeamsByRound,
 	existingPickTeamId,
+	chain,
+	futureRounds,
+	planHandlers,
 }: ClassicPickProps) {
 	const router = useRouter()
 	const [selectedTeamId, setSelectedTeamId] = useState<string | null>(existingPickTeamId)
@@ -91,9 +106,8 @@ export function ClassicPick({
 		: null
 	const lockedSide = lockedFixture && lockedFixture.home.id === existingPickTeamId ? 'H' : 'A'
 
-	// Collapsed mode: show a summary with toggle to expand
-	if (!expanded && existingPickTeamId && lockedTeam && lockedOpponent) {
-		return (
+	const currentRoundCard =
+		!expanded && existingPickTeamId && lockedTeam && lockedOpponent ? (
 			<div className="rounded-lg border border-[var(--alive)]/40 bg-[var(--alive-bg)] p-4">
 				<div className="flex items-center justify-between flex-wrap gap-3">
 					<div className="flex items-center gap-3">
@@ -126,73 +140,223 @@ export function ClassicPick({
 					</div>
 				</div>
 			</div>
+		) : (
+			<div className="space-y-2">
+				<div className="flex justify-between items-baseline mb-3">
+					<h2 className="font-display text-xl font-semibold">{roundName}</h2>
+					<div className="flex items-center gap-2">
+						{deadline && (
+							<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
+								⏱ {formatDeadline(deadline)}
+							</span>
+						)}
+						{existingPickTeamId && (
+							<button
+								type="button"
+								onClick={() => setExpanded(false)}
+								className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1"
+							>
+								Collapse <ChevronUp className="h-3 w-3" />
+							</button>
+						)}
+					</div>
+				</div>
+
+				{fixtures.map((fixture) => {
+					const homeUsed = usedTeamsByRound[fixture.home.id]
+					const awayUsed = usedTeamsByRound[fixture.away.id]
+					let usedSide: 'home' | 'away' | 'both' | null = null
+					if (homeUsed && awayUsed) usedSide = 'both'
+					else if (homeUsed) usedSide = 'home'
+					else if (awayUsed) usedSide = 'away'
+
+					const selected =
+						fixture.home.id === selectedTeamId
+							? 'home'
+							: fixture.away.id === selectedTeamId
+								? 'away'
+								: null
+
+					return (
+						<FixtureRow
+							key={fixture.id}
+							home={fixture.home}
+							away={fixture.away}
+							kickoff={fixture.kickoff ?? undefined}
+							selectedSide={selected}
+							usedSide={usedSide}
+							usedLabel={usedSide === 'both' ? `Both used` : undefined}
+							onPickHome={() => handlePick(fixture, 'home')}
+							onPickAway={() => handlePick(fixture, 'away')}
+						/>
+					)
+				})}
+
+				{error && <p className="text-sm text-[var(--eliminated)] px-2">{error}</p>}
+
+				{selectedTeam && selectedFixture && (
+					<PickConfirmBar
+						message={`Picking ${selectedTeam.name} vs ${
+							selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name
+						} (${selectedSide === 'home' ? 'H' : 'A'})`}
+						actionLabel={existingPickTeamId === selectedTeamId ? 'Already locked' : 'Lock in pick'}
+						onConfirm={handleSubmit}
+						disabled={existingPickTeamId === selectedTeamId}
+						loading={loading}
+					/>
+				)}
+			</div>
 		)
+
+	// Default handlers perform the standard REST calls against the planned-picks
+	// endpoints. Callers can override via `planHandlers` for tests/storybook.
+	const resolvedHandlers: ClassicPickPlanHandlers = planHandlers ?? {
+		onPlan: async (rid, tid, auto) => {
+			const res = await fetch(`/api/games/${gameId}/planned-picks`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ roundId: rid, teamId: tid, autoSubmit: auto }),
+			})
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ error: 'Failed to save plan' }))
+				throw new Error(body.error ?? 'Failed to save plan')
+			}
+			router.refresh()
+		},
+		onRemove: async (rid) => {
+			const res = await fetch(`/api/games/${gameId}/planned-picks/${rid}`, { method: 'DELETE' })
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ error: 'Failed to clear plan' }))
+				throw new Error(body.error ?? 'Failed to clear plan')
+			}
+			router.refresh()
+		},
+		onToggleAuto: async (rid, auto) => {
+			// To toggle auto-submit we re-post the existing plan (upsert) with the new flag.
+			// The server-side POST handler does a delete+insert so this is idempotent.
+			const existing = futureRounds?.find((r) => r.roundId === rid)
+			if (!existing?.plannedTeamId) return
+			const res = await fetch(`/api/games/${gameId}/planned-picks`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					roundId: rid,
+					teamId: existing.plannedTeamId,
+					autoSubmit: auto,
+				}),
+			})
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ error: 'Failed to toggle auto-submit' }))
+				throw new Error(body.error ?? 'Failed to toggle auto-submit')
+			}
+			router.refresh()
+		},
 	}
 
 	return (
-		<div className="space-y-2">
-			<div className="flex justify-between items-baseline mb-3">
-				<h2 className="font-display text-xl font-semibold">{roundName}</h2>
-				<div className="flex items-center gap-2">
-					{deadline && (
-						<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
-							⏱ {formatDeadline(deadline)}
-						</span>
-					)}
-					{existingPickTeamId && (
-						<button
-							type="button"
-							onClick={() => setExpanded(false)}
-							className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1"
-						>
-							Collapse <ChevronUp className="h-3 w-3" />
-						</button>
-					)}
+		<div className="space-y-4">
+			{chain && <ChainRibbon slots={chain.slots} summary={chain.summary} />}
+			<div>{currentRoundCard}</div>
+			{futureRounds && futureRounds.length > 0 && (
+				<PlannerSection gameId={gameId} rounds={futureRounds} handlers={resolvedHandlers} />
+			)}
+		</div>
+	)
+}
+
+/**
+ * Collapsible wrapper around the planner rounds. Open/closed state is
+ * persisted in localStorage, scoped by gameId so each game remembers its
+ * own preference.
+ */
+function PlannerSection({
+	gameId,
+	rounds,
+	handlers,
+}: {
+	gameId: string
+	rounds: PlannerRoundInput[]
+	handlers: ClassicPickPlanHandlers
+}) {
+	const storageKey = `lps.planner-open.${gameId}`
+	// Default closed — the planner is an optional power-user feature.
+	const [open, setOpen] = useState(false)
+	const [error, setError] = useState<string | null>(null)
+
+	// Hydrate the open/closed preference from localStorage after mount to avoid
+	// SSR/client markup mismatches.
+	useEffect(() => {
+		try {
+			const saved = window.localStorage.getItem(storageKey)
+			if (saved === 'open') setOpen(true)
+		} catch {
+			// ignore — localStorage access can throw in some browsers
+		}
+	}, [storageKey])
+
+	function toggle() {
+		const next = !open
+		setOpen(next)
+		try {
+			window.localStorage.setItem(storageKey, next ? 'open' : 'closed')
+		} catch {
+			// ignore
+		}
+	}
+
+	async function guard<T>(fn: () => Promise<T>): Promise<void> {
+		setError(null)
+		try {
+			await fn()
+		} catch (e) {
+			setError(e instanceof Error ? e.message : 'Something went wrong')
+		}
+	}
+
+	const plannedCount = rounds.filter((r) => r.plannedTeamId).length
+
+	return (
+		<div className="rounded-xl border border-border bg-card">
+			<button
+				type="button"
+				onClick={toggle}
+				aria-expanded={open}
+				className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 rounded-xl"
+			>
+				<div>
+					<div className="font-semibold text-sm">Plan ahead</div>
+					<div className="text-xs text-muted-foreground">
+						{rounds.length} upcoming {rounds.length === 1 ? 'gameweek' : 'gameweeks'} ·{' '}
+						{plannedCount} planned
+					</div>
 				</div>
-			</div>
-
-			{fixtures.map((fixture) => {
-				const homeUsed = usedTeamsByRound[fixture.home.id]
-				const awayUsed = usedTeamsByRound[fixture.away.id]
-				let usedSide: 'home' | 'away' | 'both' | null = null
-				if (homeUsed && awayUsed) usedSide = 'both'
-				else if (homeUsed) usedSide = 'home'
-				else if (awayUsed) usedSide = 'away'
-
-				const selected =
-					fixture.home.id === selectedTeamId
-						? 'home'
-						: fixture.away.id === selectedTeamId
-							? 'away'
-							: null
-
-				return (
-					<FixtureRow
-						key={fixture.id}
-						home={fixture.home}
-						away={fixture.away}
-						kickoff={fixture.kickoff ?? undefined}
-						selectedSide={selected}
-						usedSide={usedSide}
-						usedLabel={usedSide === 'both' ? `Both used` : undefined}
-						onPickHome={() => handlePick(fixture, 'home')}
-						onPickAway={() => handlePick(fixture, 'away')}
-					/>
-				)
-			})}
-
-			{error && <p className="text-sm text-[var(--eliminated)] px-2">{error}</p>}
-
-			{selectedTeam && selectedFixture && (
-				<PickConfirmBar
-					message={`Picking ${selectedTeam.name} vs ${
-						selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name
-					} (${selectedSide === 'home' ? 'H' : 'A'})`}
-					actionLabel={existingPickTeamId === selectedTeamId ? 'Already locked' : 'Lock in pick'}
-					onConfirm={handleSubmit}
-					disabled={existingPickTeamId === selectedTeamId}
-					loading={loading}
-				/>
+				{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+			</button>
+			{open && (
+				<div className="border-t border-border p-3 space-y-3">
+					{error && (
+						<p className="text-sm text-[var(--eliminated)] px-1" role="alert">
+							{error}
+						</p>
+					)}
+					{rounds.map((r) => (
+						<PlannerRound
+							key={r.roundId}
+							roundId={r.roundId}
+							roundNumber={r.roundNumber}
+							roundName={r.roundName}
+							deadline={r.deadline}
+							fixturesTbc={r.fixturesTbc}
+							fixtures={r.fixtures}
+							usedTeams={r.usedTeams}
+							plannedTeamId={r.plannedTeamId}
+							plannedAutoSubmit={r.plannedAutoSubmit}
+							onPlan={(rid, tid, auto) => guard(() => handlers.onPlan(rid, tid, auto))}
+							onRemove={(rid) => guard(() => handlers.onRemove(rid))}
+							onToggleAuto={(rid, auto) => guard(() => handlers.onToggleAuto(rid, auto))}
+						/>
+					))}
+				</div>
 			)}
 		</div>
 	)
