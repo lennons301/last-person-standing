@@ -2,14 +2,45 @@ import { describe, expect, it } from 'vitest'
 import { calculatePayouts, calculatePot } from './prizes'
 
 describe('calculatePot', () => {
-	it('multiplies entry fee by player count', () => {
-		expect(calculatePot('10.00', 12)).toBe('120.00')
+	it('returns all zeros on empty input', () => {
+		expect(calculatePot([])).toEqual({ confirmed: '0.00', pending: '0.00', total: '0.00' })
 	})
-	it('returns 0 when no entry fee', () => {
-		expect(calculatePot(null, 12)).toBe('0.00')
+
+	it('sums paid rows into confirmed', () => {
+		expect(
+			calculatePot([
+				{ amount: '10.00', status: 'paid' },
+				{ amount: '10.00', status: 'paid' },
+			]),
+		).toEqual({ confirmed: '20.00', pending: '0.00', total: '20.00' })
 	})
-	it('handles decimal entry fees', () => {
-		expect(calculatePot('7.50', 8)).toBe('60.00')
+
+	it('separates claimed into pending', () => {
+		expect(
+			calculatePot([
+				{ amount: '10.00', status: 'paid' },
+				{ amount: '10.00', status: 'claimed' },
+			]),
+		).toEqual({ confirmed: '10.00', pending: '10.00', total: '20.00' })
+	})
+
+	it('ignores pending and refunded', () => {
+		expect(
+			calculatePot([
+				{ amount: '10.00', status: 'paid' },
+				{ amount: '10.00', status: 'pending' },
+				{ amount: '10.00', status: 'refunded' },
+			]),
+		).toEqual({ confirmed: '10.00', pending: '0.00', total: '10.00' })
+	})
+
+	it('handles multiple payments per player (rebuy pre-wiring)', () => {
+		expect(
+			calculatePot([
+				{ amount: '10.00', status: 'paid' },
+				{ amount: '10.00', status: 'paid' }, // rebuy
+			]),
+		).toEqual({ confirmed: '20.00', pending: '0.00', total: '20.00' })
 	})
 })
 
