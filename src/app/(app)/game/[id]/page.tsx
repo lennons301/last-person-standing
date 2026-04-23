@@ -157,7 +157,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 				name: game.name,
 				gameMode: game.gameMode,
 				competition: game.competition.name,
-				pot: game.pot,
+				pot: game.pot.total,
 				entryFee: game.entryFee,
 				playerCount: game.players.length,
 				aliveCount,

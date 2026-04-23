@@ -14,6 +14,7 @@ import {
 import { calculatePot } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, pick, plannedPick } from '@/lib/schema/game'
+import { payment } from '@/lib/schema/payment'
 
 export async function getGameDetail(gameId: string, userId: string) {
 	const gameData = await db.query.game.findFirst({
@@ -32,7 +33,10 @@ export async function getGameDetail(gameId: string, userId: string) {
 	const isAdmin = gameData.createdBy === userId
 	const isMember = !!myMembership
 
-	const pot = calculatePot(gameData.entryFee, gameData.players.length)
+	const payments = await db.query.payment.findMany({
+		where: eq(payment.gameId, gameId),
+	})
+	const pot = calculatePot(payments)
 
 	return {
 		id: gameData.id,
@@ -605,7 +609,10 @@ export async function getProgressGridData(
 
 	const aliveCount = players.filter((p) => p.status === 'alive').length
 	const eliminatedCount = players.filter((p) => p.status === 'eliminated').length
-	const pot = calculatePot(gameData.entryFee, gameData.players.length)
+	const payments = await db.query.payment.findMany({
+		where: eq(payment.gameId, gameId),
+	})
+	const pot = calculatePot(payments).total
 
 	return { rounds, players, aliveCount, eliminatedCount, pot }
 }
