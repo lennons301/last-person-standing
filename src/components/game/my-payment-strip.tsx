@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { type PaymentStatus, PaymentStatusChip } from './payment-status-chip'
 
 interface MyPaymentStripProps {
 	gameId: string
-	status: 'pending' | 'claimed' | 'paid' | 'refunded'
+	status: PaymentStatus
 	amount: string
 	creatorName: string
 	onClaimed?: () => void
@@ -41,7 +41,7 @@ export function MyPaymentStrip({
 		<div className="flex items-center justify-between rounded-lg border border-dashed border-border bg-muted/40 px-3.5 py-2.5">
 			<div className="flex items-center gap-3">
 				<span className="text-sm text-muted-foreground">Your entry fee</span>
-				<StatusChip status={status} />
+				<PaymentStatusChip status={status} />
 			</div>
 			<div className="flex items-center gap-2">
 				<span className="text-[11px] text-muted-foreground">
@@ -59,30 +59,5 @@ export function MyPaymentStrip({
 				)}
 			</div>
 		</div>
-	)
-}
-
-function StatusChip({ status }: { status: MyPaymentStripProps['status'] }) {
-	const styles = {
-		pending: 'bg-muted text-foreground/70',
-		claimed: 'bg-amber-100 text-amber-900',
-		paid: 'bg-emerald-100 text-emerald-900',
-		refunded: 'bg-muted text-foreground/70',
-	}[status]
-	const label = {
-		pending: 'UNPAID',
-		claimed: '⏱ AWAITING CONFIRMATION',
-		paid: '✓ PAID',
-		refunded: 'REFUNDED',
-	}[status]
-	return (
-		<span
-			className={cn(
-				'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold',
-				styles,
-			)}
-		>
-			{label}
-		</span>
 	)
 }
