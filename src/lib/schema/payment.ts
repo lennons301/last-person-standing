@@ -4,7 +4,12 @@ import { game } from './game'
 
 // -- Enums --
 
-export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'paid', 'refunded'])
+export const paymentStatusEnum = pgEnum('payment_status', [
+	'pending',
+	'claimed',
+	'paid',
+	'refunded',
+])
 
 export const paymentMethodEnum = pgEnum('payment_method', ['manual', 'mangopay'])
 
@@ -21,6 +26,7 @@ export const payment = pgTable('payment', {
 	amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
 	status: paymentStatusEnum('status').notNull().default('pending'),
 	method: paymentMethodEnum('method').notNull().default('manual'),
+	claimedAt: timestamp('claimed_at'),
 	paidAt: timestamp('paid_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
