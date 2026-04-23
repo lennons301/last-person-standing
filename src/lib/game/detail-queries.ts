@@ -38,6 +38,59 @@ export async function getGameDetail(gameId: string, userId: string) {
 	})
 	const pot = calculatePot(payments)
 
+	// Resolve user names for every player + the admin so payment UI can show names.
+	const { user } = await import('@/lib/schema/auth')
+	const relevantUserIds = Array.from(
+		new Set([gameData.createdBy, ...gameData.players.map((p) => p.userId)]),
+	)
+	const userRows =
+		relevantUserIds.length > 0
+			? await db
+					.select({ id: user.id, name: user.name })
+					.from(user)
+					.where(inArray(user.id, relevantUserIds))
+			: []
+	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
+	const creatorName = userNames.get(gameData.createdBy) ?? 'the admin'
+
+	// Group payments by userId so we can mark duplicates (rebuys) for UI.
+	const paymentsByUser = new Map<string, typeof payments>()
+	for (const p of payments) {
+		const list = paymentsByUser.get(p.userId) ?? []
+		list.push(p)
+		paymentsByUser.set(p.userId, list)
+	}
+
+	// Viewer's primary (earliest) payment row — the one the claim endpoint targets.
+	const myPaymentRows = [...(paymentsByUser.get(userId) ?? [])].sort(
+		(a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+	)
+	const myPayment = myPaymentRows[0]
+		? {
+				status: myPaymentRows[0].status as 'pending' | 'claimed' | 'paid' | 'refunded',
+				amount: myPaymentRows[0].amount,
+			}
+		: null
+
+	// Full list of payments (one row per payment record) with user name + isRebuy
+	// flag. Viewer's own payments are excluded from otherPayments.
+	const allPayments = Array.from(paymentsByUser.entries()).flatMap(([uid, rows]) => {
+		const sorted = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+		return sorted.map((row, idx) => ({
+			userId: uid,
+			userName: userNames.get(uid) ?? 'Player',
+			amount: row.amount,
+			status: row.status as 'pending' | 'claimed' | 'paid' | 'refunded',
+			isRebuy: idx > 0,
+			claimedAt: row.claimedAt,
+			paidAt: row.paidAt,
+		}))
+	})
+	const otherPayments = allPayments
+		.filter((p) => p.userId !== userId)
+		.map((p) => ({ userName: p.userName, status: p.status, isRebuy: p.isRebuy }))
+	const adminPayments = isAdmin ? allPayments : undefined
+
 	return {
 		id: gameData.id,
 		name: gameData.name,
@@ -53,6 +106,10 @@ export async function getGameDetail(gameId: string, userId: string) {
 		myMembership,
 		isAdmin,
 		isMember,
+		creatorName,
+		myPayment,
+		otherPayments,
+		adminPayments,
 	}
 }
 

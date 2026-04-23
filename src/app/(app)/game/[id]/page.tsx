@@ -174,6 +174,11 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 				aliveCount,
 				status: game.status,
 				inviteCode: game.inviteCode,
+				creatorName: game.creatorName,
+				isAdmin: game.isAdmin,
+				myPayment: game.myPayment,
+				otherPayments: game.otherPayments,
+				adminPayments: game.adminPayments,
 			}}
 			pickSection={pickSection}
 			classicGrid={classicGrid}
