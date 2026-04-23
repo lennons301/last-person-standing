@@ -7,6 +7,7 @@ import { CupStandings } from '@/components/standings/cup-standings'
 import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/standings/progress-grid'
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
+import type { PotBreakdown } from '@/lib/game-logic/prizes'
 
 interface GameDetailViewProps {
 	game: {
@@ -14,7 +15,9 @@ interface GameDetailViewProps {
 		name: string
 		gameMode: string
 		competition: string
-		pot: string
+		pot: PotBreakdown
+		target: string
+		unpaid: string
 		entryFee: string | null
 		playerCount: number
 		aliveCount: number
@@ -53,7 +56,9 @@ export function GameDetailView({
 				name={game.name}
 				mode={game.gameMode}
 				competition={game.competition}
-				pot={game.pot}
+				potBreakdown={game.pot}
+				target={game.target}
+				unpaid={game.unpaid}
 				entryFee={game.entryFee}
 				playerCount={game.playerCount}
 				aliveCount={game.aliveCount}
@@ -91,7 +96,7 @@ export function GameDetailView({
 				onOpenChange={setShareOpen}
 				gameId={game.id}
 				gameName={game.name}
-				pot={game.pot}
+				pot={game.pot.total}
 				inviteUrl={inviteUrl}
 				inviteCode={game.inviteCode}
 			/>

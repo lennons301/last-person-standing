@@ -62,6 +62,15 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 	const isAlive = game.myMembership?.status === 'alive'
 	const aliveCount = game.players.filter((p) => p.status === 'alive').length
 
+	// Target = entryFee × playerCount (what the pot would be if everyone paid).
+	// Unpaid = headline sum of outstanding (not yet claimed) entries, computed
+	// directly from target − pot.total since pot includes both paid and claimed.
+	const entryFeeNum = game.entryFee ? Number.parseFloat(game.entryFee) : 0
+	const targetNum = entryFeeNum * game.players.length
+	const unpaidNum = Math.max(0, targetNum - Number.parseFloat(game.pot.total))
+	const target = targetNum.toFixed(2)
+	const unpaid = unpaidNum.toFixed(2)
+
 	// Build cup pick props inline from the data already fetched by getGameDetail.
 	// (Kept here rather than in detail-queries.ts because all source fields are already loaded.)
 	let cupFixtures: CupPickFixture[] = []
@@ -157,7 +166,9 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 				name: game.name,
 				gameMode: game.gameMode,
 				competition: game.competition.name,
-				pot: game.pot.total,
+				pot: game.pot,
+				target,
+				unpaid,
 				entryFee: game.entryFee,
 				playerCount: game.players.length,
 				aliveCount,
