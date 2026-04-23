@@ -95,6 +95,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		id: gameData.id,
 		name: gameData.name,
 		gameMode: gameData.gameMode,
+		modeConfig: gameData.modeConfig,
 		status: gameData.status,
 		competition: gameData.competition,
 		currentRound: gameData.currentRound,

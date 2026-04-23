@@ -46,11 +46,8 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 			? await getTurboPickData(game.id, game.currentRound.id, game.myMembership.id)
 			: null
 
-	const modeConfig = (
-		game as unknown as { modeConfig?: { numberOfPicks?: number; startingLives?: number } }
-	).modeConfig
-	const numberOfPicks = modeConfig?.numberOfPicks ?? 10
-	const startingLives = modeConfig?.startingLives ?? 3
+	const numberOfPicks = game.modeConfig?.numberOfPicks ?? 10
+	const startingLives = game.modeConfig?.startingLives ?? 3
 
 	const classicGrid =
 		game.gameMode === 'classic' ? await getProgressGridData(game.id, session.user.id) : null
