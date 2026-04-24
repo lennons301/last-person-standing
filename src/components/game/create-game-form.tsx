@@ -38,6 +38,7 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 	const [entryFee, setEntryFee] = useState(10)
 	const [startingLives, setStartingLives] = useState(0)
 	const [numberOfPicks, setNumberOfPicks] = useState(10)
+	const [allowRebuys, setAllowRebuys] = useState(false)
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
@@ -52,9 +53,14 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 		setLoading(true)
 		setError(null)
 
-		const modeConfig: { numberOfPicks?: number; startingLives?: number } = {}
+		const modeConfig: {
+			numberOfPicks?: number
+			startingLives?: number
+			allowRebuys?: boolean
+		} = {}
 		if (mode === 'turbo' || mode === 'cup') modeConfig.numberOfPicks = numberOfPicks
 		if (mode === 'cup') modeConfig.startingLives = startingLives
+		if (mode === 'classic') modeConfig.allowRebuys = allowRebuys
 
 		const res = await fetch('/api/games', {
 			method: 'POST',
@@ -171,6 +177,23 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 								</div>
 							)}
 						</div>
+
+						{mode === 'classic' && (
+							<div className="flex items-start justify-between gap-3">
+								<div>
+									<Label htmlFor="allow-rebuys-toggle">Allow paid rebuys</Label>
+									<p className="text-xs text-muted-foreground mt-0.5">
+										If on, round 1 losses eliminate players — and they can pay again to re-enter for
+										round 2.
+									</p>
+								</div>
+								<Switch
+									id="allow-rebuys-toggle"
+									checked={allowRebuys}
+									onCheckedChange={setAllowRebuys}
+								/>
+							</div>
+						)}
 
 						{mode === 'cup' && (
 							<div className="flex items-center gap-2">
