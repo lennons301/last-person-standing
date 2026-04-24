@@ -8,6 +8,8 @@ import { OtherPlayersPayments } from '@/components/game/other-players-payments'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import { type AdminPayment, PaymentsPanel } from '@/components/game/payments-panel'
 import { ShareDialog } from '@/components/game/share-dialog'
+import { LiveProvider } from '@/components/live/live-provider'
+import { LiveScoreTicker } from '@/components/live/live-score-ticker'
 import { CupStandings } from '@/components/standings/cup-standings'
 import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/standings/progress-grid'
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
@@ -63,86 +65,90 @@ export function GameDetailView({
 		typeof window !== 'undefined' ? `${window.location.origin}/join/${game.inviteCode}` : ''
 
 	return (
-		<div>
-			<GameHeader
-				name={game.name}
-				mode={game.gameMode}
-				competition={game.competition}
-				potBreakdown={game.pot}
-				target={game.target}
-				unpaid={game.unpaid}
-				entryFee={game.entryFee}
-				playerCount={game.playerCount}
-				aliveCount={game.aliveCount}
-				status={game.status}
-				inviteCode={game.inviteCode}
-				onShare={() => setShareOpen(true)}
-			/>
+		<LiveProvider gameId={game.id}>
+			<div>
+				<LiveScoreTicker />
 
-			{game.myPayment && (
-				<div className="mb-4">
-					<MyPaymentStrip
+				<GameHeader
+					name={game.name}
+					mode={game.gameMode}
+					competition={game.competition}
+					potBreakdown={game.pot}
+					target={game.target}
+					unpaid={game.unpaid}
+					entryFee={game.entryFee}
+					playerCount={game.playerCount}
+					aliveCount={game.aliveCount}
+					status={game.status}
+					inviteCode={game.inviteCode}
+					onShare={() => setShareOpen(true)}
+				/>
+
+				{game.myPayment && (
+					<div className="mb-4">
+						<MyPaymentStrip
+							gameId={game.id}
+							status={game.myPayment.status}
+							amount={game.myPayment.amount}
+							creatorName={game.creatorName}
+							onClaimed={refresh}
+						/>
+					</div>
+				)}
+
+				{game.otherPayments.length > 0 && (
+					<div className="mb-6">
+						<OtherPlayersPayments payments={game.otherPayments} />
+					</div>
+				)}
+
+				<div className="mb-6">{pickSection}</div>
+
+				{classicGrid && (
+					<ProgressGrid
+						rounds={classicGrid.rounds}
+						players={classicGrid.players}
+						aliveCount={classicGrid.aliveCount}
+						eliminatedCount={classicGrid.eliminatedCount}
+						pot={classicGrid.pot}
 						gameId={game.id}
-						status={game.myPayment.status}
-						amount={game.myPayment.amount}
-						creatorName={game.creatorName}
-						onClaimed={refresh}
+						onShare={() => setShareOpen(true)}
 					/>
-				</div>
-			)}
+				)}
 
-			{game.otherPayments.length > 0 && (
-				<div className="mb-6">
-					<OtherPlayersPayments payments={game.otherPayments} />
-				</div>
-			)}
+				{turboStandings && (
+					<TurboStandings
+						rounds={turboStandings.rounds}
+						numberOfPicks={turboStandings.numberOfPicks}
+						onShare={() => setShareOpen(true)}
+					/>
+				)}
 
-			<div className="mb-6">{pickSection}</div>
+				{cupStandings && <CupStandings data={cupStandings} onShare={() => setShareOpen(true)} />}
 
-			{classicGrid && (
-				<ProgressGrid
-					rounds={classicGrid.rounds}
-					players={classicGrid.players}
-					aliveCount={classicGrid.aliveCount}
-					eliminatedCount={classicGrid.eliminatedCount}
-					pot={classicGrid.pot}
+				{game.isAdmin && game.adminPayments && game.adminPayments.length > 0 && (
+					<div className="mt-6">
+						<PaymentsPanel
+							gameId={game.id}
+							gameName={game.name}
+							inviteCode={game.inviteCode}
+							totals={game.pot}
+							payments={game.adminPayments}
+							onChange={refresh}
+						/>
+					</div>
+				)}
+
+				<ShareDialog
+					open={shareOpen}
+					onOpenChange={setShareOpen}
 					gameId={game.id}
-					onShare={() => setShareOpen(true)}
+					gameName={game.name}
+					pot={game.pot.total}
+					inviteUrl={inviteUrl}
+					inviteCode={game.inviteCode}
 				/>
-			)}
-
-			{turboStandings && (
-				<TurboStandings
-					rounds={turboStandings.rounds}
-					numberOfPicks={turboStandings.numberOfPicks}
-					onShare={() => setShareOpen(true)}
-				/>
-			)}
-
-			{cupStandings && <CupStandings data={cupStandings} onShare={() => setShareOpen(true)} />}
-
-			{game.isAdmin && game.adminPayments && game.adminPayments.length > 0 && (
-				<div className="mt-6">
-					<PaymentsPanel
-						gameId={game.id}
-						gameName={game.name}
-						inviteCode={game.inviteCode}
-						totals={game.pot}
-						payments={game.adminPayments}
-						onChange={refresh}
-					/>
-				</div>
-			)}
-
-			<ShareDialog
-				open={shareOpen}
-				onOpenChange={setShareOpen}
-				gameId={game.id}
-				gameName={game.name}
-				pot={game.pot.total}
-				inviteUrl={inviteUrl}
-				inviteCode={game.inviteCode}
-			/>
-		</div>
+			</div>
+		</LiveProvider>
 	)
 }
