@@ -3,6 +3,7 @@
 import { Clock, LayoutGrid, ListTree } from 'lucide-react'
 import { useState } from 'react'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
+import type { LivePayload } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 import { CupGrid } from './cup-grid'
 import { CupLadder } from './cup-ladder'
@@ -13,9 +14,10 @@ type ViewMode = 'ladder' | 'grid' | 'timeline'
 interface CupStandingsProps {
 	data: CupLadderData
 	onShare?: () => void
+	live?: LivePayload
 }
 
-export function CupStandings({ data, onShare }: CupStandingsProps) {
+export function CupStandings({ data, onShare, live }: CupStandingsProps) {
 	const [view, setView] = useState<ViewMode>('ladder')
 	return (
 		<div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -63,9 +65,9 @@ export function CupStandings({ data, onShare }: CupStandingsProps) {
 				</div>
 			</div>
 			<div className="p-4 md:p-5">
-				{view === 'ladder' && <CupLadder data={data} />}
-				{view === 'grid' && <CupGrid data={data} />}
-				{view === 'timeline' && <CupTimeline data={data} />}
+				{view === 'ladder' && <CupLadder data={data} live={live} />}
+				{view === 'grid' && <CupGrid data={data} live={live} />}
+				{view === 'timeline' && <CupTimeline data={data} live={live} />}
 			</div>
 		</div>
 	)
