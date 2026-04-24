@@ -115,9 +115,10 @@ Returns `true` iff all of:
   2. Re-check `isRebuyEligible` inside the transaction.
   3. Insert new `payment`: `status=pending`, `amount=entryFee`, `method=manual`, `createdAt=now`.
   4. Update `game_player`: `status=alive`, `eliminatedRoundId=null`, `eliminatedReason=null`.
-  5. Delete the player's round 1 `pick` row (if any). "Wipe GW1 pick" per spec — round 1 is already processed, the pick row is history, and deleting keeps the `(gamePlayerId, roundId)` unique index clean.
-  6. Return `{ paymentId, status: 'pending' }`.
-- Client then calls the existing claim route with `paymentId` (see below) to flip the new payment to `paid`.
+  5. Return `{ paymentId, status: 'pending' }`.
+- Client then calls the existing claim route with `paymentId` to flip the new payment to `paid`.
+
+The round 1 `pick` row (if any) is **not deleted**. Rebuy undoes the *elimination consequence* of the round 1 result, not the result itself. The pick stays as history, `pick.result` remains whatever it was (`'loss'`, etc.), and the team the player used in round 1 remains unavailable for round 2 (survivor "used team" rule applies unchanged). Only the `game_player` state transitions.
 
 #### 5.3 Admin-initiated rebuy API
 
@@ -189,7 +190,7 @@ After claim paid: banner gone; player sees the normal round 2 pick UI.
 - Admin `POST /payments/[userId]/confirm` — delete file + test file.
 
 **Integration (Vitest + test DB)**
-- Full rebuy flow: create classic game with `allowRebuys=true` → seed two players → process round 1 with a losing pick → call player rebuy → call claim → verify game_player `alive`, round 1 pick deleted, two payment rows (`paid` + `paid`), pot = entryFee × 3 (initial 2 + 1 rebuy).
+- Full rebuy flow: create classic game with `allowRebuys=true` → seed two players → process round 1 with a losing pick → call player rebuy → call claim → verify game_player `alive` with `eliminatedRoundId=null`, round 1 pick row still present with `result='loss'`, two payment rows (`paid` + `paid`), pot = entryFee × 3 (initial 2 + 1 rebuy).
 
 **Manual smoke (dev)**
 - Update seed script to create one classic game with `allowRebuys=true`, one player eliminated in round 1. Verify the rebuy banner appears, flow completes, admin panel reflects two-row payment grouping.
@@ -215,7 +216,7 @@ After claim paid: banner gone; player sees the normal round 2 pick UI.
 
 1. Creating a classic game with `Allow paid rebuys` checked produces a game where round 1 losses/no-picks eliminate players.
 2. An eliminated round 1 player in such a game sees a rebuy banner on the game detail page during the rebuy window.
-3. Clicking rebuy → claim paid flips them back to `alive`, deletes their round 1 pick, and creates a second `paid` payment row; pot grows.
+3. Clicking rebuy → claim paid flips them back to `alive` (clearing `eliminatedRoundId` and `eliminatedReason`), creates a second `paid` payment row, and leaves their round 1 pick row intact as history. Pot grows.
 4. Missing the round 2 pick after a rebuy eliminates with `eliminatedReason = 'missed_rebuy_pick'`.
 5. Admin payment actions work correctly when users have multiple payment rows (no ambiguous lookups).
 6. Player claim flow is one click: "Claim paid" → `paid`. No admin confirm step.
