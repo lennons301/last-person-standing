@@ -20,45 +20,168 @@ const PL_TEAMS: Array<{
 	primaryColor: string
 	fplCode: number
 	strength: number // higher = stronger side, used to bias results
+	leaguePosition: number
 }> = [
-	{ name: 'Arsenal', shortName: 'ARS', primaryColor: '#EF0107', fplCode: 3, strength: 85 },
-	{ name: 'Aston Villa', shortName: 'AVL', primaryColor: '#670E36', fplCode: 7, strength: 72 },
-	{ name: 'Bournemouth', shortName: 'BOU', primaryColor: '#DA291C', fplCode: 91, strength: 65 },
-	{ name: 'Brentford', shortName: 'BRE', primaryColor: '#e30613', fplCode: 94, strength: 63 },
-	{ name: 'Brighton', shortName: 'BHA', primaryColor: '#0057B8', fplCode: 36, strength: 70 },
-	{ name: 'Burnley', shortName: 'BUR', primaryColor: '#6C1D45', fplCode: 90, strength: 50 },
-	{ name: 'Chelsea', shortName: 'CHE', primaryColor: '#034694', fplCode: 8, strength: 80 },
-	{ name: 'Crystal Palace', shortName: 'CRY', primaryColor: '#1B458F', fplCode: 31, strength: 62 },
-	{ name: 'Everton', shortName: 'EVE', primaryColor: '#003399', fplCode: 11, strength: 58 },
-	{ name: 'Fulham', shortName: 'FUL', primaryColor: '#000000', fplCode: 54, strength: 60 },
-	{ name: 'Leeds United', shortName: 'LEE', primaryColor: '#FFCD00', fplCode: 2, strength: 55 },
-	{ name: 'Liverpool', shortName: 'LIV', primaryColor: '#C8102E', fplCode: 14, strength: 88 },
-	{ name: 'Manchester City', shortName: 'MCI', primaryColor: '#6CABDD', fplCode: 43, strength: 86 },
+	{
+		name: 'Arsenal',
+		shortName: 'ARS',
+		primaryColor: '#EF0107',
+		fplCode: 3,
+		strength: 85,
+		leaguePosition: 2,
+	},
+	{
+		name: 'Aston Villa',
+		shortName: 'AVL',
+		primaryColor: '#670E36',
+		fplCode: 7,
+		strength: 72,
+		leaguePosition: 4,
+	},
+	{
+		name: 'Bournemouth',
+		shortName: 'BOU',
+		primaryColor: '#DA291C',
+		fplCode: 91,
+		strength: 65,
+		leaguePosition: 10,
+	},
+	{
+		name: 'Brentford',
+		shortName: 'BRE',
+		primaryColor: '#e30613',
+		fplCode: 94,
+		strength: 63,
+		leaguePosition: 9,
+	},
+	{
+		name: 'Brighton',
+		shortName: 'BHA',
+		primaryColor: '#0057B8',
+		fplCode: 36,
+		strength: 70,
+		leaguePosition: 6,
+	},
+	{
+		name: 'Burnley',
+		shortName: 'BUR',
+		primaryColor: '#6C1D45',
+		fplCode: 90,
+		strength: 50,
+		leaguePosition: 17,
+	},
+	{
+		name: 'Chelsea',
+		shortName: 'CHE',
+		primaryColor: '#034694',
+		fplCode: 8,
+		strength: 80,
+		leaguePosition: 3,
+	},
+	{
+		name: 'Crystal Palace',
+		shortName: 'CRY',
+		primaryColor: '#1B458F',
+		fplCode: 31,
+		strength: 62,
+		leaguePosition: 11,
+	},
+	{
+		name: 'Everton',
+		shortName: 'EVE',
+		primaryColor: '#003399',
+		fplCode: 11,
+		strength: 58,
+		leaguePosition: 14,
+	},
+	{
+		name: 'Fulham',
+		shortName: 'FUL',
+		primaryColor: '#000000',
+		fplCode: 54,
+		strength: 60,
+		leaguePosition: 8,
+	},
+	{
+		name: 'Leeds United',
+		shortName: 'LEE',
+		primaryColor: '#FFCD00',
+		fplCode: 2,
+		strength: 55,
+		leaguePosition: 16,
+	},
+	{
+		name: 'Liverpool',
+		shortName: 'LIV',
+		primaryColor: '#C8102E',
+		fplCode: 14,
+		strength: 88,
+		leaguePosition: 1,
+	},
+	{
+		name: 'Manchester City',
+		shortName: 'MCI',
+		primaryColor: '#6CABDD',
+		fplCode: 43,
+		strength: 86,
+		leaguePosition: 5,
+	},
 	{
 		name: 'Manchester United',
 		shortName: 'MUN',
 		primaryColor: '#DA291C',
 		fplCode: 1,
 		strength: 75,
+		leaguePosition: 7,
 	},
-	{ name: 'Newcastle United', shortName: 'NEW', primaryColor: '#241F20', fplCode: 4, strength: 76 },
+	{
+		name: 'Newcastle United',
+		shortName: 'NEW',
+		primaryColor: '#241F20',
+		fplCode: 4,
+		strength: 76,
+		leaguePosition: 12,
+	},
 	{
 		name: 'Nottingham Forest',
 		shortName: 'NFO',
 		primaryColor: '#DD0000',
 		fplCode: 17,
 		strength: 68,
+		leaguePosition: 13,
 	},
-	{ name: 'Sunderland', shortName: 'SUN', primaryColor: '#EB172B', fplCode: 56, strength: 48 },
+	{
+		name: 'Sunderland',
+		shortName: 'SUN',
+		primaryColor: '#EB172B',
+		fplCode: 56,
+		strength: 48,
+		leaguePosition: 19,
+	},
 	{
 		name: 'Tottenham Hotspur',
 		shortName: 'TOT',
 		primaryColor: '#132257',
 		fplCode: 6,
 		strength: 74,
+		leaguePosition: 15,
 	},
-	{ name: 'West Ham United', shortName: 'WHU', primaryColor: '#7A263A', fplCode: 21, strength: 64 },
-	{ name: 'Wolverhampton', shortName: 'WOL', primaryColor: '#FDB913', fplCode: 39, strength: 55 },
+	{
+		name: 'West Ham United',
+		shortName: 'WHU',
+		primaryColor: '#7A263A',
+		fplCode: 21,
+		strength: 64,
+		leaguePosition: 18,
+	},
+	{
+		name: 'Wolverhampton',
+		shortName: 'WOL',
+		primaryColor: '#FDB913',
+		fplCode: 39,
+		strength: 55,
+		leaguePosition: 20,
+	},
 ]
 
 function fplBadgeUrl(code: number): string {
@@ -73,6 +196,7 @@ const DEV_USERS = [
 	{ email: 'sarah@example.com', name: 'Sarah', password: 'password123' },
 	{ email: 'tom@example.com', name: 'Tom', password: 'password123' },
 	{ email: 'james@example.com', name: 'James', password: 'password123' },
+	{ email: 'rachel@example.com', name: 'Rachel', password: 'password123' },
 ]
 
 type RoundRow = typeof roundTable.$inferSelect
@@ -146,7 +270,7 @@ async function seed() {
 		.returning()
 	console.log(`Created competition: ${pl.name}`)
 
-	// --- Teams (with FPL badge URLs) ---
+	// --- Teams (with FPL badge URLs and league positions) ---
 	const teams = await db
 		.insert(teamTable)
 		.values(
@@ -156,6 +280,7 @@ async function seed() {
 				primaryColor: t.primaryColor,
 				badgeUrl: fplBadgeUrl(t.fplCode),
 				externalIds: { fpl: t.fplCode },
+				leaguePosition: t.leaguePosition,
 			})),
 		)
 		.returning()
@@ -332,6 +457,9 @@ async function seed() {
 		// Turbo-specific: whether to seed picks for all players (completed game) or
 		// leave most of them unsubmitted so the pick interface is testable
 		turboState?: 'live' | 'completed'
+		// Missed deadline scenario: skip inserting a pick for this player in a specific round
+		missedDeadlinePlayer?: string
+		missedDeadlineRound?: number
 	}
 
 	const gameSeeds: GameSeed[] = [
@@ -347,10 +475,13 @@ async function seed() {
 				'sarah@example.com',
 				'tom@example.com',
 				'james@example.com',
+				'rachel@example.com',
 			],
 			entryFee: '10.00',
 			creatorSubmittedCurrentPick: false,
 			plannedEliminations: { 'tom@example.com': 4, 'james@example.com': 2 },
+			missedDeadlinePlayer: 'rachel@example.com',
+			missedDeadlineRound: 3,
 		},
 		{
 			name: 'Work Classic',
@@ -473,9 +604,21 @@ async function seed() {
 				let eliminatedAt: number | null = null
 
 				const plannedElim = seed.plannedEliminations?.[email] ?? null
+				const isMissedDeadlinePlayer = email === seed.missedDeadlinePlayer
+				const missedDeadlineRound = seed.missedDeadlineRound ?? null
 
 				for (const r of completedRounds) {
 					if (eliminatedAt !== null) break
+
+					// Skip inserting a pick if this is the missed deadline player/round
+					if (
+						isMissedDeadlinePlayer &&
+						missedDeadlineRound !== null &&
+						r.number === missedDeadlineRound
+					) {
+						continue
+					}
+
 					const roundFixtures = fixturesByRound.get(r.id) ?? []
 					const available = roundFixtures.filter(
 						(f) => !usedTeamIds.has(f.homeTeamId) && !usedTeamIds.has(f.awayTeamId),
