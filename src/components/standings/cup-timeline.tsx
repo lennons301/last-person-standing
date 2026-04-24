@@ -1,6 +1,7 @@
 'use client'
 
 import { XCircle } from 'lucide-react'
+import { useLiveGame } from '@/components/live/use-live-game'
 import type { CupLadderData, CupLadderFixture } from '@/lib/game/cup-standings-queries'
 import { cn } from '@/lib/utils'
 
@@ -34,6 +35,11 @@ interface PlayerTimeline {
 }
 
 export function CupTimeline({ data }: CupTimelineProps) {
+	const { events } = useLiveGame()
+	const eliminatedGpIds = new Set(
+		events.settlements.filter((ev) => ev.result === 'settled-loss').map((ev) => ev.gamePlayerId),
+	)
+
 	// Build kickoff slots
 	const slotMap = new Map<string, KickoffSlot>()
 	for (const f of data.fixtures) {
@@ -166,7 +172,10 @@ export function CupTimeline({ data }: CupTimelineProps) {
 				{timelines.map((t) => (
 					<div
 						key={t.playerId}
-						className="grid gap-2 items-stretch"
+						className={cn(
+							'grid gap-2 items-stretch',
+							eliminatedGpIds.has(t.playerId) && 'opacity-45 transition-opacity duration-[400ms]',
+						)}
 						style={{
 							gridTemplateColumns: `180px repeat(${slots.length}, ${slotWidth})`,
 						}}

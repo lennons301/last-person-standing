@@ -1,5 +1,6 @@
 'use client'
 
+import { useLiveGame } from '@/components/live/use-live-game'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { cn } from '@/lib/utils'
 
@@ -7,7 +8,61 @@ interface CupGridProps {
 	data: CupStandingsData
 }
 
+const LIVE_RECENT_MS = 1500
+
+interface LiveRowMeta {
+	viewerGamePlayerId: string | undefined
+	viewerRowIsLive: boolean
+	eliminatedGpIds: Set<string>
+	recentGoalByFixture: Map<string, { side: 'home' | 'away' }>
+}
+
 export function CupGrid({ data }: CupGridProps) {
+	const liveCtx = useLiveGame()
+	const now = Date.now()
+
+	const recentGoalByFixture = new Map<string, { side: 'home' | 'away' }>()
+	for (const ev of liveCtx.events.goals) {
+		if (now - ev.observedAt <= LIVE_RECENT_MS) {
+			recentGoalByFixture.set(ev.fixtureId, { side: ev.side })
+		}
+	}
+
+	const eliminatedGpIds = new Set<string>()
+	for (const ev of liveCtx.events.settlements) {
+		if (ev.result !== 'settled-loss') continue
+		const p = liveCtx.payload?.players.find((pp) => pp.id === ev.gamePlayerId)
+		if (p && p.livesRemaining === 0) eliminatedGpIds.add(ev.gamePlayerId)
+	}
+
+	const viewerUserId = liveCtx.payload?.viewerUserId
+	const viewerGp = viewerUserId
+		? liveCtx.payload?.players.find((p) => p.userId === viewerUserId)
+		: undefined
+	const viewerPickFixtureId = viewerGp
+		? (liveCtx.payload?.picks.find((pk) => pk.gamePlayerId === viewerGp.id && pk.fixtureId)
+				?.fixtureId ?? undefined)
+		: undefined
+	const viewerFixtureStatus = viewerPickFixtureId
+		? liveCtx.payload?.fixtures.find((f) => f.id === viewerPickFixtureId)?.status
+		: undefined
+	const viewerRowIsLive = viewerFixtureStatus === 'live' || viewerFixtureStatus === 'halftime'
+
+	const liveMeta: LiveRowMeta = {
+		viewerGamePlayerId: viewerGp?.id,
+		viewerRowIsLive,
+		eliminatedGpIds,
+		recentGoalByFixture,
+	}
+
+	const pickFixtureByPlayer = new Map<string, Map<number, string>>()
+	for (const pk of liveCtx.payload?.picks ?? []) {
+		if (!pk.fixtureId || pk.confidenceRank == null) continue
+		const inner = pickFixtureByPlayer.get(pk.gamePlayerId) ?? new Map<number, string>()
+		inner.set(pk.confidenceRank, pk.fixtureId)
+		pickFixtureByPlayer.set(pk.gamePlayerId, inner)
+	}
+
 	const alive = data.players
 		.filter((p) => p.status !== 'eliminated')
 		.sort((a, b) => b.streak - a.streak || b.goals - a.goals)
@@ -38,6 +93,9 @@ export function CupGrid({ data }: CupGridProps) {
 						numberOfPicks={data.numberOfPicks}
 						maxLives={data.maxLives}
 						position={idx + 1}
+						roundNumber={data.roundNumber}
+						liveMeta={liveMeta}
+						pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
 					/>
 				))}
 				{out.length > 0 && (
@@ -52,6 +110,9 @@ export function CupGrid({ data }: CupGridProps) {
 								numberOfPicks={data.numberOfPicks}
 								maxLives={data.maxLives}
 								position={alive.length + idx + 1}
+								roundNumber={data.roundNumber}
+								liveMeta={liveMeta}
+								pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
 								isOut
 							/>
 						))}
@@ -91,19 +152,32 @@ function PlayerRow({
 	numberOfPicks,
 	maxLives,
 	position,
+	roundNumber,
+	liveMeta,
+	pickFixtureByRank,
 	isOut,
 }: {
 	player: CupStandingsData['players'][number]
 	numberOfPicks: number
 	maxLives: number
 	position: number
+	roundNumber: number
+	liveMeta: LiveRowMeta
+	pickFixtureByRank?: Map<number, string>
 	isOut?: boolean
 }) {
+	const isViewer = liveMeta.viewerGamePlayerId === player.id
+	const viewerLiveStyle = isViewer && liveMeta.viewerRowIsLive
+	const liveEliminated = liveMeta.eliminatedGpIds.has(player.id)
 	return (
 		<div
+			data-gpid={player.id}
 			className={cn(
 				'grid grid-cols-[24px_140px_80px_48px_48px_repeat(var(--picks),62px)] gap-1.5 px-1 py-1.5 items-center border-t border-border',
 				isOut && 'opacity-55',
+				viewerLiveStyle &&
+					'border-l-4 border-l-primary bg-gradient-to-r from-primary/10 to-transparent pl-2',
+				liveEliminated && 'opacity-45 transition-opacity duration-[400ms]',
 			)}
 			style={{ ['--picks' as string]: numberOfPicks }}
 		>
@@ -111,8 +185,14 @@ function PlayerRow({
 			<div className="flex items-center gap-2 min-w-0">
 				<Avatar name={player.name} />
 				<span className="text-sm font-semibold truncate">{player.name}</span>
+				{viewerLiveStyle && (
+					<span className="ml-0.5 rounded-sm bg-primary/15 px-1 py-0.5 text-[9px] font-bold uppercase text-primary animate-[pulse_1.4s_ease-in-out_infinite]">
+						LIVE
+					</span>
+				)}
 				{!player.hasSubmitted && <Badge tone="warn">NO PICKS</Badge>}
 				{isOut && <Badge tone="danger">OUT GW{player.eliminatedRoundNumber ?? '?'}</Badge>}
+				{!isOut && liveEliminated && <Badge tone="danger">OUT GW{roundNumber}</Badge>}
 			</div>
 			<LivesCell remaining={player.livesRemaining} max={maxLives} />
 			<div className="text-center font-bold">{player.streak || '—'}</div>
@@ -120,7 +200,10 @@ function PlayerRow({
 			{Array.from({ length: numberOfPicks }, (_, i) => {
 				const rank = i + 1
 				const pick = player.picks.find((p) => p.confidenceRank === rank)
-				return <GridCell key={rank} pick={pick} />
+				const fixtureId = pick?.fixtureId ?? pickFixtureByRank?.get(rank)
+				const recentGoal = fixtureId ? liveMeta.recentGoalByFixture.get(fixtureId) : undefined
+				const bump = recentGoal ? (recentGoal.side === pick?.pickedSide ? 'up' : 'down') : null
+				return <GridCell key={rank} pick={pick} bump={bump} />
 			})}
 		</div>
 	)
@@ -152,21 +235,31 @@ function LivesCell({ remaining, max }: { remaining: number; max: number }) {
 	)
 }
 
-function GridCell({ pick }: { pick?: CupStandingsData['players'][number]['picks'][number] }) {
+function GridCell({
+	pick,
+	bump,
+}: {
+	pick?: CupStandingsData['players'][number]['picks'][number]
+	bump?: 'up' | 'down' | null
+}) {
 	if (!pick) {
-		return <div className="h-9 w-14 rounded border border-dashed border-border bg-muted/40" />
+		return (
+			<div className="relative h-9 w-14 rounded border border-dashed border-border bg-muted/40">
+				{bump && <BumpBadge kind={bump} />}
+			</div>
+		)
 	}
 	if (pick.result === 'hidden') {
 		return (
-			<div className="h-9 w-14 rounded border border-dashed border-border bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">
-				🔒
+			<div className="relative h-9 w-14 rounded border border-dashed border-border bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">
+				🔒{bump && <BumpBadge kind={bump} />}
 			</div>
 		)
 	}
 	if (pick.result === 'restricted') {
 		return (
-			<div className="h-9 w-14 rounded border border-dashed border-border bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">
-				—
+			<div className="relative h-9 w-14 rounded border border-dashed border-border bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">
+				—{bump && <BumpBadge kind={bump} />}
 			</div>
 		)
 	}
@@ -202,7 +295,21 @@ function GridCell({ pick }: { pick?: CupStandingsData['players'][number]['picks'
 					-{pick.livesSpent}
 				</span>
 			)}
+			{bump && <BumpBadge kind={bump} />}
 		</div>
+	)
+}
+
+function BumpBadge({ kind }: { kind: 'up' | 'down' }) {
+	return (
+		<span
+			className={cn(
+				'absolute -top-2 -left-1.5 rounded-full px-1 py-0.5 text-[8px] font-extrabold leading-none text-white shadow animate-[pulse_1s_ease-in-out_2]',
+				kind === 'up' ? 'bg-emerald-600' : 'bg-red-600',
+			)}
+		>
+			{kind === 'up' ? '+1' : '-1'}
+		</span>
 	)
 }
 

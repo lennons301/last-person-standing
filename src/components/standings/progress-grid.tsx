@@ -2,10 +2,22 @@
 
 import { Eye, EyeOff, Share2, UsersRound } from 'lucide-react'
 import { useState } from 'react'
+import { useLiveGame } from '@/components/live/use-live-game'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { GridFilter } from './grid-filter'
+
+const LIVE_RECENT_MS = 1500
+
+interface ProgressLiveMeta {
+	viewerGamePlayerId: string | undefined
+	viewerRowIsLive: boolean
+	eliminatedGpIds: Set<string>
+	recentGoalByFixture: Map<string, { side: 'home' | 'away' }>
+	pickFixtureByPlayer: Map<string, string>
+	pickSideByPlayer: Map<string, 'home' | 'away' | null>
+}
 
 export interface GridRound {
 	id: string
@@ -62,6 +74,59 @@ export function ProgressGrid({
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
 	const [showOpponents, setShowOpponents] = useState(false)
 	const [hideEliminated, setHideEliminated] = useState(false)
+	const liveCtx = useLiveGame()
+
+	const liveMeta: ProgressLiveMeta = (() => {
+		const now = Date.now()
+		const recentGoalByFixture = new Map<string, { side: 'home' | 'away' }>()
+		for (const ev of liveCtx.events.goals) {
+			if (now - ev.observedAt <= LIVE_RECENT_MS) {
+				recentGoalByFixture.set(ev.fixtureId, { side: ev.side })
+			}
+		}
+		const eliminatedGpIds = new Set<string>()
+		for (const ev of liveCtx.events.settlements) {
+			if (ev.result !== 'settled-loss') continue
+			const p = liveCtx.payload?.players.find((pp) => pp.id === ev.gamePlayerId)
+			if (p && p.livesRemaining === 0) eliminatedGpIds.add(ev.gamePlayerId)
+		}
+		const viewerUserId = liveCtx.payload?.viewerUserId
+		const viewerGp = viewerUserId
+			? liveCtx.payload?.players.find((p) => p.userId === viewerUserId)
+			: undefined
+		const viewerPickFixtureId = viewerGp
+			? (liveCtx.payload?.picks.find((pk) => pk.gamePlayerId === viewerGp.id && pk.fixtureId)
+					?.fixtureId ?? undefined)
+			: undefined
+		const viewerFixtureStatus = viewerPickFixtureId
+			? liveCtx.payload?.fixtures.find((f) => f.id === viewerPickFixtureId)?.status
+			: undefined
+		const viewerRowIsLive = viewerFixtureStatus === 'live' || viewerFixtureStatus === 'halftime'
+
+		// Classic mode: one pick per player for the current round.
+		const pickFixtureByPlayer = new Map<string, string>()
+		const pickSideByPlayer = new Map<string, 'home' | 'away' | null>()
+		for (const pk of liveCtx.payload?.picks ?? []) {
+			if (!pk.fixtureId) continue
+			pickFixtureByPlayer.set(pk.gamePlayerId, pk.fixtureId)
+			const side: 'home' | 'away' | null =
+				pk.predictedResult === 'home_win'
+					? 'home'
+					: pk.predictedResult === 'away_win'
+						? 'away'
+						: null
+			pickSideByPlayer.set(pk.gamePlayerId, side)
+		}
+
+		return {
+			viewerGamePlayerId: viewerGp?.id,
+			viewerRowIsLive,
+			eliminatedGpIds,
+			recentGoalByFixture,
+			pickFixtureByPlayer,
+			pickSideByPlayer,
+		}
+	})()
 
 	const visibleRounds =
 		filter === 'all' ? rounds : filter === 'last5' ? rounds.slice(-5) : rounds.slice(-3)
@@ -144,46 +209,82 @@ export function ProgressGrid({
 							</tr>
 						</thead>
 						<tbody>
-							{visiblePlayers.map((player) => (
-								<tr
-									key={player.id}
-									className={cn(
-										'border-t border-border',
-										player.status === 'eliminated' && 'opacity-50',
-									)}
-								>
-									<td className="py-2 pr-4 font-medium whitespace-nowrap sticky left-0 bg-card z-10">
-										{player.name}
-									</td>
-									{visibleRounds.map((r) => {
-										const cell = player.cellsByRoundId[r.id] ?? { result: 'empty' }
-										return (
-											<td key={r.id} className="px-1 text-center align-middle">
-												<GridCellView
-													cell={cell}
-													roundNumber={r.number}
-													showOpponents={showOpponents}
-												/>
-											</td>
-										)
-									})}
-									<td className="pl-4 text-right">
-										{player.status === 'alive' ? (
-											<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-[var(--alive-bg)] text-[var(--alive)]">
-												alive
-											</span>
-										) : player.status === 'eliminated' ? (
-											<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-[var(--eliminated-bg)] text-[var(--eliminated)]">
-												GW{player.eliminatedRoundNumber}
-											</span>
-										) : (
-											<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-yellow-100 text-yellow-900">
-												won
-											</span>
+							{visiblePlayers.map((player) => {
+								const isViewer = liveMeta.viewerGamePlayerId === player.id
+								const viewerLiveStyle = isViewer && liveMeta.viewerRowIsLive
+								const liveEliminated = liveMeta.eliminatedGpIds.has(player.id)
+								const currentPickFixtureId = liveMeta.pickFixtureByPlayer.get(player.id)
+								const currentPickSide = liveMeta.pickSideByPlayer.get(player.id)
+								const recentGoal = currentPickFixtureId
+									? liveMeta.recentGoalByFixture.get(currentPickFixtureId)
+									: undefined
+								const rowBump = recentGoal
+									? currentPickSide && recentGoal.side === currentPickSide
+										? 'up'
+										: 'down'
+									: null
+								// The live pick almost always maps to the last visible round.
+								const bumpRoundId = visibleRounds.at(-1)?.id
+								return (
+									<tr
+										key={player.id}
+										className={cn(
+											'border-t border-border',
+											player.status === 'eliminated' && 'opacity-50',
+											viewerLiveStyle && 'bg-gradient-to-r from-primary/10 to-transparent',
+											liveEliminated && 'opacity-45 transition-opacity duration-[400ms]',
 										)}
-									</td>
-								</tr>
-							))}
+									>
+										<td
+											className={cn(
+												'py-2 pr-4 font-medium whitespace-nowrap sticky left-0 bg-card z-10',
+												viewerLiveStyle && 'border-l-4 border-l-primary pl-2',
+											)}
+										>
+											{player.name}
+											{viewerLiveStyle && (
+												<span className="ml-1.5 rounded-sm bg-primary/15 px-1 py-0.5 text-[9px] font-bold uppercase text-primary animate-[pulse_1.4s_ease-in-out_infinite]">
+													LIVE
+												</span>
+											)}
+											{liveEliminated && (
+												<span className="ml-1.5 rounded-sm border border-[#ef4444] px-1 py-0.5 text-[9px] font-extrabold uppercase text-[#ef4444]">
+													OUT
+												</span>
+											)}
+										</td>
+										{visibleRounds.map((r) => {
+											const cell = player.cellsByRoundId[r.id] ?? { result: 'empty' }
+											const bump = rowBump && r.id === bumpRoundId ? rowBump : null
+											return (
+												<td key={r.id} className="px-1 text-center align-middle">
+													<GridCellView
+														cell={cell}
+														roundNumber={r.number}
+														showOpponents={showOpponents}
+														bump={bump}
+													/>
+												</td>
+											)
+										})}
+										<td className="pl-4 text-right">
+											{player.status === 'alive' ? (
+												<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-[var(--alive-bg)] text-[var(--alive)]">
+													alive
+												</span>
+											) : player.status === 'eliminated' ? (
+												<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-[var(--eliminated-bg)] text-[var(--eliminated)]">
+													GW{player.eliminatedRoundNumber}
+												</span>
+											) : (
+												<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-yellow-100 text-yellow-900">
+													won
+												</span>
+											)}
+										</td>
+									</tr>
+								)
+							})}
 						</tbody>
 					</table>
 				</div>
@@ -196,21 +297,29 @@ function GridCellView({
 	cell,
 	roundNumber,
 	showOpponents,
+	bump,
 }: {
 	cell: GridCell
 	roundNumber: number
 	showOpponents: boolean
+	bump?: 'up' | 'down' | null
 }) {
 	const width = showOpponents ? 'w-20' : 'w-12'
 	const height = 'h-9'
 
 	if (cell.result === 'empty') {
-		return <span className={cn('inline-block', width, height)} />
+		return (
+			<span className={cn('relative inline-block', width, height)}>
+				{bump && <BumpBadge kind={bump} />}
+			</span>
+		)
 	}
 	if (cell.result === 'skull') {
 		return (
-			<span className={cn('inline-flex items-center justify-center text-lg', width, height)}>
-				💀
+			<span
+				className={cn('relative inline-flex items-center justify-center text-lg', width, height)}
+			>
+				💀{bump && <BumpBadge kind={bump} />}
 			</span>
 		)
 	}
@@ -220,13 +329,14 @@ function GridCellView({
 				<TooltipTrigger asChild>
 					<span
 						className={cn(
-							'inline-flex flex-col items-center justify-center rounded bg-[var(--draw-bg)] text-[var(--draw)] font-bold leading-tight cursor-help',
+							'relative inline-flex flex-col items-center justify-center rounded bg-[var(--draw-bg)] text-[var(--draw)] font-bold leading-tight cursor-help',
 							width,
 							height,
 						)}
 					>
 						<span className="text-sm">?</span>
 						{showOpponents && <span className="text-[0.5rem] font-medium">No pick</span>}
+						{bump && <BumpBadge kind={bump} />}
 					</span>
 				</TooltipTrigger>
 				<TooltipContent>
@@ -241,13 +351,14 @@ function GridCellView({
 				<TooltipTrigger asChild>
 					<span
 						className={cn(
-							'inline-flex flex-col items-center justify-center rounded border border-dashed border-border bg-muted/40 text-muted-foreground leading-tight cursor-help',
+							'relative inline-flex flex-col items-center justify-center rounded border border-dashed border-border bg-muted/40 text-muted-foreground leading-tight cursor-help',
 							width,
 							height,
 						)}
 					>
 						<span className="text-xs">🔒</span>
 						{showOpponents && <span className="text-[0.5rem] font-medium">Locked</span>}
+						{bump && <BumpBadge kind={bump} />}
 					</span>
 				</TooltipTrigger>
 				<TooltipContent>
@@ -298,7 +409,7 @@ function GridCellView({
 			<TooltipTrigger asChild>
 				<span
 					className={cn(
-						'inline-flex flex-col items-center justify-center rounded text-[0.7rem] font-bold cursor-help leading-tight',
+						'relative inline-flex flex-col items-center justify-center rounded text-[0.7rem] font-bold cursor-help leading-tight',
 						width,
 						height,
 						colour,
@@ -308,11 +419,25 @@ function GridCellView({
 					{showOpponents && opponentLabel && (
 						<span className="text-[0.55rem] font-normal opacity-80">{opponentLabel}</span>
 					)}
+					{bump && <BumpBadge kind={bump} />}
 				</span>
 			</TooltipTrigger>
 			<TooltipContent>
 				<p className="text-xs">{tooltipLabel}</p>
 			</TooltipContent>
 		</Tooltip>
+	)
+}
+
+function BumpBadge({ kind }: { kind: 'up' | 'down' }) {
+	return (
+		<span
+			className={cn(
+				'absolute -top-2 -left-1.5 rounded-full px-1 py-0.5 text-[8px] font-extrabold leading-none text-white shadow animate-[pulse_1s_ease-in-out_2]',
+				kind === 'up' ? 'bg-emerald-600' : 'bg-red-600',
+			)}
+		>
+			{kind === 'up' ? '+1' : '-1'}
+		</span>
 	)
 }
