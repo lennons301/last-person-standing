@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { syncCompetition } from '@/lib/game/bootstrap-competitions'
+import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { competition } from '@/lib/schema/competition'
 
 export async function POST(request: Request) {
@@ -17,9 +18,25 @@ export async function POST(request: Request) {
 		where: eq(competition.status, 'active'),
 	})
 	const results = []
+	const deadlineLockedRoundIds: string[] = []
 	for (const c of comps) {
 		const summary = await syncCompetition(c, { footballDataApiKey: apiKey })
-		results.push({ competitionId: c.id, ...summary })
+		results.push({
+			competitionId: c.id,
+			rounds: summary.rounds,
+			fixtures: summary.fixtures,
+		})
+		if (summary.transitionedRoundIds?.length) {
+			deadlineLockedRoundIds.push(...summary.transitionedRoundIds)
+		}
 	}
-	return NextResponse.json({ competitions: results })
+	let deadlineLock: {
+		autoPicksInserted: number
+		playersEliminated: number
+		paymentsRefunded: number
+	} | null = null
+	if (deadlineLockedRoundIds.length > 0) {
+		deadlineLock = await processDeadlineLock(deadlineLockedRoundIds)
+	}
+	return NextResponse.json({ competitions: results, deadlineLock })
 }

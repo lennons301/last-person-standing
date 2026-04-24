@@ -61,9 +61,9 @@ export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<voi
 export async function syncCompetition(
 	comp: CompetitionRow,
 	opts: BootstrapOptions,
-): Promise<{ rounds: number; fixtures: number }> {
+): Promise<{ rounds: number; fixtures: number; transitionedRoundIds: string[] }> {
 	const adapter = adapterFor(comp, opts)
-	if (!adapter) return { rounds: 0, fixtures: 0 }
+	if (!adapter) return { rounds: 0, fixtures: 0, transitionedRoundIds: [] }
 
 	const key = comp.dataSource === 'fpl' ? 'fpl' : 'football_data'
 	const adapterTeams = await adapter.fetchTeams()
@@ -107,6 +107,7 @@ export async function syncCompetition(
 
 	const adapterRounds = await adapter.fetchRounds()
 	let totalFixtures = 0
+	const transitionedRoundIds: string[] = []
 	for (const ar of adapterRounds) {
 		const existingRound = await db.query.round.findFirst({
 			where: and(eq(round.competitionId, comp.id), eq(round.number, ar.number)),
@@ -143,14 +144,17 @@ export async function syncCompetition(
 			roundId = created.id
 		}
 
-		if (transitioningToOpen && ar.deadline) {
-			const plans = await db.query.plannedPick.findMany({
-				where: eq(plannedPick.roundId, roundId),
-			})
-			const autoPlans = plans.filter((p) => p.autoSubmit)
-			const notBefore = new Date(ar.deadline.getTime() - AUTO_SUBMIT_LEAD_MS)
-			for (const p of autoPlans) {
-				await enqueueAutoSubmit(p.gamePlayerId, p.roundId, p.teamId, notBefore)
+		if (transitioningToOpen) {
+			transitionedRoundIds.push(roundId)
+			if (ar.deadline) {
+				const plans = await db.query.plannedPick.findMany({
+					where: eq(plannedPick.roundId, roundId),
+				})
+				const autoPlans = plans.filter((p) => p.autoSubmit)
+				const notBefore = new Date(ar.deadline.getTime() - AUTO_SUBMIT_LEAD_MS)
+				for (const p of autoPlans) {
+					await enqueueAutoSubmit(p.gamePlayerId, p.roundId, p.teamId, notBefore)
+				}
 			}
 		}
 
@@ -196,7 +200,7 @@ export async function syncCompetition(
 		}
 	}
 
-	return { rounds: adapterRounds.length, fixtures: totalFixtures }
+	return { rounds: adapterRounds.length, fixtures: totalFixtures, transitionedRoundIds }
 }
 
 export async function applyPotAssignments(competitionId: string): Promise<void> {
