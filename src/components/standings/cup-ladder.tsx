@@ -1,6 +1,7 @@
 'use client'
 
 import { AlertTriangle, CheckCircle2, Flame, Target, Zap } from 'lucide-react'
+import { useLiveGame } from '@/components/live/use-live-game'
 import { HeartIcon } from '@/components/picks/heart-icon'
 import { PlusNBadge } from '@/components/picks/plus-n-badge'
 import { TeamBadge } from '@/components/picks/team-badge'
@@ -11,13 +12,32 @@ import type {
 	CupLadderFixture,
 	CupStandingsPlayer,
 } from '@/lib/game/cup-standings-queries'
+import type { LiveFixture, LivePayload } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 
 interface CupLadderProps {
 	data: CupLadderData
+	live?: LivePayload
 }
 
+const LIVE_FLASH_MS = 1500
+
 export function CupLadder({ data }: CupLadderProps) {
+	const { payload, events } = useLiveGame()
+	const now = Date.now()
+
+	const liveFixtureById = new Map<string, LiveFixture>()
+	for (const f of payload?.fixtures ?? []) {
+		liveFixtureById.set(f.id, f)
+	}
+
+	const recentGoalByFixture = new Map<string, 'home' | 'away'>()
+	for (const ev of events.goals) {
+		if (now - ev.observedAt <= LIVE_FLASH_MS) {
+			recentGoalByFixture.set(ev.fixtureId, ev.side)
+		}
+	}
+
 	const played = data.fixtures.filter((f) => f.actualOutcome != null)
 	const unplayed = data.fixtures.filter((f) => f.actualOutcome == null)
 	const top3 = [...data.players]
@@ -36,7 +56,12 @@ export function CupLadder({ data }: CupLadderProps) {
 					</h3>
 					<div className="space-y-2">
 						{unplayed.map((f) => (
-							<CupFixtureCard key={f.id} fixture={f} />
+							<CupFixtureCard
+								key={f.id}
+								fixture={f}
+								liveFixture={liveFixtureById.get(f.id)}
+								recentGoalSide={recentGoalByFixture.get(f.id)}
+							/>
 						))}
 					</div>
 				</section>
@@ -49,7 +74,12 @@ export function CupLadder({ data }: CupLadderProps) {
 					</h3>
 					<div className="space-y-2">
 						{played.map((f) => (
-							<CupFixtureCard key={f.id} fixture={f} />
+							<CupFixtureCard
+								key={f.id}
+								fixture={f}
+								liveFixture={liveFixtureById.get(f.id)}
+								recentGoalSide={recentGoalByFixture.get(f.id)}
+							/>
 						))}
 					</div>
 				</section>
@@ -111,18 +141,30 @@ function Podium({ players, maxLives }: { players: CupStandingsPlayer[]; maxLives
 	)
 }
 
-function CupFixtureCard({ fixture }: { fixture: CupLadderFixture }) {
+function CupFixtureCard({
+	fixture,
+	liveFixture,
+	recentGoalSide,
+}: {
+	fixture: CupLadderFixture
+	liveFixture?: LiveFixture
+	recentGoalSide?: 'home' | 'away'
+}) {
 	const isPlayed = fixture.actualOutcome != null
-	const score =
-		fixture.homeScore != null && fixture.awayScore != null
-			? `${fixture.homeScore}–${fixture.awayScore}`
-			: null
+	const liveStatus = liveFixture?.status
+	const liveInProgress = liveStatus === 'live' || liveStatus === 'halftime'
+	// Override stored scores with live values when we have them (covers pre-settlement).
+	const displayHome = liveFixture?.homeScore != null ? liveFixture.homeScore : fixture.homeScore
+	const displayAway = liveFixture?.awayScore != null ? liveFixture.awayScore : fixture.awayScore
+	const score = displayHome != null && displayAway != null ? `${displayHome}–${displayAway}` : null
 
 	return (
 		<div
 			className={cn(
-				'rounded-lg border bg-card overflow-hidden',
+				'rounded-lg border bg-card overflow-hidden transition-shadow duration-300',
 				fixture.crucial && 'border-[var(--draw)] shadow-[0_0_0_1px_var(--draw)]',
+				liveInProgress && 'border-primary/60 shadow-[0_0_0_1px_var(--primary,#2563eb)]',
+				recentGoalSide && 'ring-2 ring-emerald-400 animate-[pulse_0.9s_ease-in-out_2]',
 			)}
 		>
 			{fixture.crucial && (
@@ -151,8 +193,21 @@ function CupFixtureCard({ fixture }: { fixture: CupLadderFixture }) {
 					{score ? (
 						<>
 							<span className="font-display font-bold text-lg leading-none">{score}</span>
-							<span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground mt-1">
-								{outcomeLabel(fixture.actualOutcome as 'home_win' | 'draw' | 'away_win')}
+							<span
+								className={cn(
+									'text-[0.65rem] font-semibold uppercase tracking-wider mt-1',
+									liveInProgress
+										? 'text-primary animate-[pulse_1.4s_ease-in-out_infinite]'
+										: 'text-muted-foreground',
+								)}
+							>
+								{liveInProgress
+									? liveStatus === 'halftime'
+										? 'HT'
+										: 'LIVE'
+									: fixture.actualOutcome
+										? outcomeLabel(fixture.actualOutcome as 'home_win' | 'draw' | 'away_win')
+										: ''}
 							</span>
 						</>
 					) : (
