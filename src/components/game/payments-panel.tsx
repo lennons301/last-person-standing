@@ -25,7 +25,6 @@ interface PaymentsPanelProps {
 }
 
 export function PaymentsPanel(props: PaymentsPanelProps) {
-	const claimed = props.payments.filter((p) => p.status === 'claimed')
 	const all = props.payments
 	const unpaidCount = all.filter((p) => p.status === 'pending').length
 
@@ -56,9 +55,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 			<div className="flex items-start justify-between">
 				<div>
 					<h2 className="font-display text-lg font-semibold">Payments</h2>
-					<div className="text-[11px] text-muted-foreground">
-						{claimed.length} of {all.length} awaiting confirmation · {unpaidCount} unpaid
-					</div>
+					<div className="text-[11px] text-muted-foreground">{unpaidCount} unpaid</div>
 				</div>
 				<div className="text-right">
 					<div className="text-[10px] uppercase text-muted-foreground">Received total</div>
@@ -70,39 +67,6 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 					)}
 				</div>
 			</div>
-
-			{claimed.length > 0 && (
-				<div>
-					<div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
-						Needs your attention ({claimed.length})
-					</div>
-					{claimed.map((p) => (
-						<Row
-							key={`${p.userId}-claimed`}
-							p={p}
-							highlight
-							actions={
-								<>
-									<button
-										type="button"
-										onClick={() => callAction(p.userId, 'confirm')}
-										className="rounded bg-foreground px-3 py-1.5 text-xs font-semibold text-background"
-									>
-										✓ Confirm
-									</button>
-									<button
-										type="button"
-										onClick={() => callAction(p.userId, 'reject')}
-										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
-									>
-										Reject
-									</button>
-								</>
-							}
-						/>
-					))}
-				</div>
-			)}
 
 			<div>
 				<div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">

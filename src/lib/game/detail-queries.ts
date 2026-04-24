@@ -94,6 +94,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 	)
 	const myPayment = myPaymentRows[0]
 		? {
+				id: myPaymentRows[0].id,
 				status: myPaymentRows[0].status as 'pending' | 'claimed' | 'paid' | 'refunded',
 				amount: myPaymentRows[0].amount,
 			}

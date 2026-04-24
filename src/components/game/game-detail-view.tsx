@@ -34,7 +34,7 @@ interface GameDetailViewProps {
 		inviteCode: string
 		creatorName: string
 		isAdmin: boolean
-		myPayment: { status: PaymentStatus; amount: string } | null
+		myPayment: { id: string; status: PaymentStatus; amount: string } | null
 		otherPayments: Array<{ userName: string; status: PaymentStatus; isRebuy: boolean }>
 		adminPayments: AdminPayment[] | undefined
 		myCurrentRoundPick: {
@@ -104,6 +104,7 @@ export function GameDetailView({
 					<div className="mb-4">
 						<MyPaymentStrip
 							gameId={game.id}
+							paymentId={game.myPayment.id}
 							status={game.myPayment.status}
 							amount={game.myPayment.amount}
 							creatorName={game.creatorName}

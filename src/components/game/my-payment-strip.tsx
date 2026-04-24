@@ -6,6 +6,7 @@ import { type PaymentStatus, PaymentStatusChip } from './payment-status-chip'
 
 interface MyPaymentStripProps {
 	gameId: string
+	paymentId: string
 	status: PaymentStatus
 	amount: string
 	creatorName: string
@@ -14,6 +15,7 @@ interface MyPaymentStripProps {
 
 export function MyPaymentStrip({
 	gameId,
+	paymentId,
 	status,
 	amount,
 	creatorName,
@@ -26,9 +28,11 @@ export function MyPaymentStrip({
 		try {
 			const res = await fetch(`/api/games/${gameId}/payments/claim`, {
 				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ paymentId }),
 			})
 			if (!res.ok) throw new Error(String(res.status))
-			toast.success('Marked as paid — waiting for admin confirmation')
+			toast.success('Payment marked as paid')
 			onClaimed?.()
 		} catch {
 			toast.error('Failed to mark as paid')
