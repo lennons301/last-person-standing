@@ -1,6 +1,6 @@
 'use client'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import type { GoalEvent, LivePick } from '@/lib/live/types'
+import type { LivePick } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 import { useLiveGame } from './use-live-game'
 
