@@ -1,6 +1,7 @@
 import { verifySignatureAppRouter } from '@upstash/qstash/nextjs'
 import { NextResponse } from 'next/server'
 import type { QStashJob } from '@/lib/data/qstash'
+import { submitPlannedPick } from '@/lib/game/auto-submit'
 import { writeEvent } from '@/lib/game/events'
 import { processGameRound } from '@/lib/game/process-round'
 
@@ -17,6 +18,10 @@ async function handler(request: Request): Promise<Response> {
 				type: 'deadline_approaching',
 				payload: { roundId: body.roundId, window: body.window },
 			})
+			return NextResponse.json({ ok: true })
+		}
+		case 'auto_submit': {
+			await submitPlannedPick(body.gamePlayerId, body.roundId, body.teamId)
 			return NextResponse.json({ ok: true })
 		}
 		default:

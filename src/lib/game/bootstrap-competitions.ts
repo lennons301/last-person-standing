@@ -1,14 +1,19 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter } from '@/lib/data/fpl'
+import { enqueueAutoSubmit } from '@/lib/data/qstash'
 import type { CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
 import { competition, fixture, round, team } from '@/lib/schema/competition'
+import { plannedPick } from '@/lib/schema/game'
 
 export interface BootstrapOptions {
 	footballDataApiKey?: string
 }
+
+const OPEN_WINDOW_MS = 48 * 3600 * 1000
+const AUTO_SUBMIT_LEAD_MS = 60_000
 
 type CompetitionRow = typeof competition.$inferSelect
 
@@ -90,7 +95,14 @@ export async function syncCompetition(
 		const existingRound = await db.query.round.findFirst({
 			where: and(eq(round.competitionId, comp.id), eq(round.number, ar.number)),
 		})
+		const newStatus: 'upcoming' | 'open' | 'active' | 'completed' = ar.finished
+			? 'completed'
+			: ar.deadline && ar.deadline.getTime() - Date.now() < OPEN_WINDOW_MS
+				? 'open'
+				: (existingRound?.status ?? 'upcoming')
 		let roundId: string
+		const transitioningToOpen =
+			!!existingRound && existingRound.status !== 'open' && newStatus === 'open'
 		if (existingRound) {
 			roundId = existingRound.id
 			await db
@@ -98,7 +110,7 @@ export async function syncCompetition(
 				.set({
 					name: ar.name,
 					deadline: ar.deadline,
-					status: ar.finished ? 'completed' : existingRound.status,
+					status: newStatus,
 				})
 				.where(eq(round.id, existingRound.id))
 		} else {
@@ -109,10 +121,21 @@ export async function syncCompetition(
 					number: ar.number,
 					name: ar.name,
 					deadline: ar.deadline,
-					status: ar.finished ? 'completed' : 'upcoming',
+					status: newStatus,
 				})
 				.returning()
 			roundId = created.id
+		}
+
+		if (transitioningToOpen && ar.deadline) {
+			const plans = await db.query.plannedPick.findMany({
+				where: eq(plannedPick.roundId, roundId),
+			})
+			const autoPlans = plans.filter((p) => p.autoSubmit)
+			const notBefore = new Date(ar.deadline.getTime() - AUTO_SUBMIT_LEAD_MS)
+			for (const p of autoPlans) {
+				await enqueueAutoSubmit(p.gamePlayerId, p.roundId, p.teamId, notBefore)
+			}
 		}
 
 		for (const af of ar.fixtures) {

@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { validateWcClassicPick, wcRoundStage } from '@/lib/game-logic/wc-classic'
 import { validateClassicPick, validateTurboPicks } from '@/lib/picks/validate'
 import { round } from '@/lib/schema/competition'
@@ -42,10 +43,10 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		return NextResponse.json({ error: 'Not a member of this game' }, { status: 403 })
 	}
 
-	// Get round
+	// Get round (with team relations so cup-mode validation can inspect tiers)
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
-		with: { fixtures: true },
+		with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
 	})
 	if (!roundData) {
 		return NextResponse.json({ error: 'Round not found' }, { status: 404 })
@@ -158,6 +159,35 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
 	if (!validation.valid) {
 		return NextResponse.json({ error: validation.reason }, { status: 400 })
+	}
+
+	// Cup mode: reject submissions that include any restricted pick (picking a team
+	// more than 1 tier below its opponent). The UI already hides these, but the API
+	// must enforce it defensively.
+	if (gameData.gameMode === 'cup') {
+		for (const entry of pickEntries as Array<{
+			fixtureId: string
+			predictedResult: string
+		}>) {
+			const fx = roundData.fixtures.find((f) => f.id === entry.fixtureId)
+			if (!fx) continue
+			if (entry.predictedResult !== 'home_win' && entry.predictedResult !== 'away_win') continue
+			const tierDiff = computeTierDifference(fx.homeTeam, fx.awayTeam, gameData.competition.type)
+			// A positive tierDiff means the home team is in a worse (higher-pot) tier.
+			// Picking the home side when tierDiff > 1 means picking a team > 1 tier below;
+			// picking the away side when tierDiff < -1 is the same case on the other side.
+			const tierFromPicked = entry.predictedResult === 'home_win' ? tierDiff : -tierDiff
+			if (tierFromPicked > 1) {
+				return NextResponse.json(
+					{
+						error: 'restricted',
+						fixtureId: entry.fixtureId,
+						predictedResult: entry.predictedResult,
+					},
+					{ status: 400 },
+				)
+			}
+		}
 	}
 
 	// Delete existing picks for this round, then insert new ones

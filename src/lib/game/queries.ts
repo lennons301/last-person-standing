@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { calculatePot } from '@/lib/game-logic/prizes'
+import { calculatePot, type PotBreakdown } from '@/lib/game-logic/prizes'
 import { gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -12,7 +12,7 @@ export interface DashboardGame {
 	competition: string
 	playerCount: number
 	aliveCount: number
-	pot: string
+	pot: PotBreakdown
 	entryFee: string | null
 	myStatus: 'alive' | 'eliminated' | 'winner'
 	isAdmin: boolean
@@ -42,7 +42,12 @@ export async function getMyGames(userId: string): Promise<DashboardGame[]> {
 	for (const membership of memberships) {
 		const g = membership.game
 		const aliveCount = g.players.filter((p) => p.status === 'alive').length
-		const pot = calculatePot(g.entryFee, g.players.length)
+
+		// Load payments for this game once and use them for pot + unpaidCount.
+		const payments = await db.query.payment.findMany({
+			where: eq(payment.gameId, g.id),
+		})
+		const pot = calculatePot(payments)
 
 		let myPickSubmitted = false
 		if (g.currentRoundId) {
@@ -59,9 +64,6 @@ export async function getMyGames(userId: string): Promise<DashboardGame[]> {
 		let unpaidCount = 0
 		const winnerName: string | null = null
 		if (g.createdBy === userId) {
-			const payments = await db.query.payment.findMany({
-				where: eq(payment.gameId, g.id),
-			})
 			unpaidCount = payments.filter((p) => p.status !== 'paid').length
 		}
 

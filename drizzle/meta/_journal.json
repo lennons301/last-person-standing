@@ -8,6 +8,13 @@
       "when": 1776196064419,
       "tag": "0000_military_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776976690339,
+      "tag": "0001_mute_nova",
+      "breakpoints": true
     }
   ]
 }

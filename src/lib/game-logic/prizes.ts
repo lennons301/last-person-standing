@@ -1,6 +1,26 @@
-export function calculatePot(entryFee: string | null, playerCount: number): string {
-	if (!entryFee) return '0.00'
-	return (Number.parseFloat(entryFee) * playerCount).toFixed(2)
+export interface PaymentLike {
+	amount: string
+	status: string
+}
+
+export interface PotBreakdown {
+	confirmed: string
+	pending: string
+	total: string
+}
+
+export function calculatePot(payments: PaymentLike[]): PotBreakdown {
+	let paid = 0
+	let claimed = 0
+	for (const p of payments) {
+		if (p.status === 'paid') paid += Number.parseFloat(p.amount)
+		else if (p.status === 'claimed') claimed += Number.parseFloat(p.amount)
+	}
+	return {
+		confirmed: paid.toFixed(2),
+		pending: claimed.toFixed(2),
+		total: (paid + claimed).toFixed(2),
+	}
 }
 
 export interface PayoutEntry {

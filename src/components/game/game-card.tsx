@@ -33,7 +33,7 @@ export function GameCard({ game }: GameCardProps) {
 					<span>
 						{game.playerCount} players · {game.aliveCount} alive
 					</span>
-					<span className="font-display font-semibold text-foreground">£{game.pot} pot</span>
+					<span className="font-display font-semibold text-foreground">£{game.pot.total} pot</span>
 				</div>
 
 				{!isCompleted && !isEliminated && (

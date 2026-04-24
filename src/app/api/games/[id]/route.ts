@@ -34,7 +34,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 		where: eq(payment.gameId, id),
 	})
 
-	const pot = calculatePot(gameData.entryFee, gameData.players.length)
+	const pot = calculatePot(payments)
 
 	return NextResponse.json({
 		...gameData,

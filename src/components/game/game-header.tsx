@@ -2,12 +2,15 @@
 
 import { Share2, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import type { PotBreakdown } from '@/lib/game-logic/prizes'
 
 interface GameHeaderProps {
 	name: string
 	mode: string
 	competition: string
-	pot: string
+	potBreakdown: PotBreakdown
+	target: string
+	unpaid: string
 	entryFee: string | null
 	playerCount: number
 	aliveCount: number
@@ -20,13 +23,18 @@ export function GameHeader({
 	name,
 	mode,
 	competition,
-	pot,
+	potBreakdown,
+	target,
+	unpaid,
 	entryFee,
 	playerCount,
 	aliveCount,
 	inviteCode,
 	onShare,
 }: GameHeaderProps) {
+	const hasPending = potBreakdown.pending !== '0.00'
+	const hasUnpaid = unpaid !== '0.00'
+
 	return (
 		<div className="mb-6 bg-card border border-border rounded-xl overflow-hidden">
 			<div className="p-5 flex flex-wrap items-start justify-between gap-4">
@@ -46,11 +54,18 @@ export function GameHeader({
 				<div className="flex items-center gap-3">
 					<div className="text-right">
 						<div className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold">
-							Pot
+							Pot (confirmed)
 						</div>
-						<div className="font-display text-3xl md:text-4xl font-bold leading-none">£{pot}</div>
+						<div className="font-display text-3xl md:text-4xl font-bold leading-none">
+							£{potBreakdown.confirmed}
+						</div>
+						<div className="text-[0.7rem] text-muted-foreground mt-1">
+							{hasPending && <span>£{potBreakdown.pending} awaiting confirmation · </span>}
+							{hasUnpaid && <span>£{unpaid} unpaid · </span>}
+							<span>£{target} target</span>
+						</div>
 						{entryFee && (
-							<div className="text-[0.7rem] text-muted-foreground mt-1">£{entryFee} entry</div>
+							<div className="text-[0.65rem] text-muted-foreground mt-0.5">£{entryFee} entry</div>
 						)}
 					</div>
 				</div>

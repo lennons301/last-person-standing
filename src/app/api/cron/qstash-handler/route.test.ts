@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { verifyMock, processGameRoundMock, writeEventMock } = vi.hoisted(() => ({
-	verifyMock: vi.fn(),
-	processGameRoundMock: vi.fn().mockResolvedValue({ processed: true }),
-	writeEventMock: vi.fn().mockResolvedValue(undefined),
-}))
+const { verifyMock, processGameRoundMock, writeEventMock, submitPlannedPickMock } = vi.hoisted(
+	() => ({
+		verifyMock: vi.fn(),
+		processGameRoundMock: vi.fn().mockResolvedValue({ processed: true }),
+		writeEventMock: vi.fn().mockResolvedValue(undefined),
+		submitPlannedPickMock: vi.fn().mockResolvedValue({ submitted: true }),
+	}),
+)
 
 vi.mock('@upstash/qstash/nextjs', () => ({
 	verifySignatureAppRouter: (fn: unknown) => fn,
@@ -14,6 +17,8 @@ vi.mock('@upstash/qstash/nextjs', () => ({
 vi.mock('@/lib/game/process-round', () => ({ processGameRound: processGameRoundMock }))
 
 vi.mock('@/lib/game/events', () => ({ writeEvent: writeEventMock }))
+
+vi.mock('@/lib/game/auto-submit', () => ({ submitPlannedPick: submitPlannedPickMock }))
 
 import { POST } from './route'
 
@@ -46,6 +51,14 @@ describe('qstash-handler', () => {
 			type: 'deadline_approaching',
 			payload: { roundId: 'r', window: '24h' },
 		})
+	})
+
+	it('dispatches auto_submit jobs', async () => {
+		const res = await POST(
+			req({ type: 'auto_submit', gamePlayerId: 'gp', roundId: 'r', teamId: 't' }),
+		)
+		expect(res.status).toBe(200)
+		expect(submitPlannedPickMock).toHaveBeenCalledWith('gp', 'r', 't')
 	})
 
 	it('rejects unknown job types', async () => {

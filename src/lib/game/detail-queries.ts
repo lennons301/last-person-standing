@@ -3,9 +3,18 @@ import type { ClassicPickFixture } from '@/components/picks/classic-pick'
 import type { FormResult } from '@/components/picks/form-dots'
 import type { GridCell, GridPlayer, GridRound } from '@/components/standings/progress-grid'
 import { db } from '@/lib/db'
+import {
+	buildChainSlots,
+	buildPlannerRounds,
+	type ChainPastPickRow,
+	type ChainPlannedPickRow,
+	type ChainRoundRow,
+	type FutureRoundRow,
+} from '@/lib/game/classic-planner-view'
 import { calculatePot } from '@/lib/game-logic/prizes'
-import { fixture, round } from '@/lib/schema/competition'
-import { game, pick } from '@/lib/schema/game'
+import { fixture, round, team } from '@/lib/schema/competition'
+import { game, pick, plannedPick } from '@/lib/schema/game'
+import { payment } from '@/lib/schema/payment'
 
 export async function getGameDetail(gameId: string, userId: string) {
 	const gameData = await db.query.game.findFirst({
@@ -24,12 +33,69 @@ export async function getGameDetail(gameId: string, userId: string) {
 	const isAdmin = gameData.createdBy === userId
 	const isMember = !!myMembership
 
-	const pot = calculatePot(gameData.entryFee, gameData.players.length)
+	const payments = await db.query.payment.findMany({
+		where: eq(payment.gameId, gameId),
+	})
+	const pot = calculatePot(payments)
+
+	// Resolve user names for every player + the admin so payment UI can show names.
+	const { user } = await import('@/lib/schema/auth')
+	const relevantUserIds = Array.from(
+		new Set([gameData.createdBy, ...gameData.players.map((p) => p.userId)]),
+	)
+	const userRows =
+		relevantUserIds.length > 0
+			? await db
+					.select({ id: user.id, name: user.name })
+					.from(user)
+					.where(inArray(user.id, relevantUserIds))
+			: []
+	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
+	const creatorName = userNames.get(gameData.createdBy) ?? 'the admin'
+
+	// Group payments by userId so we can mark duplicates (rebuys) for UI.
+	const paymentsByUser = new Map<string, typeof payments>()
+	for (const p of payments) {
+		const list = paymentsByUser.get(p.userId) ?? []
+		list.push(p)
+		paymentsByUser.set(p.userId, list)
+	}
+
+	// Viewer's primary (earliest) payment row — the one the claim endpoint targets.
+	const myPaymentRows = [...(paymentsByUser.get(userId) ?? [])].sort(
+		(a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+	)
+	const myPayment = myPaymentRows[0]
+		? {
+				status: myPaymentRows[0].status as 'pending' | 'claimed' | 'paid' | 'refunded',
+				amount: myPaymentRows[0].amount,
+			}
+		: null
+
+	// Full list of payments (one row per payment record) with user name + isRebuy
+	// flag. Viewer's own payments are excluded from otherPayments.
+	const allPayments = Array.from(paymentsByUser.entries()).flatMap(([uid, rows]) => {
+		const sorted = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+		return sorted.map((row, idx) => ({
+			userId: uid,
+			userName: userNames.get(uid) ?? 'Player',
+			amount: row.amount,
+			status: row.status as 'pending' | 'claimed' | 'paid' | 'refunded',
+			isRebuy: idx > 0,
+			claimedAt: row.claimedAt,
+			paidAt: row.paidAt,
+		}))
+	})
+	const otherPayments = allPayments
+		.filter((p) => p.userId !== userId)
+		.map((p) => ({ userName: p.userName, status: p.status, isRebuy: p.isRebuy }))
+	const adminPayments = isAdmin ? allPayments : undefined
 
 	return {
 		id: gameData.id,
 		name: gameData.name,
 		gameMode: gameData.gameMode,
+		modeConfig: gameData.modeConfig,
 		status: gameData.status,
 		competition: gameData.competition,
 		currentRound: gameData.currentRound,
@@ -41,6 +107,10 @@ export async function getGameDetail(gameId: string, userId: string) {
 		myMembership,
 		isAdmin,
 		isMember,
+		creatorName,
+		myPayment,
+		otherPayments,
+		adminPayments,
 	}
 }
 
@@ -597,7 +667,10 @@ export async function getProgressGridData(
 
 	const aliveCount = players.filter((p) => p.status === 'alive').length
 	const eliminatedCount = players.filter((p) => p.status === 'eliminated').length
-	const pot = calculatePot(gameData.entryFee, gameData.players.length)
+	const payments = await db.query.payment.findMany({
+		where: eq(payment.gameId, gameId),
+	})
+	const pot = calculatePot(payments).total
 
 	return { rounds, players, aliveCount, eliminatedCount, pot }
 }
@@ -650,4 +723,164 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		viewerUserId,
 		updatedAt: new Date().toISOString(),
 	}
+}
+
+/**
+ * Load everything needed to render the classic-pick chain ribbon and the
+ * planner section: all rounds in the competition, the player's own past and
+ * planned picks (with team metadata), and every upcoming round's fixtures.
+ */
+export async function getClassicPlannerData(
+	gameId: string,
+	gamePlayerId: string,
+	currentRoundId: string | null,
+) {
+	const gameData = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: {
+			competition: {
+				with: {
+					rounds: {
+						orderBy: (r, { asc }) => asc(r.number),
+						with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
+					},
+				},
+			},
+		},
+	})
+	if (!gameData) return null
+
+	// Pull the player's picks (all rounds) and plans in parallel.
+	const [playerPicks, playerPlans] = await Promise.all([
+		db.query.pick.findMany({
+			where: and(eq(pick.gameId, gameId), eq(pick.gamePlayerId, gamePlayerId)),
+			with: { round: true, team: true },
+		}),
+		db.query.plannedPick.findMany({
+			where: eq(plannedPick.gamePlayerId, gamePlayerId),
+			with: { round: true, team: true },
+		}),
+	])
+
+	const rounds: ChainRoundRow[] = gameData.competition.rounds.map((r) => ({
+		id: r.id,
+		number: r.number,
+		name: r.name,
+		status: r.status,
+	}))
+
+	// Past picks are every pick for a round that isn't the current round (i.e.
+	// something already in the past — draws/losses/wins/saves). We include the
+	// current-round pick separately so the ribbon can render it as 'current'.
+	const pastPicks: ChainPastPickRow[] = playerPicks
+		.filter((p) => p.roundId !== currentRoundId)
+		.map((p) => ({
+			roundId: p.roundId,
+			teamId: p.teamId,
+			result: p.result,
+			teamShortName: p.team.shortName,
+			teamColour: p.team.primaryColor,
+		}))
+
+	const currentPickRow = currentRoundId
+		? playerPicks.find((p) => p.roundId === currentRoundId)
+		: undefined
+	const currentPick = currentPickRow
+		? {
+				roundId: currentPickRow.roundId,
+				teamShortName: currentPickRow.team.shortName,
+				teamColour: currentPickRow.team.primaryColor,
+			}
+		: null
+
+	const plannedPicksChain: ChainPlannedPickRow[] = playerPlans.map((p) => ({
+		roundId: p.roundId,
+		teamId: p.teamId,
+		autoSubmit: p.autoSubmit,
+		teamShortName: p.team.shortName,
+		teamColour: p.team.primaryColor,
+	}))
+
+	const upcomingRoundsFixturesTbc = new Set<string>()
+	for (const r of gameData.competition.rounds) {
+		if (r.status === 'upcoming' && r.fixtures.length === 0) {
+			upcomingRoundsFixturesTbc.add(r.id)
+		}
+	}
+
+	// Count distinct teams in the competition. We derive this from the team
+	// table joined on this competition's fixtures — any team appearing in a
+	// fixture counts as "in the competition".
+	const teamRows = await db
+		.selectDistinct({ id: team.id })
+		.from(team)
+		.innerJoin(fixture, or(eq(fixture.homeTeamId, team.id), eq(fixture.awayTeamId, team.id)))
+		.innerJoin(round, eq(round.id, fixture.roundId))
+		.where(eq(round.competitionId, gameData.competition.id))
+	const totalTeams = teamRows.length
+
+	const chain = buildChainSlots({
+		rounds,
+		pastPicks,
+		currentPick,
+		plannedPicks: plannedPicksChain,
+		currentRoundId,
+		upcomingRoundsFixturesTbc,
+		totalTeams,
+	})
+
+	// Build future-round inputs: every upcoming round, whether its fixtures
+	// are published or not. The PlannerRound component handles the TBC case.
+	const futureRoundRows: FutureRoundRow[] = gameData.competition.rounds
+		.filter((r) => r.status === 'upcoming')
+		.map((r) => ({
+			id: r.id,
+			number: r.number,
+			name: r.name,
+			deadline: r.deadline,
+			fixtures: r.fixtures.map((f) => ({
+				id: f.id,
+				kickoff: f.kickoff,
+				homeTeam: {
+					id: f.homeTeam.id,
+					name: f.homeTeam.name,
+					shortName: f.homeTeam.shortName,
+					badgeUrl: f.homeTeam.badgeUrl,
+					primaryColor: f.homeTeam.primaryColor,
+				},
+				awayTeam: {
+					id: f.awayTeam.id,
+					name: f.awayTeam.name,
+					shortName: f.awayTeam.shortName,
+					badgeUrl: f.awayTeam.badgeUrl,
+					primaryColor: f.awayTeam.primaryColor,
+				},
+			})),
+		}))
+
+	// Past picks & plans keyed by round number (for the "USED GW3" labels).
+	const pastPicksForPlanner = playerPicks
+		.filter((p) => p.roundId !== currentRoundId && p.round)
+		.map((p) => ({ roundNumber: p.round.number, teamId: p.teamId }))
+	// Treat the current-round pick as "used" in future planner views too.
+	if (currentPickRow?.round) {
+		pastPicksForPlanner.push({
+			roundNumber: currentPickRow.round.number,
+			teamId: currentPickRow.teamId,
+		})
+	}
+	const plannedPicksForPlanner = playerPlans.map((p) => ({
+		roundId: p.roundId,
+		roundNumber: p.round.number,
+		teamId: p.teamId,
+		autoSubmit: p.autoSubmit,
+	}))
+
+	const futureRounds = buildPlannerRounds({
+		futureRounds: futureRoundRows,
+		pastPicks: pastPicksForPlanner,
+		plannedPicks: plannedPicksForPlanner,
+	})
+
+	return { chain, futureRounds }
 }

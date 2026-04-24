@@ -3,6 +3,7 @@ import { Client } from '@upstash/qstash'
 export type QStashJob =
 	| { type: 'process_round'; gameId: string; roundId: string }
 	| { type: 'deadline_reminder'; gameId: string; roundId: string; window: '24h' | '2h' }
+	| { type: 'auto_submit'; gamePlayerId: string; roundId: string; teamId: string }
 
 function handlerUrl(): string {
 	const base = process.env.VERCEL_URL ?? ''
@@ -34,6 +35,19 @@ export async function enqueueDeadlineReminder(
 	await client().publishJSON({
 		url: handlerUrl(),
 		body: { type: 'deadline_reminder', gameId, roundId, window } satisfies QStashJob,
+		notBefore: Math.floor(notBefore.getTime() / 1000),
+	})
+}
+
+export async function enqueueAutoSubmit(
+	gamePlayerId: string,
+	roundId: string,
+	teamId: string,
+	notBefore: Date,
+): Promise<void> {
+	await client().publishJSON({
+		url: handlerUrl(),
+		body: { type: 'auto_submit', gamePlayerId, roundId, teamId } satisfies QStashJob,
 		notBefore: Math.floor(notBefore.getTime() / 1000),
 	})
 }

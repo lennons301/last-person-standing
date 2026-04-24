@@ -4,7 +4,7 @@ import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { calculatePayouts, calculatePot } from '@/lib/game-logic/prizes'
 import { game, gamePlayer } from '@/lib/schema/game'
-import { payout } from '@/lib/schema/payment'
+import { payment, payout } from '@/lib/schema/payment'
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
 	const session = await requireSession()
@@ -29,9 +29,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 		return NextResponse.json({ error: 'Need at least 2 alive players to split' }, { status: 400 })
 	}
 
-	const pot = calculatePot(gameData.entryFee, gameData.players.length)
+	const payments = await db.query.payment.findMany({
+		where: eq(payment.gameId, id),
+	})
+	const pot = calculatePot(payments)
 	const winnerIds = alivePlayers.map((p) => p.userId)
-	const payoutEntries = calculatePayouts(pot, winnerIds)
+	const payoutEntries = calculatePayouts(pot.total, winnerIds)
 
 	// Mark players as winners
 	for (const player of alivePlayers) {
