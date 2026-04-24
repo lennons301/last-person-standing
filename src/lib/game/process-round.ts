@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { processClassicRound } from '@/lib/game-logic/classic'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
+import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { calculateTurboStandings, evaluateTurboPicks } from '@/lib/game-logic/turbo'
 import {
 	computeWcClassicAutoElims,
@@ -24,7 +25,11 @@ export async function processGameRound(
 
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
-		with: { fixtures: true },
+		with: {
+			fixtures: {
+				with: { homeTeam: true, awayTeam: true },
+			},
+		},
 	})
 	if (!roundData) throw new Error(`Round ${roundId} not found`)
 
@@ -195,12 +200,15 @@ export async function processGameRound(
 				.map((pk) => {
 					const f = roundData.fixtures.find((fx) => fx.id === pk.fixtureId)
 					const pickedTeam: 'home' | 'away' = pk.teamId === f?.homeTeamId ? 'home' : 'away'
+					const tierDifference = f
+						? computeTierDifference(f.homeTeam, f.awayTeam, gameData.competition.type)
+						: 0
 					return {
 						confidenceRank: pk.confidenceRank ?? 0,
 						pickedTeam,
 						homeScore: f?.homeScore ?? 0,
 						awayScore: f?.awayScore ?? 0,
-						tierDifference: 0, // TODO: store tier_difference on fixture in cup competitions
+						tierDifference,
 					}
 				})
 
