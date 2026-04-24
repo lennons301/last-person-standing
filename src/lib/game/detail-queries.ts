@@ -651,6 +651,7 @@ export async function getProgressGridData(
 				opponentShortName,
 				homeAway,
 				score,
+				isAuto: thePick.isAuto,
 			}
 		}
 
