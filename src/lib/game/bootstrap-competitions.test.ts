@@ -10,33 +10,42 @@ const {
 	dbQueryPlannedPickFindMany,
 	dbInsertFn,
 	dbUpdateFn,
+	dbUpdateSet,
 	fplFetchTeams,
 	fplFetchRounds,
+	fplFetchStandings,
 	fdFetchTeams,
 	fdFetchRounds,
+	fdFetchStandings,
 	enqueueAutoSubmitMock,
-} = vi.hoisted(() => ({
-	dbQueryCompetitionFindFirst: vi.fn(),
-	dbQueryTeamFindFirst: vi.fn(),
-	dbQueryTeamFindMany: vi.fn().mockResolvedValue([]),
-	dbQueryRoundFindFirst: vi.fn(),
-	dbQueryRoundFindMany: vi.fn().mockResolvedValue([]),
-	dbQueryFixtureFindFirst: vi.fn(),
-	dbQueryPlannedPickFindMany: vi.fn().mockResolvedValue([]),
-	dbInsertFn: vi.fn(() => ({
-		values: vi.fn(() => ({
-			returning: vi.fn().mockResolvedValue([{ id: 'new', externalId: 'WC' }]),
+} = vi.hoisted(() => {
+	const updateSet = vi.fn((_payload: Record<string, unknown>) => ({
+		where: vi.fn().mockResolvedValue(undefined),
+	}))
+	return {
+		dbQueryCompetitionFindFirst: vi.fn(),
+		dbQueryTeamFindFirst: vi.fn(),
+		dbQueryTeamFindMany: vi.fn().mockResolvedValue([]),
+		dbQueryRoundFindFirst: vi.fn(),
+		dbQueryRoundFindMany: vi.fn().mockResolvedValue([]),
+		dbQueryFixtureFindFirst: vi.fn(),
+		dbQueryPlannedPickFindMany: vi.fn().mockResolvedValue([]),
+		dbInsertFn: vi.fn(() => ({
+			values: vi.fn(() => ({
+				returning: vi.fn().mockResolvedValue([{ id: 'new', externalId: 'WC' }]),
+			})),
 		})),
-	})),
-	dbUpdateFn: vi.fn(() => ({
-		set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
-	})),
-	fplFetchTeams: vi.fn().mockResolvedValue([]),
-	fplFetchRounds: vi.fn().mockResolvedValue([]),
-	fdFetchTeams: vi.fn().mockResolvedValue([]),
-	fdFetchRounds: vi.fn().mockResolvedValue([]),
-	enqueueAutoSubmitMock: vi.fn().mockResolvedValue(undefined),
-}))
+		dbUpdateFn: vi.fn(() => ({ set: updateSet })),
+		dbUpdateSet: updateSet,
+		fplFetchTeams: vi.fn().mockResolvedValue([]),
+		fplFetchRounds: vi.fn().mockResolvedValue([]),
+		fplFetchStandings: vi.fn().mockResolvedValue([]),
+		fdFetchTeams: vi.fn().mockResolvedValue([]),
+		fdFetchRounds: vi.fn().mockResolvedValue([]),
+		fdFetchStandings: vi.fn().mockResolvedValue([]),
+		enqueueAutoSubmitMock: vi.fn().mockResolvedValue(undefined),
+	}
+})
 
 vi.mock('@/lib/db', () => ({
 	db: {
@@ -57,14 +66,22 @@ vi.mock('@/lib/data/qstash', () => ({ enqueueAutoSubmit: enqueueAutoSubmitMock }
 vi.mock('@/lib/data/fpl', () => ({
 	// biome-ignore lint/complexity/useArrowFunction: vi.fn().mockImplementation needs a constructable function for `new FplAdapter()`
 	FplAdapter: vi.fn().mockImplementation(function () {
-		return { fetchTeams: fplFetchTeams, fetchRounds: fplFetchRounds }
+		return {
+			fetchTeams: fplFetchTeams,
+			fetchRounds: fplFetchRounds,
+			fetchStandings: fplFetchStandings,
+		}
 	}),
 }))
 
 vi.mock('@/lib/data/football-data', () => ({
 	// biome-ignore lint/complexity/useArrowFunction: vi.fn().mockImplementation needs a constructable function for `new FootballDataAdapter()`
 	FootballDataAdapter: vi.fn().mockImplementation(function () {
-		return { fetchTeams: fdFetchTeams, fetchRounds: fdFetchRounds }
+		return {
+			fetchTeams: fdFetchTeams,
+			fetchRounds: fdFetchRounds,
+			fetchStandings: fdFetchStandings,
+		}
 	}),
 	resolveFootballDataCode: vi.fn(() => 'PL'),
 }))
@@ -95,6 +112,94 @@ describe('bootstrapCompetitions', () => {
 		await bootstrapCompetitions({ footballDataApiKey: 'fd-key' })
 		// No assertion that insert was NOT called — adapters may still insert teams/rounds.
 		// This test just ensures the function runs without error when comps already exist.
+	})
+})
+
+describe('syncCompetition league-position persistence', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbQueryTeamFindMany.mockResolvedValue([])
+		dbQueryRoundFindMany.mockResolvedValue([])
+		dbQueryPlannedPickFindMany.mockResolvedValue([])
+		fplFetchStandings.mockResolvedValue([])
+		fdFetchStandings.mockResolvedValue([])
+	})
+
+	it('persists league_position for each standings row scoped by external id', async () => {
+		fplFetchTeams.mockResolvedValue([])
+		fplFetchRounds.mockResolvedValue([])
+		fplFetchStandings.mockResolvedValue([
+			{
+				teamExternalId: '1',
+				position: 1,
+				played: 10,
+				won: 8,
+				drawn: 1,
+				lost: 1,
+				points: 25,
+			},
+			{
+				teamExternalId: '2',
+				position: 4,
+				played: 10,
+				won: 6,
+				drawn: 2,
+				lost: 2,
+				points: 20,
+			},
+		])
+		dbQueryTeamFindMany.mockResolvedValue([
+			{ id: 'team-1-uuid', externalIds: { fpl: '1' } },
+			{ id: 'team-2-uuid', externalIds: { fpl: '2' } },
+			{ id: 'team-other-uuid', externalIds: { football_data: '99' } },
+		])
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		// Two standings rows → two updates with leaguePosition.
+		const positionSets = dbUpdateSet.mock.calls
+			.map((call) => call[0])
+			.filter((payload) => 'leaguePosition' in payload)
+		expect(positionSets).toHaveLength(2)
+		expect(positionSets).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ leaguePosition: 1 }),
+				expect.objectContaining({ leaguePosition: 4 }),
+			]),
+		)
+	})
+
+	it('ignores standings rows whose teamExternalId is not in the competition data source', async () => {
+		fplFetchTeams.mockResolvedValue([])
+		fplFetchRounds.mockResolvedValue([])
+		fplFetchStandings.mockResolvedValue([
+			{
+				teamExternalId: '999',
+				position: 1,
+				played: 0,
+				won: 0,
+				drawn: 0,
+				lost: 0,
+				points: 0,
+			},
+		])
+		dbQueryTeamFindMany.mockResolvedValue([
+			// Team with different data source key — must not match.
+			{ id: 'team-fd-uuid', externalIds: { football_data: '999' } },
+		])
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		const positionSets = dbUpdateSet.mock.calls
+			.map((call) => call[0])
+			.filter((payload) => 'leaguePosition' in payload)
+		expect(positionSets).toHaveLength(0)
 	})
 })
 

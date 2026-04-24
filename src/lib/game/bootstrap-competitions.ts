@@ -89,6 +89,22 @@ export async function syncCompetition(
 
 	const allTeams = await db.query.team.findMany({})
 
+	// Persist latest league standings into team.leaguePosition when the adapter
+	// supports standings. Scope by externalIds[key] so updates stay within this
+	// competition's data source.
+	if (typeof adapter.fetchStandings === 'function') {
+		const standings = await adapter.fetchStandings()
+		for (const row of standings) {
+			const match = allTeams.find(
+				(t) =>
+					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
+					row.teamExternalId,
+			)
+			if (!match) continue
+			await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, match.id))
+		}
+	}
+
 	const adapterRounds = await adapter.fetchRounds()
 	let totalFixtures = 0
 	for (const ar of adapterRounds) {
