@@ -12,11 +12,7 @@ import {
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
-export async function processGameRound(
-	gameId: string,
-	roundId: string,
-	options?: { isStartingRound?: boolean },
-) {
+export async function processGameRound(gameId: string, roundId: string) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
 		with: { players: true, competition: true },
@@ -62,10 +58,14 @@ export async function processGameRound(
 			}
 		})
 
+		const allowRebuys =
+			(gameData.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
+		const isStartingRound = roundData.number === 1 && !allowRebuys
+
 		const result = processClassicRound({
 			players: playerPicks,
 			fixtures: completedFixtures,
-			isStartingRound: options?.isStartingRound,
+			isStartingRound,
 		})
 
 		// Update picks and player statuses
