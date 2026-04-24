@@ -73,7 +73,7 @@ export function AddPlayerModal({ gameId, onClose }: AddPlayerModalProps) {
 
 	function handleGoToPick() {
 		if (!added) return
-		router.push(`/game/${gameId}/pick?actingAs=${added.gamePlayerId}`)
+		router.push(`/game/${gameId}?actingAs=${added.gamePlayerId}`)
 	}
 
 	function handleBackToGame() {

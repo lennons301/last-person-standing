@@ -351,7 +351,7 @@ function GridView({
 											!player.hasSubmitted &&
 											roundStatus === 'open' && (
 												<a
-													href={`/game/${gameId}/pick?actingAs=${player.id}`}
+													href={`/game/${gameId}?actingAs=${player.id}`}
 													title={`Pick for ${player.name}`}
 													className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
 												>

@@ -43,6 +43,8 @@ interface CupPickProps {
 	onSubmit: (slots: CupPickSlot[]) => Promise<void>
 	deadline?: Date | null
 	readonly?: boolean
+	/** When set (e.g. "Submit as Rachel" for admin acting-as), overrides the default submit label. */
+	submitLabelOverride?: string
 }
 
 function tierForDisplay(fixture: CupPickFixture): { value: number; plusN: number; heart: boolean } {
@@ -121,6 +123,7 @@ export function CupPick({
 	onSubmit,
 	deadline,
 	readonly,
+	submitLabelOverride,
 }: CupPickProps) {
 	// Normalise initial slots into rank order (1..N) — defensive against callers passing gaps.
 	const normalisedInitial = useMemo<CupPickSlot[]>(
@@ -289,7 +292,9 @@ export function CupPick({
 						disabled={readonly || slots.length < minPicks || loading}
 						onClick={handleSubmit}
 					>
-						{loading ? 'Submitting...' : `Submit ${slots.length} of ${numberOfPicks} picks`}
+						{loading
+							? 'Submitting...'
+							: (submitLabelOverride ?? `Submit ${slots.length} of ${numberOfPicks} picks`)}
 					</button>
 					{slots.length > 0 && slots.length < minPicks && (
 						<p className="mt-2 text-xs text-muted-foreground">

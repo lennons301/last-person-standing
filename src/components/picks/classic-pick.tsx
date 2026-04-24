@@ -35,6 +35,8 @@ interface ClassicPickProps {
 	chain?: { slots: ChainSlot[]; summary: ChainSummary }
 	futureRounds?: PlannerRoundInput[]
 	planHandlers?: ClassicPickPlanHandlers
+	/** When set, the admin is picking on behalf of this player. */
+	actingAs?: { gamePlayerId: string; userName: string }
 }
 
 export function ClassicPick({
@@ -48,6 +50,7 @@ export function ClassicPick({
 	chain,
 	futureRounds,
 	planHandlers,
+	actingAs,
 }: ClassicPickProps) {
 	const router = useRouter()
 	const [selectedTeamId, setSelectedTeamId] = useState<string | null>(existingPickTeamId)
@@ -70,7 +73,10 @@ export function ClassicPick({
 		const res = await fetch(`/api/picks/${gameId}/${roundId}`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ teamId: selectedTeamId }),
+			body: JSON.stringify({
+				teamId: selectedTeamId,
+				...(actingAs ? { actingAs: actingAs.gamePlayerId } : {}),
+			}),
 		})
 		setLoading(false)
 		if (!res.ok) {
@@ -199,7 +205,13 @@ export function ClassicPick({
 						message={`Picking ${selectedTeam.name} vs ${
 							selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name
 						} (${selectedSide === 'home' ? 'H' : 'A'})`}
-						actionLabel={existingPickTeamId === selectedTeamId ? 'Already locked' : 'Lock in pick'}
+						actionLabel={
+							existingPickTeamId === selectedTeamId
+								? 'Already locked'
+								: actingAs
+									? `Submit as ${actingAs.userName}`
+									: 'Lock in pick'
+						}
 						onConfirm={handleSubmit}
 						disabled={existingPickTeamId === selectedTeamId}
 						loading={loading}
