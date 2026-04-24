@@ -707,6 +707,29 @@ async function seed() {
 		console.log(`Created "${seed.name}" (${seed.mode}) — ${seed.players.length} players`)
 	}
 
+	// --- Mid-match Cup game for live UI verification ---
+	const round8 = rounds.find((r) => r.number === 8)
+	if (round8) {
+		const round8Fixtures = fixturesByRound.get(round8.id) ?? []
+		const kickoffTime = round8Fixtures[0]?.kickoff ?? now
+		const kickoff15MinAgo = new Date(kickoffTime.getTime() - 15 * 60 * 1000)
+
+		// Update first two fixtures to live status with partial scores
+		for (let i = 0; i < Math.min(2, round8Fixtures.length); i++) {
+			const f = round8Fixtures[i]
+			await db
+				.update(fixture)
+				.set({
+					status: 'live',
+					homeScore: 1,
+					awayScore: Math.floor(rng() * 2),
+					kickoff: kickoff15MinAgo,
+				})
+				.where(eq(fixture.id, f.id))
+		}
+		console.log(`Updated 2 fixtures in round 8 to live status for verification`)
+	}
+
 	console.log('\nSeed complete!')
 	console.log('\nLog in with any of these (password: password123):')
 	for (const u of DEV_USERS) console.log(`  ${u.email}`)
