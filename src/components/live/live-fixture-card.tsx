@@ -56,13 +56,13 @@ export function LiveFixtureCard({
 			)}
 			<div className="flex items-center justify-between text-sm font-semibold">
 				<span>{fixture.homeShort}</span>
-				<span data-score="home" className="font-variant-numeric: tabular-nums; font-bold">
+				<span data-score="home" className="tabular-nums font-bold">
 					{fixture.homeScore ?? '−'}
 				</span>
 			</div>
 			<div className="flex items-center justify-between text-sm font-semibold">
 				<span>{fixture.awayShort}</span>
-				<span data-score="away" className="font-variant-numeric: tabular-nums; font-bold">
+				<span data-score="away" className="tabular-nums font-bold">
 					{fixture.awayScore ?? '−'}
 				</span>
 			</div>

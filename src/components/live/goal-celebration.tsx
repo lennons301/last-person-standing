@@ -25,20 +25,21 @@ export function GoalCelebration({ fixtureId, viewerPick, children }: GoalCelebra
 	const handledIds = useRef<Set<string>>(new Set())
 
 	useEffect(() => {
-		for (const ev of events.goals) {
-			if (ev.fixtureId !== fixtureId) continue
-			if (handledIds.current.has(ev.id)) continue
-			handledIds.current.add(ev.id)
-			const friendly =
-				!!viewerPick &&
-				((ev.side === 'home' && viewerPick.predictedResult === 'home_win') ||
-					(ev.side === 'away' && viewerPick.predictedResult === 'away_win'))
-			setActive({ eventId: ev.id, side: ev.side, minute: 0, friendly })
-			const timer = setTimeout(() => {
-				setActive((current) => (current?.eventId === ev.id ? null : current))
-			}, HOLD_MS)
-			return () => clearTimeout(timer)
-		}
+		const newForThisFixture = events.goals.filter(
+			(ev) => ev.fixtureId === fixtureId && !handledIds.current.has(ev.id),
+		)
+		if (newForThisFixture.length === 0) return
+		for (const ev of newForThisFixture) handledIds.current.add(ev.id)
+		const latest = newForThisFixture[newForThisFixture.length - 1]
+		const friendly =
+			!!viewerPick &&
+			((latest.side === 'home' && viewerPick.predictedResult === 'home_win') ||
+				(latest.side === 'away' && viewerPick.predictedResult === 'away_win'))
+		setActive({ eventId: latest.id, side: latest.side, minute: 0, friendly })
+		const timer = setTimeout(() => {
+			setActive((current) => (current?.eventId === latest.id ? null : current))
+		}, HOLD_MS)
+		return () => clearTimeout(timer)
 	}, [events.goals, fixtureId, viewerPick])
 
 	return (

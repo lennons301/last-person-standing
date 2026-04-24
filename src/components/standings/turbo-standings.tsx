@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { useLiveGame } from '@/components/live/use-live-game'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import type { LivePayload } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 import { type LadderFixture, TurboLadder } from './turbo-ladder'
 import { TurboTimeline } from './turbo-timeline'
@@ -53,7 +52,6 @@ interface TurboStandingsProps {
 	rounds: TurboRoundSummary[]
 	numberOfPicks: number
 	onShare?: () => void
-	live?: LivePayload
 }
 
 const _PRED_ABBREV = { home_win: 'H', draw: 'D', away_win: 'A' } as const

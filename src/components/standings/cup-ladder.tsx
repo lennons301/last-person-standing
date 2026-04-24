@@ -12,12 +12,11 @@ import type {
 	CupLadderFixture,
 	CupStandingsPlayer,
 } from '@/lib/game/cup-standings-queries'
-import type { LiveFixture, LivePayload } from '@/lib/live/types'
+import type { LiveFixture } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 
 interface CupLadderProps {
 	data: CupLadderData
-	live?: LivePayload
 }
 
 const LIVE_FLASH_MS = 1500

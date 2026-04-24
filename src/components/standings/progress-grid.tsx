@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { useLiveGame } from '@/components/live/use-live-game'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import type { LivePayload } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 import { GridFilter } from './grid-filter'
 
@@ -62,7 +61,6 @@ interface ProgressGridProps {
 	defaultFilter?: 'all' | 'last5' | 'last3'
 	gameId?: string
 	onShare?: () => void
-	live?: LivePayload
 }
 
 export function ProgressGrid({

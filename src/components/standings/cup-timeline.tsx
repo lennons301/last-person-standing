@@ -3,12 +3,10 @@
 import { XCircle } from 'lucide-react'
 import { useLiveGame } from '@/components/live/use-live-game'
 import type { CupLadderData, CupLadderFixture } from '@/lib/game/cup-standings-queries'
-import type { LivePayload } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 
 interface CupTimelineProps {
 	data: CupLadderData
-	live?: LivePayload
 }
 
 // A "kickoff slot" is a unique kickoff time across the round's fixtures.

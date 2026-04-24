@@ -2,12 +2,10 @@
 
 import { useLiveGame } from '@/components/live/use-live-game'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
-import type { LivePayload } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 
 interface CupGridProps {
 	data: CupStandingsData
-	live?: LivePayload
 }
 
 const LIVE_RECENT_MS = 1500
