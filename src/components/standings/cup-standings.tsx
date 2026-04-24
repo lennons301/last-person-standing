@@ -13,9 +13,11 @@ type ViewMode = 'ladder' | 'grid' | 'timeline'
 interface CupStandingsProps {
 	data: CupLadderData
 	onShare?: () => void
+	showAdminActions?: boolean
+	gameId?: string
 }
 
-export function CupStandings({ data, onShare }: CupStandingsProps) {
+export function CupStandings({ data, onShare, showAdminActions, gameId }: CupStandingsProps) {
 	const [view, setView] = useState<ViewMode>('ladder')
 	return (
 		<div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -63,8 +65,12 @@ export function CupStandings({ data, onShare }: CupStandingsProps) {
 				</div>
 			</div>
 			<div className="p-4 md:p-5">
-				{view === 'ladder' && <CupLadder data={data} />}
-				{view === 'grid' && <CupGrid data={data} />}
+				{view === 'ladder' && (
+					<CupLadder data={data} showAdminActions={showAdminActions} gameId={gameId} />
+				)}
+				{view === 'grid' && (
+					<CupGrid data={data} showAdminActions={showAdminActions} gameId={gameId} />
+				)}
 				{view === 'timeline' && <CupTimeline data={data} />}
 			</div>
 		</div>

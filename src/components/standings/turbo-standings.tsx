@@ -52,13 +52,21 @@ interface TurboStandingsProps {
 	rounds: TurboRoundSummary[]
 	numberOfPicks: number
 	onShare?: () => void
+	showAdminActions?: boolean
+	gameId?: string
 }
 
 const _PRED_ABBREV = { home_win: 'H', draw: 'D', away_win: 'A' } as const
 
 type ViewMode = 'ladder' | 'grid' | 'timeline'
 
-export function TurboStandings({ rounds, numberOfPicks, onShare }: TurboStandingsProps) {
+export function TurboStandings({
+	rounds,
+	numberOfPicks,
+	onShare,
+	showAdminActions,
+	gameId,
+}: TurboStandingsProps) {
 	const initial = rounds[rounds.length - 1]?.id
 	const [roundId, setRoundId] = useState<string>(initial ?? '')
 	const [view, setView] = useState<ViewMode>('ladder')
@@ -178,7 +186,14 @@ export function TurboStandings({ rounds, numberOfPicks, onShare }: TurboStanding
 			)}
 
 			{view === 'grid' && (
-				<GridView sortedPlayers={sortedPlayers} numberOfPicks={numberOfPicks} liveMeta={liveMeta} />
+				<GridView
+					sortedPlayers={sortedPlayers}
+					numberOfPicks={numberOfPicks}
+					liveMeta={liveMeta}
+					showAdminActions={showAdminActions}
+					gameId={gameId}
+					roundStatus={round.status}
+				/>
 			)}
 		</div>
 	)
@@ -245,10 +260,16 @@ function GridView({
 	sortedPlayers,
 	numberOfPicks,
 	liveMeta,
+	showAdminActions,
+	gameId,
+	roundStatus,
 }: {
 	sortedPlayers: TurboPlayerRow[]
 	numberOfPicks: number
 	liveMeta: TurboLiveMeta
+	showAdminActions?: boolean
+	gameId?: string
+	roundStatus: TurboRoundSummary['status']
 }) {
 	return (
 		<TooltipProvider delayDuration={100}>
@@ -325,6 +346,18 @@ function GridView({
 												no picks
 											</span>
 										)}
+										{showAdminActions &&
+											gameId &&
+											!player.hasSubmitted &&
+											roundStatus === 'open' && (
+												<a
+													href={`/game/${gameId}/pick?actingAs=${player.id}`}
+													title={`Pick for ${player.name}`}
+													className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
+												>
+													✎
+												</a>
+											)}
 									</td>
 									<td className="text-center px-2 py-2 font-display font-semibold text-lg">
 										{player.streak}

@@ -113,6 +113,7 @@ export function GameDetailView({
 						pot={classicGrid.pot}
 						gameId={game.id}
 						onShare={() => setShareOpen(true)}
+						showAdminActions={game.isAdmin}
 					/>
 				)}
 
@@ -121,10 +122,19 @@ export function GameDetailView({
 						rounds={turboStandings.rounds}
 						numberOfPicks={turboStandings.numberOfPicks}
 						onShare={() => setShareOpen(true)}
+						showAdminActions={game.isAdmin}
+						gameId={game.id}
 					/>
 				)}
 
-				{cupStandings && <CupStandings data={cupStandings} onShare={() => setShareOpen(true)} />}
+				{cupStandings && (
+					<CupStandings
+						data={cupStandings}
+						onShare={() => setShareOpen(true)}
+						showAdminActions={game.isAdmin}
+						gameId={game.id}
+					/>
+				)}
 
 				{game.isAdmin && game.adminPayments && game.adminPayments.length > 0 && (
 					<div className="mt-6">

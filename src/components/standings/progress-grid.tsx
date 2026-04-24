@@ -61,6 +61,7 @@ interface ProgressGridProps {
 	defaultFilter?: 'all' | 'last5' | 'last3'
 	gameId?: string
 	onShare?: () => void
+	showAdminActions?: boolean
 }
 
 export function ProgressGrid({
@@ -69,7 +70,9 @@ export function ProgressGrid({
 	aliveCount,
 	eliminatedCount,
 	defaultFilter = 'all',
+	gameId,
 	onShare,
+	showAdminActions,
 }: ProgressGridProps) {
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
 	const [showOpponents, setShowOpponents] = useState(false)
@@ -130,6 +133,8 @@ export function ProgressGrid({
 
 	const visibleRounds =
 		filter === 'all' ? rounds : filter === 'last5' ? rounds.slice(-5) : rounds.slice(-3)
+
+	const currentRoundId = rounds.at(-1)?.id
 
 	const sortedPlayers = [...players].sort((a, b) => {
 		if (a.status === 'alive' && b.status !== 'alive') return -1
@@ -252,6 +257,19 @@ export function ProgressGrid({
 													OUT
 												</span>
 											)}
+											{showAdminActions &&
+												gameId &&
+												currentRoundId &&
+												player.status === 'alive' &&
+												player.cellsByRoundId[currentRoundId]?.result === 'no_pick' && (
+													<a
+														href={`/game/${gameId}/pick?actingAs=${player.id}`}
+														title={`Pick for ${player.name}`}
+														className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
+													>
+														✎
+													</a>
+												)}
 										</td>
 										{visibleRounds.map((r) => {
 											const cell = player.cellsByRoundId[r.id] ?? { result: 'empty' }
