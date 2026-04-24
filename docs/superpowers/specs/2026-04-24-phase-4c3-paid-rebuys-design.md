@@ -43,9 +43,20 @@ Add an `allowRebuys: boolean` field to `game.mode_config` JSONB.
 
 ### 2. Classic game-logic changes
 
-#### 2.1 Round 1 starting-round exemption disabled when rebuys on
+#### 2.1 Round 1 starting-round exemption — wire up + gate on allowRebuys
 
-`src/lib/game-logic/classic.ts` is unchanged. The caller (in `src/lib/game/` — round processor) passes `isStartingRound = (roundNumber === 1) && !game.modeConfig.allowRebuys`. Two existing tests in `classic.test.ts` still pass; new tests cover the rebuy-on path (round 1 losses eliminate).
+**Current reality:** `classic.ts` supports an `isStartingRound` option that spares losses from elimination, but neither `processGameRound` caller passes it today (`cron/process-rounds/route.ts:41`, `cron/qstash-handler/route.ts:12`). In production, round 1 losses already eliminate — the exemption is dormant. The 2026-04-16 game-logic-corrections plan designed the exemption but the wiring never landed in the round processor path.
+
+**4c3 fix:**
+- Derive the flag inside `processGameRound` itself (it already loads `game` and `round`), removing the dependence on callers passing it.
+- Derivation: `isStartingRound = round.number === 1 && !game.modeConfig.allowRebuys`.
+- `classic.ts` is unchanged.
+- Callers (cron routes) also unchanged — they no longer need to supply the flag (and the parameter can be removed from the `options` object since it's derived internally).
+
+Net behavior after 4c3:
+- `allowRebuys=false` games: round 1 losses DO NOT eliminate (exemption now live).
+- `allowRebuys=true` games: round 1 losses DO eliminate (exemption disabled, rebuys available).
+- Anyone relying on the current prod behavior (round 1 eliminates regardless) gets a behavior change. This is a correctness fix and matches the original design intent.
 
 #### 2.2 No-pick handling for classic rounds 1 and 2
 
