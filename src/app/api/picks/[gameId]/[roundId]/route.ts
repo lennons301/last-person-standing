@@ -25,7 +25,11 @@ export async function GET(_request: Request, { params }: { params: Params }) {
 export async function POST(request: Request, { params }: { params: Params }) {
 	const session = await requireSession()
 	const { gameId, roundId } = await params
-	const body = await request.json()
+	const body = (await request.json()) as {
+		teamId?: string
+		picks?: unknown[]
+		actingAs?: string
+	}
 
 	// Get game and player
 	const gameData = await db.query.game.findFirst({
@@ -36,10 +40,27 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		return NextResponse.json({ error: 'Game not found' }, { status: 404 })
 	}
 
-	const player = await db.query.gamePlayer.findFirst({
+	// Resolve target player. Default is the session user's own gamePlayer, but
+	// admins can pick on behalf of another player via `actingAs` (Phase 4c2).
+	let targetGamePlayer = await db.query.gamePlayer.findFirst({
 		where: and(eq(gamePlayer.gameId, gameId), eq(gamePlayer.userId, session.user.id)),
 	})
-	if (!player) {
+
+	if (body.actingAs) {
+		// Admin is picking for another player.
+		if (gameData.createdBy !== session.user.id) {
+			return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+		}
+		const actingAsPlayer = await db.query.gamePlayer.findFirst({
+			where: and(eq(gamePlayer.id, body.actingAs), eq(gamePlayer.gameId, gameId)),
+		})
+		if (!actingAsPlayer) {
+			return NextResponse.json({ error: 'actingAs-not-in-game' }, { status: 404 })
+		}
+		targetGamePlayer = actingAsPlayer
+	}
+
+	if (!targetGamePlayer) {
 		return NextResponse.json({ error: 'Not a member of this game' }, { status: 403 })
 	}
 
@@ -54,26 +75,47 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
 	const now = new Date()
 
-	if (gameData.gameMode === 'classic') {
-		const { teamId } = body
+	// Shared helper: after a successful pick write, if the admin was acting-as
+	// a player who was eliminated via `missed_rebuy_pick`, flip them back to
+	// alive (Phase 4c2 rule 1: rebuy is implicit on first admin pick).
+	async function maybeUnEliminate(): Promise<boolean> {
+		if (!body.actingAs) return false
+		if (!targetGamePlayer) return false
+		if (targetGamePlayer.eliminatedReason !== 'missed_rebuy_pick') return false
+		await db
+			.update(gamePlayer)
+			.set({ status: 'alive', eliminatedReason: null, eliminatedRoundId: null })
+			.where(eq(gamePlayer.id, targetGamePlayer.id))
+		return true
+	}
 
-		// Get previously used teams
+	if (gameData.gameMode === 'classic') {
+		const { teamId } = body as { teamId: string }
+
+		// Get previously used teams (for the TARGET player, not the admin)
 		const previousPicks = await db.query.pick.findMany({
-			where: and(eq(pick.gamePlayerId, player.id), eq(pick.gameId, gameId)),
+			where: and(eq(pick.gamePlayerId, targetGamePlayer.id), eq(pick.gameId, gameId)),
 		})
 		const usedTeamIds = previousPicks.filter((p) => p.roundId !== roundId).map((p) => p.teamId)
 
 		const fixtureTeamIds = roundData.fixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId])
 
-		const validation = validateClassicPick({
-			teamId,
-			playerStatus: player.status,
-			roundStatus: roundData.status,
-			deadline: roundData.deadline,
-			now,
-			usedTeamIds,
-			fixtureTeamIds,
-		})
+		const allowEliminatedRebuy = Boolean(
+			body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
+		)
+
+		const validation = validateClassicPick(
+			{
+				teamId,
+				playerStatus: targetGamePlayer.status,
+				roundStatus: roundData.status,
+				deadline: roundData.deadline,
+				now,
+				usedTeamIds,
+				fixtureTeamIds,
+			},
+			{ allowEliminatedRebuy },
+		)
 
 		if (!validation.valid) {
 			return NextResponse.json({ error: validation.reason }, { status: 400 })
@@ -133,29 +175,42 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			.insert(pick)
 			.values({
 				gameId,
-				gamePlayerId: player.id,
+				gamePlayerId: targetGamePlayer.id,
 				roundId,
 				teamId,
 				fixtureId: teamFixture?.id,
 			})
 			.returning()
 
-		return NextResponse.json(newPick, { status: 201 })
+		const unEliminated = await maybeUnEliminate()
+
+		return NextResponse.json({ ...newPick, unEliminated }, { status: 201 })
 	}
 
 	// Turbo and Cup modes
-	const { picks: pickEntries } = body
+	const pickEntries = (body.picks ?? []) as Array<{
+		fixtureId: string
+		confidenceRank: number
+		predictedResult: 'home_win' | 'draw' | 'away_win'
+	}>
 	const numberOfPicks = (gameData.modeConfig as { numberOfPicks?: number })?.numberOfPicks ?? 10
 
-	const validation = validateTurboPicks({
-		playerStatus: player.status,
-		roundStatus: roundData.status,
-		deadline: roundData.deadline,
-		now,
-		numberOfPicks,
-		fixtureIds: roundData.fixtures.map((f) => f.id),
-		picks: pickEntries,
-	})
+	const allowEliminatedRebuyMulti = Boolean(
+		body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
+	)
+
+	const validation = validateTurboPicks(
+		{
+			playerStatus: targetGamePlayer.status,
+			roundStatus: roundData.status,
+			deadline: roundData.deadline,
+			now,
+			numberOfPicks,
+			fixtureIds: roundData.fixtures.map((f) => f.id),
+			picks: pickEntries,
+		},
+		{ allowEliminatedRebuy: allowEliminatedRebuyMulti },
+	)
 
 	if (!validation.valid) {
 		return NextResponse.json({ error: validation.reason }, { status: 400 })
@@ -190,9 +245,9 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		}
 	}
 
-	// Delete existing picks for this round, then insert new ones
+	// Delete existing picks for this round (for the TARGET player), then insert new ones
 	const existingPicks = await db.query.pick.findMany({
-		where: and(eq(pick.gamePlayerId, player.id), eq(pick.roundId, roundId)),
+		where: and(eq(pick.gamePlayerId, targetGamePlayer.id), eq(pick.roundId, roundId)),
 	})
 	if (existingPicks.length > 0) {
 		const existingIds = existingPicks.map((p) => p.id)
@@ -214,7 +269,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 					const teamId = entry.predictedResult === 'away_win' ? fx.awayTeamId : fx.homeTeamId
 					return {
 						gameId,
-						gamePlayerId: player.id,
+						gamePlayerId: targetGamePlayer!.id,
 						roundId,
 						teamId,
 						fixtureId: entry.fixtureId,
@@ -226,5 +281,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		)
 		.returning()
 
-	return NextResponse.json(newPicks, { status: 201 })
+	const unEliminated = await maybeUnEliminate()
+
+	return NextResponse.json({ picks: newPicks, unEliminated }, { status: 201 })
 }

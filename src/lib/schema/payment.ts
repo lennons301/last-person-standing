@@ -28,6 +28,7 @@ export const payment = pgTable('payment', {
 	method: paymentMethodEnum('method').notNull().default('manual'),
 	claimedAt: timestamp('claimed_at'),
 	paidAt: timestamp('paid_at'),
+	refundedAt: timestamp('refunded_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

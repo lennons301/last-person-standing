@@ -42,6 +42,8 @@ interface TurboPickProps {
 	fixtures: TurboPickFixture[]
 	existingPicks: Array<{ fixtureId: string; confidenceRank: number; predictedResult: Prediction }>
 	numberOfPicks: number
+	/** When set, the admin is picking on behalf of this player. */
+	actingAs?: { gamePlayerId: string; userName: string }
 }
 
 function ordinal(n: number): string {
@@ -58,6 +60,7 @@ export function TurboPick({
 	fixtures,
 	existingPicks,
 	numberOfPicks,
+	actingAs,
 }: TurboPickProps) {
 	const router = useRouter()
 
@@ -162,6 +165,7 @@ export function TurboPick({
 					confidenceRank: r.rank,
 					predictedResult: r.prediction,
 				})),
+				...(actingAs ? { actingAs: actingAs.gamePlayerId } : {}),
 			}),
 		})
 		setLoading(false)
@@ -335,7 +339,13 @@ export function TurboPick({
 							? 'Picks submitted — edit any pick to resubmit'
 							: `${ranked.length} of ${numberOfPicks} predictions ranked${isDirty ? ' · unsaved changes' : ''}`
 					}
-					actionLabel={hasSubmittedPicks ? 'Resubmit picks' : 'Lock in picks'}
+					actionLabel={
+						actingAs
+							? `Submit as ${actingAs.userName}`
+							: hasSubmittedPicks
+								? 'Resubmit picks'
+								: 'Lock in picks'
+					}
 					onConfirm={handleSubmit}
 					disabled={ranked.length !== numberOfPicks || (hasSubmittedPicks && !isDirty)}
 					loading={loading}

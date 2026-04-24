@@ -2,6 +2,17 @@ export interface CompetitionAdapter {
 	fetchTeams(): Promise<AdapterTeam[]>
 	fetchRounds(): Promise<AdapterRound[]>
 	fetchLiveScores(roundNumber: number): Promise<AdapterFixtureScore[]>
+	fetchStandings?(): Promise<AdapterStanding[]>
+}
+
+export interface AdapterStanding {
+	teamExternalId: string
+	position: number
+	played: number
+	won: number
+	drawn: number
+	lost: number
+	points: number
 }
 
 export interface AdapterTeam {

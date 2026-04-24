@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { AdminPanel } from '@/components/game/admin-panel'
+import { AutoPickBanner } from '@/components/game/auto-pick-banner'
 import { GameHeader } from '@/components/game/game-header'
 import { MyPaymentStrip } from '@/components/game/my-payment-strip'
 import { OtherPlayersPayments } from '@/components/game/other-players-payments'
@@ -35,6 +37,12 @@ interface GameDetailViewProps {
 		myPayment: { status: PaymentStatus; amount: string } | null
 		otherPayments: Array<{ userName: string; status: PaymentStatus; isRebuy: boolean }>
 		adminPayments: AdminPayment[] | undefined
+		myCurrentRoundPick: {
+			id: string
+			isAuto: boolean
+			teamShortName: string
+			kickoffLabel: string
+		} | null
 	}
 	pickSection: React.ReactNode
 	classicGrid?: {
@@ -68,6 +76,14 @@ export function GameDetailView({
 		<LiveProvider gameId={game.id}>
 			<div>
 				<LiveScoreTicker />
+
+				{game.myCurrentRoundPick?.isAuto && (
+					<AutoPickBanner
+						pickId={game.myCurrentRoundPick.id}
+						teamShortName={game.myCurrentRoundPick.teamShortName}
+						kickoffLabel={game.myCurrentRoundPick.kickoffLabel}
+					/>
+				)}
 
 				<GameHeader
 					name={game.name}
@@ -113,6 +129,7 @@ export function GameDetailView({
 						pot={classicGrid.pot}
 						gameId={game.id}
 						onShare={() => setShareOpen(true)}
+						showAdminActions={game.isAdmin}
 					/>
 				)}
 
@@ -121,10 +138,25 @@ export function GameDetailView({
 						rounds={turboStandings.rounds}
 						numberOfPicks={turboStandings.numberOfPicks}
 						onShare={() => setShareOpen(true)}
+						showAdminActions={game.isAdmin}
+						gameId={game.id}
 					/>
 				)}
 
-				{cupStandings && <CupStandings data={cupStandings} onShare={() => setShareOpen(true)} />}
+				{cupStandings && (
+					<CupStandings
+						data={cupStandings}
+						onShare={() => setShareOpen(true)}
+						showAdminActions={game.isAdmin}
+						gameId={game.id}
+					/>
+				)}
+
+				{game.isAdmin && (
+					<div className="mt-6">
+						<AdminPanel gameId={game.id} aliveCount={game.aliveCount} potTotal={game.pot.total} />
+					</div>
+				)}
 
 				{game.isAdmin && game.adminPayments && game.adminPayments.length > 0 && (
 					<div className="mt-6">

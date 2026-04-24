@@ -5,11 +5,18 @@ vi.mock('@/lib/db', () => ({
 }))
 
 vi.mock('@/lib/game/bootstrap-competitions', () => ({
-	syncCompetition: vi.fn().mockResolvedValue({ rounds: 0, fixtures: 0 }),
+	syncCompetition: vi.fn().mockResolvedValue({ rounds: 0, fixtures: 0, transitionedRoundIds: [] }),
+}))
+
+vi.mock('@/lib/game/no-pick-handler', () => ({
+	processDeadlineLock: vi
+		.fn()
+		.mockResolvedValue({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 }),
 }))
 
 import { db } from '@/lib/db'
 import { syncCompetition } from '@/lib/game/bootstrap-competitions'
+import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { POST } from './route'
 
 describe('daily-sync route', () => {
@@ -28,6 +35,11 @@ describe('daily-sync route', () => {
 			{ id: 'c1' },
 			{ id: 'c2' },
 		] as never)
+		vi.mocked(syncCompetition).mockResolvedValue({
+			rounds: 0,
+			fixtures: 0,
+			transitionedRoundIds: [],
+		})
 		await POST(
 			new Request('http://x', {
 				method: 'POST',
@@ -35,5 +47,47 @@ describe('daily-sync route', () => {
 			}),
 		)
 		expect(syncCompetition).toHaveBeenCalledTimes(2)
+	})
+
+	it('does not call processDeadlineLock when no rounds transitioned', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([{ id: 'c1' }] as never)
+		vi.mocked(syncCompetition).mockResolvedValue({
+			rounds: 1,
+			fixtures: 10,
+			transitionedRoundIds: [],
+		})
+		await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: { authorization: 'Bearer test-secret' },
+			}),
+		)
+		expect(processDeadlineLock).not.toHaveBeenCalled()
+	})
+
+	it('invokes processDeadlineLock once with all transitioned round ids across competitions', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([
+			{ id: 'c1' },
+			{ id: 'c2' },
+		] as never)
+		vi.mocked(syncCompetition)
+			.mockResolvedValueOnce({ rounds: 2, fixtures: 20, transitionedRoundIds: ['r1', 'r2'] })
+			.mockResolvedValueOnce({ rounds: 1, fixtures: 10, transitionedRoundIds: ['r3'] })
+
+		const res = await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: { authorization: 'Bearer test-secret' },
+			}),
+		)
+
+		expect(processDeadlineLock).toHaveBeenCalledTimes(1)
+		expect(processDeadlineLock).toHaveBeenCalledWith(['r1', 'r2', 'r3'])
+		const body = (await res.json()) as { deadlineLock: unknown }
+		expect(body.deadlineLock).toEqual({
+			autoPicksInserted: 0,
+			playersEliminated: 0,
+			paymentsRefunded: 0,
+		})
 	})
 })

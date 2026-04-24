@@ -23,7 +23,12 @@ export async function getGameDetail(gameId: string, userId: string) {
 			competition: true,
 			currentRound: { with: { fixtures: { with: { homeTeam: true, awayTeam: true } } } },
 			players: true,
-			picks: true,
+			picks: {
+				with: {
+					team: true,
+					fixture: { with: { homeTeam: true, awayTeam: true } },
+				},
+			},
 		},
 	})
 
@@ -32,6 +37,28 @@ export async function getGameDetail(gameId: string, userId: string) {
 	const myMembership = gameData.players.find((p) => p.userId === userId)
 	const isAdmin = gameData.createdBy === userId
 	const isMember = !!myMembership
+
+	// Viewer's current-round pick (used by AutoPickBanner to detect auto-picks).
+	let myCurrentRoundPick: {
+		id: string
+		isAuto: boolean
+		teamShortName: string
+		kickoffLabel: string
+	} | null = null
+	if (myMembership && gameData.currentRoundId) {
+		const currentPick = gameData.picks.find(
+			(p) => p.gamePlayerId === myMembership.id && p.roundId === gameData.currentRoundId,
+		)
+		if (currentPick) {
+			const kickoff = currentPick.fixture?.kickoff ?? null
+			myCurrentRoundPick = {
+				id: currentPick.id,
+				isAuto: currentPick.isAuto,
+				teamShortName: currentPick.team?.shortName ?? '?',
+				kickoffLabel: kickoff ? formatKickoff(kickoff) : 'TBC',
+			}
+		}
+	}
 
 	const payments = await db.query.payment.findMany({
 		where: eq(payment.gameId, gameId),
@@ -111,6 +138,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		myPayment,
 		otherPayments,
 		adminPayments,
+		myCurrentRoundPick,
 	}
 }
 
@@ -651,6 +679,7 @@ export async function getProgressGridData(
 				opponentShortName,
 				homeAway,
 				score,
+				isAuto: thePick.isAuto,
 			}
 		}
 

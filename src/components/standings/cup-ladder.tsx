@@ -17,6 +17,12 @@ import { cn } from '@/lib/utils'
 
 interface CupLadderProps {
 	data: CupLadderData
+	// Admin pick-for-player action is rendered on per-player rows. The ladder
+	// view groups players by fixture/backer, so there's no natural row-level
+	// "this player hasn't picked" surface. Deferred — the cup-grid view already
+	// exposes the same ✎ action for cup games.
+	showAdminActions?: boolean
+	gameId?: string
 }
 
 const LIVE_FLASH_MS = 1500

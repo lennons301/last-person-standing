@@ -66,6 +66,7 @@ export const team = pgTable('team', {
 	badgeUrl: text('badge_url'),
 	primaryColor: varchar('primary_color', { length: 7 }),
 	externalIds: jsonb('external_ids').$type<Record<string, string | number>>().default({}),
+	leaguePosition: integer('league_position'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

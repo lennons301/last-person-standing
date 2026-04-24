@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 
 interface CupGridProps {
 	data: CupStandingsData
+	showAdminActions?: boolean
+	gameId?: string
 }
 
 const LIVE_RECENT_MS = 1500
@@ -17,7 +19,7 @@ interface LiveRowMeta {
 	recentGoalByFixture: Map<string, { side: 'home' | 'away' }>
 }
 
-export function CupGrid({ data }: CupGridProps) {
+export function CupGrid({ data, showAdminActions, gameId }: CupGridProps) {
 	const liveCtx = useLiveGame()
 	const now = Date.now()
 
@@ -96,6 +98,9 @@ export function CupGrid({ data }: CupGridProps) {
 						roundNumber={data.roundNumber}
 						liveMeta={liveMeta}
 						pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
+						showAdminActions={showAdminActions}
+						gameId={gameId}
+						roundStatus={data.roundStatus}
 					/>
 				))}
 				{out.length > 0 && (
@@ -113,6 +118,9 @@ export function CupGrid({ data }: CupGridProps) {
 								roundNumber={data.roundNumber}
 								liveMeta={liveMeta}
 								pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
+								showAdminActions={showAdminActions}
+								gameId={gameId}
+								roundStatus={data.roundStatus}
 								isOut
 							/>
 						))}
@@ -155,6 +163,9 @@ function PlayerRow({
 	roundNumber,
 	liveMeta,
 	pickFixtureByRank,
+	showAdminActions,
+	gameId,
+	roundStatus,
 	isOut,
 }: {
 	player: CupStandingsData['players'][number]
@@ -164,6 +175,9 @@ function PlayerRow({
 	roundNumber: number
 	liveMeta: LiveRowMeta
 	pickFixtureByRank?: Map<number, string>
+	showAdminActions?: boolean
+	gameId?: string
+	roundStatus: CupStandingsData['roundStatus']
 	isOut?: boolean
 }) {
 	const isViewer = liveMeta.viewerGamePlayerId === player.id
@@ -193,6 +207,15 @@ function PlayerRow({
 				{!player.hasSubmitted && <Badge tone="warn">NO PICKS</Badge>}
 				{isOut && <Badge tone="danger">OUT GW{player.eliminatedRoundNumber ?? '?'}</Badge>}
 				{!isOut && liveEliminated && <Badge tone="danger">OUT GW{roundNumber}</Badge>}
+				{showAdminActions && gameId && !isOut && !player.hasSubmitted && roundStatus === 'open' && (
+					<a
+						href={`/game/${gameId}?actingAs=${player.id}`}
+						title={`Pick for ${player.name}`}
+						className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
+					>
+						✎
+					</a>
+				)}
 			</div>
 			<LivesCell remaining={player.livesRemaining} max={maxLives} />
 			<div className="text-center font-bold">{player.streak || '—'}</div>

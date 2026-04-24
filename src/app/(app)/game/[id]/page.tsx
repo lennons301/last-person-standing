@@ -1,10 +1,13 @@
-import { notFound } from 'next/navigation'
+import { and, eq } from 'drizzle-orm'
+import { notFound, redirect } from 'next/navigation'
+import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
 import { ClassicPick } from '@/components/picks/classic-pick'
 import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
 import { TurboPick } from '@/components/picks/turbo-pick'
 import { requireSession } from '@/lib/auth-helpers'
+import { db } from '@/lib/db'
 import { getCupLadderData } from '@/lib/game/cup-standings-queries'
 import {
 	getClassicPickData,
@@ -15,10 +18,31 @@ import {
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
+import { user } from '@/lib/schema/auth'
+import { gamePlayer } from '@/lib/schema/game'
 
-export default async function GameDetailPage({ params }: { params: Promise<{ id: string }> }) {
+function initialsFromName(name: string): string {
+	return (
+		name
+			.split(' ')
+			.map((p) => p[0] ?? '')
+			.filter(Boolean)
+			.slice(0, 2)
+			.join('')
+			.toUpperCase() || '??'
+	)
+}
+
+export default async function GameDetailPage({
+	params,
+	searchParams,
+}: {
+	params: Promise<{ id: string }>
+	searchParams: Promise<{ actingAs?: string }>
+}) {
 	const session = await requireSession()
 	const { id } = await params
+	const resolvedSearchParams = await searchParams
 	const game = await getGameDetail(id, session.user.id)
 	if (!game) notFound()
 
@@ -31,19 +55,62 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 		)
 	}
 
+	// Resolve actingAs: admin-only override of whose pick context we render.
+	// Runs before any pick-data loading so non-admins can't leak target picks.
+	const actingAsId = resolvedSearchParams.actingAs ?? null
+	let actingAsTarget: {
+		gamePlayerId: string
+		userName: string
+		initials: string
+		livesRemaining: number
+	} | null = null
+
+	if (actingAsId) {
+		if (!game.isAdmin) {
+			// Non-admin attempting to use actingAs — strip the param and redirect.
+			redirect(`/game/${id}`)
+		}
+		const [targetRow] = await db
+			.select({
+				gamePlayerId: gamePlayer.id,
+				userName: user.name,
+				livesRemaining: gamePlayer.livesRemaining,
+			})
+			.from(gamePlayer)
+			.innerJoin(user, eq(user.id, gamePlayer.userId))
+			.where(and(eq(gamePlayer.id, actingAsId), eq(gamePlayer.gameId, game.id)))
+			.limit(1)
+		if (!targetRow) {
+			// Invalid actingAs target — redirect back to the game page.
+			redirect(`/game/${id}`)
+		}
+		actingAsTarget = {
+			gamePlayerId: targetRow.gamePlayerId,
+			userName: targetRow.userName,
+			initials: initialsFromName(targetRow.userName),
+			livesRemaining: targetRow.livesRemaining,
+		}
+	}
+
+	// Choose the gamePlayer whose pick context we're loading. Admin acting-as mode
+	// targets another player; otherwise the viewer's own membership.
+	const targetGamePlayerId = actingAsTarget?.gamePlayerId ?? game.myMembership?.id
+	const targetLivesRemaining =
+		actingAsTarget?.livesRemaining ?? game.myMembership?.livesRemaining ?? 0
+
 	const classicPickData =
-		game.currentRound && game.myMembership && game.gameMode === 'classic'
-			? await getClassicPickData(game.id, game.currentRound.id, game.myMembership.id)
+		game.currentRound && targetGamePlayerId && game.gameMode === 'classic'
+			? await getClassicPickData(game.id, game.currentRound.id, targetGamePlayerId)
 			: null
 
 	const classicPlannerData =
-		game.myMembership && game.gameMode === 'classic'
-			? await getClassicPlannerData(game.id, game.myMembership.id, game.currentRound?.id ?? null)
+		targetGamePlayerId && game.gameMode === 'classic'
+			? await getClassicPlannerData(game.id, targetGamePlayerId, game.currentRound?.id ?? null)
 			: null
 
 	const turboPickData =
-		game.currentRound && game.myMembership && game.gameMode === 'turbo'
-			? await getTurboPickData(game.id, game.currentRound.id, game.myMembership.id)
+		game.currentRound && targetGamePlayerId && game.gameMode === 'turbo'
+			? await getTurboPickData(game.id, game.currentRound.id, targetGamePlayerId)
 			: null
 
 	const numberOfPicks = game.modeConfig?.numberOfPicks ?? 10
@@ -56,7 +123,13 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 	const cupStandingsData =
 		game.gameMode === 'cup' ? await getCupLadderData(game.id, session.user.id) : null
 
-	const isAlive = game.myMembership?.status === 'alive'
+	// Alive check is on the TARGET player (acting-as) or the viewer's own membership.
+	const targetPlayerStatus = actingAsTarget
+		? game.players.find((p) => p.id === actingAsTarget.gamePlayerId)?.status
+		: game.myMembership?.status
+	const isAlive = targetPlayerStatus === 'alive' || !!actingAsTarget
+	// NB: in acting-as mode we always render the pick UI even for "eliminated"
+	// players so admins can rebuy-via-pick (see maybeUnEliminate in the POST route).
 	const aliveCount = game.players.filter((p) => p.status === 'alive').length
 
 	// Target = entryFee × playerCount (what the pot would be if everyone paid).
@@ -68,11 +141,11 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 	const target = targetNum.toFixed(2)
 	const unpaid = unpaidNum.toFixed(2)
 
-	// Build cup pick props inline from the data already fetched by getGameDetail.
-	// (Kept here rather than in detail-queries.ts because all source fields are already loaded.)
+	// Build cup pick props. Source picks from the TARGET player so admin acting-as
+	// sees the target's existing slot state, not their own.
 	let cupFixtures: CupPickFixture[] = []
 	let cupInitialSlots: CupPickSlot[] = []
-	if (game.gameMode === 'cup' && game.currentRound && game.myMembership) {
+	if (game.gameMode === 'cup' && game.currentRound && targetGamePlayerId) {
 		cupFixtures = game.currentRound.fixtures.map((f) => ({
 			id: f.id,
 			homeTeamId: f.homeTeamId,
@@ -89,11 +162,10 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 			tierDifference: computeTierDifference(f.homeTeam, f.awayTeam, game.competition.type),
 		}))
 
-		const myPlayerId = game.myMembership.id
 		cupInitialSlots = game.picks
 			.filter(
 				(p) =>
-					p.gamePlayerId === myPlayerId &&
+					p.gamePlayerId === targetGamePlayerId &&
 					p.roundId === game.currentRound?.id &&
 					p.fixtureId != null &&
 					p.confidenceRank != null,
@@ -104,6 +176,10 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 				pickedSide: (p.predictedResult === 'away_win' ? 'away' : 'home') as 'home' | 'away',
 			}))
 	}
+
+	const actingAsForPickUI = actingAsTarget
+		? { gamePlayerId: actingAsTarget.gamePlayerId, userName: actingAsTarget.userName }
+		: undefined
 
 	const pickSection =
 		game.currentRound && isAlive ? (
@@ -118,6 +194,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 					existingPickTeamId={classicPickData.existingPickTeamId}
 					chain={classicPlannerData?.chain}
 					futureRounds={classicPlannerData?.futureRounds}
+					actingAs={actingAsForPickUI}
 				/>
 			) : game.gameMode === 'turbo' && turboPickData ? (
 				<TurboPick
@@ -128,18 +205,20 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 					fixtures={turboPickData.fixtures}
 					existingPicks={turboPickData.existingPicks}
 					numberOfPicks={numberOfPicks}
+					actingAs={actingAsForPickUI}
 				/>
-			) : game.gameMode === 'cup' && game.myMembership ? (
+			) : game.gameMode === 'cup' && targetGamePlayerId ? (
 				<CupPickForm
 					gameId={game.id}
 					roundId={game.currentRound.id}
 					fixtures={cupFixtures}
 					numberOfPicks={numberOfPicks}
-					livesRemaining={game.myMembership.livesRemaining}
+					livesRemaining={targetLivesRemaining}
 					maxLives={startingLives}
 					initialSlots={cupInitialSlots}
 					deadline={game.currentRound.deadline}
 					readonly={game.status !== 'open'}
+					actingAs={actingAsForPickUI}
 				/>
 			) : (
 				<div className="p-4 rounded-lg border border-border bg-card text-sm text-muted-foreground">
@@ -176,8 +255,20 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 				myPayment: game.myPayment,
 				otherPayments: game.otherPayments,
 				adminPayments: game.adminPayments,
+				myCurrentRoundPick: game.myCurrentRoundPick,
 			}}
-			pickSection={pickSection}
+			pickSection={
+				<>
+					{actingAsTarget && (
+						<ActingAsBanner
+							gameId={game.id}
+							targetUserName={actingAsTarget.userName}
+							targetAvatarInitials={actingAsTarget.initials}
+						/>
+					)}
+					{pickSection}
+				</>
+			}
 			classicGrid={classicGrid}
 			turboStandings={
 				turboStandingsData ? { rounds: turboStandingsData.rounds, numberOfPicks } : null

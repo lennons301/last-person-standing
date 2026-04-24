@@ -61,9 +61,9 @@ export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<voi
 export async function syncCompetition(
 	comp: CompetitionRow,
 	opts: BootstrapOptions,
-): Promise<{ rounds: number; fixtures: number }> {
+): Promise<{ rounds: number; fixtures: number; transitionedRoundIds: string[] }> {
 	const adapter = adapterFor(comp, opts)
-	if (!adapter) return { rounds: 0, fixtures: 0 }
+	if (!adapter) return { rounds: 0, fixtures: 0, transitionedRoundIds: [] }
 
 	const key = comp.dataSource === 'fpl' ? 'fpl' : 'football_data'
 	const adapterTeams = await adapter.fetchTeams()
@@ -89,8 +89,25 @@ export async function syncCompetition(
 
 	const allTeams = await db.query.team.findMany({})
 
+	// Persist latest league standings into team.leaguePosition when the adapter
+	// supports standings. Scope by externalIds[key] so updates stay within this
+	// competition's data source.
+	if (typeof adapter.fetchStandings === 'function') {
+		const standings = await adapter.fetchStandings()
+		for (const row of standings) {
+			const match = allTeams.find(
+				(t) =>
+					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
+					row.teamExternalId,
+			)
+			if (!match) continue
+			await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, match.id))
+		}
+	}
+
 	const adapterRounds = await adapter.fetchRounds()
 	let totalFixtures = 0
+	const transitionedRoundIds: string[] = []
 	for (const ar of adapterRounds) {
 		const existingRound = await db.query.round.findFirst({
 			where: and(eq(round.competitionId, comp.id), eq(round.number, ar.number)),
@@ -101,8 +118,22 @@ export async function syncCompetition(
 				? 'open'
 				: (existingRound?.status ?? 'upcoming')
 		let roundId: string
+		// T-48h: pre-lock window opens. Used to enqueue the planned-pick auto-submit
+		// job (fires at T-60s). Does NOT signal the deadline has passed.
 		const transitioningToOpen =
 			!!existingRound && existingRound.status !== 'open' && newStatus === 'open'
+		// Actual deadline passed: the round is still `open` in the DB (we have not
+		// transitioned it to `active` yet) AND its deadline is in the past. This is
+		// what drives `processDeadlineLock` (rules 2 and 3) — firing earlier would
+		// elim/auto-pick players who still have time to submit. The handler is
+		// idempotent so it is safe to re-fire on subsequent sync runs until the
+		// round advances to `active`/`completed`.
+		const nowForDeadline = new Date()
+		const deadlineHasPassed =
+			!!existingRound &&
+			existingRound.status === 'open' &&
+			existingRound.deadline != null &&
+			existingRound.deadline.getTime() <= nowForDeadline.getTime()
 		if (existingRound) {
 			roundId = existingRound.id
 			await db
@@ -136,6 +167,10 @@ export async function syncCompetition(
 			for (const p of autoPlans) {
 				await enqueueAutoSubmit(p.gamePlayerId, p.roundId, p.teamId, notBefore)
 			}
+		}
+
+		if (deadlineHasPassed) {
+			transitionedRoundIds.push(roundId)
 		}
 
 		for (const af of ar.fixtures) {
@@ -180,7 +215,7 @@ export async function syncCompetition(
 		}
 	}
 
-	return { rounds: adapterRounds.length, fixtures: totalFixtures }
+	return { rounds: adapterRounds.length, fixtures: totalFixtures, transitionedRoundIds }
 }
 
 export async function applyPotAssignments(competitionId: string): Promise<void> {

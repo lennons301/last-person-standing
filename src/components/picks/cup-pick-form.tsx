@@ -13,6 +13,8 @@ interface CupPickFormProps {
 	initialSlots: CupPickSlot[]
 	deadline: Date | null
 	readonly?: boolean
+	/** When set, the admin is picking on behalf of this player. */
+	actingAs?: { gamePlayerId: string; userName: string }
 }
 
 export function CupPickForm({
@@ -25,6 +27,7 @@ export function CupPickForm({
 	initialSlots,
 	deadline,
 	readonly,
+	actingAs,
 }: CupPickFormProps) {
 	const router = useRouter()
 
@@ -38,6 +41,7 @@ export function CupPickForm({
 					confidenceRank: s.confidenceRank,
 					predictedResult: s.pickedSide === 'home' ? 'home_win' : 'away_win',
 				})),
+				...(actingAs ? { actingAs: actingAs.gamePlayerId } : {}),
 			}),
 		})
 		if (!res.ok) {
@@ -59,6 +63,7 @@ export function CupPickForm({
 			onSubmit={handleSubmit}
 			deadline={deadline}
 			readonly={readonly}
+			submitLabelOverride={actingAs ? `Submit as ${actingAs.userName}` : undefined}
 		/>
 	)
 }

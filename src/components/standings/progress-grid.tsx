@@ -42,6 +42,7 @@ export interface GridCell {
 	opponentShortName?: string
 	homeAway?: 'H' | 'A'
 	score?: string
+	isAuto?: boolean
 }
 
 export interface GridPlayer {
@@ -61,6 +62,7 @@ interface ProgressGridProps {
 	defaultFilter?: 'all' | 'last5' | 'last3'
 	gameId?: string
 	onShare?: () => void
+	showAdminActions?: boolean
 }
 
 export function ProgressGrid({
@@ -69,7 +71,9 @@ export function ProgressGrid({
 	aliveCount,
 	eliminatedCount,
 	defaultFilter = 'all',
+	gameId,
 	onShare,
+	showAdminActions,
 }: ProgressGridProps) {
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
 	const [showOpponents, setShowOpponents] = useState(false)
@@ -130,6 +134,8 @@ export function ProgressGrid({
 
 	const visibleRounds =
 		filter === 'all' ? rounds : filter === 'last5' ? rounds.slice(-5) : rounds.slice(-3)
+
+	const currentRoundId = rounds.at(-1)?.id
 
 	const sortedPlayers = [...players].sort((a, b) => {
 		if (a.status === 'alive' && b.status !== 'alive') return -1
@@ -252,6 +258,19 @@ export function ProgressGrid({
 													OUT
 												</span>
 											)}
+											{showAdminActions &&
+												gameId &&
+												currentRoundId &&
+												player.status === 'alive' &&
+												player.cellsByRoundId[currentRoundId]?.result === 'no_pick' && (
+													<a
+														href={`/game/${gameId}?actingAs=${player.id}`}
+														title={`Pick for ${player.name}`}
+														className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
+													>
+														✎
+													</a>
+												)}
 										</td>
 										{visibleRounds.map((r) => {
 											const cell = player.cellsByRoundId[r.id] ?? { result: 'empty' }
@@ -377,7 +396,13 @@ function GridCellView({
 		pending: 'bg-[var(--accent)] text-white',
 	}
 
-	const colour = colours[cell.result] ?? 'bg-muted text-muted-foreground'
+	// Auto-picked pending cells use amber dashed treatment instead of the
+	// normal pending fill, so the viewer can spot "we auto-picked for you"
+	// at a glance before kickoff.
+	const isAutoPending = cell.isAuto && cell.result === 'pending'
+	const colour = isAutoPending
+		? 'border border-dashed border-amber-500 text-amber-500 bg-amber-500/10'
+		: (colours[cell.result] ?? 'bg-muted text-muted-foreground')
 
 	const pickedLabel = cell.teamShortName ?? '?'
 	const opponentLabel = cell.opponentShortName
@@ -400,8 +425,9 @@ function GridCellView({
 						: cell.result === 'saved'
 							? ' — Saved by life'
 							: ' — Pending'
+	const autoPart = cell.isAuto ? ' (auto-pick)' : ''
 	const tooltipLabel = cell.teamShortName
-		? `${cell.teamShortName}${opponentPart}${scorePart}${resultPart} (GW${roundNumber})`
+		? `${cell.teamShortName}${opponentPart}${scorePart}${resultPart}${autoPart} (GW${roundNumber})`
 		: `GW${roundNumber}`
 
 	return (
@@ -418,6 +444,11 @@ function GridCellView({
 					<span>{pickedLabel}</span>
 					{showOpponents && opponentLabel && (
 						<span className="text-[0.55rem] font-normal opacity-80">{opponentLabel}</span>
+					)}
+					{cell.isAuto && (
+						<span className="absolute -right-0.5 -top-0.5 rounded-sm bg-amber-500 px-1 py-0 text-[8px] font-black uppercase tracking-wider text-white leading-none">
+							AUTO
+						</span>
 					)}
 					{bump && <BumpBadge kind={bump} />}
 				</span>
