@@ -42,6 +42,7 @@ export const game = pgTable('game', {
 		.$type<{
 			startingLives?: number
 			numberOfPicks?: number
+			allowRebuys?: boolean
 		}>()
 		.default({}),
 	competitionId: uuid('competition_id')
