@@ -118,8 +118,22 @@ export async function syncCompetition(
 				? 'open'
 				: (existingRound?.status ?? 'upcoming')
 		let roundId: string
+		// T-48h: pre-lock window opens. Used to enqueue the planned-pick auto-submit
+		// job (fires at T-60s). Does NOT signal the deadline has passed.
 		const transitioningToOpen =
 			!!existingRound && existingRound.status !== 'open' && newStatus === 'open'
+		// Actual deadline passed: the round is still `open` in the DB (we have not
+		// transitioned it to `active` yet) AND its deadline is in the past. This is
+		// what drives `processDeadlineLock` (rules 2 and 3) — firing earlier would
+		// elim/auto-pick players who still have time to submit. The handler is
+		// idempotent so it is safe to re-fire on subsequent sync runs until the
+		// round advances to `active`/`completed`.
+		const nowForDeadline = new Date()
+		const deadlineHasPassed =
+			!!existingRound &&
+			existingRound.status === 'open' &&
+			existingRound.deadline != null &&
+			existingRound.deadline.getTime() <= nowForDeadline.getTime()
 		if (existingRound) {
 			roundId = existingRound.id
 			await db
@@ -144,18 +158,19 @@ export async function syncCompetition(
 			roundId = created.id
 		}
 
-		if (transitioningToOpen) {
-			transitionedRoundIds.push(roundId)
-			if (ar.deadline) {
-				const plans = await db.query.plannedPick.findMany({
-					where: eq(plannedPick.roundId, roundId),
-				})
-				const autoPlans = plans.filter((p) => p.autoSubmit)
-				const notBefore = new Date(ar.deadline.getTime() - AUTO_SUBMIT_LEAD_MS)
-				for (const p of autoPlans) {
-					await enqueueAutoSubmit(p.gamePlayerId, p.roundId, p.teamId, notBefore)
-				}
+		if (transitioningToOpen && ar.deadline) {
+			const plans = await db.query.plannedPick.findMany({
+				where: eq(plannedPick.roundId, roundId),
+			})
+			const autoPlans = plans.filter((p) => p.autoSubmit)
+			const notBefore = new Date(ar.deadline.getTime() - AUTO_SUBMIT_LEAD_MS)
+			for (const p of autoPlans) {
+				await enqueueAutoSubmit(p.gamePlayerId, p.roundId, p.teamId, notBefore)
 			}
+		}
+
+		if (deadlineHasPassed) {
+			transitionedRoundIds.push(roundId)
 		}
 
 		for (const af of ar.fixtures) {

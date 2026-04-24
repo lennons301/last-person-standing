@@ -307,3 +307,77 @@ describe('syncCompetition auto-submit enqueue', () => {
 		expect(enqueueAutoSubmitMock).not.toHaveBeenCalled()
 	})
 })
+
+describe('syncCompetition deadline-lock trigger (transitionedRoundIds)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbQueryTeamFindMany.mockResolvedValue([])
+		dbQueryRoundFindMany.mockResolvedValue([])
+		dbQueryPlannedPickFindMany.mockResolvedValue([])
+	})
+
+	it('does NOT include the round in transitionedRoundIds on upcoming → open transitions (deadline still in future)', async () => {
+		// Deadline is 24h away — within the 48h OPEN_WINDOW so status flips to `open`,
+		// but the deadline itself has NOT passed yet.
+		const deadline = new Date(Date.now() + 24 * 3600 * 1000)
+		fplFetchTeams.mockResolvedValue([])
+		fplFetchRounds.mockResolvedValue([
+			{ number: 1, name: 'Round 1', deadline, finished: false, fixtures: [] },
+		])
+		dbQueryRoundFindFirst.mockResolvedValue({
+			id: 'round-1',
+			status: 'upcoming',
+			deadline: deadline, // existing round had same deadline, still upcoming
+		})
+
+		const result = await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		expect(result.transitionedRoundIds).toEqual([])
+	})
+
+	it('DOES include the round in transitionedRoundIds when the deadline has actually passed', async () => {
+		// Existing round is `open` (we previously flipped it at T-48h) with a
+		// deadline in the past — i.e. the actual lock moment has arrived.
+		const pastDeadline = new Date(Date.now() - 3600 * 1000) // 1h ago
+		fplFetchTeams.mockResolvedValue([])
+		fplFetchRounds.mockResolvedValue([
+			{ number: 1, name: 'Round 1', deadline: pastDeadline, finished: false, fixtures: [] },
+		])
+		dbQueryRoundFindFirst.mockResolvedValue({
+			id: 'round-1',
+			status: 'open',
+			deadline: pastDeadline,
+		})
+
+		const result = await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		expect(result.transitionedRoundIds).toEqual(['round-1'])
+	})
+
+	it('does NOT include the round when it is already completed (finished in adapter)', async () => {
+		const pastDeadline = new Date(Date.now() - 24 * 3600 * 1000)
+		fplFetchTeams.mockResolvedValue([])
+		fplFetchRounds.mockResolvedValue([
+			{ number: 1, name: 'Round 1', deadline: pastDeadline, finished: true, fixtures: [] },
+		])
+		dbQueryRoundFindFirst.mockResolvedValue({
+			id: 'round-1',
+			status: 'completed',
+			deadline: pastDeadline,
+		})
+
+		const result = await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		// Finished rounds are not open anymore — no re-fire of the deadline lock.
+		expect(result.transitionedRoundIds).toEqual([])
+	})
+})

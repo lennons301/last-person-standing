@@ -100,15 +100,22 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
 		const fixtureTeamIds = roundData.fixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId])
 
-		const validation = validateClassicPick({
-			teamId,
-			playerStatus: targetGamePlayer.status,
-			roundStatus: roundData.status,
-			deadline: roundData.deadline,
-			now,
-			usedTeamIds,
-			fixtureTeamIds,
-		})
+		const allowEliminatedRebuy = Boolean(
+			body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
+		)
+
+		const validation = validateClassicPick(
+			{
+				teamId,
+				playerStatus: targetGamePlayer.status,
+				roundStatus: roundData.status,
+				deadline: roundData.deadline,
+				now,
+				usedTeamIds,
+				fixtureTeamIds,
+			},
+			{ allowEliminatedRebuy },
+		)
 
 		if (!validation.valid) {
 			return NextResponse.json({ error: validation.reason }, { status: 400 })
@@ -188,15 +195,22 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	}>
 	const numberOfPicks = (gameData.modeConfig as { numberOfPicks?: number })?.numberOfPicks ?? 10
 
-	const validation = validateTurboPicks({
-		playerStatus: targetGamePlayer.status,
-		roundStatus: roundData.status,
-		deadline: roundData.deadline,
-		now,
-		numberOfPicks,
-		fixtureIds: roundData.fixtures.map((f) => f.id),
-		picks: pickEntries,
-	})
+	const allowEliminatedRebuyMulti = Boolean(
+		body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
+	)
+
+	const validation = validateTurboPicks(
+		{
+			playerStatus: targetGamePlayer.status,
+			roundStatus: roundData.status,
+			deadline: roundData.deadline,
+			now,
+			numberOfPicks,
+			fixtureIds: roundData.fixtures.map((f) => f.id),
+			picks: pickEntries,
+		},
+		{ allowEliminatedRebuy: allowEliminatedRebuyMulti },
+	)
 
 	if (!validation.valid) {
 		return NextResponse.json({ error: validation.reason }, { status: 400 })

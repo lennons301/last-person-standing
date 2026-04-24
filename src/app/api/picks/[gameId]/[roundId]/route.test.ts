@@ -132,7 +132,10 @@ describe('POST /api/picks/[gameId]/[roundId] — actingAs + un-elimination', () 
 				id: 'gp-target',
 				userId: 'u-target',
 				gameId: 'g1',
-				status: 'alive', // validation needs alive — the admin's pick implicitly rebuys
+				// Real post-deadline-lock state: player was eliminated for missing
+				// the rebuy deadline. Admin acting-as with allowEliminatedRebuy
+				// bypasses the "not alive" validator gate so maybeUnEliminate can run.
+				status: 'eliminated',
 				eliminatedReason: 'missed_rebuy_pick',
 				eliminatedRoundId: 'r-prev',
 			} as never)

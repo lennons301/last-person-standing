@@ -10,8 +10,12 @@ export interface ClassicPickValidation {
 	fixtureTeamIds: string[]
 }
 
-export function validateClassicPick(input: ClassicPickValidation): ValidationResult {
-	if (input.playerStatus !== 'alive') return { valid: false, reason: 'Player is not alive' }
+export function validateClassicPick(
+	input: ClassicPickValidation,
+	opts: { allowEliminatedRebuy?: boolean } = {},
+): ValidationResult {
+	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
+		return { valid: false, reason: 'Player is not alive' }
 	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
@@ -60,8 +64,12 @@ export interface CupPicksValidation {
 	picks: CupPickEntry[]
 }
 
-export function validateCupPicks(input: CupPicksValidation): ValidationResult {
-	if (input.playerStatus !== 'alive') return { valid: false, reason: 'Player is not alive' }
+export function validateCupPicks(
+	input: CupPicksValidation,
+	opts: { allowEliminatedRebuy?: boolean } = {},
+): ValidationResult {
+	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
+		return { valid: false, reason: 'Player is not alive' }
 	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
@@ -99,8 +107,12 @@ export function validateCupPicks(input: CupPicksValidation): ValidationResult {
 	return { valid: true }
 }
 
-export function validateTurboPicks(input: TurboPicksValidation): ValidationResult {
-	if (input.playerStatus !== 'alive') return { valid: false, reason: 'Player is not alive' }
+export function validateTurboPicks(
+	input: TurboPicksValidation,
+	opts: { allowEliminatedRebuy?: boolean } = {},
+): ValidationResult {
+	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
+		return { valid: false, reason: 'Player is not alive' }
 	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
