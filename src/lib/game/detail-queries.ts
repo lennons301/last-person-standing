@@ -105,6 +105,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 	const allPayments = Array.from(paymentsByUser.entries()).flatMap(([uid, rows]) => {
 		const sorted = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
 		return sorted.map((row, idx) => ({
+			id: row.id,
 			userId: uid,
 			userName: userNames.get(uid) ?? 'Player',
 			amount: row.amount,
