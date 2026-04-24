@@ -64,6 +64,8 @@ export const gamePlayer = pgTable(
 		userId: text('user_id').notNull(),
 		status: playerStatusEnum('status').notNull().default('alive'),
 		eliminatedRoundId: uuid('eliminated_round_id').references(() => round.id),
+		// Valid values: 'loss' | 'missed_rebuy_pick' | 'no_pick_no_fallback' | 'admin_removed'
+		eliminatedReason: text('eliminated_reason'),
 		livesRemaining: integer('lives_remaining').notNull().default(0),
 		joinedAt: timestamp('joined_at').defaultNow().notNull(),
 	},
@@ -92,6 +94,7 @@ export const pick = pgTable(
 		result: pickResultEnum('result').notNull().default('pending'),
 		goalsScored: integer('goals_scored'),
 		autoSubmitted: boolean('auto_submitted').notNull().default(false),
+		isAuto: boolean('is_auto').notNull().default(false),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 	},
 	(table) => [
