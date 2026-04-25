@@ -16,19 +16,19 @@ vi.mock('@/lib/db', () => ({
 import { db } from '@/lib/db'
 import { POST } from './route'
 
-const ctx = { params: Promise.resolve({ id: 'g1', userId: 'u1' }) }
+const ctx = { params: Promise.resolve({ id: 'g1', paymentId: 'p1' }) }
 
-describe('confirm payment route', () => {
+describe('admin payment reject route (paymentId-keyed)', () => {
 	beforeEach(() => vi.clearAllMocks())
 
-	it('404s if game does not exist', async () => {
+	it('404s if game not found', async () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue(undefined as never)
 		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
 		expect(res.status).toBe(404)
 	})
 
-	it('403s if caller is not the admin', async () => {
-		vi.mocked(db.query.game.findFirst).mockResolvedValue({ createdBy: 'someone-else' } as never)
+	it('403s if caller is not the creator', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({ createdBy: 'someone' } as never)
 		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
 		expect(res.status).toBe(403)
 	})
@@ -40,23 +40,27 @@ describe('confirm payment route', () => {
 		expect(res.status).toBe(404)
 	})
 
-	it('400s if payment is not in claimed state', async () => {
+	it('400s if payment is not currently paid', async () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue({ createdBy: 'admin' } as never)
 		vi.mocked(db.query.payment.findFirst).mockResolvedValue({
 			id: 'p1',
+			gameId: 'g1',
 			status: 'pending',
 		} as never)
 		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
 		expect(res.status).toBe(400)
 	})
 
-	it('200s for a claimed payment', async () => {
+	it('200s and flips paid → pending, clearing paidAt', async () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue({ createdBy: 'admin' } as never)
 		vi.mocked(db.query.payment.findFirst).mockResolvedValue({
 			id: 'p1',
-			status: 'claimed',
+			gameId: 'g1',
+			status: 'paid',
 		} as never)
 		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
 		expect(res.status).toBe(200)
+		const setCall = vi.mocked(db.update).mock.results[0]?.value.set.mock.calls[0]?.[0]
+		expect(setCall).toMatchObject({ status: 'pending', paidAt: null })
 	})
 })

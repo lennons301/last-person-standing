@@ -850,6 +850,130 @@ async function seed() {
 		console.log(`Created "${seed.name}" (${seed.mode}) — ${seed.players.length} players`)
 	}
 
+	// --- Rebuy smoke game (Phase 4c3) ---
+	// Classic game with allowRebuys=true. Round 1 (GW1) is complete;
+	// the current round is the open round (GW7) so a dev can exercise rebuy UI immediately.
+	//
+	// Player A (dev) — alive, paid, won round 1
+	// Player B (dave) — eliminated round 1 (loss), paid          <- rebuy candidate
+	// Player C (mike) — eliminated round 1 (no_pick_no_fallback), no payment  <- admin-added free rebuy candidate
+	{
+		const gw1 = rounds.find((r) => r.number === 1)
+		if (!gw1) throw new Error('GW1 not found for rebuy smoke game')
+
+		const [rebuyGame] = await db
+			.insert(game)
+			.values({
+				name: 'Rebuy Lads (4c3 smoke)',
+				createdBy: userIds['dev@example.com'],
+				competitionId: pl.id,
+				gameMode: 'classic',
+				modeConfig: { allowRebuys: true },
+				entryFee: '10.00',
+				inviteCode: generateInviteCode(),
+				status: 'active',
+				currentRoundId: openRound.id,
+			})
+			.returning()
+
+		// Player A — dev@example.com — alive
+		const [gpA] = await db
+			.insert(gamePlayer)
+			.values({
+				gameId: rebuyGame.id,
+				userId: userIds['dev@example.com'],
+				status: 'alive',
+				livesRemaining: 0,
+			})
+			.returning()
+		await db.insert(payment).values({
+			gameId: rebuyGame.id,
+			userId: userIds['dev@example.com'],
+			amount: '10.00',
+			status: 'paid',
+			paidAt: new Date(),
+		})
+
+		// Player B — dave@example.com — eliminated (loss), paid
+		const [gpB] = await db
+			.insert(gamePlayer)
+			.values({
+				gameId: rebuyGame.id,
+				userId: userIds['dave@example.com'],
+				status: 'eliminated',
+				eliminatedRoundId: gw1.id,
+				eliminatedReason: 'loss',
+				livesRemaining: 0,
+			})
+			.returning()
+		await db.insert(payment).values({
+			gameId: rebuyGame.id,
+			userId: userIds['dave@example.com'],
+			amount: '10.00',
+			status: 'paid',
+			paidAt: new Date(),
+		})
+
+		// Player C — mike@example.com — eliminated (no pick), no payment row
+		const [gpC] = await db
+			.insert(gamePlayer)
+			.values({
+				gameId: rebuyGame.id,
+				userId: userIds['mike@example.com'],
+				status: 'eliminated',
+				eliminatedRoundId: gw1.id,
+				eliminatedReason: 'no_pick_no_fallback',
+				livesRemaining: 0,
+			})
+			.returning()
+
+		// Picks for round 1
+		const gw1Fixtures = fixturesByRound.get(gw1.id) ?? []
+
+		// Player A picks a winning team in GW1
+		const winnerFixtureA = gw1Fixtures.find((f) => fixtureWinnerTeam(f) !== null)
+		if (winnerFixtureA) {
+			const winner = fixtureWinnerTeam(winnerFixtureA)!
+			await db.insert(pick).values({
+				gameId: rebuyGame.id,
+				gamePlayerId: gpA.id,
+				roundId: gw1.id,
+				teamId: winner.id,
+				fixtureId: winnerFixtureA.id,
+				result: 'win',
+				goalsScored:
+					winner.id === winnerFixtureA.homeTeamId
+						? (winnerFixtureA.homeScore ?? 0)
+						: (winnerFixtureA.awayScore ?? 0),
+			})
+		}
+
+		// Player B picks a losing team in GW1 (uses a different fixture from Player A's)
+		const loserFixtureB = gw1Fixtures.find(
+			(f) => fixtureLoserTeam(f) !== null && f.id !== winnerFixtureA?.id,
+		)
+		if (loserFixtureB) {
+			const loser = fixtureLoserTeam(loserFixtureB)!
+			await db.insert(pick).values({
+				gameId: rebuyGame.id,
+				gamePlayerId: gpB.id,
+				roundId: gw1.id,
+				teamId: loser.id,
+				fixtureId: loserFixtureB.id,
+				result: 'loss',
+				goalsScored: 0,
+			})
+		}
+
+		// Player C has no pick for round 1 (eliminated as no_pick_no_fallback)
+		// gpC declared but only used for gamePlayer row — no pick inserted intentionally
+		void gpC
+
+		console.log(
+			`Created "Rebuy Lads (4c3 smoke)" — 3 players (A:alive B:eliminated C:eliminated-no-pick)`,
+		)
+	}
+
 	// --- Mid-match Cup game for live UI verification ---
 	const round8 = rounds.find((r) => r.number === 8)
 	if (round8) {

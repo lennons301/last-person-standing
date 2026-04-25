@@ -14,6 +14,19 @@ vi.mock('@/lib/db', () => ({
 		insert: vi.fn(),
 		delete: vi.fn(),
 		update: vi.fn(),
+		transaction: vi.fn(async (cb) => {
+			// Create a transaction proxy that mirrors db methods
+			const txMock = {
+				insert: vi.fn(),
+				delete: vi.fn(),
+				update: vi.fn(),
+			}
+			// Set up the tx to use the same mocks as the outer db
+			vi.mocked(txMock.insert).mockImplementation(vi.mocked(db.insert) as never)
+			vi.mocked(txMock.delete).mockImplementation(vi.mocked(db.delete) as never)
+			vi.mocked(txMock.update).mockImplementation(vi.mocked(db.update) as never)
+			return cb(txMock as never)
+		}),
 	},
 }))
 

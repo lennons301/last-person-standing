@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { notFound, redirect } from 'next/navigation'
 import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
+import { RebuyBanner } from '@/components/game/rebuy-banner'
 import { ClassicPick } from '@/components/picks/classic-pick'
 import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
@@ -259,6 +260,14 @@ export default async function GameDetailPage({
 			}}
 			pickSection={
 				<>
+					{game.rebuyBanner && (
+						<RebuyBanner
+							gameId={game.id}
+							entryFee={game.rebuyBanner.entryFee}
+							round2Deadline={game.rebuyBanner.round2Deadline}
+							pendingPayment={game.rebuyBanner.pendingPayment}
+						/>
+					)}
 					{actingAsTarget && (
 						<ActingAsBanner
 							gameId={game.id}

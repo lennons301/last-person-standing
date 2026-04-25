@@ -11,6 +11,7 @@ import {
 	type ChainRoundRow,
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
+import { isRebuyEligible } from '@/lib/game/rebuy'
 import { calculatePot } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, pick, plannedPick } from '@/lib/schema/game'
@@ -88,12 +89,49 @@ export async function getGameDetail(gameId: string, userId: string) {
 		paymentsByUser.set(p.userId, list)
 	}
 
+	// Pre-compute rebuy eligibility per user (used for the admin payments panel).
+	// We need rounds 1 and 2 for this — they are also fetched later for the rebuy
+	// banner, but we do the fetch once here and reuse below.
+	const competitionRounds = await db.query.round.findMany({
+		where: and(eq(round.competitionId, gameData.competition.id), inArray(round.number, [1, 2])),
+	})
+	const round1 = competitionRounds.find((r) => r.number === 1)
+	const round2 = competitionRounds.find((r) => r.number === 2)
+
+	const eligibilityByUser = new Map<string, boolean>()
+	for (const uid of relevantUserIds) {
+		const userPlayer = gameData.players.find((p) => p.userId === uid)
+		const userPaymentRows = payments.filter((p) => p.userId === uid)
+		if (!userPlayer || !round1 || !round2 || !round2.deadline) {
+			eligibilityByUser.set(uid, false)
+			continue
+		}
+		eligibilityByUser.set(
+			uid,
+			isRebuyEligible({
+				game: {
+					gameMode: gameData.gameMode,
+					modeConfig: gameData.modeConfig as { allowRebuys?: boolean } | null,
+				},
+				gamePlayer: {
+					status: userPlayer.status,
+					eliminatedRoundId: userPlayer.eliminatedRoundId,
+				},
+				round1: { id: round1.id },
+				round2: { deadline: round2.deadline },
+				paymentRowCount: userPaymentRows.length,
+				now: new Date(),
+			}),
+		)
+	}
+
 	// Viewer's primary (earliest) payment row — the one the claim endpoint targets.
 	const myPaymentRows = [...(paymentsByUser.get(userId) ?? [])].sort(
 		(a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
 	)
 	const myPayment = myPaymentRows[0]
 		? {
+				id: myPaymentRows[0].id,
 				status: myPaymentRows[0].status as 'pending' | 'claimed' | 'paid' | 'refunded',
 				amount: myPaymentRows[0].amount,
 			}
@@ -104,11 +142,13 @@ export async function getGameDetail(gameId: string, userId: string) {
 	const allPayments = Array.from(paymentsByUser.entries()).flatMap(([uid, rows]) => {
 		const sorted = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
 		return sorted.map((row, idx) => ({
+			id: row.id,
 			userId: uid,
 			userName: userNames.get(uid) ?? 'Player',
 			amount: row.amount,
 			status: row.status as 'pending' | 'claimed' | 'paid' | 'refunded',
 			isRebuy: idx > 0,
+			isRebuyEligible: idx === 0 ? (eligibilityByUser.get(uid) ?? false) : false,
 			claimedAt: row.claimedAt,
 			paidAt: row.paidAt,
 		}))
@@ -117,6 +157,59 @@ export async function getGameDetail(gameId: string, userId: string) {
 		.filter((p) => p.userId !== userId)
 		.map((p) => ({ userName: p.userName, status: p.status, isRebuy: p.isRebuy }))
 	const adminPayments = isAdmin ? allPayments : undefined
+
+	// Rebuy banner: rounds 1 and 2 were already fetched above for eligibility checks.
+	const viewerGamePlayer = myMembership
+	const viewerPayments = [...(paymentsByUser.get(userId) ?? [])]
+
+	let rebuyBanner: {
+		entryFee: string
+		round2Deadline: Date
+		pendingPayment: { id: string; amount: string } | null
+	} | null = null
+
+	if (viewerGamePlayer && round1 && round2 && round2.deadline && gameData.entryFee) {
+		const eligible = isRebuyEligible({
+			game: {
+				gameMode: gameData.gameMode,
+				modeConfig: gameData.modeConfig as { allowRebuys?: boolean } | null,
+			},
+			gamePlayer: {
+				status: viewerGamePlayer.status,
+				eliminatedRoundId: viewerGamePlayer.eliminatedRoundId,
+			},
+			round1: { id: round1.id },
+			round2: { deadline: round2.deadline },
+			paymentRowCount: viewerPayments.length,
+			now: new Date(),
+		})
+
+		// Pending-rebuy state: viewer has more than one payment row, the most recent is
+		// pending, and they're alive (i.e., they already initiated a rebuy and need to
+		// claim paid).
+		const sortedPayments = [...viewerPayments].sort(
+			(a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+		)
+		const mostRecent = sortedPayments[0]
+		const hasPendingRebuy =
+			viewerPayments.length > 1 &&
+			mostRecent?.status === 'pending' &&
+			viewerGamePlayer.status === 'alive'
+
+		if (eligible) {
+			rebuyBanner = {
+				entryFee: gameData.entryFee,
+				round2Deadline: round2.deadline,
+				pendingPayment: null,
+			}
+		} else if (hasPendingRebuy && mostRecent) {
+			rebuyBanner = {
+				entryFee: gameData.entryFee,
+				round2Deadline: round2.deadline,
+				pendingPayment: { id: mostRecent.id, amount: mostRecent.amount },
+			}
+		}
+	}
 
 	return {
 		id: gameData.id,
@@ -139,6 +232,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		otherPayments,
 		adminPayments,
 		myCurrentRoundPick,
+		rebuyBanner,
 	}
 }
 
