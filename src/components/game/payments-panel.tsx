@@ -11,6 +11,7 @@ export interface AdminPayment {
 	amount: string
 	status: PaymentStatus
 	isRebuy: boolean
+	isRebuyEligible: boolean
 	claimedAt: Date | null
 	paidAt: Date | null
 }
@@ -28,12 +29,25 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 	const all = props.payments
 	const unpaidCount = all.filter((p) => p.status === 'pending').length
 
-	async function callAction(paymentId: string, action: 'dispute') {
-		const res = await fetch(`/api/games/${props.gameId}/payments/${paymentId}/reject`, {
+	async function callAction(p: AdminPayment, action: 'dispute' | 'admin-rebuy') {
+		if (action === 'admin-rebuy') {
+			const res = await fetch(`/api/games/${props.gameId}/admin/rebuy/${p.userId}`, {
+				method: 'POST',
+			})
+			if (res.ok) {
+				toast.success('Player reactivated — rebuy payment created as pending')
+				props.onChange?.()
+			} else {
+				toast.error('Rebuy failed')
+			}
+			return
+		}
+		// 'dispute' branch — POSTs to .../{paymentId}/reject
+		const res = await fetch(`/api/games/${props.gameId}/payments/${p.id}/reject`, {
 			method: 'POST',
 		})
 		if (res.ok) {
-			toast.success(action === 'dispute' ? 'Payment disputed' : 'Payment updated')
+			toast.success('Payment disputed')
 			props.onChange?.()
 		} else {
 			toast.error('Action failed')
@@ -67,22 +81,33 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 						key={`${p.userId}-all-${p.isRebuy ? 'rebuy' : 'original'}`}
 						p={p}
 						actions={
-							p.status === 'paid' ? (
-								<button
-									type="button"
-									onClick={() => callAction(p.id, 'dispute')}
-									className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
-								>
-									Dispute
-								</button>
-							) : p.status === 'pending' ? (
-								<PaymentReminderButton
-									gameName={props.gameName}
-									amount={p.amount}
-									creatorName="you"
-									inviteCode={props.inviteCode}
-								/>
-							) : null
+							<div className="flex gap-1">
+								{p.isRebuyEligible && (
+									<button
+										type="button"
+										onClick={() => callAction(p, 'admin-rebuy')}
+										className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+									>
+										Rebuy player
+									</button>
+								)}
+								{p.status === 'paid' ? (
+									<button
+										type="button"
+										onClick={() => callAction(p, 'dispute')}
+										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
+									>
+										Dispute
+									</button>
+								) : p.status === 'pending' ? (
+									<PaymentReminderButton
+										gameName={props.gameName}
+										amount={p.amount}
+										creatorName="you"
+										inviteCode={props.inviteCode}
+									/>
+								) : null}
+							</div>
 						}
 					/>
 				))}

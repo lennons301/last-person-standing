@@ -89,6 +89,42 @@ export async function getGameDetail(gameId: string, userId: string) {
 		paymentsByUser.set(p.userId, list)
 	}
 
+	// Pre-compute rebuy eligibility per user (used for the admin payments panel).
+	// We need rounds 1 and 2 for this — they are also fetched later for the rebuy
+	// banner, but we do the fetch once here and reuse below.
+	const competitionRounds = await db.query.round.findMany({
+		where: and(eq(round.competitionId, gameData.competition.id), inArray(round.number, [1, 2])),
+	})
+	const round1 = competitionRounds.find((r) => r.number === 1)
+	const round2 = competitionRounds.find((r) => r.number === 2)
+
+	const eligibilityByUser = new Map<string, boolean>()
+	for (const uid of relevantUserIds) {
+		const userPlayer = gameData.players.find((p) => p.userId === uid)
+		const userPaymentRows = payments.filter((p) => p.userId === uid)
+		if (!userPlayer || !round1 || !round2 || !round2.deadline) {
+			eligibilityByUser.set(uid, false)
+			continue
+		}
+		eligibilityByUser.set(
+			uid,
+			isRebuyEligible({
+				game: {
+					gameMode: gameData.gameMode,
+					modeConfig: gameData.modeConfig as { allowRebuys?: boolean } | null,
+				},
+				gamePlayer: {
+					status: userPlayer.status,
+					eliminatedRoundId: userPlayer.eliminatedRoundId,
+				},
+				round1: { id: round1.id },
+				round2: { deadline: round2.deadline },
+				paymentRowCount: userPaymentRows.length,
+				now: new Date(),
+			}),
+		)
+	}
+
 	// Viewer's primary (earliest) payment row — the one the claim endpoint targets.
 	const myPaymentRows = [...(paymentsByUser.get(userId) ?? [])].sort(
 		(a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
@@ -112,6 +148,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 			amount: row.amount,
 			status: row.status as 'pending' | 'claimed' | 'paid' | 'refunded',
 			isRebuy: idx > 0,
+			isRebuyEligible: idx === 0 ? (eligibilityByUser.get(uid) ?? false) : false,
 			claimedAt: row.claimedAt,
 			paidAt: row.paidAt,
 		}))
@@ -121,12 +158,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		.map((p) => ({ userName: p.userName, status: p.status, isRebuy: p.isRebuy }))
 	const adminPayments = isAdmin ? allPayments : undefined
 
-	// Rebuy banner: fetch rounds 1 and 2 to check eligibility / pending state.
-	const competitionRounds = await db.query.round.findMany({
-		where: and(eq(round.competitionId, gameData.competition.id), inArray(round.number, [1, 2])),
-	})
-	const round1 = competitionRounds.find((r) => r.number === 1)
-	const round2 = competitionRounds.find((r) => r.number === 2)
+	// Rebuy banner: rounds 1 and 2 were already fetched above for eligibility checks.
 	const viewerGamePlayer = myMembership
 	const viewerPayments = [...(paymentsByUser.get(userId) ?? [])]
 
