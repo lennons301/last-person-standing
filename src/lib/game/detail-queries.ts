@@ -11,6 +11,7 @@ import {
 	type ChainRoundRow,
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
+import { isRebuyEligible } from '@/lib/game/rebuy'
 import { calculatePot } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, pick, plannedPick } from '@/lib/schema/game'
@@ -120,6 +121,64 @@ export async function getGameDetail(gameId: string, userId: string) {
 		.map((p) => ({ userName: p.userName, status: p.status, isRebuy: p.isRebuy }))
 	const adminPayments = isAdmin ? allPayments : undefined
 
+	// Rebuy banner: fetch rounds 1 and 2 to check eligibility / pending state.
+	const competitionRounds = await db.query.round.findMany({
+		where: and(eq(round.competitionId, gameData.competition.id), inArray(round.number, [1, 2])),
+	})
+	const round1 = competitionRounds.find((r) => r.number === 1)
+	const round2 = competitionRounds.find((r) => r.number === 2)
+	const viewerGamePlayer = myMembership
+	const viewerPayments = [...(paymentsByUser.get(userId) ?? [])]
+
+	let rebuyBanner: {
+		entryFee: string
+		round2Deadline: Date
+		pendingPayment: { id: string; amount: string } | null
+	} | null = null
+
+	if (viewerGamePlayer && round1 && round2 && round2.deadline && gameData.entryFee) {
+		const eligible = isRebuyEligible({
+			game: {
+				gameMode: gameData.gameMode,
+				modeConfig: gameData.modeConfig as { allowRebuys?: boolean } | null,
+			},
+			gamePlayer: {
+				status: viewerGamePlayer.status,
+				eliminatedRoundId: viewerGamePlayer.eliminatedRoundId,
+			},
+			round1: { id: round1.id },
+			round2: { deadline: round2.deadline },
+			paymentRowCount: viewerPayments.length,
+			now: new Date(),
+		})
+
+		// Pending-rebuy state: viewer has more than one payment row, the most recent is
+		// pending, and they're alive (i.e., they already initiated a rebuy and need to
+		// claim paid).
+		const sortedPayments = [...viewerPayments].sort(
+			(a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+		)
+		const mostRecent = sortedPayments[0]
+		const hasPendingRebuy =
+			viewerPayments.length > 1 &&
+			mostRecent?.status === 'pending' &&
+			viewerGamePlayer.status === 'alive'
+
+		if (eligible) {
+			rebuyBanner = {
+				entryFee: gameData.entryFee,
+				round2Deadline: round2.deadline,
+				pendingPayment: null,
+			}
+		} else if (hasPendingRebuy && mostRecent) {
+			rebuyBanner = {
+				entryFee: gameData.entryFee,
+				round2Deadline: round2.deadline,
+				pendingPayment: { id: mostRecent.id, amount: mostRecent.amount },
+			}
+		}
+	}
+
 	return {
 		id: gameData.id,
 		name: gameData.name,
@@ -141,6 +200,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		otherPayments,
 		adminPayments,
 		myCurrentRoundPick,
+		rebuyBanner,
 	}
 }
 
