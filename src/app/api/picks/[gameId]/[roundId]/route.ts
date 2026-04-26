@@ -75,17 +75,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
 	const now = new Date()
 
-	// Shared helper: after a successful pick write, if the admin was acting-as
-	// a player who was eliminated via `missed_rebuy_pick`, flip them back to
-	// alive (Phase 4c2 rule 1: rebuy is implicit on first admin pick).
-	async function maybeUnEliminate(): Promise<boolean> {
+	// Helper: check if we need to un-eliminate. Returns true if conditions are met.
+	function shouldUnEliminate(): boolean {
 		if (!body.actingAs) return false
 		if (!targetGamePlayer) return false
 		if (targetGamePlayer.eliminatedReason !== 'missed_rebuy_pick') return false
-		await db
-			.update(gamePlayer)
-			.set({ status: 'alive', eliminatedReason: null, eliminatedRoundId: null })
-			.where(eq(gamePlayer.id, targetGamePlayer.id))
 		return true
 	}
 
@@ -171,18 +165,32 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			await db.delete(pick).where(eq(pick.id, existingPick.id))
 		}
 
-		const [newPick] = await db
-			.insert(pick)
-			.values({
-				gameId,
-				gamePlayerId: targetGamePlayer.id,
-				roundId,
-				teamId,
-				fixtureId: teamFixture?.id,
-			})
-			.returning()
+		let newPick!: typeof pick.$inferSelect
+		let unEliminated = false
 
-		const unEliminated = await maybeUnEliminate()
+		await db.transaction(async (tx) => {
+			const picks = await tx
+				.insert(pick)
+				.values({
+					gameId,
+					gamePlayerId: targetGamePlayer.id,
+					roundId,
+					teamId,
+					fixtureId: teamFixture?.id,
+				})
+				.returning()
+			newPick = picks[0]
+
+			// If the admin was acting-as a player who was eliminated via `missed_rebuy_pick`,
+			// flip them back to alive (Phase 4c2 rule 1: rebuy is implicit on first admin pick).
+			if (shouldUnEliminate()) {
+				await tx
+					.update(gamePlayer)
+					.set({ status: 'alive', eliminatedReason: null, eliminatedRoundId: null })
+					.where(eq(gamePlayer.id, targetGamePlayer.id))
+				unEliminated = true
+			}
+		})
 
 		return NextResponse.json({ ...newPick, unEliminated }, { status: 201 })
 	}
@@ -259,29 +267,43 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	// home_win/draw and the away team for away_win.
 	const fixtureLookup = new Map(roundData.fixtures.map((f) => [f.id, f]))
 
-	const newPicks = await db
-		.insert(pick)
-		.values(
-			pickEntries.map(
-				(entry: { fixtureId: string; confidenceRank: number; predictedResult: string }) => {
-					const fx = fixtureLookup.get(entry.fixtureId)
-					if (!fx) throw new Error(`Fixture ${entry.fixtureId} not found`)
-					const teamId = entry.predictedResult === 'away_win' ? fx.awayTeamId : fx.homeTeamId
-					return {
-						gameId,
-						gamePlayerId: targetGamePlayer!.id,
-						roundId,
-						teamId,
-						fixtureId: entry.fixtureId,
-						confidenceRank: entry.confidenceRank,
-						predictedResult: entry.predictedResult,
-					}
-				},
-			),
-		)
-		.returning()
+	let newPicks: (typeof pick.$inferSelect)[] = []
+	let unEliminated = false
 
-	const unEliminated = await maybeUnEliminate()
+	await db.transaction(async (tx) => {
+		const insertedPicks = await tx
+			.insert(pick)
+			.values(
+				pickEntries.map(
+					(entry: { fixtureId: string; confidenceRank: number; predictedResult: string }) => {
+						const fx = fixtureLookup.get(entry.fixtureId)
+						if (!fx) throw new Error(`Fixture ${entry.fixtureId} not found`)
+						const teamId = entry.predictedResult === 'away_win' ? fx.awayTeamId : fx.homeTeamId
+						return {
+							gameId,
+							gamePlayerId: targetGamePlayer!.id,
+							roundId,
+							teamId,
+							fixtureId: entry.fixtureId,
+							confidenceRank: entry.confidenceRank,
+							predictedResult: entry.predictedResult,
+						}
+					},
+				),
+			)
+			.returning()
+		newPicks = insertedPicks
+
+		// If the admin was acting-as a player who was eliminated via `missed_rebuy_pick`,
+		// flip them back to alive (Phase 4c2 rule 1: rebuy is implicit on first admin pick).
+		if (shouldUnEliminate()) {
+			await tx
+				.update(gamePlayer)
+				.set({ status: 'alive', eliminatedReason: null, eliminatedRoundId: null })
+				.where(eq(gamePlayer.id, targetGamePlayer.id))
+			unEliminated = true
+		}
+	})
 
 	return NextResponse.json({ picks: newPicks, unEliminated }, { status: 201 })
 }

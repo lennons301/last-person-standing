@@ -1,16 +1,17 @@
 'use client'
 
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { PaymentReminderButton } from './payment-reminder'
 import { type PaymentStatus, PaymentStatusChip } from './payment-status-chip'
 
 export interface AdminPayment {
+	id: string
 	userId: string
 	userName: string
 	amount: string
 	status: PaymentStatus
 	isRebuy: boolean
+	isRebuyEligible: boolean
 	claimedAt: Date | null
 	paidAt: Date | null
 }
@@ -25,29 +26,31 @@ interface PaymentsPanelProps {
 }
 
 export function PaymentsPanel(props: PaymentsPanelProps) {
-	const claimed = props.payments.filter((p) => p.status === 'claimed')
 	const all = props.payments
 	const unpaidCount = all.filter((p) => p.status === 'pending').length
 
-	async function callAction(userId: string, action: 'confirm' | 'reject' | 'revert') {
-		const endpoint = action === 'confirm' ? 'confirm' : action === 'reject' ? 'reject' : 'override'
-		const body = action === 'revert' ? JSON.stringify({ status: 'pending' }) : undefined
-		const res = await fetch(`/api/games/${props.gameId}/payments/${userId}/${endpoint}`, {
+	async function callAction(p: AdminPayment, action: 'dispute' | 'admin-rebuy') {
+		if (action === 'admin-rebuy') {
+			const res = await fetch(`/api/games/${props.gameId}/admin/rebuy/${p.userId}`, {
+				method: 'POST',
+			})
+			if (res.ok) {
+				toast.success('Player reactivated — rebuy payment created as pending')
+				props.onChange?.()
+			} else {
+				toast.error('Rebuy failed')
+			}
+			return
+		}
+		// 'dispute' branch — POSTs to .../{paymentId}/reject
+		const res = await fetch(`/api/games/${props.gameId}/payments/${p.id}/reject`, {
 			method: 'POST',
-			headers: body ? { 'content-type': 'application/json' } : undefined,
-			body,
 		})
 		if (res.ok) {
-			toast.success(
-				action === 'confirm'
-					? 'Payment confirmed'
-					: action === 'reject'
-						? 'Payment rejected'
-						: 'Payment reverted',
-			)
+			toast.success('Payment disputed')
 			props.onChange?.()
 		} else {
-			toast.error(`Failed to ${action}`)
+			toast.error('Action failed')
 		}
 	}
 
@@ -56,9 +59,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 			<div className="flex items-start justify-between">
 				<div>
 					<h2 className="font-display text-lg font-semibold">Payments</h2>
-					<div className="text-[11px] text-muted-foreground">
-						{claimed.length} of {all.length} awaiting confirmation · {unpaidCount} unpaid
-					</div>
+					<div className="text-[11px] text-muted-foreground">{unpaidCount} unpaid</div>
 				</div>
 				<div className="text-right">
 					<div className="text-[10px] uppercase text-muted-foreground">Received total</div>
@@ -71,39 +72,6 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 				</div>
 			</div>
 
-			{claimed.length > 0 && (
-				<div>
-					<div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
-						Needs your attention ({claimed.length})
-					</div>
-					{claimed.map((p) => (
-						<Row
-							key={`${p.userId}-claimed`}
-							p={p}
-							highlight
-							actions={
-								<>
-									<button
-										type="button"
-										onClick={() => callAction(p.userId, 'confirm')}
-										className="rounded bg-foreground px-3 py-1.5 text-xs font-semibold text-background"
-									>
-										✓ Confirm
-									</button>
-									<button
-										type="button"
-										onClick={() => callAction(p.userId, 'reject')}
-										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
-									>
-										Reject
-									</button>
-								</>
-							}
-						/>
-					))}
-				</div>
-			)}
-
 			<div>
 				<div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
 					All payments
@@ -113,22 +81,33 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 						key={`${p.userId}-all-${p.isRebuy ? 'rebuy' : 'original'}`}
 						p={p}
 						actions={
-							p.status === 'paid' ? (
-								<button
-									type="button"
-									onClick={() => callAction(p.userId, 'revert')}
-									className="rounded border border-border px-3 py-1.5 text-xs font-semibold"
-								>
-									Revert
-								</button>
-							) : p.status === 'pending' ? (
-								<PaymentReminderButton
-									gameName={props.gameName}
-									amount={p.amount}
-									creatorName="you"
-									inviteCode={props.inviteCode}
-								/>
-							) : null
+							<div className="flex gap-1">
+								{p.isRebuyEligible && (
+									<button
+										type="button"
+										onClick={() => callAction(p, 'admin-rebuy')}
+										className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+									>
+										Rebuy player
+									</button>
+								)}
+								{p.status === 'paid' ? (
+									<button
+										type="button"
+										onClick={() => callAction(p, 'dispute')}
+										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
+									>
+										Dispute
+									</button>
+								) : p.status === 'pending' ? (
+									<PaymentReminderButton
+										gameName={props.gameName}
+										amount={p.amount}
+										creatorName="you"
+										inviteCode={props.inviteCode}
+									/>
+								) : null}
+							</div>
 						}
 					/>
 				))}
@@ -137,22 +116,9 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 	)
 }
 
-function Row({
-	p,
-	actions,
-	highlight,
-}: {
-	p: AdminPayment
-	actions: React.ReactNode
-	highlight?: boolean
-}) {
+function Row({ p, actions }: { p: AdminPayment; actions: React.ReactNode }) {
 	return (
-		<div
-			className={cn(
-				'mb-1 grid grid-cols-[28px_1fr_120px_60px_auto] items-center gap-2 rounded-lg border px-3 py-2',
-				highlight ? 'border-amber-300 bg-amber-50' : 'border-border bg-card',
-			)}
-		>
+		<div className="mb-1 grid grid-cols-[28px_1fr_120px_60px_auto] items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
 			<Avatar name={p.userName} />
 			<div>
 				<div className="text-sm font-semibold">

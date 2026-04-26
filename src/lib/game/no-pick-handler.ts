@@ -31,10 +31,41 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 				})
 				if (existingPick) continue
 
-				if (g.gameMode === 'classic' && roundRow.number >= 3) {
-					const result = await applyRule2Classic(g.id, player, roundId)
-					if (result === 'auto-pick-inserted') autoPicksInserted++
-					else if (result === 'eliminated-no-fallback') playersEliminated++
+				if (g.gameMode === 'classic') {
+					if (roundRow.number === 1) {
+						const allowRebuys =
+							(g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
+						if (allowRebuys) {
+							await db
+								.update(gamePlayer)
+								.set({
+									status: 'eliminated',
+									eliminatedReason: 'no_pick_no_fallback',
+									eliminatedRoundId: roundId,
+								})
+								.where(eq(gamePlayer.id, player.id))
+							playersEliminated++
+						}
+						// !allowRebuys: classic.ts exemption applies; no elimination here.
+					} else if (roundRow.number === 2) {
+						const prevPayments = await db.query.payment.findMany({
+							where: and(eq(payment.gameId, g.id), eq(payment.userId, player.userId)),
+						})
+						const reason = prevPayments.length > 1 ? 'missed_rebuy_pick' : 'no_pick_no_fallback'
+						await db
+							.update(gamePlayer)
+							.set({
+								status: 'eliminated',
+								eliminatedReason: reason,
+								eliminatedRoundId: roundId,
+							})
+							.where(eq(gamePlayer.id, player.id))
+						playersEliminated++
+					} else {
+						const result = await applyRule2Classic(g.id, player, roundId)
+						if (result === 'auto-pick-inserted') autoPicksInserted++
+						else if (result === 'eliminated-no-fallback') playersEliminated++
+					}
 				} else if (g.gameMode === 'turbo' || g.gameMode === 'cup') {
 					const result = await applyRule3TurboOrCup(g.id, player, roundId)
 					playersEliminated++
