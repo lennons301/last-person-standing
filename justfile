@@ -21,9 +21,21 @@ build:
 
 setup:
     pnpm install
+    just env-init
     docker compose up -d
     just db-migrate
     just db-seed
+
+# Bootstrap .env.local from .env.example if it doesn't exist.
+# Real secrets come from Doppler in production; placeholder values in
+# .env.example are enough for pnpm build / pnpm test to work locally.
+env-init:
+    @if [ ! -f .env.local ]; then \
+        cp .env.example .env.local; \
+        echo "✔ Created .env.local from .env.example — replace placeholders with real values for the services you need."; \
+    else \
+        echo "↳ .env.local already exists; leaving alone."; \
+    fi
 
 db-generate:
     pnpm exec drizzle-kit generate

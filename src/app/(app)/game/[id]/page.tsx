@@ -257,6 +257,9 @@ export default async function GameDetailPage({
 				otherPayments: game.otherPayments,
 				adminPayments: game.adminPayments,
 				myCurrentRoundPick: game.myCurrentRoundPick,
+				defaultShareVariant: game.defaultShareVariant,
+				liveShareAvailable: game.liveShareAvailable,
+				winnerShareAvailable: game.winnerShareAvailable,
 			}}
 			pickSection={
 				<>

@@ -43,6 +43,9 @@ interface GameDetailViewProps {
 			teamShortName: string
 			kickoffLabel: string
 		} | null
+		defaultShareVariant: 'standings' | 'live' | 'winner'
+		liveShareAvailable: boolean
+		winnerShareAvailable: boolean
 	}
 	pickSection: React.ReactNode
 	classicGrid?: {
@@ -180,6 +183,9 @@ export function GameDetailView({
 					pot={game.pot.total}
 					inviteUrl={inviteUrl}
 					inviteCode={game.inviteCode}
+					defaultVariant={game.defaultShareVariant}
+					liveAvailable={game.liveShareAvailable}
+					winnerAvailable={game.winnerShareAvailable}
 				/>
 			</div>
 		</LiveProvider>
