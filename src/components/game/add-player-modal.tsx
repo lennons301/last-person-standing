@@ -1,6 +1,14 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 interface UserRow {
@@ -11,6 +19,7 @@ interface UserRow {
 
 interface AddPlayerModalProps {
 	gameId: string
+	open: boolean
 	onClose: () => void
 }
 
@@ -19,7 +28,7 @@ interface AddedState {
 	userName: string
 }
 
-export function AddPlayerModal({ gameId, onClose }: AddPlayerModalProps) {
+export function AddPlayerModal({ gameId, open, onClose }: AddPlayerModalProps) {
 	const router = useRouter()
 	const [query, setQuery] = useState('')
 	const [results, setResults] = useState<UserRow[]>([])
@@ -29,9 +38,16 @@ export function AddPlayerModal({ gameId, onClose }: AddPlayerModalProps) {
 	const [added, setAdded] = useState<AddedState | null>(null)
 	const inputRef = useRef<HTMLInputElement>(null)
 
+	// Reset state when dialog opens
 	useEffect(() => {
-		inputRef.current?.focus()
-	}, [])
+		if (open) {
+			setQuery('')
+			setResults([])
+			setSelectedId(null)
+			setError(null)
+			setAdded(null)
+		}
+	}, [open])
 
 	useEffect(() => {
 		if (added) return
@@ -73,6 +89,7 @@ export function AddPlayerModal({ gameId, onClose }: AddPlayerModalProps) {
 
 	function handleGoToPick() {
 		if (!added) return
+		onClose()
 		router.push(`/game/${gameId}?actingAs=${added.gamePlayerId}`)
 	}
 
@@ -82,27 +99,15 @@ export function AddPlayerModal({ gameId, onClose }: AddPlayerModalProps) {
 	}
 
 	return (
-		// biome-ignore lint/a11y/useKeyWithClickEvents: backdrop click-to-close; Escape handling delegated to dialog close button
-		// biome-ignore lint/a11y/noStaticElementInteractions: backdrop is a dialog scrim, not an interactive control
-		<div
-			role="dialog"
-			aria-modal="true"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/65"
-			onClick={onClose}
-		>
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation on container prevents backdrop-close, not a user-facing interaction */}
-			{/* biome-ignore lint/a11y/noStaticElementInteractions: inner panel is non-interactive — intercepts bubbling clicks only */}
-			<div
-				onClick={(e) => e.stopPropagation()}
-				className="w-[340px] rounded-lg border border-border bg-background p-5 shadow-2xl"
-			>
+		<Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+			<DialogContent className="sm:max-w-md">
 				{added ? (
 					<>
-						<h3 className="text-[15px] font-bold">{added.userName} added</h3>
-						<p className="mb-4 mt-1 text-xs text-muted-foreground">
-							Pick for them now, or come back later.
-						</p>
-						<div className="flex justify-end gap-2">
+						<DialogHeader>
+							<DialogTitle>{added.userName} added</DialogTitle>
+							<DialogDescription>Pick for them now, or come back later.</DialogDescription>
+						</DialogHeader>
+						<DialogFooter>
 							<button
 								type="button"
 								onClick={handleBackToGame}
@@ -117,50 +122,53 @@ export function AddPlayerModal({ gameId, onClose }: AddPlayerModalProps) {
 							>
 								Pick for {added.userName}
 							</button>
-						</div>
+						</DialogFooter>
 					</>
 				) : (
 					<>
-						<h3 className="text-[15px] font-bold">Add player to this game</h3>
-						<p className="mb-3 mt-1 text-xs text-muted-foreground">
-							Search an existing user by name or email.
-						</p>
-						<input
-							ref={inputRef}
-							value={query}
-							onChange={(e) => setQuery(e.target.value)}
-							placeholder="name or email…"
-							className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-						/>
-						<div className="mt-2 max-h-[180px] overflow-y-auto">
-							{results.map((u) => (
-								<button
-									type="button"
-									key={u.id}
-									onClick={() => setSelectedId(u.id)}
-									className={cn(
-										'mb-0.5 flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-sm',
-										selectedId === u.id && 'border-primary bg-primary/10',
-										selectedId !== u.id && 'hover:bg-card hover:border-border',
-									)}
-								>
-									<span className="flex-1">
-										<span className="block font-semibold">{u.name}</span>
-										<span className="block text-[11px] text-muted-foreground">{u.email}</span>
-									</span>
-								</button>
-							))}
+						<DialogHeader>
+							<DialogTitle>Add player to this game</DialogTitle>
+							<DialogDescription>Search an existing user by name or email.</DialogDescription>
+						</DialogHeader>
+						<div className="space-y-3">
+							<input
+								ref={inputRef}
+								autoFocus
+								value={query}
+								onChange={(e) => setQuery(e.target.value)}
+								placeholder="name or email…"
+								className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+							/>
+							<div className="max-h-[180px] overflow-y-auto">
+								{results.map((u) => (
+									<button
+										type="button"
+										key={u.id}
+										onClick={() => setSelectedId(u.id)}
+										className={cn(
+											'mb-0.5 flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-sm',
+											selectedId === u.id && 'border-primary bg-primary/10',
+											selectedId !== u.id && 'hover:bg-card hover:border-border',
+										)}
+									>
+										<span className="flex-1">
+											<span className="block font-semibold">{u.name}</span>
+											<span className="block text-[11px] text-muted-foreground">{u.email}</span>
+										</span>
+									</button>
+								))}
+							</div>
+							{error === 'already-in-game' && (
+								<p className="text-xs text-amber-600">That user is already in this game.</p>
+							)}
+							{error && error !== 'already-in-game' && (
+								<p className="text-xs text-red-500">Couldn't add: {error}</p>
+							)}
+							<p className="rounded-l-sm border-l-2 border-primary bg-primary/10 px-2 py-2 text-[11px] text-muted-foreground">
+								Can't find someone? Ask them to sign up first.
+							</p>
 						</div>
-						{error === 'already-in-game' && (
-							<p className="mt-2 text-xs text-amber-600">That user is already in this game.</p>
-						)}
-						{error && error !== 'already-in-game' && (
-							<p className="mt-2 text-xs text-red-500">Couldn't add: {error}</p>
-						)}
-						<p className="mt-3 rounded-l-sm border-l-2 border-primary bg-primary/10 px-2 py-2 text-[11px] text-muted-foreground">
-							Can't find someone? Ask them to sign up first.
-						</p>
-						<div className="mt-4 flex justify-end gap-2">
+						<DialogFooter>
 							<button
 								type="button"
 								onClick={onClose}
@@ -176,10 +184,10 @@ export function AddPlayerModal({ gameId, onClose }: AddPlayerModalProps) {
 							>
 								{selected ? `Add ${selected.name}` : 'Add'}
 							</button>
-						</div>
+						</DialogFooter>
 					</>
 				)}
-			</div>
-		</div>
+			</DialogContent>
+		</Dialog>
 	)
 }

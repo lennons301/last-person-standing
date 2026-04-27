@@ -39,7 +39,11 @@ export function AdminPanel({ gameId, aliveCount, potTotal }: AdminPanelProps) {
 					</button>
 				</div>
 			</div>
-			{openModal === 'add' && <AddPlayerModal gameId={gameId} onClose={() => setOpenModal(null)} />}
+			<AddPlayerModal
+				gameId={gameId}
+				open={openModal === 'add'}
+				onClose={() => setOpenModal(null)}
+			/>
 			{openModal === 'split' && (
 				<SplitPotModal
 					gameId={gameId}
