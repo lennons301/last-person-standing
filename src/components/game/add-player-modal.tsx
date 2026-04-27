@@ -15,6 +15,7 @@ interface UserRow {
 	id: string
 	name: string
 	email: string
+	isInGame?: boolean
 }
 
 interface AddPlayerModalProps {
@@ -56,13 +57,17 @@ export function AddPlayerModal({ gameId, open, onClose }: AddPlayerModalProps) {
 			return
 		}
 		const timer = setTimeout(async () => {
-			const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`)
+			const params = new URLSearchParams({
+				q: query,
+				gameId: gameId,
+			})
+			const res = await fetch(`/api/users/search?${params}`)
 			if (!res.ok) return
 			const body = (await res.json()) as { users: UserRow[] }
 			setResults(body.users)
 		}, 200)
 		return () => clearTimeout(timer)
-	}, [query, added])
+	}, [query, added, gameId])
 
 	const selected = results.find((u) => u.id === selectedId) ?? null
 
@@ -155,6 +160,11 @@ export function AddPlayerModal({ gameId, open, onClose }: AddPlayerModalProps) {
 											<span className="block font-semibold">{u.name}</span>
 											<span className="block text-[11px] text-muted-foreground">{u.email}</span>
 										</span>
+										{u.isInGame && (
+											<span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+												IN GAME
+											</span>
+										)}
 									</button>
 								))}
 							</div>
