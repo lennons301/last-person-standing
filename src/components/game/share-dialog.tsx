@@ -11,6 +11,15 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '@/components/ui/dialog'
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select'
+
+type Variant = 'standings' | 'live' | 'winner'
 
 interface ShareDialogProps {
 	open: boolean
@@ -20,6 +29,15 @@ interface ShareDialogProps {
 	pot: string
 	inviteUrl: string
 	inviteCode: string
+	defaultVariant: Variant
+	liveAvailable: boolean
+	winnerAvailable: boolean
+}
+
+const VARIANT_LABEL: Record<Variant, string> = {
+	standings: 'Standings',
+	live: 'Live (match-day)',
+	winner: 'Winner',
 }
 
 export function ShareDialog({
@@ -30,14 +48,21 @@ export function ShareDialog({
 	pot,
 	inviteUrl,
 	inviteCode,
+	defaultVariant,
+	liveAvailable,
+	winnerAvailable,
 }: ShareDialogProps) {
 	const [copied, setCopied] = useState(false)
+	const [variant, setVariant] = useState<Variant>(defaultVariant)
 
 	const inviteMessage = `Join me in ${gameName} on Last Person Standing — £${pot} pot. ${inviteUrl}`
 	const whatsappHref = `https://wa.me/?text=${encodeURIComponent(inviteMessage)}`
 
-	// Cache-bust the image every time the dialog opens so you always see latest state
-	const gridImageUrl = `/api/share/grid/${gameId}?t=${open ? Math.floor(Date.now() / 60000) : 0}`
+	const cacheBust = open ? Math.floor(Date.now() / 60000) : 0
+	const imageUrl =
+		variant === 'winner'
+			? `/api/share/${variant}/${gameId}`
+			: `/api/share/${variant}/${gameId}?t=${cacheBust}`
 
 	async function handleCopy() {
 		await navigator.clipboard.writeText(inviteUrl)
@@ -94,27 +119,39 @@ export function ShareDialog({
 							<div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 								Game state image
 							</div>
-							<Button asChild variant="outline" size="sm" className="gap-1.5">
-								<a href={gridImageUrl} download={`${gameName.replace(/\s+/g, '-')}-progress.png`}>
-									<Download className="h-3.5 w-3.5" />
-									Download
-								</a>
-							</Button>
+							<div className="flex gap-2 items-center">
+								<Select value={variant} onValueChange={(v) => setVariant(v as Variant)}>
+									<SelectTrigger className="h-8 text-xs w-[160px]">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="standings">{VARIANT_LABEL.standings}</SelectItem>
+										<SelectItem value="live" disabled={!liveAvailable}>
+											{VARIANT_LABEL.live}
+										</SelectItem>
+										<SelectItem value="winner" disabled={!winnerAvailable}>
+											{VARIANT_LABEL.winner}
+										</SelectItem>
+									</SelectContent>
+								</Select>
+								<Button asChild variant="outline" size="sm" className="gap-1.5">
+									<a href={imageUrl} download={`${gameName.replace(/\s+/g, '-')}-${variant}.png`}>
+										<Download className="h-3.5 w-3.5" />
+										Download
+									</a>
+								</Button>
+							</div>
 						</div>
 						<div className="rounded-md border border-border bg-muted/30 overflow-hidden">
-							{/* Using unoptimized Image so the PNG streams straight through */}
 							<Image
-								src={gridImageUrl}
-								alt={`${gameName} progress grid`}
+								src={imageUrl}
+								alt={`${gameName} ${variant}`}
 								width={1080}
 								height={600}
 								unoptimized
 								className="w-full h-auto"
 							/>
 						</div>
-						<p className="text-xs text-muted-foreground mt-2">
-							Live match day snapshots and winner announcements arriving in a future update.
-						</p>
 					</div>
 				</div>
 			</DialogContent>

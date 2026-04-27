@@ -211,6 +211,25 @@ export async function getGameDetail(gameId: string, userId: string) {
 		}
 	}
 
+	// Determine the default share variant and which variants are available.
+	let defaultShareVariant: 'standings' | 'live' | 'winner' = 'standings'
+	let liveShareAvailable = false
+	let winnerShareAvailable = false
+
+	if (gameData.status === 'completed') {
+		defaultShareVariant = 'winner'
+		winnerShareAvailable = true
+	} else {
+		const currentRound = gameData.currentRound
+		if (currentRound?.status === 'active') {
+			const liveFixture = currentRound.fixtures?.find((f) => f.status === 'live')
+			if (liveFixture) {
+				defaultShareVariant = 'live'
+				liveShareAvailable = true
+			}
+		}
+	}
+
 	return {
 		id: gameData.id,
 		name: gameData.name,
@@ -233,6 +252,9 @@ export async function getGameDetail(gameId: string, userId: string) {
 		adminPayments,
 		myCurrentRoundPick,
 		rebuyBanner,
+		defaultShareVariant,
+		liveShareAvailable,
+		winnerShareAvailable,
 	}
 }
 
