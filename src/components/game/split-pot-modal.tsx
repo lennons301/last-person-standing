@@ -1,15 +1,24 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog'
 
 interface SplitPotModalProps {
 	gameId: string
 	aliveCount: number
 	potTotal: string
+	open: boolean
 	onClose: () => void
 }
 
-export function SplitPotModal({ gameId, aliveCount, potTotal, onClose }: SplitPotModalProps) {
+export function SplitPotModal({ gameId, aliveCount, potTotal, open, onClose }: SplitPotModalProps) {
 	const router = useRouter()
 	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -38,26 +47,16 @@ export function SplitPotModal({ gameId, aliveCount, potTotal, onClose }: SplitPo
 	}
 
 	return (
-		// biome-ignore lint/a11y/useKeyWithClickEvents: backdrop click-to-close; Escape handling delegated to dialog close button
-		// biome-ignore lint/a11y/noStaticElementInteractions: backdrop is a dialog scrim, not an interactive control
-		<div
-			role="dialog"
-			aria-modal="true"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/65"
-			onClick={onClose}
-		>
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation on container prevents backdrop-close, not a user-facing interaction */}
-			{/* biome-ignore lint/a11y/noStaticElementInteractions: inner panel is non-interactive — intercepts bubbling clicks only */}
-			<div
-				onClick={(e) => e.stopPropagation()}
-				className="w-[360px] rounded-lg border border-border bg-background p-5 shadow-2xl"
-			>
-				<h3 className="text-[15px] font-bold">Split the pot now?</h3>
-				<p className="mb-4 mt-1 text-xs text-muted-foreground">
-					This ends the game immediately. All {aliveCount} alive players are marked as winners.
-					Eliminated players get nothing.
-				</p>
-				<div className="mb-4 rounded-md border border-border bg-card p-3 text-center">
+		<Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Split the pot now?</DialogTitle>
+					<DialogDescription>
+						This ends the game immediately. All {aliveCount} alive players are marked as winners.
+						Eliminated players get nothing.
+					</DialogDescription>
+				</DialogHeader>
+				<div className="rounded-md border border-border bg-card p-3 text-center">
 					<div className="text-xl font-extrabold tabular-nums text-emerald-500">
 						£{perWinner} each
 					</div>
@@ -65,11 +64,11 @@ export function SplitPotModal({ gameId, aliveCount, potTotal, onClose }: SplitPo
 						£{potTotal} split {aliveCount} ways
 					</div>
 				</div>
-				<p className="mb-4 rounded-r-sm border-l-2 border-amber-500 bg-amber-500/10 px-2 py-2 text-[11px] text-amber-500">
+				<p className="rounded-r-sm border-l-2 border-amber-500 bg-amber-500/10 px-2 py-2 text-[11px] text-amber-500">
 					⚠ This can't be undone. Game status becomes "completed".
 				</p>
-				{error && <p className="mb-3 text-xs text-red-500">Couldn't split: {error}</p>}
-				<div className="flex justify-end gap-2">
+				{error && <p className="text-xs text-red-500">Couldn't split: {error}</p>}
+				<DialogFooter>
 					<button
 						type="button"
 						onClick={onClose}
@@ -86,8 +85,8 @@ export function SplitPotModal({ gameId, aliveCount, potTotal, onClose }: SplitPo
 					>
 						Split £{potTotal} across {aliveCount} winners
 					</button>
-				</div>
-			</div>
-		</div>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	)
 }

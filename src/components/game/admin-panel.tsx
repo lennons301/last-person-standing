@@ -44,14 +44,13 @@ export function AdminPanel({ gameId, aliveCount, potTotal }: AdminPanelProps) {
 				open={openModal === 'add'}
 				onClose={() => setOpenModal(null)}
 			/>
-			{openModal === 'split' && (
-				<SplitPotModal
-					gameId={gameId}
-					aliveCount={aliveCount}
-					potTotal={potTotal}
-					onClose={() => setOpenModal(null)}
-				/>
-			)}
+			<SplitPotModal
+				gameId={gameId}
+				aliveCount={aliveCount}
+				potTotal={potTotal}
+				open={openModal === 'split'}
+				onClose={() => setOpenModal(null)}
+			/>
 		</>
 	)
 }
