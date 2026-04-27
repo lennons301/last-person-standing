@@ -4,15 +4,22 @@ vi.mock('@/lib/auth-helpers', () => ({
 	requireSession: vi.fn().mockResolvedValue({ user: { id: 'u1' } }),
 }))
 
-const { getGameDetailMock, getShareLiveDataMock } = vi.hoisted(() => ({
-	getGameDetailMock: vi.fn(),
-	getShareLiveDataMock: vi.fn(),
-}))
+const { getGameDetailMock, getShareLiveDataMock, ImageResponseMock } = vi.hoisted(() => {
+	class ImageResponseMock extends Response {
+		constructor(_jsx: unknown, _options: unknown) {
+			super('png-bytes', { status: 200 })
+		}
+	}
+	return {
+		getGameDetailMock: vi.fn(),
+		getShareLiveDataMock: vi.fn(),
+		ImageResponseMock,
+	}
+})
 vi.mock('@/lib/game/detail-queries', () => ({ getGameDetail: getGameDetailMock }))
 vi.mock('@/lib/share/data', () => ({ getShareLiveData: getShareLiveDataMock }))
-
 vi.mock('next/og', () => ({
-	ImageResponse: vi.fn().mockImplementation(() => new Response('png-bytes', { status: 200 })),
+	ImageResponse: ImageResponseMock,
 }))
 
 import { GET } from './route'
