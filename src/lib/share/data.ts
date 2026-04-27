@@ -1,4 +1,14 @@
+import { eq } from 'drizzle-orm'
+import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
+import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
+import { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
+import { calculatePot } from '@/lib/game-logic/prizes'
+import { game } from '@/lib/schema/game'
+import { payment } from '@/lib/schema/payment'
+
+const STANDINGS_ALIVE_CAP = 20
+const STANDINGS_ELIMINATED_CAP = 10
 
 export interface ShareHeader {
 	gameName: string
@@ -155,12 +165,54 @@ export type WinnerShareData =
 			overflowCount: number
 	  }
 
-// Fetcher signatures (implementations in later tasks)
+async function buildHeader(gameId: string): Promise<ShareHeader | null> {
+	const gameRow = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: { competition: true },
+	})
+	if (!gameRow) return null
+	const payments = await db.query.payment.findMany({
+		where: eq(payment.gameId, gameId),
+	})
+	const pot = calculatePot(payments)
+	return {
+		gameName: gameRow.name,
+		gameMode: gameRow.gameMode as 'classic' | 'cup' | 'turbo',
+		competitionName: gameRow.competition.name,
+		pot: pot.total,
+		potTotal: pot.total,
+		generatedAt: new Date(),
+	}
+}
+
 export async function getShareStandingsData(
-	_gameId: string,
-	_viewerUserId: string,
+	gameId: string,
+	viewerUserId: string,
 ): Promise<StandingsShareData | null> {
-	throw new Error('Implemented in Task 2')
+	const header = await buildHeader(gameId)
+	if (!header) return null
+
+	if (header.gameMode === 'classic') {
+		const grid = await getProgressGridData(gameId, viewerUserId, { hideAllCurrentPicks: true })
+		if (!grid) return null
+		return { mode: 'classic', header, classicGrid: grid }
+	}
+	if (header.gameMode === 'cup') {
+		const cupData = await getCupStandingsData(gameId, viewerUserId)
+		if (!cupData) return null
+		const totalPlayers = cupData.players.length
+		const overflowCount = Math.max(
+			0,
+			totalPlayers - (STANDINGS_ALIVE_CAP + STANDINGS_ELIMINATED_CAP),
+		)
+		return { mode: 'cup', header, cupData, overflowCount }
+	}
+	// turbo
+	const turboData = await getTurboStandingsData(gameId, viewerUserId)
+	if (!turboData) return null
+	const totalPlayers = turboData.rounds[0]?.players.length ?? 0
+	const overflowCount = Math.max(0, totalPlayers - (STANDINGS_ALIVE_CAP + STANDINGS_ELIMINATED_CAP))
+	return { mode: 'turbo', header, turboData, overflowCount }
 }
 export async function getShareLiveData(
 	_gameId: string,
