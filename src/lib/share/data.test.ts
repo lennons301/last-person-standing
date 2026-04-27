@@ -26,7 +26,7 @@ vi.mock('@/lib/game/cup-standings-queries', () => ({
 }))
 
 import { db } from '@/lib/db'
-import { getShareStandingsData } from './data'
+import { getShareLiveData, getShareStandingsData } from './data'
 
 function makeHeaderMock(mode: 'classic' | 'cup' | 'turbo') {
 	vi.mocked(db.query.game.findFirst).mockResolvedValue({
@@ -108,5 +108,15 @@ describe('getShareStandingsData', () => {
 		expect(getProgressGridDataMock).toHaveBeenCalledWith('g1', 'user-42', {
 			hideAllCurrentPicks: true,
 		})
+	})
+})
+
+describe('getShareLiveData', () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it('returns null when game is missing', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue(undefined as never)
+		const result = await getShareLiveData('g1', 'u1')
+		expect(result).toBeNull()
 	})
 })

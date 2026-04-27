@@ -1,14 +1,17 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
 import { calculatePot } from '@/lib/game-logic/prizes'
-import { game } from '@/lib/schema/game'
+import { user } from '@/lib/schema/auth'
+import { game, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
 const STANDINGS_ALIVE_CAP = 20
 const STANDINGS_ELIMINATED_CAP = 10
+const LIVE_CUP_TURBO_CAP = 16
+const LIVE_CUP_TURBO_RECENT_ELIM = 4
 
 export interface ShareHeader {
 	gameName: string
@@ -215,10 +218,120 @@ export async function getShareStandingsData(
 	return { mode: 'turbo', header, turboData, overflowCount }
 }
 export async function getShareLiveData(
-	_gameId: string,
-	_viewerUserId: string,
+	gameId: string,
+	viewerUserId: string,
 ): Promise<LiveShareData | null> {
-	throw new Error('Implemented in Task 7')
+	const header = await buildHeader(gameId)
+	if (!header) return null
+
+	const gameRow = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: {
+			competition: {
+				with: {
+					rounds: { with: { fixtures: { with: { homeTeam: true, awayTeam: true } } } },
+				},
+			},
+			players: true,
+		},
+	})
+	if (!gameRow || !gameRow.currentRoundId) return null
+	const currentRound = gameRow.competition.rounds.find((r) => r.id === gameRow.currentRoundId)
+	if (!currentRound) return null
+
+	if (header.gameMode === 'classic') {
+		const allPicks = await db.query.pick.findMany({
+			where: and(eq(pick.gameId, gameId), eq(pick.roundId, currentRound.id)),
+			with: { team: true, fixture: { with: { homeTeam: true, awayTeam: true } } },
+		})
+		const userIds = gameRow.players.map((p) => p.userId)
+		const userRows = userIds.length
+			? await db
+					.select({ id: user.id, name: user.name })
+					.from(user)
+					.where(inArray(user.id, userIds))
+			: []
+		const userNames = new Map(userRows.map((u) => [u.id, u.name]))
+
+		const rows: ClassicLiveRow[] = gameRow.players
+			.filter((p) => p.status === 'alive')
+			.map((p) => {
+				const pk = allPicks.find((pp) => pp.gamePlayerId === p.id)
+				const fx = pk?.fixture
+				const homeScore = fx?.homeScore ?? null
+				const awayScore = fx?.awayScore ?? null
+				const fixtureStatus = (fx?.status ?? 'scheduled') as ClassicLiveRow['fixtureStatus']
+				const pickedHome = pk && fx ? pk.teamId === fx.homeTeamId : false
+				let liveState: ClassicLiveRow['liveState'] = 'pending'
+				if (
+					fixtureStatus === 'live' ||
+					fixtureStatus === 'halftime' ||
+					fixtureStatus === 'finished'
+				) {
+					if (homeScore != null && awayScore != null) {
+						if (pickedHome) {
+							liveState =
+								homeScore > awayScore ? 'winning' : homeScore === awayScore ? 'drawing' : 'losing'
+						} else {
+							liveState =
+								awayScore > homeScore ? 'winning' : awayScore === homeScore ? 'drawing' : 'losing'
+						}
+					}
+				}
+				return {
+					id: p.id,
+					userId: p.userId,
+					name: userNames.get(p.userId) ?? 'Unknown',
+					pickedTeamShort: pk?.team?.shortName ?? null,
+					homeShort: fx?.homeTeam?.shortName ?? null,
+					awayShort: fx?.awayTeam?.shortName ?? null,
+					homeScore,
+					awayScore,
+					fixtureStatus,
+					liveState,
+				}
+			})
+			.sort((a, b) => {
+				const order = { winning: 0, drawing: 1, losing: 2, pending: 3 } as const
+				return order[a.liveState] - order[b.liveState] || a.name.localeCompare(b.name)
+			})
+		return { mode: 'classic', header, rows, roundNumber: currentRound.number }
+	}
+
+	if (header.gameMode === 'cup') {
+		const cupData = await getCupStandingsData(gameId, viewerUserId)
+		if (!cupData) return null
+		const matchupsLegend = currentRound.fixtures
+			.map((f) => `${f.homeTeam?.shortName ?? '?'} v ${f.awayTeam?.shortName ?? '?'}`)
+			.join(' · ')
+		const total = cupData.players.length
+		const overflow = Math.max(0, total - (LIVE_CUP_TURBO_CAP + LIVE_CUP_TURBO_RECENT_ELIM))
+		return {
+			mode: 'cup',
+			header,
+			cupData,
+			roundNumber: currentRound.number,
+			overflowCount: overflow,
+			matchupsLegend,
+		}
+	}
+
+	// turbo
+	const turboData = await getTurboStandingsData(gameId, viewerUserId)
+	if (!turboData) return null
+	const matchupsLegend = currentRound.fixtures
+		.map((f) => `${f.homeTeam?.shortName ?? '?'} v ${f.awayTeam?.shortName ?? '?'}`)
+		.join(' · ')
+	const totalTurbo = turboData.rounds[turboData.rounds.length - 1]?.players.length ?? 0
+	const overflow = Math.max(0, totalTurbo - (LIVE_CUP_TURBO_CAP + LIVE_CUP_TURBO_RECENT_ELIM))
+	return {
+		mode: 'turbo',
+		header,
+		turboData,
+		roundNumber: currentRound.number,
+		overflowCount: overflow,
+		matchupsLegend,
+	}
 }
 export async function getShareWinnerData(
 	_gameId: string,
