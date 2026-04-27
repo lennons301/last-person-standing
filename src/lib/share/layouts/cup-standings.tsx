@@ -1,0 +1,239 @@
+import type { ReactElement } from 'react'
+import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
+import type { StandingsShareData } from '../data'
+import { Footer, Header, modeLabel, OverflowTailRow } from '../shared'
+
+const ALIVE_CAP = 20
+const ELIM_CAP = 10
+const ROW_HEIGHT = 48
+
+export interface LayoutRender {
+	jsx: ReactElement
+	width: number
+	height: number
+}
+
+type CupPlayer = CupStandingsData['players'][number]
+type CupPick = CupPlayer['picks'][number]
+
+export function cupStandingsLayout(
+	data: Extract<StandingsShareData, { mode: 'cup' }>,
+): LayoutRender {
+	const cup = data.cupData
+	const alive = cup.players
+		.filter((p) => p.status !== 'eliminated')
+		.sort((a, b) => b.livesRemaining - a.livesRemaining || b.streak - a.streak || b.goals - a.goals)
+		.slice(0, ALIVE_CAP)
+	const elim = cup.players
+		.filter((p) => p.status === 'eliminated')
+		.sort((a, b) => (b.eliminatedRoundNumber ?? 0) - (a.eliminatedRoundNumber ?? 0))
+		.slice(0, ELIM_CAP)
+	const visible = [...alive, ...elim]
+	const overflow = cup.players.length - visible.length
+	const height = Math.max(700, 320 + visible.length * ROW_HEIGHT + (overflow > 0 ? 40 : 0))
+
+	const numberOfPicks = cup.numberOfPicks
+	const headerCells = ['#', 'Player', 'Lives', 'Strk', 'Gls']
+
+	const jsx = (
+		<div
+			style={{
+				display: 'flex',
+				flexDirection: 'column',
+				width: '1080px',
+				background: '#f6f5f1',
+				padding: '48px',
+				fontFamily: 'sans-serif',
+			}}
+		>
+			<Header
+				gameName={data.header.gameName}
+				modeLabel={modeLabel(data.header.gameMode)}
+				competitionName={data.header.competitionName}
+				pot={data.header.pot}
+			/>
+			<div
+				style={{
+					display: 'flex',
+					flexDirection: 'column',
+					background: '#fff',
+					border: '1px solid #e8e6e1',
+					borderRadius: '12px',
+					padding: '20px',
+				}}
+			>
+				<div
+					style={{
+						display: 'flex',
+						alignItems: 'center',
+						gap: '8px',
+						paddingBottom: '8px',
+						borderBottom: '1px solid #e8e6e1',
+						fontSize: '14px',
+						color: '#9a9a9a',
+						fontWeight: 700,
+						textTransform: 'uppercase',
+						letterSpacing: '0.05em',
+					}}
+				>
+					<div style={{ display: 'flex', width: '32px' }}>{headerCells[0]}</div>
+					<div style={{ display: 'flex', width: '180px' }}>{headerCells[1]}</div>
+					<div style={{ display: 'flex', width: '90px' }}>{headerCells[2]}</div>
+					<div style={{ display: 'flex', width: '50px', justifyContent: 'center' }}>
+						{headerCells[3]}
+					</div>
+					<div style={{ display: 'flex', width: '50px', justifyContent: 'center' }}>
+						{headerCells[4]}
+					</div>
+					<div style={{ display: 'flex', flex: 1, gap: '4px' }}>
+						{Array.from({ length: numberOfPicks }).map((_, i) => (
+							<div
+								// biome-ignore lint/suspicious/noArrayIndexKey: rank columns are stable
+								key={`hdr-${i}`}
+								style={{ display: 'flex', flex: 1, justifyContent: 'center', fontSize: '12px' }}
+							>
+								{`#${i + 1}`}
+							</div>
+						))}
+					</div>
+				</div>
+				{visible.map((player, idx) => {
+					const isOut = player.status === 'eliminated'
+					return (
+						<div
+							key={player.id}
+							style={{
+								display: 'flex',
+								alignItems: 'center',
+								gap: '8px',
+								padding: '8px 0',
+								borderBottom: '1px solid #f0eee9',
+								opacity: isOut ? 0.55 : 1,
+								height: `${ROW_HEIGHT}px`,
+							}}
+						>
+							<div style={{ display: 'flex', width: '32px', fontWeight: 800, color: '#6b6b6b' }}>
+								{idx + 1}
+							</div>
+							<div style={{ display: 'flex', width: '180px', fontWeight: 600, fontSize: '18px' }}>
+								{player.name}
+							</div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: '3px', width: '90px' }}>
+								{Array.from({ length: cup.maxLives }).map((_, i) => (
+									<div
+										// biome-ignore lint/suspicious/noArrayIndexKey: stable index
+										key={`life-${player.id}-${i}`}
+										style={{
+											display: 'flex',
+											width: '12px',
+											height: '12px',
+											borderRadius: '6px',
+											background: i < player.livesRemaining ? '#dc2626' : 'transparent',
+											border: i < player.livesRemaining ? 'none' : '1.5px solid #e8e6e1',
+										}}
+									/>
+								))}
+							</div>
+							<div
+								style={{
+									display: 'flex',
+									width: '50px',
+									justifyContent: 'center',
+									fontWeight: 700,
+									fontSize: '16px',
+								}}
+							>
+								{player.streak || '—'}
+							</div>
+							<div
+								style={{
+									display: 'flex',
+									width: '50px',
+									justifyContent: 'center',
+									fontWeight: 700,
+									fontSize: '16px',
+								}}
+							>
+								{player.goals || '—'}
+							</div>
+							<div style={{ display: 'flex', flex: 1, gap: '4px' }}>
+								{Array.from({ length: numberOfPicks }).map((_, i) => {
+									const pick = player.picks.find((pp) => pp.confidenceRank === i + 1)
+									// biome-ignore lint/suspicious/noArrayIndexKey: rank columns are stable
+									return <CupCell key={`cell-${player.id}-${i}`} pick={pick} />
+								})}
+							</div>
+						</div>
+					)
+				})}
+				{overflow > 0 && <OverflowTailRow count={overflow} label="players not shown" />}
+			</div>
+			<Footer generatedAt={data.header.generatedAt} />
+		</div>
+	)
+
+	return { jsx, width: 1080, height }
+}
+
+function CupCell({ pick }: { pick?: CupPick }): ReactElement {
+	if (!pick) {
+		return (
+			<div
+				style={{
+					display: 'flex',
+					flex: 1,
+					height: '34px',
+					borderRadius: '4px',
+					background: 'transparent',
+					border: '1px dashed #e8e6e1',
+				}}
+			/>
+		)
+	}
+	if (pick.result === 'hidden' || pick.result === 'restricted') {
+		return (
+			<div
+				style={{
+					display: 'flex',
+					flex: 1,
+					height: '34px',
+					borderRadius: '4px',
+					background: '#f0eee9',
+					color: '#6b6b6b',
+					alignItems: 'center',
+					justifyContent: 'center',
+					fontSize: '12px',
+				}}
+			>
+				{pick.result === 'hidden' ? '🔒' : '—'}
+			</div>
+		)
+	}
+	const bg =
+		pick.result === 'win'
+			? '#16a34a'
+			: pick.result === 'saved_by_life'
+				? '#f59e0b'
+				: pick.result === 'loss'
+					? '#dc2626'
+					: '#2563eb'
+	const label = pick.pickedSide === 'home' ? pick.homeShort : pick.awayShort
+	return (
+		<div
+			style={{
+				display: 'flex',
+				flex: 1,
+				height: '34px',
+				borderRadius: '4px',
+				background: bg,
+				color: '#fff',
+				alignItems: 'center',
+				justifyContent: 'center',
+				fontWeight: 700,
+				fontSize: '12px',
+			}}
+		>
+			{label}
+		</div>
+	)
+}
