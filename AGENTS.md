@@ -68,7 +68,15 @@ drizzle/                  # Generated migrations
 
 ## Environment variables
 
-Local dev uses `.env.local`; production uses Doppler. Variables:
+**Pattern.** `.env.example` (committed) documents every env var the app reads with placeholder values that are sufficient for `pnpm build` and `pnpm test` to succeed. Real values come from one of three places depending on context:
+
+- **Local dev:** `.env.local` (gitignored). Run `just env-init` once to copy from `.env.example`, then replace placeholders for whatever services you actually want to exercise.
+- **Production / preview:** Doppler is the source of truth → synced to Vercel project env. Never set Vercel env vars directly; always go via Doppler.
+- **GitHub Actions:** repo-level secrets, set via repo settings (separate from Doppler).
+
+If a new env var is added, update `.env.example` AND this list. Routes that read env at module load (e.g., `verifySignatureAppRouter` for QStash) require non-empty placeholder values; that's the whole reason `.env.example` exists.
+
+Variables:
 - `DATABASE_URL` — Postgres connection string.
 - `BETTER_AUTH_SECRET` — Better Auth session secret.
 - `BETTER_AUTH_URL` — app URL used for cookie scope.
