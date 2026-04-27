@@ -153,10 +153,41 @@ export async function getGameDetail(gameId: string, userId: string) {
 			paidAt: row.paidAt,
 		}))
 	})
+
+	// Surface admin-added players who have no payment row as synthetic "unpaid" rows
+	// so the admin Rebuy button is reachable for free-entry players.
+	const playersWithPayments = new Set(allPayments.map((p) => p.userId))
+	const syntheticUnpaidRows = gameData.players
+		.filter((p) => !playersWithPayments.has(p.userId))
+		.map((p) => ({
+			id: null as string | null,
+			userId: p.userId,
+			userName: userNames.get(p.userId) ?? 'Unknown',
+			amount: gameData.entryFee ?? '0.00',
+			status: 'unpaid' as const,
+			isRebuy: false,
+			isRebuyEligible: eligibilityByUser.get(p.userId) ?? false,
+			claimedAt: null,
+			paidAt: null,
+		}))
+	// finalAdminPayments unions real payment rows with synthetic free-player rows.
+	// The id field is widened to string | null for synthetic rows.
+	const finalAdminPayments: Array<{
+		id: string | null
+		userId: string
+		userName: string
+		amount: string
+		status: 'pending' | 'claimed' | 'paid' | 'refunded' | 'unpaid'
+		isRebuy: boolean
+		isRebuyEligible: boolean
+		claimedAt: Date | null
+		paidAt: Date | null
+	}> = [...allPayments, ...syntheticUnpaidRows]
+
 	const otherPayments = allPayments
 		.filter((p) => p.userId !== userId)
 		.map((p) => ({ userName: p.userName, status: p.status, isRebuy: p.isRebuy }))
-	const adminPayments = isAdmin ? allPayments : undefined
+	const adminPayments = isAdmin ? finalAdminPayments : undefined
 
 	// Rebuy banner: rounds 1 and 2 were already fetched above for eligibility checks.
 	const viewerGamePlayer = myMembership
