@@ -26,7 +26,7 @@ vi.mock('@/lib/game/cup-standings-queries', () => ({
 }))
 
 import { db } from '@/lib/db'
-import { getShareLiveData, getShareStandingsData } from './data'
+import { getShareLiveData, getShareStandingsData, getShareWinnerData } from './data'
 
 function makeHeaderMock(mode: 'classic' | 'cup' | 'turbo') {
 	vi.mocked(db.query.game.findFirst).mockResolvedValue({
@@ -118,5 +118,15 @@ describe('getShareLiveData', () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue(undefined as never)
 		const result = await getShareLiveData('g1', 'u1')
 		expect(result).toBeNull()
+	})
+})
+
+describe('getShareWinnerData', () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it('returns null when game is missing', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue(undefined as never)
+		const r = await getShareWinnerData('g1', 'u1')
+		expect(r).toBeNull()
 	})
 })

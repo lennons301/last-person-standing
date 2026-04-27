@@ -3,11 +3,12 @@ import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
-import { calculatePot } from '@/lib/game-logic/prizes'
+import { calculatePayouts, calculatePot } from '@/lib/game-logic/prizes'
 import { user } from '@/lib/schema/auth'
 import { game, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
+const WINNER_RUNNERS_UP_CAP = 8
 const STANDINGS_ALIVE_CAP = 20
 const STANDINGS_ELIMINATED_CAP = 10
 const LIVE_CUP_TURBO_CAP = 16
@@ -334,8 +335,132 @@ export async function getShareLiveData(
 	}
 }
 export async function getShareWinnerData(
-	_gameId: string,
-	_viewerUserId: string,
+	gameId: string,
+	viewerUserId: string,
 ): Promise<WinnerShareData | null> {
-	throw new Error('Implemented in Task 11')
+	const header = await buildHeader(gameId)
+	if (!header) return null
+
+	const gameRow = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: { competition: { with: { rounds: true } }, players: true },
+	})
+	if (!gameRow) return null
+
+	// Winners are players whose status === 'winner'. Fall back to alive players if none.
+	const winnerPlayers = gameRow.players.filter((p) => p.status === 'winner')
+	const fallbackAlive = gameRow.players.filter((p) => p.status === 'alive')
+	const effectiveWinners = winnerPlayers.length > 0 ? winnerPlayers : fallbackAlive
+
+	// Resolve user names
+	const allUserIds = gameRow.players.map((p) => p.userId)
+	const userRows = allUserIds.length
+		? await db
+				.select({ id: user.id, name: user.name })
+				.from(user)
+				.where(inArray(user.id, allUserIds))
+		: []
+	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
+
+	// Pot share via calculatePayouts (handles remainder cents)
+	const winnerUserIds = effectiveWinners.map((p) => p.userId)
+	const payouts = calculatePayouts(header.potTotal, winnerUserIds)
+
+	if (header.gameMode === 'classic') {
+		const finalRoundNumber = gameRow.competition.rounds.reduce(
+			(max, r) => (r.number > max ? r.number : max),
+			0,
+		)
+		const winners: WinnerEntry[] = effectiveWinners.map((p) => {
+			const payout = payouts.find((po) => po.userId === p.userId)
+			return {
+				userId: p.userId,
+				name: userNames.get(p.userId) ?? 'Unknown',
+				potShare: payout?.amount ?? '0.00',
+				classicMeta: { roundsSurvived: finalRoundNumber, finalPickLabel: '' },
+			}
+		})
+		const elim = gameRow.players
+			.filter((p) => p.status === 'eliminated')
+			.sort((a, b) => {
+				const aRound =
+					gameRow.competition.rounds.find((r) => r.id === a.eliminatedRoundId)?.number ?? 0
+				const bRound =
+					gameRow.competition.rounds.find((r) => r.id === b.eliminatedRoundId)?.number ?? 0
+				return bRound - aRound
+			})
+		const runnersUp: ClassicRunnerUp[] = elim.slice(0, WINNER_RUNNERS_UP_CAP).map((p) => ({
+			userId: p.userId,
+			name: userNames.get(p.userId) ?? 'Unknown',
+			eliminatedRoundNumber:
+				gameRow.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number ?? 0,
+		}))
+		const overflow = Math.max(0, elim.length - WINNER_RUNNERS_UP_CAP)
+		return { mode: 'classic', header, winners, runnersUp, overflowCount: overflow }
+	}
+
+	if (header.gameMode === 'cup') {
+		const cup = await getCupStandingsData(gameId, viewerUserId)
+		if (!cup) return null
+		const winners: WinnerEntry[] = effectiveWinners.map((p) => {
+			const payout = payouts.find((po) => po.userId === p.userId)
+			const cupPlayer = cup.players.find((cp) => cp.userId === p.userId)
+			return {
+				userId: p.userId,
+				name: userNames.get(p.userId) ?? 'Unknown',
+				potShare: payout?.amount ?? '0.00',
+				cupMeta: {
+					livesRemaining: cupPlayer?.livesRemaining ?? 0,
+					streak: cupPlayer?.streak ?? 0,
+					goals: cupPlayer?.goals ?? 0,
+				},
+			}
+		})
+		const others = cup.players
+			.filter((cp) => !winners.some((w) => w.userId === cp.userId))
+			.sort(
+				(a, b) => b.livesRemaining - a.livesRemaining || b.streak - a.streak || b.goals - a.goals,
+			)
+		const runnersUp: CupRunnerUp[] = others.slice(0, WINNER_RUNNERS_UP_CAP).map((cp) => ({
+			userId: cp.userId,
+			name: cp.name,
+			livesRemaining: cp.livesRemaining,
+			streak: cp.streak,
+			goals: cp.goals,
+			eliminatedRoundNumber: cp.eliminatedRoundNumber,
+		}))
+		const overflow = Math.max(0, others.length - WINNER_RUNNERS_UP_CAP)
+		return { mode: 'cup', header, winners, runnersUp, overflowCount: overflow }
+	}
+
+	// turbo
+	const turbo = await getTurboStandingsData(gameId, viewerUserId)
+	if (!turbo) return null
+	const lastRound = turbo.rounds[turbo.rounds.length - 1]
+	const lastRoundPlayers = lastRound?.players ?? []
+	const winners: WinnerEntry[] = effectiveWinners.map((p) => {
+		const payout = payouts.find((po) => po.userId === p.userId)
+		const tp = lastRoundPlayers.find((tt) => tt.id === p.id)
+		return {
+			userId: p.userId,
+			name: userNames.get(p.userId) ?? 'Unknown',
+			potShare: payout?.amount ?? '0.00',
+			turboMeta: { streak: tp?.streak ?? 0, goals: tp?.goals ?? 0 },
+		}
+	})
+	const winnerGamePlayerIds = new Set(effectiveWinners.map((w) => w.id))
+	const others = lastRoundPlayers
+		.filter((tp) => !winnerGamePlayerIds.has(tp.id))
+		.sort((a, b) => b.streak - a.streak || b.goals - a.goals)
+	const runnersUp: TurboRunnerUp[] = others.slice(0, WINNER_RUNNERS_UP_CAP).map((tp) => {
+		const gp = gameRow.players.find((p) => p.id === tp.id)
+		return {
+			userId: gp?.userId ?? '',
+			name: tp.name,
+			streak: tp.streak,
+			goals: tp.goals,
+		}
+	})
+	const overflow = Math.max(0, others.length - WINNER_RUNNERS_UP_CAP)
+	return { mode: 'turbo', header, winners, runnersUp, overflowCount: overflow }
 }
