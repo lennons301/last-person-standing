@@ -63,3 +63,8 @@ db-reset:
 
 bootstrap-competitions:
     pnpm exec tsx scripts/bootstrap-competitions.ts
+
+# Push Doppler/stg secrets to Vercel/preview env (free-tier sync workaround).
+# Re-run after any change to Doppler stg secrets.
+sync-preview-env:
+    ./scripts/sync-preview-env.sh
