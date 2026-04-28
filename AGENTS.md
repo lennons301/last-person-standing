@@ -86,6 +86,7 @@ Variables:
 - `QSTASH_TOKEN` — Upstash QStash client token.
 - `QSTASH_CURRENT_SIGNING_KEY` and `QSTASH_NEXT_SIGNING_KEY` — QStash webhook signature verification.
 - `VERCEL_URL` — deployment URL used as the QStash callback base. Populated automatically in Vercel builds; set manually in dev if you want to exercise QStash locally.
+- `NEXT_PUBLIC_APP_URL` — public origin of the deployed app. Used by the Better Auth client (`src/lib/auth-client.ts`) as its `baseURL`. **Must match the deployed URL exactly** so the browser can reach `/api/auth/*`. As a `NEXT_PUBLIC_*` var, it's bundled into the client at build time — changing it requires a redeploy.
 
 GitHub Actions secrets (repo-level):
 - `CRON_SECRET` — same value as Doppler `prd.CRON_SECRET`. Used by `live-scores.yml` for the every-minute poll.
