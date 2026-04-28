@@ -32,7 +32,7 @@ export function PredictionButtons({ value, onChange, size = 'md' }: PredictionBu
 					type="button"
 					onClick={() => onChange(pred)}
 					className={cn(
-						'flex-1 rounded-md border font-semibold transition-colors',
+						'flex-1 rounded-md border font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 						sizeClass,
 						value === pred
 							? COLOURS[pred]

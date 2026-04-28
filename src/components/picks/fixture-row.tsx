@@ -162,7 +162,7 @@ function TeamPickButton({
 			onClick={clickable ? onClick : undefined}
 			disabled={!clickable}
 			className={cn(
-				'flex items-center gap-3 px-4 py-3 flex-1 min-w-0 transition-all',
+				'flex items-center gap-3 px-4 py-3 flex-1 min-w-0 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset',
 				isHome ? 'flex-row-reverse' : 'flex-row',
 				clickable && 'hover:bg-muted/50 cursor-pointer',
 				selected && 'bg-[var(--alive-bg)] ring-2 ring-[var(--alive)] ring-inset',

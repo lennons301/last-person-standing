@@ -115,7 +115,7 @@ export function ShareDialog({
 					</div>
 
 					<div>
-						<div className="flex items-center justify-between mb-2">
+						<div className="flex flex-wrap items-center justify-between gap-2 mb-2">
 							<div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 								Game state image
 							</div>

@@ -933,7 +933,8 @@ async function seed() {
 		// Player A picks a winning team in GW1
 		const winnerFixtureA = gw1Fixtures.find((f) => fixtureWinnerTeam(f) !== null)
 		if (winnerFixtureA) {
-			const winner = fixtureWinnerTeam(winnerFixtureA)!
+			const winner = fixtureWinnerTeam(winnerFixtureA)
+			if (!winner) throw new Error('Winner team should exist in fixture')
 			await db.insert(pick).values({
 				gameId: rebuyGame.id,
 				gamePlayerId: gpA.id,
@@ -953,7 +954,8 @@ async function seed() {
 			(f) => fixtureLoserTeam(f) !== null && f.id !== winnerFixtureA?.id,
 		)
 		if (loserFixtureB) {
-			const loser = fixtureLoserTeam(loserFixtureB)!
+			const loser = fixtureLoserTeam(loserFixtureB)
+			if (!loser) throw new Error('Loser team should exist in fixture')
 			await db.insert(pick).values({
 				gameId: rebuyGame.id,
 				gamePlayerId: gpB.id,
@@ -995,6 +997,273 @@ async function seed() {
 				.where(eq(fixture.id, f.id))
 		}
 		console.log(`Updated 2 fixtures in round 8 to live status for verification`)
+	}
+
+	// --- 4c5 smoke games ---
+	// Three games that each trigger a different defaultShareVariant in the share dialog:
+	//   5a  Live Lads      → variant = 'live'    (active game, current round has live fixture)
+	//   5b  Champion's Cup → variant = 'winner'  (completed game, 1 winner)
+	//   5c  Split Cup      → variant = 'winner'  (completed game, 2 co-winners)
+
+	// Round references
+	const gw1_4c5 = rounds.find((r) => r.number === 1)
+	const gw2_4c5 = rounds.find((r) => r.number === 2)
+	const gw3_4c5 = rounds.find((r) => r.number === 3)
+	const gw9_4c5 = rounds.find((r) => r.number === 9)
+	const gw6_4c5 = rounds.find((r) => r.number === 6)
+	if (!gw1_4c5 || !gw2_4c5 || !gw3_4c5 || !gw9_4c5 || !gw6_4c5) {
+		throw new Error('Required rounds not found for 4c5 smoke games')
+	}
+
+	// ─── 5a: Live Lads ────────────────────────────────────────────────────────
+	// Active game whose current round (GW9) is 'active' and has a live fixture.
+	// This makes defaultShareVariant === 'live'.
+	{
+		// Promote GW9 from 'upcoming' to 'active'
+		await db.update(roundTable).set({ status: 'active' }).where(eq(roundTable.id, gw9_4c5.id))
+
+		// Update the first GW9 fixture to live status with a score
+		const gw9Fixtures = fixturesByRound.get(gw9_4c5.id) ?? []
+		const liveFixture4c5 = gw9Fixtures[0]
+		if (!liveFixture4c5) throw new Error('No fixtures found in GW9 for 4c5 smoke')
+
+		await db
+			.update(fixture)
+			.set({ status: 'live', homeScore: 1, awayScore: 0 })
+			.where(eq(fixture.id, liveFixture4c5.id))
+
+		const [liveLadsGame] = await db
+			.insert(game)
+			.values({
+				name: 'Live Lads (4c5 smoke)',
+				createdBy: userIds['dev@example.com'],
+				competitionId: pl.id,
+				gameMode: 'classic',
+				modeConfig: {},
+				entryFee: '10.00',
+				inviteCode: generateInviteCode(),
+				status: 'active',
+				currentRoundId: gw9_4c5.id,
+			})
+			.returning()
+
+		const livePlayerEmails = ['dev@example.com', 'dave@example.com', 'mike@example.com']
+		const livePlayerRows: Record<string, { id: string }> = {}
+
+		for (const email of livePlayerEmails) {
+			const [gp] = await db
+				.insert(gamePlayer)
+				.values({
+					gameId: liveLadsGame.id,
+					userId: userIds[email],
+					status: 'alive',
+					livesRemaining: 0,
+				})
+				.returning()
+			livePlayerRows[email] = { id: gp.id }
+
+			await db.insert(payment).values({
+				gameId: liveLadsGame.id,
+				userId: userIds[email],
+				amount: '10.00',
+				status: 'paid',
+				paidAt: new Date(),
+			})
+		}
+
+		// Round 1 picks — each player picks a winner from GW1 fixtures
+		const gw1Fixtures4c5 = fixturesByRound.get(gw1_4c5.id) ?? []
+		const winnerFixtures4c5 = gw1Fixtures4c5.filter((f) => fixtureWinnerTeam(f) !== null)
+		for (let i = 0; i < livePlayerEmails.length; i++) {
+			const email = livePlayerEmails[i]
+			const f = winnerFixtures4c5[i % winnerFixtures4c5.length]
+			const winner = fixtureWinnerTeam(f)
+			if (!f || !winner) continue
+			await db.insert(pick).values({
+				gameId: liveLadsGame.id,
+				gamePlayerId: livePlayerRows[email].id,
+				roundId: gw1_4c5.id,
+				teamId: winner.id,
+				fixtureId: f.id,
+				result: 'win',
+				goalsScored: winner.id === f.homeTeamId ? (f.homeScore ?? 0) : (f.awayScore ?? 0),
+			})
+		}
+
+		// Round 9 picks — at least one player picks the home team of the live fixture
+		// dev picks home team of live fixture (so they're "winning" the live game)
+		await db.insert(pick).values({
+			gameId: liveLadsGame.id,
+			gamePlayerId: livePlayerRows['dev@example.com'].id,
+			roundId: gw9_4c5.id,
+			teamId: liveFixture4c5.homeTeamId,
+			fixtureId: liveFixture4c5.id,
+			result: 'pending',
+		})
+		// dave picks away team of the same live fixture
+		if (gw9Fixtures[1]) {
+			await db.insert(pick).values({
+				gameId: liveLadsGame.id,
+				gamePlayerId: livePlayerRows['dave@example.com'].id,
+				roundId: gw9_4c5.id,
+				teamId: gw9Fixtures[1].homeTeamId,
+				fixtureId: gw9Fixtures[1].id,
+				result: 'pending',
+			})
+		}
+		// mike has no round-9 pick yet (pending submission)
+
+		console.log(`Created "Live Lads (4c5 smoke)" — 3 players, GW9 active with live fixture`)
+	}
+
+	// ─── 5b: Champion's Cup (solo winner) ────────────────────────────────────
+	// Completed classic game: 1 winner, 3 eliminated. Pot = 4 × £20 = £80.
+	// defaultShareVariant === 'winner', single-winner block.
+	{
+		const [champGame] = await db
+			.insert(game)
+			.values({
+				name: "Champion's Cup (4c5 smoke)",
+				createdBy: userIds['dev@example.com'],
+				competitionId: pl.id,
+				gameMode: 'classic',
+				modeConfig: {},
+				entryFee: '20.00',
+				inviteCode: generateInviteCode(),
+				status: 'completed',
+				currentRoundId: gw6_4c5.id,
+			})
+			.returning()
+
+		// Winner: dev
+		await db.insert(gamePlayer).values({
+			gameId: champGame.id,
+			userId: userIds['dev@example.com'],
+			status: 'winner',
+			livesRemaining: 0,
+		})
+		// Eliminated: dave (round 2), mike (round 3), rich (round 4)
+		await db.insert(gamePlayer).values({
+			gameId: champGame.id,
+			userId: userIds['dave@example.com'],
+			status: 'eliminated',
+			eliminatedRoundId: gw2_4c5.id,
+			eliminatedReason: 'loss',
+			livesRemaining: 0,
+		})
+		await db.insert(gamePlayer).values({
+			gameId: champGame.id,
+			userId: userIds['mike@example.com'],
+			status: 'eliminated',
+			eliminatedRoundId: gw3_4c5.id,
+			eliminatedReason: 'loss',
+			livesRemaining: 0,
+		})
+		const gw4_4c5 = rounds.find((r) => r.number === 4)
+		await db.insert(gamePlayer).values({
+			gameId: champGame.id,
+			userId: userIds['rich@example.com'],
+			status: 'eliminated',
+			eliminatedRoundId: gw4_4c5?.id ?? gw3_4c5.id,
+			eliminatedReason: 'loss',
+			livesRemaining: 0,
+		})
+
+		// Payments for all 4 players → pot = £80
+		for (const email of [
+			'dev@example.com',
+			'dave@example.com',
+			'mike@example.com',
+			'rich@example.com',
+		]) {
+			await db.insert(payment).values({
+				gameId: champGame.id,
+				userId: userIds[email],
+				amount: '20.00',
+				status: 'paid',
+				paidAt: new Date(),
+			})
+		}
+
+		console.log(`Created "Champion's Cup (4c5 smoke)" — 1 winner + 3 eliminated, pot £80`)
+	}
+
+	// ─── 5c: Split Cup (two co-winners) ───────────────────────────────────────
+	// Completed cup game: 2 winners, 3 eliminated. Pot = 5 × £20 = £100, split = £50 each.
+	// defaultShareVariant === 'winner', split-pot 2-way block.
+	{
+		const [splitGame] = await db
+			.insert(game)
+			.values({
+				name: 'Split Cup (4c5 smoke)',
+				createdBy: userIds['dev@example.com'],
+				competitionId: pl.id,
+				gameMode: 'cup',
+				modeConfig: { startingLives: 2, numberOfPicks: 5 },
+				entryFee: '20.00',
+				inviteCode: generateInviteCode(),
+				status: 'completed',
+				currentRoundId: gw6_4c5.id,
+			})
+			.returning()
+
+		// 2 winners: dev, dave
+		await db.insert(gamePlayer).values({
+			gameId: splitGame.id,
+			userId: userIds['dev@example.com'],
+			status: 'winner',
+			livesRemaining: 0,
+		})
+		await db.insert(gamePlayer).values({
+			gameId: splitGame.id,
+			userId: userIds['dave@example.com'],
+			status: 'winner',
+			livesRemaining: 0,
+		})
+		// 3 eliminated: mike (round 1), rich (round 2), sarah (round 3)
+		await db.insert(gamePlayer).values({
+			gameId: splitGame.id,
+			userId: userIds['mike@example.com'],
+			status: 'eliminated',
+			eliminatedRoundId: gw1_4c5.id,
+			eliminatedReason: 'loss',
+			livesRemaining: 0,
+		})
+		await db.insert(gamePlayer).values({
+			gameId: splitGame.id,
+			userId: userIds['rich@example.com'],
+			status: 'eliminated',
+			eliminatedRoundId: gw2_4c5.id,
+			eliminatedReason: 'loss',
+			livesRemaining: 0,
+		})
+		await db.insert(gamePlayer).values({
+			gameId: splitGame.id,
+			userId: userIds['sarah@example.com'],
+			status: 'eliminated',
+			eliminatedRoundId: gw3_4c5.id,
+			eliminatedReason: 'loss',
+			livesRemaining: 0,
+		})
+
+		// Payments for all 5 players → pot = £100
+		for (const email of [
+			'dev@example.com',
+			'dave@example.com',
+			'mike@example.com',
+			'rich@example.com',
+			'sarah@example.com',
+		]) {
+			await db.insert(payment).values({
+				gameId: splitGame.id,
+				userId: userIds[email],
+				amount: '20.00',
+				status: 'paid',
+				paidAt: new Date(),
+			})
+		}
+
+		console.log(`Created "Split Cup (4c5 smoke)" — 2 winners + 3 eliminated, pot £100`)
 	}
 
 	console.log('\nSeed complete!')

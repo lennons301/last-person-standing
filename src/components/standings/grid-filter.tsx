@@ -24,7 +24,7 @@ export function GridFilter({ value, onChange }: GridFilterProps) {
 					type="button"
 					onClick={() => onChange(opt.value)}
 					className={cn(
-						'text-xs px-2 py-1 rounded-md border border-border font-medium transition-colors',
+						'text-xs px-2 py-1 rounded-md border border-border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 						value === opt.value
 							? 'bg-foreground text-background border-foreground'
 							: 'bg-card text-muted-foreground hover:bg-muted',

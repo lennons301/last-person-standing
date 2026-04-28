@@ -64,7 +64,7 @@ export function RankedItem({
 				type="button"
 				{...attributes}
 				{...listeners}
-				className="text-muted-foreground p-1 cursor-grab touch-none"
+				className="text-muted-foreground p-1 cursor-grab touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded"
 				style={{ touchAction: 'none' }}
 				aria-label="Drag to reorder"
 			>
@@ -99,7 +99,7 @@ export function RankedItem({
 				type="button"
 				onClick={onChangePrediction}
 				className={cn(
-					'text-xs font-bold px-2.5 py-1 rounded shrink-0',
+					'text-xs font-bold px-2.5 py-1 rounded shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 					PRED_COLOUR[pick.prediction],
 				)}
 			>
@@ -110,7 +110,7 @@ export function RankedItem({
 					type="button"
 					onClick={onMoveUp}
 					disabled={isFirst}
-					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted"
+					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					aria-label="Move up"
 				>
 					<ChevronUp className="h-3.5 w-3.5" />
@@ -119,7 +119,7 @@ export function RankedItem({
 					type="button"
 					onClick={onMoveDown}
 					disabled={isLast}
-					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted"
+					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					aria-label="Move down"
 				>
 					<ChevronDown className="h-3.5 w-3.5" />
@@ -128,7 +128,7 @@ export function RankedItem({
 			<button
 				type="button"
 				onClick={onRemove}
-				className="text-muted-foreground hover:text-[var(--eliminated)] p-1 shrink-0"
+				className="text-muted-foreground hover:text-[var(--eliminated)] p-1 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 				aria-label="Remove"
 			>
 				<X className="h-4 w-4" />

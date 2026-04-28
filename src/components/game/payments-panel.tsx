@@ -2,14 +2,14 @@
 
 import { toast } from 'sonner'
 import { PaymentReminderButton } from './payment-reminder'
-import { type PaymentStatus, PaymentStatusChip } from './payment-status-chip'
+import { type AdminPaymentStatus, PaymentStatusChip } from './payment-status-chip'
 
 export interface AdminPayment {
-	id: string
+	id: string | null
 	userId: string
 	userName: string
 	amount: string
-	status: PaymentStatus
+	status: AdminPaymentStatus
 	isRebuy: boolean
 	isRebuyEligible: boolean
 	claimedAt: Date | null
@@ -27,7 +27,7 @@ interface PaymentsPanelProps {
 
 export function PaymentsPanel(props: PaymentsPanelProps) {
 	const all = props.payments
-	const unpaidCount = all.filter((p) => p.status === 'pending').length
+	const unpaidCount = all.filter((p) => p.status === 'pending' || p.status === 'unpaid').length
 
 	async function callAction(p: AdminPayment, action: 'dispute' | 'admin-rebuy') {
 		if (action === 'admin-rebuy') {
@@ -43,6 +43,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 			return
 		}
 		// 'dispute' branch — POSTs to .../{paymentId}/reject
+		if (!p.id) return
 		const res = await fetch(`/api/games/${props.gameId}/payments/${p.id}/reject`, {
 			method: 'POST',
 		})
@@ -72,7 +73,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 				</div>
 			</div>
 
-			<div>
+			<div className="overflow-x-auto">
 				<div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
 					All payments
 				</div>
@@ -86,20 +87,20 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 									<button
 										type="button"
 										onClick={() => callAction(p, 'admin-rebuy')}
-										className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+										className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 									>
 										Rebuy player
 									</button>
 								)}
-								{p.status === 'paid' ? (
+								{p.id !== null && p.status === 'paid' ? (
 									<button
 										type="button"
 										onClick={() => callAction(p, 'dispute')}
-										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
+										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
 									>
 										Dispute
 									</button>
-								) : p.status === 'pending' ? (
+								) : p.id !== null && p.status === 'pending' ? (
 									<PaymentReminderButton
 										gameName={props.gameName}
 										amount={p.amount}

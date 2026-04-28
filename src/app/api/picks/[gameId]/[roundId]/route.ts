@@ -269,6 +269,9 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
 	let newPicks: (typeof pick.$inferSelect)[] = []
 	let unEliminated = false
+	// Capture the narrowed reference so it's available inside the .map closure
+	// below without TS losing the non-null narrowing through the callback boundary.
+	const player = targetGamePlayer
 
 	await db.transaction(async (tx) => {
 		const insertedPicks = await tx
@@ -281,7 +284,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 						const teamId = entry.predictedResult === 'away_win' ? fx.awayTeamId : fx.homeTeamId
 						return {
 							gameId,
-							gamePlayerId: targetGamePlayer!.id,
+							gamePlayerId: player.id,
 							roundId,
 							teamId,
 							fixtureId: entry.fixtureId,

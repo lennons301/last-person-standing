@@ -51,7 +51,7 @@ export function GameHeader({
 					</div>
 				</div>
 
-				<div className="flex items-center gap-3">
+				<div className="flex items-center gap-3 shrink-0">
 					<div className="text-right">
 						<div className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold">
 							Pot (confirmed)
@@ -59,8 +59,8 @@ export function GameHeader({
 						<div className="font-display text-3xl md:text-4xl font-bold leading-none">
 							£{potBreakdown.confirmed}
 						</div>
-						<div className="text-[0.7rem] text-muted-foreground mt-1">
-							{hasPending && <span>£{potBreakdown.pending} awaiting confirmation · </span>}
+						<div className="text-[0.7rem] text-muted-foreground mt-1 max-w-[200px] leading-relaxed">
+							{hasPending && <span>£{potBreakdown.pending} pending · </span>}
 							{hasUnpaid && <span>£{unpaid} unpaid · </span>}
 							<span>£{target} target</span>
 						</div>

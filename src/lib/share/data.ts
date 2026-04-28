@@ -236,7 +236,7 @@ export async function getShareLiveData(
 			players: true,
 		},
 	})
-	if (!gameRow || !gameRow.currentRoundId) return null
+	if (!gameRow?.currentRoundId) return null
 	const currentRound = gameRow.competition.rounds.find((r) => r.id === gameRow.currentRoundId)
 	if (!currentRound) return null
 

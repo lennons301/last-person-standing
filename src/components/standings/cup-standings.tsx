@@ -40,7 +40,7 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 								type="button"
 								onClick={() => setView(m)}
 								className={cn(
-									'text-xs font-semibold px-2.5 py-1 rounded flex items-center gap-1',
+									'text-xs font-semibold px-2.5 py-1 rounded flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 									view === m
 										? 'bg-foreground text-background'
 										: 'text-muted-foreground hover:text-foreground',
@@ -57,7 +57,7 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 						<button
 							type="button"
 							onClick={onShare}
-							className="text-xs font-semibold px-3 py-1 rounded border border-border"
+							className="text-xs font-semibold px-3 py-1 rounded border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 						>
 							Share
 						</button>
@@ -71,7 +71,11 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 				{view === 'grid' && (
 					<CupGrid data={data} showAdminActions={showAdminActions} gameId={gameId} />
 				)}
-				{view === 'timeline' && <CupTimeline data={data} />}
+				{view === 'timeline' && (
+					<div className="overflow-x-auto">
+						<CupTimeline data={data} />
+					</div>
+				)}
 			</div>
 		</div>
 	)

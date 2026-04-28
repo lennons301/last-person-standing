@@ -27,7 +27,7 @@ export function ActingAsBanner({
 			<button
 				type="button"
 				onClick={() => router.push(`/game/${gameId}`)}
-				className="ml-auto rounded-md bg-black/25 px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground"
+				className="ml-auto rounded-md bg-black/25 px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
 			>
 				Exit admin mode
 			</button>

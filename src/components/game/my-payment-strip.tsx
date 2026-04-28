@@ -42,7 +42,7 @@ export function MyPaymentStrip({
 	}
 
 	return (
-		<div className="flex items-center justify-between rounded-lg border border-dashed border-border bg-muted/40 px-3.5 py-2.5">
+		<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-3.5 py-2.5">
 			<div className="flex items-center gap-3">
 				<span className="text-sm text-muted-foreground">Your entry fee</span>
 				<PaymentStatusChip status={status} />
@@ -54,7 +54,7 @@ export function MyPaymentStrip({
 				{status === 'pending' && (
 					<button
 						type="button"
-						className="rounded bg-foreground px-3 py-1.5 text-xs font-semibold text-background disabled:opacity-60"
+						className="rounded bg-foreground px-3 py-1.5 text-xs font-semibold text-background disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 						disabled={pending}
 						onClick={handleClaim}
 					>

@@ -139,7 +139,7 @@ export function ClassicPick({
 						<button
 							type="button"
 							onClick={() => setExpanded(true)}
-							className="text-xs font-semibold px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted flex items-center gap-1"
+							className="text-xs font-semibold px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 						>
 							Change pick <ChevronDown className="h-3 w-3" />
 						</button>
@@ -160,7 +160,7 @@ export function ClassicPick({
 							<button
 								type="button"
 								onClick={() => setExpanded(false)}
-								className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1"
+								className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 							>
 								Collapse <ChevronUp className="h-3 w-3" />
 							</button>
@@ -333,7 +333,7 @@ function PlannerSection({
 				type="button"
 				onClick={toggle}
 				aria-expanded={open}
-				className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 rounded-xl"
+				className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 			>
 				<div>
 					<div className="font-semibold text-sm">Plan ahead</div>
