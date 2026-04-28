@@ -87,7 +87,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 									<button
 										type="button"
 										onClick={() => callAction(p, 'admin-rebuy')}
-										className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+										className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 									>
 										Rebuy player
 									</button>
@@ -96,7 +96,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 									<button
 										type="button"
 										onClick={() => callAction(p, 'dispute')}
-										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
+										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
 									>
 										Dispute
 									</button>

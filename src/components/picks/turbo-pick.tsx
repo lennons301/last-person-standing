@@ -315,7 +315,7 @@ export function TurboPick({
 											<button
 												type="button"
 												onClick={() => handleAddToRanked(fix)}
-												className="mt-2.5 text-sm font-semibold text-[var(--accent)] w-full text-center py-1.5 hover:underline"
+												className="mt-2.5 text-sm font-semibold text-[var(--accent)] w-full text-center py-1.5 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 											>
 												↑ Add to predictions as #{ranked.length + 1}
 											</button>

@@ -54,7 +54,7 @@ export function MyPaymentStrip({
 				{status === 'pending' && (
 					<button
 						type="button"
-						className="rounded bg-foreground px-3 py-1.5 text-xs font-semibold text-background disabled:opacity-60"
+						className="rounded bg-foreground px-3 py-1.5 text-xs font-semibold text-background disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 						disabled={pending}
 						onClick={handleClaim}
 					>

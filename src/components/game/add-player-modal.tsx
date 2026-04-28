@@ -116,14 +116,14 @@ export function AddPlayerModal({ gameId, open, onClose }: AddPlayerModalProps) {
 							<button
 								type="button"
 								onClick={handleBackToGame}
-								className="rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+								className="rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-semibold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 							>
 								Back to game
 							</button>
 							<button
 								type="button"
 								onClick={handleGoToPick}
-								className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+								className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 							>
 								Pick for {added.userName}
 							</button>
@@ -151,7 +151,7 @@ export function AddPlayerModal({ gameId, open, onClose }: AddPlayerModalProps) {
 										key={u.id}
 										onClick={() => setSelectedId(u.id)}
 										className={cn(
-											'mb-0.5 flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-sm',
+											'mb-0.5 flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 											selectedId === u.id && 'border-primary bg-primary/10',
 											selectedId !== u.id && 'hover:bg-card hover:border-border',
 										)}
@@ -182,7 +182,7 @@ export function AddPlayerModal({ gameId, open, onClose }: AddPlayerModalProps) {
 							<button
 								type="button"
 								onClick={onClose}
-								className="rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+								className="rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-semibold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 							>
 								Cancel
 							</button>
@@ -190,7 +190,7 @@ export function AddPlayerModal({ gameId, open, onClose }: AddPlayerModalProps) {
 								type="button"
 								onClick={handleAdd}
 								disabled={!selected || submitting}
-								className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+								className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 							>
 								{selected ? `Add ${selected.name}` : 'Add'}
 							</button>

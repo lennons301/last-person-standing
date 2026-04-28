@@ -151,7 +151,7 @@ export function PlannerRound(props: PlannerRoundProps) {
 			{props.plannedTeamId && (
 				<button
 					type="button"
-					className="mt-2 text-[11px] text-muted-foreground underline"
+					className="mt-2 text-[11px] text-muted-foreground underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded"
 					onClick={() => props.onRemove(props.roundId)}
 				>
 					Clear plan

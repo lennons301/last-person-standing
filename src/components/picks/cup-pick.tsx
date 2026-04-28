@@ -288,6 +288,7 @@ export function CupPick({
 						className={cn(
 							'mt-3 w-full rounded bg-foreground text-background py-3 font-semibold',
 							'disabled:opacity-50 disabled:cursor-not-allowed',
+							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 						)}
 						disabled={readonly || slots.length < minPicks || loading}
 						onClick={handleSubmit}
@@ -367,7 +368,7 @@ function CupRankedRow({
 				<button
 					type="button"
 					onClick={onRemove}
-					className="ml-auto text-muted-foreground hover:text-[var(--eliminated)] p-1"
+					className="ml-auto text-muted-foreground hover:text-[var(--eliminated)] p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					aria-label="Remove"
 				>
 					<X className="h-4 w-4" />
@@ -425,7 +426,7 @@ function CupRankedRow({
 					type="button"
 					onClick={onMoveUp}
 					disabled={isFirst}
-					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted"
+					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					aria-label="Move up"
 				>
 					<ChevronUp className="h-3.5 w-3.5" />
@@ -434,7 +435,7 @@ function CupRankedRow({
 					type="button"
 					onClick={onMoveDown}
 					disabled={isLast}
-					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted"
+					className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					aria-label="Move down"
 				>
 					<ChevronDown className="h-3.5 w-3.5" />
@@ -443,7 +444,7 @@ function CupRankedRow({
 			<button
 				type="button"
 				onClick={onRemove}
-				className="text-muted-foreground hover:text-[var(--eliminated)] p-1 shrink-0"
+				className="text-muted-foreground hover:text-[var(--eliminated)] p-1 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 				aria-label="Remove"
 			>
 				<X className="h-4 w-4" />

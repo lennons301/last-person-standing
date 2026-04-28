@@ -71,7 +71,7 @@ export function RebuyBanner({
 					type="button"
 					onClick={() => claimPaid(pendingPayment.id)}
 					disabled={loading}
-					className="mt-2 rounded bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 disabled:opacity-50"
+					className="mt-2 rounded bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 				>
 					{loading ? 'Working…' : 'Claim paid'}
 				</button>
@@ -91,7 +91,7 @@ export function RebuyBanner({
 				type="button"
 				onClick={startRebuy}
 				disabled={loading}
-				className="mt-2 rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+				className="mt-2 rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 			>
 				{loading ? 'Working…' : `Rebuy £${entryFee}`}
 			</button>

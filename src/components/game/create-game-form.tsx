@@ -126,7 +126,7 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 									type="button"
 									onClick={() => setMode(m)}
 									className={cn(
-										'text-left p-3 rounded-lg border-2 transition-all',
+										'text-left p-3 rounded-lg border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 										mode === m
 											? 'border-[var(--alive)] bg-[var(--alive-bg)]'
 											: 'border-border hover:border-muted-foreground bg-card',

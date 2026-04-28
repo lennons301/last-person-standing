@@ -73,7 +73,7 @@ export function SplitPotModal({ gameId, aliveCount, potTotal, open, onClose }: S
 						type="button"
 						onClick={onClose}
 						disabled={submitting}
-						className="rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+						className="rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-semibold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					>
 						Cancel
 					</button>
@@ -81,7 +81,7 @@ export function SplitPotModal({ gameId, aliveCount, potTotal, open, onClose }: S
 						type="button"
 						onClick={handleConfirm}
 						disabled={submitting || aliveCount < 2}
-						className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+						className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					>
 						Split £{potTotal} across {aliveCount} winners
 					</button>
