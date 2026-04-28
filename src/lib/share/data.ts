@@ -236,8 +236,7 @@ export async function getShareLiveData(
 			players: true,
 		},
 	})
-	// biome-ignore lint/complexity/useOptionalChain: Need to check both gameRow existence and currentRoundId separately
-	if (!gameRow || !gameRow.currentRoundId) return null
+	if (!gameRow?.currentRoundId) return null
 	const currentRound = gameRow.competition.rounds.find((r) => r.id === gameRow.currentRoundId)
 	if (!currentRound) return null
 

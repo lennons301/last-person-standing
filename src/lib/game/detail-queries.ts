@@ -102,8 +102,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 	for (const uid of relevantUserIds) {
 		const userPlayer = gameData.players.find((p) => p.userId === uid)
 		const userPaymentRows = payments.filter((p) => p.userId === uid)
-		// biome-ignore lint/complexity/useOptionalChain: Need to check both round2 existence and deadline separately
-		if (!userPlayer || !round1 || !round2 || !round2.deadline) {
+		if (!userPlayer || !round1 || !round2?.deadline) {
 			eligibilityByUser.set(uid, false)
 			continue
 		}
@@ -200,8 +199,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		pendingPayment: { id: string; amount: string } | null
 	} | null = null
 
-	// biome-ignore lint/complexity/useOptionalChain: Need to check both round2 existence and deadline separately
-	if (viewerGamePlayer && round1 && round2 && round2.deadline && gameData.entryFee) {
+	if (viewerGamePlayer && round1 && round2?.deadline && gameData.entryFee) {
 		const eligible = isRebuyEligible({
 			game: {
 				gameMode: gameData.gameMode,
