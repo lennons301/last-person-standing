@@ -281,6 +281,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 						const teamId = entry.predictedResult === 'away_win' ? fx.awayTeamId : fx.homeTeamId
 						return {
 							gameId,
+							// biome-ignore lint/style/noNonNullAssertion: targetGamePlayer is checked for existence at line 63
 							gamePlayerId: targetGamePlayer!.id,
 							roundId,
 							teamId,

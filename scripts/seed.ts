@@ -933,7 +933,8 @@ async function seed() {
 		// Player A picks a winning team in GW1
 		const winnerFixtureA = gw1Fixtures.find((f) => fixtureWinnerTeam(f) !== null)
 		if (winnerFixtureA) {
-			const winner = fixtureWinnerTeam(winnerFixtureA)!
+			const winner = fixtureWinnerTeam(winnerFixtureA)
+			if (!winner) throw new Error('Winner team should exist in fixture')
 			await db.insert(pick).values({
 				gameId: rebuyGame.id,
 				gamePlayerId: gpA.id,
@@ -953,7 +954,8 @@ async function seed() {
 			(f) => fixtureLoserTeam(f) !== null && f.id !== winnerFixtureA?.id,
 		)
 		if (loserFixtureB) {
-			const loser = fixtureLoserTeam(loserFixtureB)!
+			const loser = fixtureLoserTeam(loserFixtureB)
+			if (!loser) throw new Error('Loser team should exist in fixture')
 			await db.insert(pick).values({
 				gameId: rebuyGame.id,
 				gamePlayerId: gpB.id,
