@@ -25,11 +25,18 @@ export function resolveFootballDataCode(
 	return null
 }
 
+interface FdTeam {
+	id: number | null
+	name: string | null
+	tla: string | null
+	crest: string | null
+}
+
 interface FdMatch {
 	id: number
 	matchday: number
-	homeTeam: { id: number; name: string; tla: string; crest: string }
-	awayTeam: { id: number; name: string; tla: string; crest: string }
+	homeTeam: FdTeam
+	awayTeam: FdTeam
 	utcDate: string
 	status: string
 	score: { fullTime: { home: number | null; away: number | null } }
@@ -75,12 +82,13 @@ export class FootballDataAdapter implements CompetitionAdapter {
 		const teamMap = new Map<string, AdapterTeam>()
 		for (const match of data.matches) {
 			for (const t of [match.homeTeam, match.awayTeam]) {
+				if (t.id == null || t.name == null) continue
 				if (!teamMap.has(String(t.id))) {
 					teamMap.set(String(t.id), {
 						externalId: String(t.id),
 						name: t.name,
-						shortName: t.tla,
-						badgeUrl: t.crest,
+						shortName: t.tla ?? t.name.slice(0, 3).toUpperCase(),
+						badgeUrl: t.crest ?? null,
 					})
 				}
 			}
@@ -106,17 +114,19 @@ export class FootballDataAdapter implements CompetitionAdapter {
 				name: `Matchday ${matchday}`,
 				deadline: null,
 				finished: matches.every((m) => m.status === 'FINISHED'),
-				fixtures: matches.map(
-					(m): AdapterFixture => ({
-						externalId: String(m.id),
-						homeTeamExternalId: String(m.homeTeam.id),
-						awayTeamExternalId: String(m.awayTeam.id),
-						kickoff: new Date(m.utcDate),
-						status: this.mapStatus(m.status),
-						homeScore: m.score.fullTime.home,
-						awayScore: m.score.fullTime.away,
-					}),
-				),
+				fixtures: matches
+					.filter((m) => m.homeTeam.id != null && m.awayTeam.id != null)
+					.map(
+						(m): AdapterFixture => ({
+							externalId: String(m.id),
+							homeTeamExternalId: String(m.homeTeam.id),
+							awayTeamExternalId: String(m.awayTeam.id),
+							kickoff: new Date(m.utcDate),
+							status: this.mapStatus(m.status),
+							homeScore: m.score.fullTime.home,
+							awayScore: m.score.fullTime.away,
+						}),
+					),
 			}))
 	}
 
