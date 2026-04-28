@@ -42,7 +42,7 @@ export function MyPaymentStrip({
 	}
 
 	return (
-		<div className="flex items-center justify-between rounded-lg border border-dashed border-border bg-muted/40 px-3.5 py-2.5">
+		<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-3.5 py-2.5">
 			<div className="flex items-center gap-3">
 				<span className="text-sm text-muted-foreground">Your entry fee</span>
 				<PaymentStatusChip status={status} />

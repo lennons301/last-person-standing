@@ -37,7 +37,7 @@ export function GameCard({ game }: GameCardProps) {
 				</div>
 
 				{!isCompleted && !isEliminated && (
-					<div className="pt-3 border-t flex justify-between items-center">
+					<div className="pt-3 border-t flex flex-wrap justify-between items-center gap-1.5">
 						{needsPick ? (
 							<span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-[var(--draw-bg)] text-[var(--draw)]">
 								⚡ Make your pick — {game.currentRoundName}
