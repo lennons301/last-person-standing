@@ -73,7 +73,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 				</div>
 			</div>
 
-			<div>
+			<div className="overflow-x-auto">
 				<div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
 					All payments
 				</div>

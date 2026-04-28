@@ -71,7 +71,11 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 				{view === 'grid' && (
 					<CupGrid data={data} showAdminActions={showAdminActions} gameId={gameId} />
 				)}
-				{view === 'timeline' && <CupTimeline data={data} />}
+				{view === 'timeline' && (
+					<div className="overflow-x-auto">
+						<CupTimeline data={data} />
+					</div>
+				)}
 			</div>
 		</div>
 	)
