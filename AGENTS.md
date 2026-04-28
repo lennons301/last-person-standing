@@ -71,7 +71,8 @@ drizzle/                  # Generated migrations
 **Pattern.** `.env.example` (committed) documents every env var the app reads with placeholder values that are sufficient for `pnpm build` and `pnpm test` to succeed. Real values come from one of three places depending on context:
 
 - **Local dev:** `.env.local` (gitignored). Run `just env-init` once to copy from `.env.example`, then replace placeholders for whatever services you actually want to exercise.
-- **Production / preview:** Doppler is the source of truth → synced to Vercel project env. Never set Vercel env vars directly; always go via Doppler.
+- **Production:** Doppler `prd` config → synced automatically to Vercel Production env via the Doppler-Vercel integration. Never set Vercel Production env vars directly; always go via Doppler.
+- **Preview:** Doppler `stg` config is the source of truth, but is **not auto-synced** (Doppler free tier caps the workspace at 5 syncs and the slot was sacrificed). After changing any Doppler `stg` value, run `just sync-preview-env` to push the change to Vercel Preview env. See `scripts/sync-preview-env.sh`.
 - **GitHub Actions:** repo-level secrets, set via repo settings (separate from Doppler).
 
 If a new env var is added, update `.env.example` AND this list. Routes that read env at module load (e.g., `verifySignatureAppRouter` for QStash) require non-empty placeholder values; that's the whole reason `.env.example` exists.
@@ -87,8 +88,9 @@ Variables:
 - `VERCEL_URL` — deployment URL used as the QStash callback base. Populated automatically in Vercel builds; set manually in dev if you want to exercise QStash locally.
 
 GitHub Actions secrets (repo-level):
-- `CRON_SECRET` — same value as above.
-- `VERCEL_PROD_URL` — full https URL of the Vercel production deployment.
+- `CRON_SECRET` — same value as Doppler `prd.CRON_SECRET`. Used by `live-scores.yml` for the every-minute poll.
+- `VERCEL_PROD_URL` — full https URL of the Vercel production deployment. Used by `live-scores.yml` as the request target.
+- `PROD_DATABASE_URL` — same value as Doppler `prd.DATABASE_URL`. Used by `migrate.yml` to apply Drizzle migrations on push to `main`. Duplicated from Doppler intentionally; revisit if rotation cadence increases.
 
 ## Platform Context
 
