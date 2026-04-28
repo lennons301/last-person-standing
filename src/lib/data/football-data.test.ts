@@ -111,6 +111,53 @@ describe('FootballDataAdapter', () => {
 		)
 	})
 
+	it('skips matches with placeholder (null) teams in fetchTeams', async () => {
+		const placeholderMatches = {
+			matches: [
+				...mockMatches.matches,
+				{
+					id: 999,
+					matchday: 4,
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-07-15T15:00:00Z',
+					status: 'SCHEDULED',
+					score: { fullTime: { home: null, away: null } },
+				},
+			],
+		}
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+			Promise.resolve(new Response(JSON.stringify(placeholderMatches))),
+		)
+		const teams = await adapter.fetchTeams()
+		expect(teams.every((t) => t.name && t.externalId !== 'null')).toBe(true)
+		expect(teams.find((t) => t.externalId === 'null')).toBeUndefined()
+	})
+
+	it('skips fixtures with placeholder teams in fetchRounds', async () => {
+		const placeholderMatches = {
+			matches: [
+				...mockMatches.matches,
+				{
+					id: 999,
+					matchday: 1,
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: 64, name: 'Liverpool', tla: 'LIV', crest: '' },
+					utcDate: '2026-07-15T15:00:00Z',
+					status: 'SCHEDULED',
+					score: { fullTime: { home: null, away: null } },
+				},
+			],
+		}
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+			Promise.resolve(new Response(JSON.stringify(placeholderMatches))),
+		)
+		const rounds = await adapter.fetchRounds()
+		const allFixtures = rounds.flatMap((r) => r.fixtures)
+		expect(allFixtures.find((f) => f.externalId === '999')).toBeUndefined()
+		expect(allFixtures.every((f) => f.homeTeamExternalId !== 'null')).toBe(true)
+	})
+
 	it('fetches standings', async () => {
 		const standings = await adapter.fetchStandings()
 		expect(standings).toHaveLength(2)
