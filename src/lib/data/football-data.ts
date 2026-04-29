@@ -34,7 +34,7 @@ interface FdTeam {
 
 interface FdMatch {
 	id: number
-	matchday: number
+	matchday: number | null
 	homeTeam: FdTeam
 	awayTeam: FdTeam
 	utcDate: string
@@ -102,6 +102,7 @@ export class FootballDataAdapter implements CompetitionAdapter {
 		)
 		const roundMap = new Map<number, FdMatch[]>()
 		for (const match of data.matches) {
+			if (match.matchday == null) continue
 			const list = roundMap.get(match.matchday) ?? []
 			list.push(match)
 			roundMap.set(match.matchday, list)
