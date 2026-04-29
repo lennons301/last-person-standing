@@ -134,6 +134,31 @@ describe('FootballDataAdapter', () => {
 		expect(teams.find((t) => t.externalId === 'null')).toBeUndefined()
 	})
 
+	it('skips matches with null matchday in fetchRounds', async () => {
+		const withKnockouts = {
+			matches: [
+				...mockMatches.matches,
+				{
+					id: 998,
+					matchday: null,
+					homeTeam: { id: 64, name: 'Liverpool', tla: 'LIV', crest: '' },
+					awayTeam: { id: 66, name: 'Man United', tla: 'MUN', crest: '' },
+					utcDate: '2026-07-15T15:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+			],
+		}
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+			Promise.resolve(new Response(JSON.stringify(withKnockouts))),
+		)
+		const rounds = await adapter.fetchRounds()
+		expect(rounds.every((r) => r.number != null)).toBe(true)
+		expect(rounds.find((r) => r.name === 'Matchday null')).toBeUndefined()
+		const allFixtures = rounds.flatMap((r) => r.fixtures)
+		expect(allFixtures.find((f) => f.externalId === '998')).toBeUndefined()
+	})
+
 	it('skips fixtures with placeholder teams in fetchRounds', async () => {
 		const placeholderMatches = {
 			matches: [
