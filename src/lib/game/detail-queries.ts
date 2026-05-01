@@ -12,6 +12,7 @@ import {
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
+import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { calculatePot } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, pick, plannedPick } from '@/lib/schema/game'
@@ -528,6 +529,8 @@ export async function getTurboStandingsData(
 		playerStreakBreakRank.set(p.id, broken)
 	}
 
+	const now = new Date()
+
 	return {
 		rounds: visibleRounds.map((r) => {
 			const isRoundOpen = r.status !== 'completed'
@@ -688,10 +691,15 @@ export async function getTurboStandingsData(
 				id: r.id,
 				number: r.number,
 				name: r.name ?? `GW${r.number}`,
-				status: (isRoundOpen ? (r.status === 'open' ? 'open' : 'active') : 'completed') as
-					| 'open'
-					| 'active'
-					| 'completed',
+				// Per-game round status — see src/lib/game/round-status.ts.
+				status: deriveGameRoundStatus({
+					round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
+					game: {
+						currentRoundId: gameData.currentRoundId,
+						currentRoundNumber: gameData.currentRound?.number ?? null,
+					},
+					now,
+				}) as 'open' | 'active' | 'completed',
 				players,
 				fixtures,
 			}
@@ -938,11 +946,19 @@ export async function getClassicPlannerData(
 		}),
 	])
 
+	const now = new Date()
+	const currentRoundNumber = currentRoundId
+		? (gameData.competition.rounds.find((r) => r.id === currentRoundId)?.number ?? null)
+		: null
 	const rounds: ChainRoundRow[] = gameData.competition.rounds.map((r) => ({
 		id: r.id,
 		number: r.number,
 		name: r.name,
-		status: r.status,
+		status: deriveGameRoundStatus({
+			round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
+			game: { currentRoundId, currentRoundNumber },
+			now,
+		}),
 	}))
 
 	// Past picks are every pick for a round that isn't the current round (i.e.

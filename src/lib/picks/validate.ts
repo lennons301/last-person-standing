@@ -3,7 +3,12 @@ type ValidationResult = { valid: true } | { valid: false; reason: string }
 export interface ClassicPickValidation {
 	teamId: string
 	playerStatus: 'alive' | 'eliminated' | 'winner'
-	roundStatus: 'upcoming' | 'open' | 'active' | 'completed'
+	/**
+	 * True iff this round is the game's currently-active round (`game.currentRoundId === roundId`).
+	 * Picks are only allowed on the game's current round; past rounds are completed and
+	 * future rounds aren't visible to the player yet for this game.
+	 */
+	isCurrentRound: boolean
 	deadline: Date | null
 	now: Date
 	usedTeamIds: string[]
@@ -16,7 +21,7 @@ export function validateClassicPick(
 ): ValidationResult {
 	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
 		return { valid: false, reason: 'Player is not alive' }
-	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }
+	if (!input.isCurrentRound) return { valid: false, reason: 'Round is not open for picks' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
 	if (input.usedTeamIds.includes(input.teamId))
@@ -34,7 +39,7 @@ export interface TurboPickEntry {
 
 export interface TurboPicksValidation {
 	playerStatus: 'alive' | 'eliminated' | 'winner'
-	roundStatus: 'upcoming' | 'open' | 'active' | 'completed'
+	isCurrentRound: boolean
 	deadline: Date | null
 	now: Date
 	numberOfPicks: number
@@ -56,7 +61,7 @@ export interface CupFixtureInfo {
 
 export interface CupPicksValidation {
 	playerStatus: 'alive' | 'eliminated' | 'winner'
-	roundStatus: 'upcoming' | 'open' | 'active' | 'completed'
+	isCurrentRound: boolean
 	deadline: Date | null
 	now: Date
 	numberOfPicks: number
@@ -70,7 +75,7 @@ export function validateCupPicks(
 ): ValidationResult {
 	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
 		return { valid: false, reason: 'Player is not alive' }
-	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }
+	if (!input.isCurrentRound) return { valid: false, reason: 'Round is not open for picks' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
 	if (input.picks.length !== input.numberOfPicks)
@@ -113,7 +118,7 @@ export function validateTurboPicks(
 ): ValidationResult {
 	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
 		return { valid: false, reason: 'Player is not alive' }
-	if (input.roundStatus !== 'open') return { valid: false, reason: 'Round is not open for picks' }
+	if (!input.isCurrentRound) return { valid: false, reason: 'Round is not open for picks' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
 	if (input.picks.length !== input.numberOfPicks)

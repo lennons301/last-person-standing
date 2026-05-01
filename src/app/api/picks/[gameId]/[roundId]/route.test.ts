@@ -72,6 +72,10 @@ const CLASSIC_GAME_ADMIN = {
 	modeConfig: {},
 	competitionId: 'c1',
 	competition: { id: 'c1', type: 'league' },
+	// Pick validation now gates on `game.currentRoundId === roundId` (see
+	// src/lib/picks/validate.ts). The test posts picks for round id 'r1', so
+	// the game's currentRoundId must point at 'r1' for the pick to be accepted.
+	currentRoundId: 'r1',
 }
 
 function mockDeleteChain() {

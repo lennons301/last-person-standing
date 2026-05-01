@@ -102,7 +102,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			{
 				teamId,
 				playerStatus: targetGamePlayer.status,
-				roundStatus: roundData.status,
+				isCurrentRound: gameData.currentRoundId === roundId,
 				deadline: roundData.deadline,
 				now,
 				usedTeamIds,
@@ -210,7 +210,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	const validation = validateTurboPicks(
 		{
 			playerStatus: targetGamePlayer.status,
-			roundStatus: roundData.status,
+			isCurrentRound: gameData.currentRoundId === roundId,
 			deadline: roundData.deadline,
 			now,
 			numberOfPicks,

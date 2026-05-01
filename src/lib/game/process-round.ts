@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq, gt } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { processClassicRound } from '@/lib/game-logic/classic'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
@@ -11,6 +11,28 @@ import {
 } from '@/lib/game-logic/wc-classic'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
+
+/**
+ * Advance the game's currentRoundId pointer to the next round in the
+ * competition (or null if there are no further rounds). Called after
+ * a round has been processed so that picks can begin on the next round
+ * for this game. Round-state is per-game: each game advances independently
+ * based on when its rounds complete, not on a global competition timeline.
+ */
+async function advanceGameToNextRound(
+	gameId: string,
+	competitionId: string,
+	completedRoundNumber: number,
+): Promise<void> {
+	const nextRound = await db.query.round.findFirst({
+		where: and(eq(round.competitionId, competitionId), gt(round.number, completedRoundNumber)),
+		orderBy: [asc(round.number)],
+	})
+	await db
+		.update(game)
+		.set({ currentRoundId: nextRound?.id ?? null })
+		.where(eq(game.id, gameId))
+}
 
 export async function processGameRound(gameId: string, roundId: string) {
 	const gameData = await db.query.game.findFirst({
@@ -148,6 +170,7 @@ export async function processGameRound(gameId: string, roundId: string) {
 		}
 
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
+		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
 		return { processed: true, eliminations }
 	}
 
@@ -189,6 +212,7 @@ export async function processGameRound(gameId: string, roundId: string) {
 
 		const standings = calculateTurboStandings(playerResults)
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
+		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
 		return { processed: true, eliminations: 0, standings }
 	}
 
@@ -254,6 +278,7 @@ export async function processGameRound(gameId: string, roundId: string) {
 		}
 
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
+		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
 		return { processed: true, eliminations }
 	}
 

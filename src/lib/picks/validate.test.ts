@@ -4,7 +4,7 @@ import { validateClassicPick, validateCupPicks, validateTurboPicks } from './val
 describe('validateClassicPick', () => {
 	const base = {
 		playerStatus: 'alive' as const,
-		roundStatus: 'open' as const,
+		isCurrentRound: true,
 		deadline: new Date(Date.now() + 3600000),
 		now: new Date(),
 		usedTeamIds: ['used-1', 'used-2'],
@@ -20,8 +20,8 @@ describe('validateClassicPick', () => {
 			reason: 'Player is not alive',
 		})
 	})
-	it('rejects closed round', () => {
-		expect(validateClassicPick({ ...base, teamId: 'team-a', roundStatus: 'completed' })).toEqual({
+	it('rejects when not the game current round', () => {
+		expect(validateClassicPick({ ...base, teamId: 'team-a', isCurrentRound: false })).toEqual({
 			valid: false,
 			reason: 'Round is not open for picks',
 		})
@@ -53,7 +53,7 @@ describe('validateClassicPick', () => {
 describe('validateTurboPicks', () => {
 	const base = {
 		playerStatus: 'alive' as const,
-		roundStatus: 'open' as const,
+		isCurrentRound: true,
 		deadline: new Date(Date.now() + 3600000),
 		now: new Date(),
 		numberOfPicks: 3,
@@ -124,7 +124,7 @@ describe('validateTurboPicks', () => {
 describe('validateCupPicks', () => {
 	const base = {
 		playerStatus: 'alive' as const,
-		roundStatus: 'open' as const,
+		isCurrentRound: true,
 		deadline: new Date(Date.now() + 3600000),
 		now: new Date(),
 		numberOfPicks: 2,
