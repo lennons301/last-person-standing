@@ -18,6 +18,7 @@ vi.mock('@/lib/data/match-window', () => ({
 
 vi.mock('@/lib/data/qstash', () => ({
 	enqueueProcessRound: vi.fn().mockResolvedValue(undefined),
+	enqueuePollScores: vi.fn().mockResolvedValue(undefined),
 }))
 
 const footballDataAdapterCtor = vi.fn()
@@ -40,7 +41,7 @@ vi.mock('@/lib/data/football-data', async () => {
 })
 
 import { hasActiveFixture } from '@/lib/data/match-window'
-import { enqueueProcessRound } from '@/lib/data/qstash'
+import { enqueuePollScores, enqueueProcessRound } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
 import { POST } from './route'
 
@@ -121,7 +122,44 @@ describe('poll-scores short-circuit', () => {
 		expect(footballDataAdapterCtor).toHaveBeenCalledWith('PL', 'fd-key')
 		expect(db.update).toHaveBeenCalled()
 		expect(setMock).toHaveBeenCalledTimes(2)
-		expect(body).toEqual({ updated: 2 })
+		expect(body).toEqual({ updated: 2, chained: true })
+	})
+
+	it('enqueues the next poll-scores call when fixtures are active (chain)', async () => {
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			{ currentRoundId: 'r1', competition: { externalId: 'PL', dataSource: 'football_data' } },
+		] as never)
+		vi.mocked(db.select).mockReturnValue({
+			from: () => ({
+				where: () => Promise.resolve([{ id: 'f1', kickoff: new Date(), roundId: 'r1' }]),
+			}),
+		} as never)
+		vi.mocked(hasActiveFixture).mockReturnValue(true)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({ id: 'r1', number: 1 } as never)
+		fetchLiveScoresMock.mockResolvedValue([])
+		const whereMock = vi.fn().mockResolvedValue(undefined)
+		const setMock = vi.fn(() => ({ where: whereMock }))
+		vi.mocked(db.update).mockReturnValue({ set: setMock } as never)
+
+		await POST(authedRequest())
+
+		expect(enqueuePollScores).toHaveBeenCalledTimes(1)
+	})
+
+	it('does NOT enqueue the next call when no active fixtures (chain terminates)', async () => {
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			{ currentRoundId: 'r1', competition: { externalId: 'PL', dataSource: 'football_data' } },
+		] as never)
+		vi.mocked(db.select).mockReturnValue({
+			from: () => ({
+				where: () => Promise.resolve([{ id: 'f1', kickoff: null, roundId: 'r1' }]),
+			}),
+		} as never)
+		vi.mocked(hasActiveFixture).mockReturnValue(false)
+
+		await POST(authedRequest())
+
+		expect(enqueuePollScores).not.toHaveBeenCalled()
 	})
 
 	it('enqueues process_round when the last fixture transitions to finished', async () => {

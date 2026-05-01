@@ -51,3 +51,26 @@ export async function enqueueAutoSubmit(
 		notBefore: Math.floor(notBefore.getTime() / 1000),
 	})
 }
+
+/**
+ * Enqueue another call to /api/cron/poll-scores with the given delay (seconds).
+ * Used to build a self-perpetuating chain during live match windows where
+ * GitHub Actions free-tier scheduling can't deliver per-minute reliability.
+ *
+ * The route's CRON_SECRET bearer auth is satisfied via a forwarded
+ * Authorization header (QStash sends the literal value verbatim — same
+ * security envelope as a GH Actions secret).
+ */
+export async function enqueuePollScores(delaySeconds = 60): Promise<void> {
+	const base = process.env.VERCEL_URL ?? ''
+	if (!base) throw new Error('VERCEL_URL must be set to enqueue poll-scores')
+	const cronSecret = process.env.CRON_SECRET
+	if (!cronSecret) throw new Error('CRON_SECRET must be set to enqueue poll-scores')
+	const withScheme = base.startsWith('http') ? base : `https://${base}`
+	await client().publishJSON({
+		url: `${withScheme}/api/cron/poll-scores`,
+		body: { source: 'qstash-loop' },
+		headers: { Authorization: `Bearer ${cronSecret}` },
+		delay: delaySeconds,
+	})
+}
