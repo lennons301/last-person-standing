@@ -8,7 +8,12 @@ vi.mock('@upstash/qstash', () => ({
 	}),
 }))
 
-import { enqueueAutoSubmit, enqueueDeadlineReminder, enqueueProcessRound } from './qstash'
+import {
+	enqueueAutoSubmit,
+	enqueueDeadlineReminder,
+	enqueuePollScores,
+	enqueueProcessRound,
+} from './qstash'
 
 describe('qstash helpers', () => {
 	beforeEach(() => {
@@ -52,5 +57,29 @@ describe('qstash helpers', () => {
 			teamId: 't-1',
 		})
 		expect(call.notBefore).toBe(Math.floor(notBefore.getTime() / 1000))
+	})
+
+	it('enqueuePollScores posts to /api/cron/poll-scores with bearer auth and default 60s delay', async () => {
+		process.env.CRON_SECRET = 'shh'
+		await enqueuePollScores()
+		expect(publishJSONMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: 'https://example.com/api/cron/poll-scores',
+				body: { source: 'qstash-loop' },
+				headers: { Authorization: 'Bearer shh' },
+				delay: 60,
+			}),
+		)
+	})
+
+	it('enqueuePollScores honours a custom delay', async () => {
+		process.env.CRON_SECRET = 'shh'
+		await enqueuePollScores(5)
+		expect(publishJSONMock.mock.calls[0][0].delay).toBe(5)
+	})
+
+	it('enqueuePollScores throws when CRON_SECRET is missing', async () => {
+		process.env.CRON_SECRET = ''
+		await expect(enqueuePollScores()).rejects.toThrow(/CRON_SECRET/)
 	})
 })

@@ -2,7 +2,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
 import { hasActiveFixture } from '@/lib/data/match-window'
-import { enqueueProcessRound } from '@/lib/data/qstash'
+import { enqueuePollScores, enqueueProcessRound } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
 import { fixture, round } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
@@ -108,5 +108,14 @@ export async function POST(request: Request) {
 		}
 	}
 
-	return NextResponse.json({ updated: totalUpdated })
+	// Self-perpetuating chain: GitHub Actions free-tier crons run every ~60-90
+	// minutes in practice (despite the `* * * * *` schedule), which is far too
+	// slow for live football scoring. To get true per-minute polling during
+	// match windows, this route enqueues the next call to itself via QStash
+	// with a 60s delay. The chain self-terminates when hasActiveFixture()
+	// returns false at the top of a future call. The hourly heartbeat from
+	// GitHub Actions restarts the chain after any breakage.
+	await enqueuePollScores(60)
+
+	return NextResponse.json({ updated: totalUpdated, chained: true })
 }

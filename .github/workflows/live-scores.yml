@@ -1,8 +1,23 @@
-name: Live scores poll
+name: Live scores heartbeat
+
+# This workflow is a heartbeat — not the live-scores driver itself.
+#
+# GitHub Actions free-tier scheduled workflows run every ~60-90 minutes in
+# practice (GitHub deprioritises free-tier scheduled jobs under load), which
+# is unusable for live football scoring.
+#
+# The actual per-minute polling during match windows is driven by a
+# self-perpetuating QStash chain started by /api/cron/poll-scores. This
+# workflow's job is just to kick off the chain periodically — if the chain
+# dies (transient QStash outage, deploy hiccup), the next heartbeat restarts
+# it within ~15 minutes.
+#
+# See src/app/api/cron/poll-scores/route.ts and the enqueuePollScores helper
+# in src/lib/data/qstash.ts for the chain mechanics.
 
 on:
   schedule:
-    - cron: '* * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -10,10 +25,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  poll:
+  heartbeat:
     runs-on: ubuntu-latest
     steps:
-      - name: Hit poll-scores endpoint
+      - name: Hit poll-scores endpoint (kicks the QStash chain)
         run: |
           curl -sS -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
