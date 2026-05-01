@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { determineFixtureOutcome } from '@/lib/game-logic/common'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { pick } from '@/lib/schema/game'
@@ -107,7 +108,13 @@ export async function getCupStandingsData(
 			: []
 	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
 
-	const hideOpenPicks = g.currentRound.status === 'open'
+	// Hide picks while the round is still accepting them (deadline hasn't passed).
+	// Once the deadline passes, picks are revealed even though the round may
+	// still be in 'active' state until processGameRound completes.
+	const now = new Date()
+	const hideOpenPicks =
+		g.currentRound.status !== 'completed' &&
+		(!g.currentRound.deadline || now < g.currentRound.deadline)
 
 	const players: CupStandingsPlayer[] = g.players.map((p) => {
 		const isViewer = p.userId === viewerUserId
@@ -171,7 +178,17 @@ export async function getCupStandingsData(
 		gameId: g.id,
 		roundId: g.currentRound.id,
 		roundNumber: g.currentRound.number,
-		roundStatus: g.currentRound.status as 'open' | 'active' | 'completed',
+		// Per-game derived round status — see src/lib/game/round-status.ts.
+		roundStatus: deriveGameRoundStatus({
+			round: {
+				id: g.currentRound.id,
+				number: g.currentRound.number,
+				status: g.currentRound.status,
+				deadline: g.currentRound.deadline,
+			},
+			game: { currentRoundId: g.currentRound.id, currentRoundNumber: g.currentRound.number },
+			now,
+		}) as 'open' | 'active' | 'completed',
 		maxLives: (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 3,
 		numberOfPicks: (g.modeConfig as { numberOfPicks?: number } | null)?.numberOfPicks ?? 6,
 		players,

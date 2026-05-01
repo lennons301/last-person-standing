@@ -7,6 +7,9 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: 'node',
+		// Don't pick up tests from local git worktrees (stale snapshots of older
+		// branches). Only the primary checkout's tests are authoritative.
+		exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/.worktrees/**'],
 	},
 	resolve: {
 		alias: {
