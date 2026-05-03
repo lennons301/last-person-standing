@@ -1,7 +1,11 @@
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { syncCompetition } from '@/lib/game/bootstrap-competitions'
+import {
+	mergeFootballDataIds,
+	scheduleUpcomingFixturePolls,
+	syncCompetition,
+} from '@/lib/game/bootstrap-competitions'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { competition } from '@/lib/schema/competition'
 
@@ -29,7 +33,21 @@ export async function POST(request: Request) {
 		if (summary.transitionedRoundIds?.length) {
 			deadlineLockedRoundIds.push(...summary.transitionedRoundIds)
 		}
+		// For FPL-bootstrapped competitions, merge football-data IDs onto fresh
+		// fixtures + teams so the live-score poll can match by external_ids.football_data.
+		// Was previously only run by the manual `scripts/bootstrap-competitions.ts`
+		// path; missing it here meant new fixtures (rescheduled / late-published)
+		// stayed invisible to live polling.
+		if (c.dataSource === 'fpl' && apiKey) {
+			await mergeFootballDataIds(c, apiKey)
+		}
 	}
+
+	// Pre-schedule a poll-scores trigger for every upcoming fixture across all
+	// competitions. Solves the "GH Actions heartbeat missed the match window"
+	// gap: each fixture gets its own QStash trigger 10 min before kickoff,
+	// which starts the self-perpetuating chain reliably.
+	await scheduleUpcomingFixturePolls()
 	let deadlineLock: {
 		autoPicksInserted: number
 		playersEliminated: number

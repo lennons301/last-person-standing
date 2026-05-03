@@ -6,6 +6,8 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/game/bootstrap-competitions', () => ({
 	syncCompetition: vi.fn().mockResolvedValue({ rounds: 0, fixtures: 0, transitionedRoundIds: [] }),
+	mergeFootballDataIds: vi.fn().mockResolvedValue(undefined),
+	scheduleUpcomingFixturePolls: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/game/no-pick-handler', () => ({

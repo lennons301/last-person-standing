@@ -11,6 +11,8 @@ const {
 	dbInsertFn,
 	dbUpdateFn,
 	dbUpdateSet,
+	dbSelectFn,
+	dbSelectWhere,
 	fplFetchTeams,
 	fplFetchRounds,
 	fplFetchStandings,
@@ -18,9 +20,14 @@ const {
 	fdFetchRounds,
 	fdFetchStandings,
 	enqueueAutoSubmitMock,
+	enqueuePollScoresAtMock,
 } = vi.hoisted(() => {
 	const updateSet = vi.fn((_payload: Record<string, unknown>) => ({
 		where: vi.fn().mockResolvedValue(undefined),
+	}))
+	const selectWhere = vi.fn().mockResolvedValue([])
+	const selectFn = vi.fn(() => ({
+		from: () => ({ where: selectWhere }),
 	}))
 	return {
 		dbQueryCompetitionFindFirst: vi.fn(),
@@ -37,6 +44,8 @@ const {
 		})),
 		dbUpdateFn: vi.fn(() => ({ set: updateSet })),
 		dbUpdateSet: updateSet,
+		dbSelectFn: selectFn,
+		dbSelectWhere: selectWhere,
 		fplFetchTeams: vi.fn().mockResolvedValue([]),
 		fplFetchRounds: vi.fn().mockResolvedValue([]),
 		fplFetchStandings: vi.fn().mockResolvedValue([]),
@@ -44,6 +53,7 @@ const {
 		fdFetchRounds: vi.fn().mockResolvedValue([]),
 		fdFetchStandings: vi.fn().mockResolvedValue([]),
 		enqueueAutoSubmitMock: vi.fn().mockResolvedValue(undefined),
+		enqueuePollScoresAtMock: vi.fn().mockResolvedValue(undefined),
 	}
 })
 
@@ -58,10 +68,14 @@ vi.mock('@/lib/db', () => ({
 		},
 		insert: dbInsertFn,
 		update: dbUpdateFn,
+		select: dbSelectFn,
 	},
 }))
 
-vi.mock('@/lib/data/qstash', () => ({ enqueueAutoSubmit: enqueueAutoSubmitMock }))
+vi.mock('@/lib/data/qstash', () => ({
+	enqueueAutoSubmit: enqueueAutoSubmitMock,
+	enqueuePollScoresAt: enqueuePollScoresAtMock,
+}))
 
 vi.mock('@/lib/data/fpl', () => ({
 	// biome-ignore lint/complexity/useArrowFunction: vi.fn().mockImplementation needs a constructable function for `new FplAdapter()`
@@ -89,6 +103,7 @@ vi.mock('@/lib/data/football-data', () => ({
 import {
 	bootstrapCompetitions,
 	mergeFootballDataIds,
+	scheduleUpcomingFixturePolls,
 	syncCompetition,
 } from './bootstrap-competitions'
 
@@ -482,5 +497,54 @@ describe('mergeFootballDataIds', () => {
 
 		// No team matched → no team updates → no fixture updates either.
 		expect(dbUpdateSet).not.toHaveBeenCalled()
+	})
+})
+
+describe('scheduleUpcomingFixturePolls', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbSelectWhere.mockReset()
+		enqueuePollScoresAtMock.mockClear()
+	})
+
+	it('enqueues one trigger per upcoming fixture, scheduled 10 min before kickoff, with stable dedup id', async () => {
+		const future1 = new Date(Date.now() + 60 * 60 * 1000) // 1h from now
+		const future2 = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24h from now
+		dbSelectWhere.mockResolvedValue([
+			{ id: 'fx-1', kickoff: future1 },
+			{ id: 'fx-2', kickoff: future2 },
+		])
+
+		await scheduleUpcomingFixturePolls()
+
+		expect(enqueuePollScoresAtMock).toHaveBeenCalledTimes(2)
+		const [[trigger1, dedup1], [trigger2, dedup2]] = enqueuePollScoresAtMock.mock.calls
+		expect((trigger1 as Date).getTime()).toBe(future1.getTime() - 10 * 60 * 1000)
+		expect((trigger2 as Date).getTime()).toBe(future2.getTime() - 10 * 60 * 1000)
+		expect(dedup1).toBe(`poll-fixture:fx-1:${(trigger1 as Date).toISOString()}`)
+		expect(dedup2).toBe(`poll-fixture:fx-2:${(trigger2 as Date).toISOString()}`)
+	})
+
+	it('skips fixtures whose kickoff is closer than the lead window', async () => {
+		const veryClose = new Date(Date.now() + 5 * 60 * 1000) // 5min from now (lead is 10min)
+		dbSelectWhere.mockResolvedValue([{ id: 'fx-imminent', kickoff: veryClose }])
+
+		await scheduleUpcomingFixturePolls()
+
+		expect(enqueuePollScoresAtMock).not.toHaveBeenCalled()
+	})
+
+	it('does not throw when an individual enqueue fails', async () => {
+		const future = new Date(Date.now() + 60 * 60 * 1000)
+		dbSelectWhere.mockResolvedValue([
+			{ id: 'fx-bad', kickoff: future },
+			{ id: 'fx-good', kickoff: future },
+		])
+		enqueuePollScoresAtMock
+			.mockRejectedValueOnce(new Error('QStash transient'))
+			.mockResolvedValueOnce(undefined)
+
+		await expect(scheduleUpcomingFixturePolls()).resolves.toBeUndefined()
+		expect(enqueuePollScoresAtMock).toHaveBeenCalledTimes(2)
 	})
 })

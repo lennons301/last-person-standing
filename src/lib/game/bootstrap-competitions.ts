@@ -1,7 +1,7 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, gt, inArray, lt } from 'drizzle-orm'
 import { FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter } from '@/lib/data/fpl'
-import { enqueueAutoSubmit } from '@/lib/data/qstash'
+import { enqueueAutoSubmit, enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
@@ -59,6 +59,57 @@ export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<voi
 	}
 	await syncCompetition(wc, opts)
 	await applyPotAssignments(wc.id)
+
+	// Pre-schedule a poll-scores trigger for each upcoming fixture across both
+	// competitions. Without this, the live-score chain only restarts when the
+	// GitHub Actions heartbeat happens to fire during a match window — and on
+	// the free tier those run every ~60-90 minutes. A 90-min match could end
+	// without the chain ever waking.
+	await scheduleUpcomingFixturePolls()
+}
+
+/**
+ * For every fixture whose kickoff is in the future (and within a 7-day
+ * lookahead — beyond that we'd risk QStash dedup expiring before the message
+ * fires), enqueue a single QStash trigger scheduled for `kickoff − 10 min`.
+ * The trigger hits /api/cron/poll-scores, which starts a self-perpetuating
+ * chain that runs through the match window and self-terminates.
+ *
+ * Idempotent within QStash's dedup window: re-running this within ~10 min
+ * (e.g. multiple bootstrap calls in quick succession) won't queue duplicates.
+ * Across longer intervals (the daily cron), duplicates are technically possible
+ * but harmless — each just starts a redundant chain that converges on the same
+ * DB state.
+ */
+const PRE_SCHEDULE_LEAD_MS = 10 * 60 * 1000
+const PRE_SCHEDULE_LOOKAHEAD_MS = 7 * 24 * 60 * 60 * 1000
+
+export async function scheduleUpcomingFixturePolls(): Promise<void> {
+	const now = new Date()
+	const lookahead = new Date(now.getTime() + PRE_SCHEDULE_LOOKAHEAD_MS)
+	const upcoming = await db
+		.select({ id: fixture.id, kickoff: fixture.kickoff })
+		.from(fixture)
+		.where(and(gt(fixture.kickoff, now), lt(fixture.kickoff, lookahead)))
+
+	for (const f of upcoming) {
+		if (!f.kickoff) continue
+		const triggerAt = new Date(f.kickoff.getTime() - PRE_SCHEDULE_LEAD_MS)
+		// Don't schedule for moments already past — covers the edge case where a
+		// fixture's kickoff is closer than the lead window.
+		if (triggerAt <= now) continue
+		// Stable dedup id per fixture+trigger so a second bootstrap in the
+		// dedup window is a no-op. We don't include date because the kickoff is
+		// the unique key — if a fixture's kickoff is rescheduled, it gets a new
+		// trigger time and a new dedup key.
+		const dedupId = `poll-fixture:${f.id}:${triggerAt.toISOString()}`
+		try {
+			await enqueuePollScoresAt(triggerAt, dedupId)
+		} catch (e) {
+			// Don't fail the whole bootstrap if a single enqueue errors.
+			console.warn(`[scheduleUpcomingFixturePolls] enqueue failed for fixture ${f.id}`, e)
+		}
+	}
 }
 
 /**
