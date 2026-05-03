@@ -641,7 +641,7 @@ describe('mergeFootballDataIds', () => {
 				{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
 				'fd-key',
 			),
-		).rejects.toThrow(/missing football-data IDs.*FPL_TO_FD_TLA/s)
+		).rejects.toThrow(/missing football-data IDs[\s\S]*FPL_TO_FD_TLA/)
 	})
 })
 
