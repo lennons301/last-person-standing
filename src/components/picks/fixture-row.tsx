@@ -171,7 +171,7 @@ function TeamPickButton({
 				stateCls,
 			)}
 		>
-			<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="lg" />
+			<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="lg" responsive />
 			<div
 				className={cn('flex flex-col gap-1.5 min-w-0 flex-1', isHome ? 'items-end' : 'items-start')}
 			>
