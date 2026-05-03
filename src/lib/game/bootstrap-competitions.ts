@@ -54,8 +54,89 @@ export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<voi
 	}
 
 	await syncCompetition(pl, opts)
+	if (pl.dataSource === 'fpl' && opts.footballDataApiKey) {
+		await mergeFootballDataIds(pl, opts.footballDataApiKey)
+	}
 	await syncCompetition(wc, opts)
 	await applyPotAssignments(wc.id)
+}
+
+/**
+ * For competitions whose primary adapter is FPL, this fetches the same matchdays
+ * from football-data.org and merges football-data IDs into existing teams +
+ * fixtures. The FPL adapter remains the source of truth for round structure
+ * (deadlines, names, finished flag); football-data IDs are added so live-score
+ * polling — which uses football-data.org — can match against the right rows.
+ *
+ * Matching strategy:
+ * - Teams: match our `team.short_name` against football-data's `tla`. PL team
+ *   3-letter codes are stable and align across both sources.
+ * - Fixtures: within a round (same `matchday` number), match by the resolved
+ *   home/away team UUIDs. We do NOT trust kickoff times to match exactly — FPL
+ *   sometimes has slightly older snapshots than football-data after a match
+ *   reschedule.
+ *
+ * Idempotent: re-running this on already-merged data is a no-op.
+ */
+export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string): Promise<void> {
+	if (!comp.externalId && comp.dataSource !== 'fpl') return // PL is the only fpl source today
+	const fdCode = comp.externalId ?? 'PL'
+	const fdAdapter = new FootballDataAdapter(fdCode, apiKey)
+
+	// Pull football-data teams + rounds (with embedded fixtures).
+	const fdTeams = await fdAdapter.fetchTeams()
+	const fdRounds = await fdAdapter.fetchRounds()
+
+	// 1) Merge football-data team IDs onto our teams via short_name === tla.
+	const ourTeams = await db.query.team.findMany({})
+	const ourTeamIdByFdId = new Map<string, string>() // football-data id -> our team UUID
+	for (const fdTeam of fdTeams) {
+		const ourTeam = ourTeams.find((t) => t.shortName === fdTeam.shortName)
+		if (!ourTeam) continue
+		ourTeamIdByFdId.set(fdTeam.externalId, ourTeam.id)
+		await db
+			.update(team)
+			.set({
+				externalIds: {
+					...((ourTeam.externalIds as Record<string, string | number>) ?? {}),
+					football_data: fdTeam.externalId,
+				},
+				// Prefer football-data's crest URL — works for newly-promoted PL teams
+				// where the FPL CDN URL (`/badges/rb/t{code}.svg`) returns 404.
+				...(fdTeam.badgeUrl ? { badgeUrl: fdTeam.badgeUrl } : {}),
+			})
+			.where(eq(team.id, ourTeam.id))
+	}
+
+	// 2) Merge football-data fixture IDs onto our fixtures via (matchday, home, away).
+	const ourRounds = await db.query.round.findMany({
+		where: eq(round.competitionId, comp.id),
+		with: { fixtures: true },
+	})
+	const ourRoundsByNumber = new Map(ourRounds.map((r) => [r.number, r]))
+
+	for (const fdRound of fdRounds) {
+		const ourRound = ourRoundsByNumber.get(fdRound.number)
+		if (!ourRound) continue
+		for (const fdFx of fdRound.fixtures) {
+			const ourHomeId = ourTeamIdByFdId.get(fdFx.homeTeamExternalId)
+			const ourAwayId = ourTeamIdByFdId.get(fdFx.awayTeamExternalId)
+			if (!ourHomeId || !ourAwayId) continue
+			const ourFx = ourRound.fixtures.find(
+				(f) => f.homeTeamId === ourHomeId && f.awayTeamId === ourAwayId,
+			)
+			if (!ourFx) continue
+			await db
+				.update(fixture)
+				.set({
+					externalIds: {
+						...((ourFx.externalIds as Record<string, string | number>) ?? {}),
+						football_data: fdFx.externalId,
+					},
+				})
+				.where(eq(fixture.id, ourFx.id))
+		}
+	}
 }
 
 export async function syncCompetition(
@@ -197,6 +278,10 @@ export async function syncCompetition(
 						status: af.status,
 						homeScore: af.homeScore,
 						awayScore: af.awayScore,
+						externalIds: {
+							...((existingFixture.externalIds as Record<string, string | number>) ?? {}),
+							[key]: af.externalId,
+						},
 					})
 					.where(eq(fixture.id, existingFixture.id))
 			} else {
@@ -209,6 +294,7 @@ export async function syncCompetition(
 					homeScore: af.homeScore,
 					awayScore: af.awayScore,
 					externalId: af.externalId,
+					externalIds: { [key]: af.externalId },
 				})
 				totalFixtures++
 			}
