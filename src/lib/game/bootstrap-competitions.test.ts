@@ -481,6 +481,96 @@ describe('mergeFootballDataIds', () => {
 		})
 	})
 
+	it('matches rescheduled fixtures across different matchdays (FPL gameweek vs football-data matchday)', async () => {
+		// Real prod case: FPL says GW26 WOL v ARS but football-data has the same
+		// fixture under matchday 31 because of a reschedule. Match must succeed.
+		const teamWol = { id: 'our-WOL', shortName: 'WOL', externalIds: { fpl: '20' } }
+		const teamArs = { id: 'our-ARS', shortName: 'ARS', externalIds: { fpl: '1' } }
+		dbQueryTeamFindMany.mockResolvedValueOnce([teamWol, teamArs])
+
+		const ourFixtureRescheduled = {
+			id: 'our-fx-reschedule',
+			homeTeamId: 'our-WOL',
+			awayTeamId: 'our-ARS',
+			externalIds: { fpl: '310' },
+		}
+		// Our DB tracks it under round 26 (FPL event)
+		dbQueryRoundFindMany.mockResolvedValue([
+			{ id: 'our-r-26', number: 26, fixtures: [ourFixtureRescheduled] },
+		])
+
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '76', name: 'Wolverhampton Wanderers FC', shortName: 'WOL', badgeUrl: null },
+			{ externalId: '57', name: 'Arsenal FC', shortName: 'ARS', badgeUrl: null },
+		])
+		// Football-data tracks the same fixture under matchday 31 (rescheduled)
+		fdFetchRounds.mockResolvedValue([
+			{
+				externalId: '31',
+				number: 31,
+				name: 'Matchday 31',
+				deadline: null,
+				finished: true,
+				fixtures: [
+					{
+						externalId: '538200',
+						homeTeamExternalId: '76',
+						awayTeamExternalId: '57',
+						kickoff: new Date('2026-02-18T20:00:00Z'),
+						status: 'finished' as const,
+						homeScore: 2,
+						awayScore: 2,
+					},
+				],
+			},
+		])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		// The fixture should now have football_data id even though our matchday was 26 and fd's was 31.
+		const update = dbUpdateSet.mock.calls.find(
+			(c) =>
+				(c[0] as { externalIds?: { football_data?: string } }).externalIds?.football_data ===
+				'538200',
+		)
+		expect(update?.[0]).toEqual({
+			externalIds: { fpl: '310', football_data: '538200' },
+		})
+	})
+
+	it('matches teams via FPL_TO_FD_TLA alias when codes differ across sources (NFO → NOT)', async () => {
+		const teamForest = {
+			id: 'our-NFO',
+			shortName: 'NFO',
+			externalIds: { fpl: '16' },
+		}
+		dbQueryTeamFindMany.mockResolvedValueOnce([teamForest])
+		dbQueryRoundFindMany.mockResolvedValue([])
+
+		// Football-data returns the team with its `tla=NOT`, our DB has `short_name=NFO`.
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '351', name: 'Nottingham Forest FC', shortName: 'NOT', badgeUrl: 'fd-not.png' },
+		])
+		fdFetchRounds.mockResolvedValue([])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		const update = dbUpdateSet.mock.calls.find(
+			(c) =>
+				(c[0] as { externalIds?: { football_data?: string } }).externalIds?.football_data === '351',
+		)
+		expect(update?.[0]).toMatchObject({
+			externalIds: { fpl: '16', football_data: '351' },
+			badgeUrl: 'fd-not.png',
+		})
+	})
+
 	it('skips fixtures when our DB has no matching team for the football-data tla', async () => {
 		dbQueryTeamFindMany.mockResolvedValueOnce([])
 		dbQueryRoundFindMany.mockResolvedValue([])
@@ -521,8 +611,8 @@ describe('scheduleUpcomingFixturePolls', () => {
 		const [[trigger1, dedup1], [trigger2, dedup2]] = enqueuePollScoresAtMock.mock.calls
 		expect((trigger1 as Date).getTime()).toBe(future1.getTime() - 10 * 60 * 1000)
 		expect((trigger2 as Date).getTime()).toBe(future2.getTime() - 10 * 60 * 1000)
-		expect(dedup1).toBe(`poll-fixture:fx-1:${(trigger1 as Date).toISOString()}`)
-		expect(dedup2).toBe(`poll-fixture:fx-2:${(trigger2 as Date).toISOString()}`)
+		expect(dedup1).toBe(`poll-fixture-fx-1-${(trigger1 as Date).getTime()}`)
+		expect(dedup2).toBe(`poll-fixture-fx-2-${(trigger2 as Date).getTime()}`)
 	})
 
 	it('skips fixtures whose kickoff is closer than the lead window', async () => {

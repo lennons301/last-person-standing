@@ -98,11 +98,11 @@ export async function scheduleUpcomingFixturePolls(): Promise<void> {
 		// Don't schedule for moments already past — covers the edge case where a
 		// fixture's kickoff is closer than the lead window.
 		if (triggerAt <= now) continue
-		// Stable dedup id per fixture+trigger so a second bootstrap in the
-		// dedup window is a no-op. We don't include date because the kickoff is
-		// the unique key — if a fixture's kickoff is rescheduled, it gets a new
-		// trigger time and a new dedup key.
-		const dedupId = `poll-fixture:${f.id}:${triggerAt.toISOString()}`
+		// Stable dedup id per fixture+trigger so a second bootstrap inside the
+		// QStash dedup window is a no-op. Use epoch ms (not ISO) because QStash
+		// rejects deduplication IDs containing `:`. If a fixture's kickoff is
+		// rescheduled, it gets a different epoch → different dedup key.
+		const dedupId = `poll-fixture-${f.id}-${triggerAt.getTime()}`
 		try {
 			await enqueuePollScoresAt(triggerAt, dedupId)
 		} catch (e) {
@@ -113,6 +113,25 @@ export async function scheduleUpcomingFixturePolls(): Promise<void> {
 }
 
 /**
+ * Alias for the (rare) cases where FPL and football-data disagree on a team's
+ * 3-letter code. Map: FPL `short_name` → football-data `tla`.
+ *
+ * Known mismatches:
+ * - Nottingham Forest: FPL `NFO`, football-data `NOT`. Confirmed 2026-05-03
+ *   on the 2025/26 PL season — every other PL team's tla aligns across sources.
+ *
+ * If a new mismatch surfaces (e.g. promoted team next season), add an entry
+ * here and re-run bootstrap.
+ */
+const FPL_TO_FD_TLA: Record<string, string> = {
+	NFO: 'NOT',
+}
+
+function fdTlaForFplShortName(fplShortName: string): string {
+	return FPL_TO_FD_TLA[fplShortName] ?? fplShortName
+}
+
+/**
  * For competitions whose primary adapter is FPL, this fetches the same matchdays
  * from football-data.org and merges football-data IDs into existing teams +
  * fixtures. The FPL adapter remains the source of truth for round structure
@@ -120,8 +139,8 @@ export async function scheduleUpcomingFixturePolls(): Promise<void> {
  * polling — which uses football-data.org — can match against the right rows.
  *
  * Matching strategy:
- * - Teams: match our `team.short_name` against football-data's `tla`. PL team
- *   3-letter codes are stable and align across both sources.
+ * - Teams: match our `team.short_name` against football-data's `tla`, with the
+ *   `FPL_TO_FD_TLA` alias map covering the known mismatch (NFO → NOT).
  * - Fixtures: within a round (same `matchday` number), match by the resolved
  *   home/away team UUIDs. We do NOT trust kickoff times to match exactly — FPL
  *   sometimes has slightly older snapshots than football-data after a match
@@ -138,11 +157,12 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	const fdTeams = await fdAdapter.fetchTeams()
 	const fdRounds = await fdAdapter.fetchRounds()
 
-	// 1) Merge football-data team IDs onto our teams via short_name === tla.
+	// 1) Merge football-data team IDs onto our teams via short_name === tla
+	// (with the FPL_TO_FD_TLA alias map covering the NFO → NOT case).
 	const ourTeams = await db.query.team.findMany({})
 	const ourTeamIdByFdId = new Map<string, string>() // football-data id -> our team UUID
 	for (const fdTeam of fdTeams) {
-		const ourTeam = ourTeams.find((t) => t.shortName === fdTeam.shortName)
+		const ourTeam = ourTeams.find((t) => fdTlaForFplShortName(t.shortName) === fdTeam.shortName)
 		if (!ourTeam) continue
 		ourTeamIdByFdId.set(fdTeam.externalId, ourTeam.id)
 		await db
@@ -159,23 +179,29 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 			.where(eq(team.id, ourTeam.id))
 	}
 
-	// 2) Merge football-data fixture IDs onto our fixtures via (matchday, home, away).
+	// 2) Merge football-data fixture IDs onto our fixtures via (home, away) team
+	// UUIDs alone — NOT including matchday. Rescheduled matches sometimes end
+	// up under a different matchday in football-data than the FPL gameweek
+	// they're tracked under in our DB. Since each PL pairing happens exactly
+	// once per home venue per season, (home, away) is a unique key across the
+	// whole competition and gives us a one-shot match regardless of round.
 	const ourRounds = await db.query.round.findMany({
 		where: eq(round.competitionId, comp.id),
 		with: { fixtures: true },
 	})
-	const ourRoundsByNumber = new Map(ourRounds.map((r) => [r.number, r]))
+	const ourFixtureByPair = new Map<string, (typeof ourRounds)[number]['fixtures'][number]>()
+	for (const r of ourRounds) {
+		for (const f of r.fixtures) {
+			ourFixtureByPair.set(`${f.homeTeamId}|${f.awayTeamId}`, f)
+		}
+	}
 
 	for (const fdRound of fdRounds) {
-		const ourRound = ourRoundsByNumber.get(fdRound.number)
-		if (!ourRound) continue
 		for (const fdFx of fdRound.fixtures) {
 			const ourHomeId = ourTeamIdByFdId.get(fdFx.homeTeamExternalId)
 			const ourAwayId = ourTeamIdByFdId.get(fdFx.awayTeamExternalId)
 			if (!ourHomeId || !ourAwayId) continue
-			const ourFx = ourRound.fixtures.find(
-				(f) => f.homeTeamId === ourHomeId && f.awayTeamId === ourAwayId,
-			)
+			const ourFx = ourFixtureByPair.get(`${ourHomeId}|${ourAwayId}`)
 			if (!ourFx) continue
 			await db
 				.update(fixture)
