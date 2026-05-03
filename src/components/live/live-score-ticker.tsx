@@ -11,11 +11,35 @@ export function LiveScoreTicker() {
 	if (!payload) return null
 
 	const now = new Date()
-	const livish = payload.fixtures.filter((f) => {
-		const state = deriveMatchState(f, now)
-		return state === 'pre' || state === 'live' || state === 'ht'
+
+	// Surface every fixture in the current round, with state-aware ordering so
+	// the most actionable ones (live → upcoming → finished) appear left-to-right.
+	// Within each state group, sort sensibly: live by kickoff asc (oldest first
+	// = most match minutes elapsed), upcoming by kickoff asc (next first),
+	// finished by kickoff desc (most recent first).
+	const stateOrder: Record<'live' | 'ht' | 'pre' | 'ft', number> = {
+		live: 0,
+		ht: 0,
+		pre: 1,
+		ft: 2,
+	}
+	const annotated = payload.fixtures.map((f) => ({ fixture: f, state: deriveMatchState(f, now) }))
+	annotated.sort((a, b) => {
+		const orderDiff = stateOrder[a.state] - stateOrder[b.state]
+		if (orderDiff !== 0) return orderDiff
+		const aKickoff = a.fixture.kickoff
+			? typeof a.fixture.kickoff === 'string'
+				? Date.parse(a.fixture.kickoff)
+				: a.fixture.kickoff.getTime()
+			: 0
+		const bKickoff = b.fixture.kickoff
+			? typeof b.fixture.kickoff === 'string'
+				? Date.parse(b.fixture.kickoff)
+				: b.fixture.kickoff.getTime()
+			: 0
+		return a.state === 'ft' ? bKickoff - aKickoff : aKickoff - bKickoff
 	})
-	if (livish.length === 0) return null
+	if (annotated.length === 0) return null
 
 	const viewerPicksByFixture = new Map<string, LivePick>()
 	const viewerPlayerIds = new Set(
@@ -30,7 +54,7 @@ export function LiveScoreTicker() {
 	return (
 		<div className="mb-4 flex items-start gap-2">
 			<div className="flex flex-1 gap-2 overflow-x-auto pb-1">
-				{livish.map((fixture) => {
+				{annotated.map(({ fixture }) => {
 					const viewerPick = viewerPicksByFixture.get(fixture.id) ?? null
 					return (
 						<GoalCelebration key={fixture.id} fixtureId={fixture.id} viewerPick={viewerPick}>
