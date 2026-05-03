@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
 import { hasActiveFixture } from '@/lib/data/match-window'
@@ -72,10 +72,16 @@ export async function POST(request: Request) {
 			const transitionedFixtureIds: string[] = []
 
 			for (const score of scoresUpdates) {
+				// Match by external_ids.football_data so FPL-bootstrapped fixtures
+				// (where external_id is the FPL id) still get score updates from the
+				// football-data adapter. The merge step in bootstrap-competitions
+				// populates external_ids.football_data on FPL fixtures. For
+				// football-data-bootstrapped competitions (e.g., WC), external_ids.football_data
+				// equals external_id by construction.
 				const [existing] = await db
 					.select({ id: fixture.id, status: fixture.status })
 					.from(fixture)
-					.where(eq(fixture.externalId, score.externalId))
+					.where(sql`${fixture.externalIds}->>'football_data' = ${score.externalId}`)
 				if (!existing) continue
 
 				await db

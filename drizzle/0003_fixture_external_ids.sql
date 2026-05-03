@@ -1,0 +1,1 @@
+ALTER TABLE "fixture" ADD COLUMN "external_ids" jsonb DEFAULT '{}'::jsonb;

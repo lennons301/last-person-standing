@@ -86,7 +86,11 @@ vi.mock('@/lib/data/football-data', () => ({
 	resolveFootballDataCode: vi.fn(() => 'PL'),
 }))
 
-import { bootstrapCompetitions, syncCompetition } from './bootstrap-competitions'
+import {
+	bootstrapCompetitions,
+	mergeFootballDataIds,
+	syncCompetition,
+} from './bootstrap-competitions'
 
 describe('bootstrapCompetitions', () => {
 	beforeEach(() => {
@@ -379,5 +383,104 @@ describe('syncCompetition deadline-lock trigger (transitionedRoundIds)', () => {
 
 		// Finished rounds are not open anymore — no re-fire of the deadline lock.
 		expect(result.transitionedRoundIds).toEqual([])
+	})
+})
+
+describe('mergeFootballDataIds', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbQueryTeamFindMany.mockResolvedValue([])
+		dbQueryRoundFindMany.mockResolvedValue([])
+	})
+
+	it('merges football-data team + fixture IDs onto FPL-bootstrapped rows by short_name and (matchday, home, away)', async () => {
+		// Existing PL teams + fixtures bootstrapped via FPL.
+		const teamArs = {
+			id: 'our-ARS',
+			shortName: 'ARS',
+			externalIds: { fpl: '1' },
+		}
+		const teamLiv = {
+			id: 'our-LIV',
+			shortName: 'LIV',
+			externalIds: { fpl: '12' },
+		}
+		dbQueryTeamFindMany.mockResolvedValueOnce([teamArs, teamLiv])
+
+		const ourFixture = {
+			id: 'our-fx-1',
+			homeTeamId: 'our-ARS',
+			awayTeamId: 'our-LIV',
+			externalIds: { fpl: '347' },
+		}
+		dbQueryRoundFindMany.mockResolvedValue([{ id: 'our-r-35', number: 35, fixtures: [ourFixture] }])
+
+		// Football-data adapter returns matching teams (by tla) + matching fixture (by matchday + team ids).
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal', shortName: 'ARS', badgeUrl: 'fd-ars.png' },
+			{ externalId: '64', name: 'Liverpool', shortName: 'LIV', badgeUrl: 'fd-liv.png' },
+		])
+		fdFetchRounds.mockResolvedValue([
+			{
+				externalId: '35',
+				number: 35,
+				name: 'Matchday 35',
+				deadline: null,
+				finished: false,
+				fixtures: [
+					{
+						externalId: '538131',
+						homeTeamExternalId: '57',
+						awayTeamExternalId: '64',
+						kickoff: new Date(),
+						status: 'scheduled' as const,
+						homeScore: null,
+						awayScore: null,
+					},
+				],
+			},
+		])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		// We expect 3 update set() calls: 2 teams + 1 fixture.
+		const teamArsUpdate = dbUpdateSet.mock.calls.find(
+			(c) =>
+				(c[0] as { externalIds?: { football_data?: string } }).externalIds?.football_data === '57',
+		)
+		expect(teamArsUpdate?.[0]).toMatchObject({
+			externalIds: { fpl: '1', football_data: '57' },
+			badgeUrl: 'fd-ars.png',
+		})
+
+		const fixtureUpdate = dbUpdateSet.mock.calls.find(
+			(c) =>
+				(c[0] as { externalIds?: { football_data?: string } }).externalIds?.football_data ===
+				'538131',
+		)
+		expect(fixtureUpdate?.[0]).toEqual({
+			externalIds: { fpl: '347', football_data: '538131' },
+		})
+	})
+
+	it('skips fixtures when our DB has no matching team for the football-data tla', async () => {
+		dbQueryTeamFindMany.mockResolvedValueOnce([])
+		dbQueryRoundFindMany.mockResolvedValue([])
+
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal', shortName: 'ARS', badgeUrl: null },
+		])
+		fdFetchRounds.mockResolvedValue([])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		// No team matched → no team updates → no fixture updates either.
+		expect(dbUpdateSet).not.toHaveBeenCalled()
 	})
 })

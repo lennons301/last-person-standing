@@ -85,7 +85,13 @@ export const fixture = pgTable('fixture', {
 	homeScore: integer('home_score'),
 	awayScore: integer('away_score'),
 	status: fixtureStatusEnum('status').notNull().default('scheduled'),
+	// Source-specific id from the adapter that originally inserted the fixture.
+	// Kept for backwards-compatibility; new code should prefer external_ids.
 	externalId: varchar('external_id', { length: 100 }),
+	// Per-source ids, e.g. { fpl: '347', football_data: '538131' }. Lets the
+	// fixture be matched against any adapter independent of which one bootstrapped
+	// it (notably: FPL rounds + structure, football-data live scores).
+	externalIds: jsonb('external_ids').$type<Record<string, string | number>>().default({}),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
