@@ -158,7 +158,12 @@ export function GameDetailView({
 
 				{game.isAdmin && (
 					<div className="mt-6">
-						<AdminPanel gameId={game.id} aliveCount={game.aliveCount} potTotal={game.pot.total} />
+						<AdminPanel
+							gameId={game.id}
+							gameName={game.name}
+							aliveCount={game.aliveCount}
+							potTotal={game.pot.total}
+						/>
 					</div>
 				)}
 
