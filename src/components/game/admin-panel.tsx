@@ -1,16 +1,39 @@
 'use client'
-import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useState, useTransition } from 'react'
 import { AddPlayerModal } from './add-player-modal'
 import { SplitPotModal } from './split-pot-modal'
 
 interface AdminPanelProps {
 	gameId: string
+	gameName: string
 	aliveCount: number
 	potTotal: string
 }
 
-export function AdminPanel({ gameId, aliveCount, potTotal }: AdminPanelProps) {
+export function AdminPanel({ gameId, gameName, aliveCount, potTotal }: AdminPanelProps) {
 	const [openModal, setOpenModal] = useState<'add' | 'split' | null>(null)
+	const [deleteError, setDeleteError] = useState<string | null>(null)
+	const [isPending, startTransition] = useTransition()
+	const router = useRouter()
+
+	function handleDelete() {
+		const ok = window.confirm(
+			`Delete "${gameName}"? This permanently removes the game and every pick, payment, and player record attached to it. Cannot be undone.`,
+		)
+		if (!ok) return
+		setDeleteError(null)
+		startTransition(async () => {
+			const res = await fetch(`/api/games/${gameId}`, { method: 'DELETE' })
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}))
+				setDeleteError(body.message ?? body.error ?? 'Delete failed')
+				return
+			}
+			router.push('/dashboard')
+			router.refresh()
+		})
+	}
 
 	return (
 		<>
@@ -37,7 +60,16 @@ export function AdminPanel({ gameId, aliveCount, potTotal }: AdminPanelProps) {
 					>
 						Split pot ({aliveCount} alive)
 					</button>
+					<button
+						type="button"
+						onClick={handleDelete}
+						disabled={isPending}
+						className="ml-auto rounded-md border border-[color-mix(in_oklab,var(--eliminated)_60%,transparent)] bg-background px-3 py-1.5 text-xs font-semibold text-[var(--eliminated)] hover:bg-[color-mix(in_oklab,var(--eliminated)_10%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						{isPending ? 'Deleting…' : 'Delete game'}
+					</button>
 				</div>
+				{deleteError && <p className="mt-2 text-xs text-[var(--eliminated)]">{deleteError}</p>}
 			</div>
 			<AddPlayerModal
 				gameId={gameId}

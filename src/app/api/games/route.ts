@@ -59,15 +59,33 @@ export async function POST(request: Request) {
 
 	const inviteCode = generateInviteCode()
 
-	// Link to the competition's earliest non-completed round so the game
-	// has somewhere to start. If none exist the game just waits.
-	const firstRound = await db.query.round.findFirst({
+	// Link to the competition's earliest still-pickable round. A round is
+	// pickable iff its deadline is in the future — once the deadline has
+	// passed, attaching a new game to it would be dead-on-arrival because
+	// validateClassicPick / validateTurboPicks / validateCupPicks all reject
+	// post-deadline submissions. Skip those rounds and roll to the next.
+	//
+	// Rounds without a deadline (e.g. WC knockouts pre-draw with TBD fixtures)
+	// are still pickable in principle — we keep them as candidates.
+	const candidates = await db.query.round.findMany({
 		where: and(
 			eq(round.competitionId, competitionId),
 			inArray(round.status, ['open', 'active', 'upcoming']),
 		),
 		orderBy: [asc(round.number)],
 	})
+	const now = new Date()
+	const firstRound = candidates.find((r) => !r.deadline || r.deadline > now)
+	if (!firstRound) {
+		return NextResponse.json(
+			{
+				error: 'no-pickable-round',
+				message:
+					'This competition has no upcoming rounds. The deadline for every remaining gameweek has passed.',
+			},
+			{ status: 400 },
+		)
+	}
 
 	const [newGame] = await db
 		.insert(game)
@@ -80,8 +98,8 @@ export async function POST(request: Request) {
 			entryFee: entryFee ?? null,
 			maxPlayers: maxPlayers ?? null,
 			inviteCode,
-			status: firstRound ? 'active' : 'open',
-			currentRoundId: firstRound?.id ?? null,
+			status: 'active',
+			currentRoundId: firstRound.id,
 		})
 		.returning()
 
