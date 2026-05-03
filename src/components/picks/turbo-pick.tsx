@@ -259,7 +259,8 @@ export function TurboPick({
 											/>
 											<div className="flex flex-col gap-1.5 min-w-0 flex-1 items-end">
 												<span className="font-semibold text-base leading-tight truncate w-full text-right">
-													{fix.home.name}
+													<span className="sm:hidden">{fix.home.shortName}</span>
+													<span className="hidden sm:inline">{fix.home.name}</span>
 												</span>
 												<div className="flex items-center gap-2">
 													{fix.home.leaguePosition != null && (
@@ -268,7 +269,14 @@ export function TurboPick({
 														</span>
 													)}
 													{fix.home.form && fix.home.form.length > 0 && (
-														<FormDots results={fix.home.form} size="md" />
+														<>
+															<span className="sm:hidden">
+																<FormDots results={fix.home.form} size="sm" />
+															</span>
+															<span className="hidden sm:inline">
+																<FormDots results={fix.home.form} size="md" />
+															</span>
+														</>
 													)}
 												</div>
 											</div>
@@ -291,7 +299,8 @@ export function TurboPick({
 											/>
 											<div className="flex flex-col gap-1.5 min-w-0 flex-1 items-start">
 												<span className="font-semibold text-base leading-tight truncate w-full">
-													{fix.away.name}
+													<span className="sm:hidden">{fix.away.shortName}</span>
+													<span className="hidden sm:inline">{fix.away.name}</span>
 												</span>
 												<div className="flex items-center gap-2">
 													{fix.away.leaguePosition != null && (
@@ -300,7 +309,14 @@ export function TurboPick({
 														</span>
 													)}
 													{fix.away.form && fix.away.form.length > 0 && (
-														<FormDots results={fix.away.form} size="md" />
+														<>
+															<span className="sm:hidden">
+																<FormDots results={fix.away.form} size="sm" />
+															</span>
+															<span className="hidden sm:inline">
+																<FormDots results={fix.away.form} size="md" />
+															</span>
+														</>
 													)}
 												</div>
 											</div>

@@ -84,11 +84,17 @@ export function RankedItem({
 					badgeUrl={pick.homeTeam.badgeUrl}
 					size="md"
 				/>
-				<span className="font-semibold text-sm truncate">{pick.homeTeam.name}</span>
+				<span className="font-semibold text-sm truncate">
+					<span className="sm:hidden">{pick.homeTeam.shortName}</span>
+					<span className="hidden sm:inline">{pick.homeTeam.name}</span>
+				</span>
 				<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide px-1">
 					vs
 				</span>
-				<span className="font-semibold text-sm truncate">{pick.awayTeam.name}</span>
+				<span className="font-semibold text-sm truncate">
+					<span className="sm:hidden">{pick.awayTeam.shortName}</span>
+					<span className="hidden sm:inline">{pick.awayTeam.name}</span>
+				</span>
 				<TeamBadge
 					shortName={pick.awayTeam.shortName}
 					badgeUrl={pick.awayTeam.badgeUrl}
