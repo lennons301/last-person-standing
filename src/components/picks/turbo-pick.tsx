@@ -256,6 +256,7 @@ export function TurboPick({
 												shortName={fix.home.shortName}
 												badgeUrl={fix.home.badgeUrl}
 												size="lg"
+												responsive
 											/>
 											<div className="flex flex-col gap-1.5 min-w-0 flex-1 items-end">
 												<span className="font-semibold text-base leading-tight truncate w-full text-right">
@@ -296,6 +297,7 @@ export function TurboPick({
 												shortName={fix.away.shortName}
 												badgeUrl={fix.away.badgeUrl}
 												size="lg"
+												responsive
 											/>
 											<div className="flex flex-col gap-1.5 min-w-0 flex-1 items-start">
 												<span className="font-semibold text-base leading-tight truncate w-full">
