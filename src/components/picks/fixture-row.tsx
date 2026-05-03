@@ -175,14 +175,31 @@ function TeamPickButton({
 			<div
 				className={cn('flex flex-col gap-1.5 min-w-0 flex-1', isHome ? 'items-end' : 'items-start')}
 			>
-				<span className="font-semibold text-base leading-tight truncate w-full">{team.name}</span>
+				{/* Country/long names truncate to first chars on narrow phones — show
+				 * the 3-letter shortName instead and switch to the full name from `sm`
+				 * upward. Keeps the touch target useful and avoids "Argen…" / "C". */}
+				<span className="font-semibold text-base leading-tight truncate w-full">
+					<span className="sm:hidden">{team.shortName}</span>
+					<span className="hidden sm:inline">{team.name}</span>
+				</span>
 				<div className="flex items-center gap-2">
 					{team.leaguePosition != null && (
 						<span className="text-xs text-muted-foreground font-medium">
 							{ordinal(team.leaguePosition)}
 						</span>
 					)}
-					{team.form && team.form.length > 0 && <FormDots results={team.form} size="md" />}
+					{/* sm-and-up uses larger dots; below sm we shrink so the form guide
+					 * stays inside the row even when the team name is long. */}
+					{team.form && team.form.length > 0 && (
+						<>
+							<span className="sm:hidden">
+								<FormDots results={team.form} size="sm" />
+							</span>
+							<span className="hidden sm:inline">
+								<FormDots results={team.form} size="md" />
+							</span>
+						</>
+					)}
 				</div>
 				{chip && <div className={cn('flex', isHome ? 'justify-end' : 'justify-start')}>{chip}</div>}
 			</div>
