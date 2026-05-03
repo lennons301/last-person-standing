@@ -12,6 +12,7 @@ import {
 	enqueueAutoSubmit,
 	enqueueDeadlineReminder,
 	enqueuePollScores,
+	enqueuePollScoresAt,
 	enqueueProcessRound,
 } from './qstash'
 
@@ -81,5 +82,24 @@ describe('qstash helpers', () => {
 	it('enqueuePollScores throws when CRON_SECRET is missing', async () => {
 		process.env.CRON_SECRET = ''
 		await expect(enqueuePollScores()).rejects.toThrow(/CRON_SECRET/)
+	})
+
+	it('enqueuePollScoresAt schedules with notBefore (epoch seconds) and dedupId', async () => {
+		process.env.CRON_SECRET = 'shh'
+		const triggerAt = new Date('2026-06-11T18:50:00Z') // WC opener kickoff -10min
+		await enqueuePollScoresAt(triggerAt, 'poll-fixture:abc:2026-06-11T18:50:00.000Z')
+		const call = publishJSONMock.mock.calls[0][0]
+		expect(call.url).toBe('https://example.com/api/cron/poll-scores')
+		expect(call.body).toEqual({ source: 'fixture-kickoff' })
+		expect(call.notBefore).toBe(Math.floor(triggerAt.getTime() / 1000))
+		expect(call.deduplicationId).toBe('poll-fixture:abc:2026-06-11T18:50:00.000Z')
+		expect(call.headers).toEqual({ Authorization: 'Bearer shh' })
+	})
+
+	it('enqueuePollScoresAt omits deduplicationId when not provided', async () => {
+		process.env.CRON_SECRET = 'shh'
+		await enqueuePollScoresAt(new Date('2026-06-11T18:50:00Z'))
+		const call = publishJSONMock.mock.calls[0][0]
+		expect(call.deduplicationId).toBeUndefined()
 	})
 })

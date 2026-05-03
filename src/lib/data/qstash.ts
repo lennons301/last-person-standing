@@ -74,3 +74,30 @@ export async function enqueuePollScores(delaySeconds = 60): Promise<void> {
 		delay: delaySeconds,
 	})
 }
+
+/**
+ * Pre-schedule a single poll-scores call for a future moment (e.g. a fixture's
+ * kickoff time minus a grace window). Solves the "live polling didn't start"
+ * gap where GitHub Actions heartbeats run every ~50-90 minutes in practice
+ * and may miss a match's live window entirely. We schedule one trigger per
+ * upcoming fixture; each trigger starts a chain that self-terminates when
+ * matches finish.
+ *
+ * Pass a stable `dedupId` (e.g. fixture id + scheduled epoch) so re-running
+ * bootstrap doesn't queue duplicates. QStash dedup window is ~10min by
+ * default, so two bootstrap runs within that window won't double up.
+ */
+export async function enqueuePollScoresAt(notBefore: Date, dedupId?: string): Promise<void> {
+	const base = process.env.VERCEL_URL ?? ''
+	if (!base) throw new Error('VERCEL_URL must be set to enqueue poll-scores')
+	const cronSecret = process.env.CRON_SECRET
+	if (!cronSecret) throw new Error('CRON_SECRET must be set to enqueue poll-scores')
+	const withScheme = base.startsWith('http') ? base : `https://${base}`
+	await client().publishJSON({
+		url: `${withScheme}/api/cron/poll-scores`,
+		body: { source: 'fixture-kickoff' },
+		headers: { Authorization: `Bearer ${cronSecret}` },
+		notBefore: Math.floor(notBefore.getTime() / 1000),
+		...(dedupId ? { deduplicationId: dedupId } : {}),
+	})
+}
