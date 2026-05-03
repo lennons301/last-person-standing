@@ -413,14 +413,22 @@ describe('mergeFootballDataIds', () => {
 		const teamArs = {
 			id: 'our-ARS',
 			shortName: 'ARS',
+			name: 'Arsenal',
 			externalIds: { fpl: '1' },
 		}
 		const teamLiv = {
 			id: 'our-LIV',
 			shortName: 'LIV',
+			name: 'Liverpool',
 			externalIds: { fpl: '12' },
 		}
-		dbQueryTeamFindMany.mockResolvedValueOnce([teamArs, teamLiv])
+		// First findMany: pre-merge state for the merge step. Second findMany:
+		// post-merge state for the coverage assertion (mocks the writes that
+		// would have happened in real DB).
+		dbQueryTeamFindMany.mockResolvedValueOnce([teamArs, teamLiv]).mockResolvedValueOnce([
+			{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } },
+			{ ...teamLiv, externalIds: { fpl: '12', football_data: '64' } },
+		])
 
 		const ourFixture = {
 			id: 'our-fx-1',
@@ -484,9 +492,22 @@ describe('mergeFootballDataIds', () => {
 	it('matches rescheduled fixtures across different matchdays (FPL gameweek vs football-data matchday)', async () => {
 		// Real prod case: FPL says GW26 WOL v ARS but football-data has the same
 		// fixture under matchday 31 because of a reschedule. Match must succeed.
-		const teamWol = { id: 'our-WOL', shortName: 'WOL', externalIds: { fpl: '20' } }
-		const teamArs = { id: 'our-ARS', shortName: 'ARS', externalIds: { fpl: '1' } }
-		dbQueryTeamFindMany.mockResolvedValueOnce([teamWol, teamArs])
+		const teamWol = {
+			id: 'our-WOL',
+			shortName: 'WOL',
+			name: 'Wolves',
+			externalIds: { fpl: '20' },
+		}
+		const teamArs = {
+			id: 'our-ARS',
+			shortName: 'ARS',
+			name: 'Arsenal',
+			externalIds: { fpl: '1' },
+		}
+		dbQueryTeamFindMany.mockResolvedValueOnce([teamWol, teamArs]).mockResolvedValueOnce([
+			{ ...teamWol, externalIds: { fpl: '20', football_data: '76' } },
+			{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } },
+		])
 
 		const ourFixtureRescheduled = {
 			id: 'our-fx-reschedule',
@@ -545,9 +566,12 @@ describe('mergeFootballDataIds', () => {
 		const teamForest = {
 			id: 'our-NFO',
 			shortName: 'NFO',
+			name: "Nott'm Forest",
 			externalIds: { fpl: '16' },
 		}
-		dbQueryTeamFindMany.mockResolvedValueOnce([teamForest])
+		dbQueryTeamFindMany
+			.mockResolvedValueOnce([teamForest])
+			.mockResolvedValueOnce([{ ...teamForest, externalIds: { fpl: '16', football_data: '351' } }])
 		dbQueryRoundFindMany.mockResolvedValue([])
 
 		// Football-data returns the team with its `tla=NOT`, our DB has `short_name=NFO`.
@@ -572,7 +596,9 @@ describe('mergeFootballDataIds', () => {
 	})
 
 	it('skips fixtures when our DB has no matching team for the football-data tla', async () => {
-		dbQueryTeamFindMany.mockResolvedValueOnce([])
+		// Both findMany calls (merge + coverage assertion) get [] — no FPL teams
+		// in our DB so the assertion is trivially satisfied.
+		dbQueryTeamFindMany.mockResolvedValue([])
 		dbQueryRoundFindMany.mockResolvedValue([])
 
 		fdFetchTeams.mockResolvedValue([
@@ -587,6 +613,35 @@ describe('mergeFootballDataIds', () => {
 
 		// No team matched → no team updates → no fixture updates either.
 		expect(dbUpdateSet).not.toHaveBeenCalled()
+	})
+
+	it('throws if any FPL team is missing football_data id after merge (alias map gap)', async () => {
+		// Hypothetical 2026/27 promoted team that we forgot to add to FPL_TO_FD_TLA.
+		const newPromotedTeam = {
+			id: 'our-XYZ',
+			shortName: 'XYZ',
+			name: 'Hypothetical FC',
+			externalIds: { fpl: '99' },
+		}
+		// First call: pre-merge state. Second call: post-merge state — still missing
+		// football_data id because the merge couldn't find a matching tla.
+		dbQueryTeamFindMany
+			.mockResolvedValueOnce([newPromotedTeam])
+			.mockResolvedValueOnce([newPromotedTeam])
+		dbQueryRoundFindMany.mockResolvedValue([])
+
+		// Football-data has the team but under a different tla; merge can't link them.
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '999', name: 'Hypothetical FC', shortName: 'HYP', badgeUrl: null },
+		])
+		fdFetchRounds.mockResolvedValue([])
+
+		await expect(
+			mergeFootballDataIds(
+				{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+				'fd-key',
+			),
+		).rejects.toThrow(/missing football-data IDs.*FPL_TO_FD_TLA/s)
 	})
 })
 

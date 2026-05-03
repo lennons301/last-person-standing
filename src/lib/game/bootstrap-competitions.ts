@@ -214,6 +214,44 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 				.where(eq(fixture.id, ourFx.id))
 		}
 	}
+
+	// 3) Coverage assertion. Self-diagnosing for the next time the FPL/football-
+	// data data shape drifts (likely each August when promoted PL teams arrive).
+	// Fails loudly on team-level gaps because every PL team must be matchable
+	// for live scoring to work; warns on fixture-level gaps because rescheduled
+	// or yet-to-be-published fixtures may legitimately be absent from
+	// football-data temporarily.
+	const refreshedTeams = await db.query.team.findMany({})
+	const fplTeams = refreshedTeams.filter(
+		(t) => (t.externalIds as Record<string, string | number> | null)?.fpl != null,
+	)
+	const teamsMissing = fplTeams.filter(
+		(t) => (t.externalIds as Record<string, string | number> | null)?.football_data == null,
+	)
+	if (teamsMissing.length > 0) {
+		const detail = teamsMissing.map((t) => `${t.shortName} (${t.name})`).join(', ')
+		throw new Error(
+			`mergeFootballDataIds: ${teamsMissing.length}/${fplTeams.length} FPL team(s) missing football-data IDs after merge: ${detail}. Likely tla mismatch — add to FPL_TO_FD_TLA alias map.`,
+		)
+	}
+
+	const fixturesAll = (
+		await db.query.round.findMany({
+			where: eq(round.competitionId, comp.id),
+			with: { fixtures: true },
+		})
+	).flatMap((r) => r.fixtures)
+	const fixturesMissing = fixturesAll.filter(
+		(f) => (f.externalIds as Record<string, string | number> | null)?.football_data == null,
+	)
+	if (fixturesMissing.length > 0) {
+		console.warn(
+			`[mergeFootballDataIds] ${fixturesMissing.length}/${fixturesAll.length} fixtures still missing football-data IDs after merge. Usually rescheduled or not yet published; will be filled on a future bootstrap run. First few: ${fixturesMissing
+				.slice(0, 5)
+				.map((f) => f.id)
+				.join(', ')}`,
+		)
+	}
 }
 
 export async function syncCompetition(

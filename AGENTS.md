@@ -93,6 +93,19 @@ GitHub Actions secrets (repo-level):
 - `VERCEL_PROD_URL` — full https URL of the Vercel production deployment. Used by `live-scores.yml` as the request target.
 - `PROD_DATABASE_URL` — same value as Doppler `prd.DATABASE_URL`. Used by `migrate.yml` to apply Drizzle migrations on push to `main`. Duplicated from Doppler intentionally; revisit if rotation cadence increases.
 
+## PL season rollover (annual ritual)
+
+Every August, the Premier League season changes — 3 promoted teams replace 3 relegated ones. Bootstrap merges FPL data with football-data IDs by `short_name === tla`, plus an alias map `FPL_TO_FD_TLA` in `src/lib/game/bootstrap-competitions.ts` for the rare cases where the two sources disagree on a team's 3-letter code. (As of 2025/26: only Nottingham Forest mismatched — FPL `NFO`, football-data `NOT`.)
+
+After a season rollover:
+
+1. **Re-run bootstrap once** locally with prod creds (or wait for the daily Vercel Cron at 04:00 UTC).
+2. **If `mergeFootballDataIds` throws** with `missing football-data IDs after merge: <list>`, that's the new-season gap. The error names the unmatched team(s).
+3. **Look up the team's football-data tla** at `https://api.football-data.org/v4/competitions/PL/teams` and add a one-line entry to `FPL_TO_FD_TLA`.
+4. **Re-run bootstrap.** Coverage assertion passes; live scoring works for the new team.
+
+Fixture-level coverage gaps are warn-only (rescheduled / late-published matches fill in on subsequent bootstrap runs). Team gaps fail loudly because every team must be matchable for live scoring to work.
+
 ## Platform Context
 
 Platform standards and choices: see ~/code/platform/
