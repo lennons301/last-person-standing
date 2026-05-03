@@ -12,7 +12,7 @@ Football survivor picks game — private games where friends pick teams each rou
 - **Auth:** Better Auth (email + password, database-backed sessions)
 - **UI:** shadcn/ui + Tailwind CSS
 - **Testing:** Vitest
-- **Deployment:** Vercel (lhr1 region)
+- **Deployment:** Vercel (lhr1 region) — production: <https://last-person-standing-theta.vercel.app> (live since Phase 4.5, 2026-04-28)
 
 ## Commands
 
@@ -64,7 +64,7 @@ drizzle/                  # Generated migrations
 - **Secrets**: Doppler is the production secrets source. Local dev uses `.env.local` (gitignored).
 - **Testing**: Vitest for unit tests. Game logic lives in pure functions for easy testing. Tests run against local Postgres in CI.
 - **Linting**: Biome for linting + formatting. Pre-commit hook via husky + lint-staged.
-- **Phase completions ride CI/CD from Phase 5 onwards.** Phases 1–4a have already merged to `main` without any pipeline; Phases 4b and 4c will do the same. Phase 4.5 is the big-bang launch that introduces the pipeline and does the first real deploys. From Phase 5 onwards, a phase is not "done" until its branch has merged to `main`, CI has passed, and the resulting deployment has landed on staging and production via Vercel's GitHub integration. No manual deploy steps. If a phase's definition of done can't go through the pipeline, the pipeline is what's broken — fix it before declaring the phase complete.
+- **Phase completions ride CI/CD from Phase 5 onwards.** Phases 1–4c5 merged dormant to `main` (no pipeline). Phase 4.5 introduced the pipeline and the first real production deploy on 2026-04-28. From Phase 5 onwards, a phase is not "done" until its branch has merged to `main`, CI has passed, and the resulting deployment has landed on production via Vercel's GitHub integration. No manual deploy steps. If a phase's definition of done can't go through the pipeline, the pipeline is what's broken — fix it before declaring the phase complete.
 
 ## Environment variables
 
