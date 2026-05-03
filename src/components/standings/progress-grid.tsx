@@ -405,8 +405,11 @@ function GridCellView({
 		: (colours[cell.result] ?? 'bg-muted text-muted-foreground')
 
 	const pickedLabel = cell.teamShortName ?? '?'
+	// Build the under-line as `<v|@><opponent> [score]` so users can see at a
+	// glance whether their pick won/lost without hovering for the tooltip.
+	// Score replaces no info — when score is unset the opponent line stays as-is.
 	const opponentLabel = cell.opponentShortName
-		? `${cell.homeAway === 'A' ? '@' : 'v'}${cell.opponentShortName}`
+		? `${cell.homeAway === 'A' ? '@' : 'v'}${cell.opponentShortName}${cell.score ? ` ${cell.score}` : ''}`
 		: null
 
 	const scorePart = cell.score ? ` (${cell.score})` : ''

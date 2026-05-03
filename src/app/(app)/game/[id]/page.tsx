@@ -182,8 +182,16 @@ export default async function GameDetailPage({
 		? { gamePlayerId: actingAsTarget.gamePlayerId, userName: actingAsTarget.userName }
 		: undefined
 
+	// Once a round's deadline has passed (and processGameRound has not yet
+	// advanced the game's currentRoundId), the pick interface is locked: showing
+	// it would just surface options the user can no longer use. We render a
+	// concise "Round closed" panel instead. Standings views (rendered below the
+	// pickSection) are where the user gets the live/results detail.
+	const now = new Date()
+	const roundDeadlinePassed = !!game.currentRound?.deadline && now >= game.currentRound.deadline
+
 	const pickSection =
-		game.currentRound && isAlive ? (
+		game.currentRound && isAlive && !roundDeadlinePassed ? (
 			game.gameMode === 'classic' && classicPickData ? (
 				<ClassicPick
 					gameId={game.id}
@@ -232,7 +240,9 @@ export default async function GameDetailPage({
 					? 'You have been eliminated from this game.'
 					: game.status === 'completed'
 						? 'This game has ended.'
-						: 'Waiting for the next round.'}
+						: roundDeadlinePassed
+							? 'Round closed — picks locked. Live scores and standings update below.'
+							: 'Waiting for the next round.'}
 			</div>
 		)
 
