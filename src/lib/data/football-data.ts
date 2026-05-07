@@ -109,15 +109,24 @@ export class FootballDataAdapter implements CompetitionAdapter {
 		}
 		return Array.from(roundMap.entries())
 			.sort(([a], [b]) => a - b)
-			.map(([matchday, matches]) => ({
-				externalId: String(matchday),
-				number: matchday,
-				name: `Matchday ${matchday}`,
-				deadline: null,
-				finished: matches.every((m) => m.status === 'FINISHED'),
-				fixtures: matches
-					.filter((m) => m.homeTeam.id != null && m.awayTeam.id != null)
-					.map(
+			.map(([matchday, matches]) => {
+				const playable = matches.filter((m) => m.homeTeam.id != null && m.awayTeam.id != null)
+				// Round deadline = earliest kickoff in the round. Picks lock when the
+				// first match starts. football-data doesn't supply a separate
+				// deadline concept (unlike FPL), so we derive from kickoffs. Knockout
+				// rounds with TBD fixtures have no kickoffs yet — deadline stays null
+				// until the bracket is published and the next bootstrap sync runs.
+				const earliestKickoff = playable
+					.map((m) => new Date(m.utcDate).getTime())
+					.filter((t) => Number.isFinite(t))
+					.reduce((min, t) => (min === null || t < min ? t : min), null as number | null)
+				return {
+					externalId: String(matchday),
+					number: matchday,
+					name: `Matchday ${matchday}`,
+					deadline: earliestKickoff != null ? new Date(earliestKickoff) : null,
+					finished: matches.every((m) => m.status === 'FINISHED'),
+					fixtures: playable.map(
 						(m): AdapterFixture => ({
 							externalId: String(m.id),
 							homeTeamExternalId: String(m.homeTeam.id),
@@ -128,7 +137,8 @@ export class FootballDataAdapter implements CompetitionAdapter {
 							awayScore: m.score.fullTime.away,
 						}),
 					),
-			}))
+				}
+			})
 	}
 
 	async fetchLiveScores(roundNumber: number): Promise<AdapterFixtureScore[]> {
