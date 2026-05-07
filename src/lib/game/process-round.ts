@@ -1,5 +1,11 @@
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import {
+	applyAutoCompletion,
+	checkClassicCompletion,
+	checkCupCompletion,
+	checkTurboCompletion,
+} from '@/lib/game/auto-complete'
 import { processClassicRound } from '@/lib/game-logic/classic'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
@@ -170,6 +176,18 @@ export async function processGameRound(gameId: string, roundId: string) {
 		}
 
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
+
+		const completion = await checkClassicCompletion(
+			gameId,
+			gameData.competitionId,
+			roundId,
+			roundData.number,
+		)
+		if (completion.completed) {
+			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+			return { processed: true, eliminations, completed: true, reason: completion.reason }
+		}
+
 		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
 		return { processed: true, eliminations }
 	}
@@ -212,8 +230,17 @@ export async function processGameRound(gameId: string, roundId: string) {
 
 		const standings = calculateTurboStandings(playerResults)
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
-		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
-		return { processed: true, eliminations: 0, standings }
+
+		// Turbo is a single-round format. Auto-complete and never advance.
+		const completion = checkTurboCompletion(playerResults)
+		await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+		return {
+			processed: true,
+			eliminations: 0,
+			standings,
+			completed: true,
+			reason: completion.reason,
+		}
 	}
 
 	if (gameData.gameMode === 'cup') {
@@ -278,6 +305,18 @@ export async function processGameRound(gameId: string, roundId: string) {
 		}
 
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
+
+		const completion = await checkCupCompletion(
+			gameId,
+			gameData.competitionId,
+			roundId,
+			roundData.number,
+		)
+		if (completion.completed) {
+			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+			return { processed: true, eliminations, completed: true, reason: completion.reason }
+		}
+
 		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
 		return { processed: true, eliminations }
 	}
