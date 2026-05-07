@@ -7,7 +7,9 @@ import {
 	syncCompetition,
 } from '@/lib/game/bootstrap-competitions'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
+import { advanceGameIfReady } from '@/lib/game/process-round'
 import { competition } from '@/lib/schema/competition'
+import { game } from '@/lib/schema/game'
 
 export async function POST(request: Request) {
 	const secret = process.env.CRON_SECRET
@@ -56,5 +58,22 @@ export async function POST(request: Request) {
 	if (deadlineLockedRoundIds.length > 0) {
 		deadlineLock = await processDeadlineLock(deadlineLockedRoundIds)
 	}
-	return NextResponse.json({ competitions: results, deadlineLock })
+
+	// Retry advancement for games stuck pointing at a completed round. The
+	// per-game process-rounds dispatch only fires when a round just finished,
+	// so it can't pick up a game whose advance was a no-op (e.g. WC bracket
+	// not yet published). This is the load-bearing retry slot — daily-sync
+	// has just refreshed round deadlines and fixtures, so any previously-TBD
+	// round that's now populated will be advanceable here.
+	const activeGames = await db.query.game.findMany({
+		where: eq(game.status, 'active'),
+	})
+	const advanced: string[] = []
+	for (const g of activeGames) {
+		if (!g.currentRoundId) continue
+		const r = await advanceGameIfReady(g.id)
+		if (r.advanced) advanced.push(g.id)
+	}
+
+	return NextResponse.json({ competitions: results, deadlineLock, advanced })
 }
