@@ -15,9 +15,13 @@ const { dbMock } = vi.hoisted(() => ({
 			round: { findFirst: vi.fn() },
 			pick: { findMany: vi.fn() },
 			gamePlayer: { findMany: vi.fn() },
+			payment: { findMany: vi.fn() },
 		},
 		update: vi.fn(() => ({
 			set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+		})),
+		insert: vi.fn(() => ({
+			values: vi.fn().mockResolvedValue(undefined),
 		})),
 	},
 }))
@@ -40,6 +44,8 @@ function makeClassicGameAndRound(opts: { roundNumber: number; allowRebuys?: bool
 		fixtures: [{ status: 'finished', homeScore: 0, awayScore: 0 }],
 	} as never)
 	dbMock.query.pick.findMany.mockResolvedValue([])
+	dbMock.query.gamePlayer.findMany.mockResolvedValue([])
+	dbMock.query.payment.findMany.mockResolvedValue([])
 	processClassicRoundMock.mockReturnValue({ results: [] })
 }
 
