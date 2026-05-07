@@ -419,7 +419,9 @@ export async function syncCompetition(
 	return { rounds: adapterRounds.length, fixtures: totalFixtures, transitionedRoundIds }
 }
 
-export async function applyPotAssignments(competitionId: string): Promise<void> {
+export async function applyPotAssignments(
+	competitionId: string,
+): Promise<{ matched: number; unmatched: string[] }> {
 	const rounds = await db.query.round.findMany({
 		where: eq(round.competitionId, competitionId),
 		with: { fixtures: true },
@@ -431,23 +433,42 @@ export async function applyPotAssignments(competitionId: string): Promise<void> 
 			teamIds.add(f.awayTeamId)
 		}
 	}
-	if (teamIds.size === 0) return
+	if (teamIds.size === 0) return { matched: 0, unmatched: [] }
 
 	const teams = await db.query.team.findMany({
 		where: inArray(team.id, [...teamIds]),
 	})
+	let matched = 0
+	const unmatched: string[] = []
 	for (const t of teams) {
 		const fdId = (t.externalIds as Record<string, string | number> | null)?.football_data
-		if (!fdId) continue
-		const entry = WC_2026_POTS.find((p) => p.footballDataId === String(fdId))
-		if (!entry) continue
+		// Match by football-data ID first (when WC_2026_POTS has been backfilled
+		// from /competitions/WC/teams), fall back to team name. Name matching
+		// covers the common case today: pots are seeded with names only and
+		// football-data uses canonical country names that align with the list.
+		const entry =
+			(fdId
+				? WC_2026_POTS.find((p) => p.footballDataId && p.footballDataId === String(fdId))
+				: undefined) ?? WC_2026_POTS.find((p) => p.name.toLowerCase() === t.name.toLowerCase())
+		if (!entry) {
+			unmatched.push(t.name)
+			continue
+		}
 		await db
 			.update(team)
 			.set({
 				externalIds: { ...(t.externalIds ?? {}), fifa_pot: entry.pot },
 			})
 			.where(eq(team.id, t.id))
+		matched++
 	}
+	if (unmatched.length > 0) {
+		console.warn(
+			`[bootstrap] ${unmatched.length} WC team(s) not in WC_2026_POTS — cup tier-difference will be 0:`,
+			unmatched.join(', '),
+		)
+	}
+	return { matched, unmatched }
 }
 
 function adapterFor(comp: CompetitionRow, opts: BootstrapOptions): CompetitionAdapter | null {
