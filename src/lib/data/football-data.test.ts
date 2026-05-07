@@ -89,6 +89,36 @@ describe('FootballDataAdapter', () => {
 		expect(rounds[0].fixtures).toHaveLength(2)
 	})
 
+	it('derives round deadline from earliest fixture kickoff', async () => {
+		const rounds = await adapter.fetchRounds()
+		// mockMatches earliest kickoff is 2025-08-16T15:00:00Z
+		expect(rounds[0].deadline).toEqual(new Date('2025-08-16T15:00:00Z'))
+	})
+
+	it('returns null deadline when round has no playable fixtures (e.g. WC knockout pre-draw)', async () => {
+		const onlyPlaceholders = {
+			matches: [
+				{
+					id: 9001,
+					matchday: 4,
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-06-30T20:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+			],
+		}
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+			Promise.resolve(new Response(JSON.stringify(onlyPlaceholders))),
+		)
+		const rounds = await adapter.fetchRounds()
+		expect(rounds).toHaveLength(1)
+		expect(rounds[0].number).toBe(4)
+		expect(rounds[0].fixtures).toHaveLength(0)
+		expect(rounds[0].deadline).toBeNull()
+	})
+
 	it('maps status correctly', async () => {
 		const rounds = await adapter.fetchRounds()
 		expect(rounds[0].fixtures[0].status).toBe('finished')
