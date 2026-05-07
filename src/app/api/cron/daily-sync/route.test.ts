@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
-	db: { query: { competition: { findMany: vi.fn() } } },
+	db: {
+		query: {
+			competition: { findMany: vi.fn() },
+			game: { findMany: vi.fn().mockResolvedValue([]) },
+		},
+	},
 }))
 
 vi.mock('@/lib/game/bootstrap-competitions', () => ({
@@ -16,9 +21,14 @@ vi.mock('@/lib/game/no-pick-handler', () => ({
 		.mockResolvedValue({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 }),
 }))
 
+vi.mock('@/lib/game/process-round', () => ({
+	advanceGameIfReady: vi.fn().mockResolvedValue({ advanced: false, reason: 'not-active' }),
+}))
+
 import { db } from '@/lib/db'
 import { syncCompetition } from '@/lib/game/bootstrap-competitions'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
+import { advanceGameIfReady } from '@/lib/game/process-round'
 import { POST } from './route'
 
 describe('daily-sync route', () => {
@@ -91,5 +101,29 @@ describe('daily-sync route', () => {
 			playersEliminated: 0,
 			paymentsRefunded: 0,
 		})
+	})
+
+	it('retries advancement for stuck games after sync', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([{ id: 'c1' }] as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			{ id: 'g-stuck', currentRoundId: 'r-completed' },
+			{ id: 'g-clean', currentRoundId: 'r-open' },
+			{ id: 'g-no-round', currentRoundId: null },
+		] as never)
+		vi.mocked(advanceGameIfReady)
+			.mockResolvedValueOnce({ advanced: true, reason: 'advanced' })
+			.mockResolvedValueOnce({ advanced: false, reason: 'round-not-completed' })
+
+		const res = await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: { authorization: 'Bearer test-secret' },
+			}),
+		)
+
+		// Skips the game with currentRoundId=null
+		expect(advanceGameIfReady).toHaveBeenCalledTimes(2)
+		const body = (await res.json()) as { advanced: string[] }
+		expect(body.advanced).toEqual(['g-stuck'])
 	})
 })
