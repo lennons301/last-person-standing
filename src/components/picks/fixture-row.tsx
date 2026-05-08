@@ -51,6 +51,12 @@ export interface FixtureRowProps {
 	// don't yet pass them — when omitted, the form row is non-tappable.
 	competitionId?: string
 	roundNumber?: number
+	/**
+	 * Extra content rendered inside the bordered card, below the form bar.
+	 * Used by turbo's pick interface to attach PredictionButtons to the
+	 * fixture without breaking visual grouping.
+	 */
+	children?: React.ReactNode
 }
 
 export function FixtureRow({
@@ -72,6 +78,7 @@ export function FixtureRow({
 	awayState,
 	competitionId,
 	roundNumber,
+	children,
 }: FixtureRowProps) {
 	const isFullyUsed = usedSide === 'both'
 	const showTierStrip = tierValue != null || plusN != null || showHeart
@@ -141,6 +148,7 @@ export function FixtureRow({
 						onOpenSheet={(side) => setSheetTeam(side)}
 					/>
 				)}
+				{children}
 			</div>
 
 			{sheetEnabled && competitionId && (
