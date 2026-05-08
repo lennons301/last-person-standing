@@ -7,6 +7,7 @@ import {
 	type PlannedPick as PPick,
 	validatePlannedPick,
 } from '@/lib/game/planned-picks'
+import { scheduleAutoSubmitForPlan } from '@/lib/game/round-lifecycle'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick, plannedPick } from '@/lib/schema/game'
 
@@ -99,6 +100,13 @@ export async function POST(request: Request, ctx: Ctx): Promise<Response> {
 			autoSubmit: body.autoSubmit,
 		})
 		.returning()
+
+	// If the player wants this auto-submitted, enqueue the QStash trigger
+	// for T-60s before the round's deadline. Idempotent via dedup ID, so
+	// re-saves of the same plan don't duplicate the schedule.
+	if (body.autoSubmit) {
+		await scheduleAutoSubmitForPlan(membership.id, body.roundId, body.teamId)
+	}
 
 	return NextResponse.json({ plan: created })
 }

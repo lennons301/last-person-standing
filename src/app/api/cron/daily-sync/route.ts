@@ -7,7 +7,10 @@ import {
 	syncCompetition,
 } from '@/lib/game/bootstrap-competitions'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
+import { advanceGameIfReady } from '@/lib/game/process-round'
+import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { competition } from '@/lib/schema/competition'
+import { game } from '@/lib/schema/game'
 
 export async function POST(request: Request) {
 	const secret = process.env.CRON_SECRET
@@ -30,23 +33,46 @@ export async function POST(request: Request) {
 			rounds: summary.rounds,
 			fixtures: summary.fixtures,
 		})
-		if (summary.transitionedRoundIds?.length) {
-			deadlineLockedRoundIds.push(...summary.transitionedRoundIds)
+		if (summary.deadlinePassedRoundIds?.length) {
+			deadlineLockedRoundIds.push(...summary.deadlinePassedRoundIds)
 		}
 		// For FPL-bootstrapped competitions, merge football-data IDs onto fresh
 		// fixtures + teams so the live-score poll can match by external_ids.football_data.
-		// Was previously only run by the manual `scripts/bootstrap-competitions.ts`
-		// path; missing it here meant new fixtures (rescheduled / late-published)
-		// stayed invisible to live polling.
 		if (c.dataSource === 'fpl' && apiKey) {
 			await mergeFootballDataIds(c, apiKey)
 		}
 	}
 
+	// Reconciliation: any active game whose currentRoundId still points at an
+	// 'upcoming' round means the open transition didn't fire (e.g. a game
+	// created before the round-lifecycle fix shipped, or a future-round
+	// advance whose new round was upcoming when the game advanced into it).
+	// Heal here so the progress grid filter and processDeadlineLock both see
+	// the round as open.
+	const activeGames = await db.query.game.findMany({
+		where: eq(game.status, 'active'),
+		with: { currentRound: true },
+	})
+	const reconciledRoundIds: string[] = []
+	for (const g of activeGames) {
+		if (g.currentRound && g.currentRound.status === 'upcoming') {
+			await openRoundForGame(g.currentRound.id)
+			reconciledRoundIds.push(g.currentRound.id)
+		}
+	}
+
+	// Retry advancement for any games stuck on a completed round (next round
+	// was TBD when last processed — typically WC bracket pre-publication).
+	const advanced: string[] = []
+	for (const g of activeGames) {
+		if (!g.currentRoundId) continue
+		const r = await advanceGameIfReady(g.id)
+		if (r.advanced) advanced.push(g.id)
+	}
+
 	// Pre-schedule a poll-scores trigger for every upcoming fixture across all
-	// competitions. Solves the "GH Actions heartbeat missed the match window"
-	// gap: each fixture gets its own QStash trigger 10 min before kickoff,
-	// which starts the self-perpetuating chain reliably.
+	// competitions. Each fixture gets its own QStash trigger 10 min before
+	// kickoff, which starts the self-perpetuating chain reliably.
 	await scheduleUpcomingFixturePolls()
 	let deadlineLock: {
 		autoPicksInserted: number
@@ -56,5 +82,11 @@ export async function POST(request: Request) {
 	if (deadlineLockedRoundIds.length > 0) {
 		deadlineLock = await processDeadlineLock(deadlineLockedRoundIds)
 	}
-	return NextResponse.json({ competitions: results, deadlineLock })
+
+	return NextResponse.json({
+		competitions: results,
+		deadlineLock,
+		reconciledRoundIds,
+		advanced,
+	})
 }

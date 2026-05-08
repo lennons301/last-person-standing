@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { processGameRound } from '@/lib/game/process-round'
+import { advanceGameIfReady, processGameRound } from '@/lib/game/process-round'
 import { round } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
 
@@ -42,5 +42,15 @@ export async function POST(request: Request) {
 		results.push({ gameId: g.id, ...result })
 	}
 
-	return NextResponse.json({ processed: results })
+	// Retry advancement for games stuck pointing at a completed round —
+	// happens when the next round was TBD at process-time (e.g. WC bracket
+	// not yet published). Idempotent (no-op for healthy games).
+	const advanced: string[] = []
+	for (const g of activeGames) {
+		if (!g.currentRoundId) continue
+		const r = await advanceGameIfReady(g.id)
+		if (r.advanced) advanced.push(g.id)
+	}
+
+	return NextResponse.json({ processed: results, advanced })
 }

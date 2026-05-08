@@ -6,6 +6,7 @@ import {
 	checkCupCompletion,
 	checkTurboCompletion,
 } from '@/lib/game/auto-complete'
+import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { processClassicRound } from '@/lib/game-logic/classic'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
@@ -20,24 +21,59 @@ import { game, gamePlayer, pick } from '@/lib/schema/game'
 
 /**
  * Advance the game's currentRoundId pointer to the next round in the
- * competition (or null if there are no further rounds). Called after
- * a round has been processed so that picks can begin on the next round
- * for this game. Round-state is per-game: each game advances independently
+ * competition. Round-state is per-game: each game advances independently
  * based on when its rounds complete, not on a global competition timeline.
+ *
+ * Refuses to advance to a round with no fixtures or no deadline (e.g. WC
+ * knockout pre-bracket-publication). In that case the game stays pointed at
+ * the just-completed round; advanceGameIfReady retries on subsequent cron
+ * ticks once the next round has been populated.
+ *
+ * On successful advance, marks the new currentRound as 'open' and schedules
+ * any auto-submit-flagged plans for it.
  */
 async function advanceGameToNextRound(
 	gameId: string,
 	competitionId: string,
 	completedRoundNumber: number,
-): Promise<void> {
+): Promise<{ advanced: boolean; reason?: 'no-next-round' | 'next-round-tbd' }> {
 	const nextRound = await db.query.round.findFirst({
 		where: and(eq(round.competitionId, competitionId), gt(round.number, completedRoundNumber)),
 		orderBy: [asc(round.number)],
+		with: { fixtures: true },
 	})
-	await db
-		.update(game)
-		.set({ currentRoundId: nextRound?.id ?? null })
-		.where(eq(game.id, gameId))
+	if (!nextRound) {
+		await db.update(game).set({ currentRoundId: null }).where(eq(game.id, gameId))
+		return { advanced: false, reason: 'no-next-round' }
+	}
+	if (nextRound.fixtures.length === 0 || nextRound.deadline == null) {
+		return { advanced: false, reason: 'next-round-tbd' }
+	}
+	await db.update(game).set({ currentRoundId: nextRound.id }).where(eq(game.id, gameId))
+	await openRoundForGame(nextRound.id)
+	return { advanced: true }
+}
+
+/**
+ * Retry advancement for games stuck pointing at a completed round. Used by
+ * the cron to pick up games whose next round was TBD at process-time and
+ * has since been populated by bootstrap.
+ */
+export async function advanceGameIfReady(
+	gameId: string,
+): Promise<{ advanced: boolean; reason: string }> {
+	const g = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: { currentRound: true },
+	})
+	if (!g) return { advanced: false, reason: 'not-found' }
+	if (g.status !== 'active') return { advanced: false, reason: 'not-active' }
+	if (!g.currentRound) return { advanced: false, reason: 'no-current-round' }
+	if (g.currentRound.status !== 'completed') {
+		return { advanced: false, reason: 'round-not-completed' }
+	}
+	const result = await advanceGameToNextRound(g.id, g.competitionId, g.currentRound.number)
+	return { advanced: result.advanced, reason: result.reason ?? 'advanced' }
 }
 
 export async function processGameRound(gameId: string, roundId: string) {
