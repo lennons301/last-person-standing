@@ -6,12 +6,12 @@ import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatDeadline } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { FormDots, type FormResult } from './form-dots'
+import { FixtureRow } from './fixture-row'
+import type { FormResult } from './form-dots'
 import { PickConfirmBar } from './pick-confirm-bar'
 import { type Prediction, PredictionButtons } from './prediction-buttons'
 import type { RankedPick } from './ranked-item'
 import { RankingList } from './ranking-list'
-import { TeamBadge } from './team-badge'
 
 export interface TurboPickFixture {
 	id: string
@@ -38,6 +38,8 @@ interface TurboPickProps {
 	gameId: string
 	roundId: string
 	roundName: string
+	roundNumber: number
+	competitionId: string
 	deadline: Date | null
 	fixtures: TurboPickFixture[]
 	existingPicks: Array<{ fixtureId: string; confidenceRank: number; predictedResult: Prediction }>
@@ -46,16 +48,12 @@ interface TurboPickProps {
 	actingAs?: { gamePlayerId: string; userName: string }
 }
 
-function ordinal(n: number): string {
-	const s = ['th', 'st', 'nd', 'rd']
-	const v = n % 100
-	return n + (s[(v - 20) % 10] || s[v] || s[0])
-}
-
 export function TurboPick({
 	gameId,
 	roundId,
 	roundName,
+	roundNumber,
+	competitionId,
 	deadline,
 	fixtures,
 	existingPicks,
@@ -246,84 +244,28 @@ export function TurboPick({
 						{remaining.map((fix) => {
 							const hasPrediction = !!pendingPredictions[fix.id]
 							return (
-								<div
+								<FixtureRow
 									key={fix.id}
-									className="border border-border rounded-lg bg-card overflow-hidden"
+									home={{
+										id: fix.home.id,
+										name: fix.home.name,
+										shortName: fix.home.shortName,
+										badgeUrl: fix.home.badgeUrl,
+										form: fix.home.form,
+										leaguePosition: fix.home.leaguePosition,
+									}}
+									away={{
+										id: fix.away.id,
+										name: fix.away.name,
+										shortName: fix.away.shortName,
+										badgeUrl: fix.away.badgeUrl,
+										form: fix.away.form,
+										leaguePosition: fix.away.leaguePosition,
+									}}
+									kickoff={fix.kickoff}
+									competitionId={competitionId}
+									roundNumber={roundNumber}
 								>
-									<div className="flex items-stretch">
-										<div className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0 flex-row-reverse">
-											<TeamBadge
-												shortName={fix.home.shortName}
-												badgeUrl={fix.home.badgeUrl}
-												size="lg"
-												responsive
-											/>
-											<div className="flex flex-col gap-1.5 min-w-0 flex-1 items-end">
-												<span className="font-semibold text-base leading-tight truncate w-full text-right">
-													<span className="sm:hidden">{fix.home.shortName}</span>
-													<span className="hidden sm:inline">{fix.home.name}</span>
-												</span>
-												<div className="flex items-center gap-2">
-													{fix.home.leaguePosition != null && (
-														<span className="text-xs text-muted-foreground font-medium">
-															{ordinal(fix.home.leaguePosition)}
-														</span>
-													)}
-													{fix.home.form && fix.home.form.length > 0 && (
-														<>
-															<span className="sm:hidden">
-																<FormDots results={fix.home.form} size="sm" />
-															</span>
-															<span className="hidden sm:inline">
-																<FormDots results={fix.home.form} size="md" />
-															</span>
-														</>
-													)}
-												</div>
-											</div>
-										</div>
-										<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[64px] bg-muted/30 border-l border-r border-border">
-											<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
-												vs
-											</span>
-											{fix.kickoff && (
-												<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
-													{fix.kickoff}
-												</span>
-											)}
-										</div>
-										<div className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0">
-											<TeamBadge
-												shortName={fix.away.shortName}
-												badgeUrl={fix.away.badgeUrl}
-												size="lg"
-												responsive
-											/>
-											<div className="flex flex-col gap-1.5 min-w-0 flex-1 items-start">
-												<span className="font-semibold text-base leading-tight truncate w-full">
-													<span className="sm:hidden">{fix.away.shortName}</span>
-													<span className="hidden sm:inline">{fix.away.name}</span>
-												</span>
-												<div className="flex items-center gap-2">
-													{fix.away.leaguePosition != null && (
-														<span className="text-xs text-muted-foreground font-medium">
-															{ordinal(fix.away.leaguePosition)}
-														</span>
-													)}
-													{fix.away.form && fix.away.form.length > 0 && (
-														<>
-															<span className="sm:hidden">
-																<FormDots results={fix.away.form} size="sm" />
-															</span>
-															<span className="hidden sm:inline">
-																<FormDots results={fix.away.form} size="md" />
-															</span>
-														</>
-													)}
-												</div>
-											</div>
-										</div>
-									</div>
 									<div className="px-4 py-3 border-t border-border bg-muted/20">
 										<PredictionButtons
 											value={pendingPredictions[fix.id]}
@@ -339,7 +281,7 @@ export function TurboPick({
 											</button>
 										)}
 									</div>
-								</div>
+								</FixtureRow>
 							)
 						})}
 					</div>

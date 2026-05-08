@@ -213,6 +213,8 @@ export default async function GameDetailPage({
 					gameId={game.id}
 					roundId={game.currentRound.id}
 					roundName={turboPickData.roundName}
+					roundNumber={turboPickData.roundNumber}
+					competitionId={turboPickData.competitionId}
 					deadline={turboPickData.deadline}
 					fixtures={turboPickData.fixtures}
 					existingPicks={turboPickData.existingPicks}
