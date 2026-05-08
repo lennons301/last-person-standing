@@ -1,9 +1,11 @@
 import { and, asc, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { fixture, round, team } from '@/lib/schema/competition'
+import { roundLabel } from '@/lib/game/round-label'
+import { competition, fixture, round, team } from '@/lib/schema/competition'
 
 export interface TeamFormResult {
 	roundNumber: number
+	roundLabel: string
 	opponentShortName: string
 	opponentName: string
 	opponentBadgeUrl: string | null
@@ -15,6 +17,7 @@ export interface TeamFormResult {
 
 export interface HeadToHeadResult {
 	roundNumber: number
+	roundLabel: string
 	homeTeamShortName: string
 	awayTeamShortName: string
 	homeScore: number
@@ -43,6 +46,11 @@ export async function getTeamFormDetail(
 ): Promise<TeamFormDetail | null> {
 	const teamRow = await db.query.team.findFirst({ where: eq(team.id, teamId) })
 	if (!teamRow) return null
+
+	const compRow = await db.query.competition.findFirst({
+		where: eq(competition.id, competitionId),
+	})
+	const competitionType = (compRow?.type ?? 'league') as 'league' | 'knockout' | 'group_knockout'
 
 	const finishedRows = await db
 		.select({
@@ -98,6 +106,7 @@ export async function getTeamFormDetail(
 			const opponent = opponentMap.get(opponentId)
 			recent.push({
 				roundNumber: row.roundNumber,
+				roundLabel: roundLabel(competitionType, row.roundNumber),
 				opponentShortName: opponent?.shortName ?? '???',
 				opponentName: opponent?.name ?? 'Unknown',
 				opponentBadgeUrl: opponent?.badgeUrl ?? null,
@@ -148,6 +157,7 @@ export async function getTeamFormDetail(
 			.filter((r) => r.homeScore != null && r.awayScore != null)
 			.map((r) => ({
 				roundNumber: r.roundNumber,
+				roundLabel: roundLabel(competitionType, r.roundNumber),
 				homeTeamShortName: teamShortNames.get(r.homeTeamId) ?? '???',
 				awayTeamShortName: teamShortNames.get(r.awayTeamId) ?? '???',
 				homeScore: r.homeScore as number,

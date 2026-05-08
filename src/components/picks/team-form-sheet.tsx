@@ -112,7 +112,7 @@ export function TeamFormSheet({
 												{r.goalsFor}–{r.goalsAgainst}
 											</span>
 											<span className="ml-auto text-xs text-muted-foreground font-mono">
-												GW{r.roundNumber}
+												{r.roundLabel}
 											</span>
 										</li>
 									))}
@@ -139,7 +139,7 @@ export function TeamFormSheet({
 													className="flex items-center gap-3 text-sm tabular-nums"
 												>
 													<span className="font-mono text-xs text-muted-foreground">
-														GW{r.roundNumber}
+														{r.roundLabel}
 													</span>
 													<span
 														className={cn(r.homeTeamShortName === display.shortName && 'font-bold')}

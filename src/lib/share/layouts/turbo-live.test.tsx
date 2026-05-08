@@ -24,6 +24,7 @@ const fixture = {
 		],
 	} as never,
 	roundNumber: 7,
+	roundLabel: 'GW7',
 	overflowCount: 0,
 	matchupsLegend: 'BRA v SER · ENG v USA',
 }

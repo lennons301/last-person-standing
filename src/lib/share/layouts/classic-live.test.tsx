@@ -38,6 +38,7 @@ const fixture = {
 		},
 	],
 	roundNumber: 7,
+	roundLabel: 'GW7',
 }
 
 describe('classicLiveLayout', () => {

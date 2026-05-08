@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
+import { roundLabel } from '@/lib/game/round-label'
 import { calculatePayouts, calculatePot } from '@/lib/game-logic/prizes'
 import { user } from '@/lib/schema/auth'
 import { game, pick } from '@/lib/schema/game'
@@ -94,12 +95,14 @@ export type LiveShareData =
 			header: ShareHeader
 			rows: ClassicLiveRow[]
 			roundNumber: number
+			roundLabel: string
 	  }
 	| {
 			mode: 'cup'
 			header: ShareHeader
 			cupData: CupStandingsData
 			roundNumber: number
+			roundLabel: string
 			overflowCount: number
 			matchupsLegend: string
 	  }
@@ -110,6 +113,7 @@ export type LiveShareData =
 				Awaited<ReturnType<typeof import('@/lib/game/detail-queries').getTurboStandingsData>>
 			>
 			roundNumber: number
+			roundLabel: string
 			overflowCount: number
 			matchupsLegend: string
 	  }
@@ -128,6 +132,7 @@ export interface ClassicRunnerUp {
 	userId: string
 	name: string
 	eliminatedRoundNumber: number
+	eliminatedRoundLabel: string
 }
 
 export interface CupRunnerUp {
@@ -247,6 +252,9 @@ export async function getShareLiveData(
 	const currentRound = gameRow.competition.rounds.find((r) => r.id === gameRow.currentRoundId)
 	if (!currentRound) return null
 
+	const liveCompetitionType = gameRow.competition.type as 'league' | 'knockout' | 'group_knockout'
+	const currentRoundLabel = roundLabel(liveCompetitionType, currentRound.number)
+
 	if (header.gameMode === 'classic') {
 		const allPicks = await db.query.pick.findMany({
 			where: and(eq(pick.gameId, gameId), eq(pick.roundId, currentRound.id)),
@@ -303,7 +311,13 @@ export async function getShareLiveData(
 				const order = { winning: 0, drawing: 1, losing: 2, pending: 3 } as const
 				return order[a.liveState] - order[b.liveState] || a.name.localeCompare(b.name)
 			})
-		return { mode: 'classic', header, rows, roundNumber: currentRound.number }
+		return {
+			mode: 'classic',
+			header,
+			rows,
+			roundNumber: currentRound.number,
+			roundLabel: currentRoundLabel,
+		}
 	}
 
 	if (header.gameMode === 'cup') {
@@ -319,6 +333,7 @@ export async function getShareLiveData(
 			header,
 			cupData,
 			roundNumber: currentRound.number,
+			roundLabel: currentRoundLabel,
 			overflowCount: overflow,
 			matchupsLegend,
 		}
@@ -337,6 +352,7 @@ export async function getShareLiveData(
 		header,
 		turboData,
 		roundNumber: currentRound.number,
+		roundLabel: currentRoundLabel,
 		overflowCount: overflow,
 		matchupsLegend,
 	}
@@ -396,12 +412,20 @@ export async function getShareWinnerData(
 					gameRow.competition.rounds.find((r) => r.id === b.eliminatedRoundId)?.number ?? 0
 				return bRound - aRound
 			})
-		const runnersUp: ClassicRunnerUp[] = elim.slice(0, WINNER_RUNNERS_UP_CAP).map((p) => ({
-			userId: p.userId,
-			name: userNames.get(p.userId) ?? 'Unknown',
-			eliminatedRoundNumber:
-				gameRow.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number ?? 0,
-		}))
+		const winnerCompetitionType = gameRow.competition.type as
+			| 'league'
+			| 'knockout'
+			| 'group_knockout'
+		const runnersUp: ClassicRunnerUp[] = elim.slice(0, WINNER_RUNNERS_UP_CAP).map((p) => {
+			const eliminatedRoundNumber =
+				gameRow.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number ?? 0
+			return {
+				userId: p.userId,
+				name: userNames.get(p.userId) ?? 'Unknown',
+				eliminatedRoundNumber,
+				eliminatedRoundLabel: roundLabel(winnerCompetitionType, eliminatedRoundNumber),
+			}
+		})
 		const overflow = Math.max(0, elim.length - WINNER_RUNNERS_UP_CAP)
 		return { mode: 'classic', header, winners, runnersUp, overflowCount: overflow }
 	}

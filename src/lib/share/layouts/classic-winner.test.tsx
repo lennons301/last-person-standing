@@ -20,8 +20,8 @@ const fixture = {
 		},
 	],
 	runnersUp: [
-		{ userId: 'u2', name: 'Anna', eliminatedRoundNumber: 17 },
-		{ userId: 'u3', name: 'Dave', eliminatedRoundNumber: 14 },
+		{ userId: 'u2', name: 'Anna', eliminatedRoundNumber: 17, eliminatedRoundLabel: 'GW17' },
+		{ userId: 'u3', name: 'Dave', eliminatedRoundNumber: 14, eliminatedRoundLabel: 'GW14' },
 	],
 	overflowCount: 0,
 }

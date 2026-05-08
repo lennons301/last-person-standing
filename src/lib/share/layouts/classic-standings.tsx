@@ -110,7 +110,7 @@ export function classicStandingsLayout(
 									fontSize: '14px',
 								}}
 							>
-								{`GW${r.number}`}
+								{r.label}
 							</div>
 						))}
 					</div>
@@ -299,7 +299,7 @@ export function classicStandingsLayout(
 										borderRadius: '6px',
 									}}
 								>
-									{`GW${player.eliminatedRoundNumber}`}
+									{player.eliminatedRoundLabel ?? `GW${player.eliminatedRoundNumber}`}
 								</div>
 							)}
 						</div>

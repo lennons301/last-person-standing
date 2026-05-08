@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { roundLabel } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { determineFixtureOutcome } from '@/lib/game-logic/common'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
@@ -30,6 +31,7 @@ export interface CupStandingsPlayer {
 	goals: number
 	hasSubmitted: boolean
 	eliminatedRoundNumber: number | null
+	eliminatedRoundLabel: string | null
 	picks: CupStandingsPick[]
 }
 
@@ -37,6 +39,7 @@ export interface CupStandingsData {
 	gameId: string
 	roundId: string
 	roundNumber: number
+	roundLabel: string
 	roundStatus: 'open' | 'active' | 'completed'
 	maxLives: number
 	numberOfPicks: number
@@ -175,14 +178,18 @@ export async function getCupStandingsData(
 			goals: picks.reduce((sum, pk) => sum + pk.goalsCounted, 0),
 			hasSubmitted: myPicks.length > 0,
 			eliminatedRoundNumber: null,
+			eliminatedRoundLabel: null,
 			picks,
 		}
 	})
+
+	const competitionType = g.competition.type as 'league' | 'knockout' | 'group_knockout'
 
 	return {
 		gameId: g.id,
 		roundId: g.currentRound.id,
 		roundNumber: g.currentRound.number,
+		roundLabel: roundLabel(competitionType, g.currentRound.number),
 		// Per-game derived round status — see src/lib/game/round-status.ts.
 		roundStatus: deriveGameRoundStatus({
 			round: {
