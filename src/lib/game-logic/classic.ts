@@ -3,6 +3,15 @@ import { determinePickResult, type PickResult } from './common'
 export interface ClassicPlayerPick {
 	gamePlayerId: string
 	pickedTeamId: string
+	/**
+	 * The specific fixture the player picked. Required when a team has more
+	 * than one fixture in a round (e.g. PL rearrangements). When multiple
+	 * fixtures exist for the picked team and pickedFixtureId is null, falls
+	 * back to the first matching fixture in the input array — which is now
+	 * deterministic (kickoff-ordered) but legacy data may not have a stored
+	 * fixtureId, hence the defensive fallback.
+	 */
+	pickedFixtureId?: string | null
 }
 
 export interface ClassicFixture {
@@ -31,14 +40,28 @@ export interface ClassicRoundOutput {
 }
 
 export function processClassicRound(input: ClassicRoundInput): ClassicRoundOutput {
-	const fixturesByTeam = new Map<string, ClassicFixture>()
+	// Index by fixture id (unique) for explicit-fixture lookups.
+	const fixturesById = new Map<string, ClassicFixture>()
 	for (const f of input.fixtures) {
-		fixturesByTeam.set(f.homeTeamId, f)
-		fixturesByTeam.set(f.awayTeamId, f)
+		fixturesById.set(f.id, f)
+	}
+
+	function resolveFixture(player: ClassicPlayerPick): ClassicFixture | undefined {
+		// Explicit fixtureId wins. This is the path for any pick made post-fix.
+		if (player.pickedFixtureId) {
+			const explicit = fixturesById.get(player.pickedFixtureId)
+			if (explicit) return explicit
+		}
+		// Fallback for legacy picks (no fixtureId stored). Walk the input array
+		// in order, return the first fixture featuring the team. Caller controls
+		// the order — production callers sort by kickoff so this is deterministic.
+		return input.fixtures.find(
+			(f) => f.homeTeamId === player.pickedTeamId || f.awayTeamId === player.pickedTeamId,
+		)
 	}
 
 	const results: ClassicPlayerResult[] = input.players.map((player) => {
-		const fixture = fixturesByTeam.get(player.pickedTeamId)
+		const fixture = resolveFixture(player)
 		if (!fixture) {
 			return {
 				gamePlayerId: player.gamePlayerId,
