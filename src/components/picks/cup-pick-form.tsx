@@ -15,6 +15,8 @@ interface CupPickFormProps {
 	readonly?: boolean
 	/** When set, the admin is picking on behalf of this player. */
 	actingAs?: { gamePlayerId: string; userName: string }
+	competitionId?: string
+	roundNumber?: number
 }
 
 export function CupPickForm({
@@ -28,6 +30,8 @@ export function CupPickForm({
 	deadline,
 	readonly,
 	actingAs,
+	competitionId,
+	roundNumber,
 }: CupPickFormProps) {
 	const router = useRouter()
 
@@ -64,6 +68,8 @@ export function CupPickForm({
 			deadline={deadline}
 			readonly={readonly}
 			submitLabelOverride={actingAs ? `Submit as ${actingAs.userName}` : undefined}
+			competitionId={competitionId}
+			roundNumber={roundNumber}
 		/>
 	)
 }

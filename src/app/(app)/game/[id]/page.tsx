@@ -197,6 +197,8 @@ export default async function GameDetailPage({
 					gameId={game.id}
 					roundId={game.currentRound.id}
 					roundName={classicPickData.roundName}
+					roundNumber={classicPickData.roundNumber}
+					competitionId={classicPickData.competitionId}
 					deadline={classicPickData.deadline}
 					fixtures={classicPickData.fixtures}
 					usedTeamsByRound={classicPickData.usedTeamsByRound}
@@ -228,6 +230,8 @@ export default async function GameDetailPage({
 					deadline={game.currentRound.deadline}
 					readonly={game.status !== 'open'}
 					actingAs={actingAsForPickUI}
+					competitionId={game.competition.id}
+					roundNumber={game.currentRound.number}
 				/>
 			) : (
 				<div className="p-4 rounded-lg border border-border bg-card text-sm text-muted-foreground">
