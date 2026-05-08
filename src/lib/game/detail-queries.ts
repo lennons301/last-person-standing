@@ -400,7 +400,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 			badgeUrl: f.awayTeam.badgeUrl,
 			form: formMap.get(f.awayTeamId),
 		},
-		kickoff: f.kickoff ? formatKickoff(f.kickoff) : null,
+		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
 	}))
 
 	return {
@@ -415,12 +415,21 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 	}
 }
 
+// Server-side label used only for places where a React component can't run
+// (currently just the AutoPickBanner kickoff line in getGameDetail). All other
+// surfaces render via <LocalDateTime /> in the user's timezone.
 function formatKickoff(date: Date): string {
-	// e.g. "Sat 17 Jan · 15:00"
-	const day = date.toLocaleDateString('en-GB', { weekday: 'short' })
-	const dayOfMonth = date.getDate()
-	const month = date.toLocaleDateString('en-GB', { month: 'short' })
-	const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+	const day = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' })
+	const dayOfMonth = new Intl.DateTimeFormat('en-GB', {
+		day: 'numeric',
+		timeZone: 'Europe/London',
+	}).format(date)
+	const month = date.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/London' })
+	const time = date.toLocaleTimeString('en-GB', {
+		hour: '2-digit',
+		minute: '2-digit',
+		timeZone: 'Europe/London',
+	})
 	return `${day} ${dayOfMonth} ${month} · ${time}`
 }
 
@@ -466,7 +475,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 			badgeUrl: f.awayTeam.badgeUrl,
 			form: formMap.get(f.awayTeamId),
 		},
-		kickoff: f.kickoff ? formatKickoff(f.kickoff) : null,
+		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
 	}))
 
 	return {

@@ -2,6 +2,7 @@
 
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { LocalDateTime } from '@/components/local-datetime'
 import { cn } from '@/lib/utils'
 import { FixtureRow, type SideState } from './fixture-row'
 import { HeartIcon } from './heart-icon'
@@ -84,36 +85,6 @@ function computeProjectedGain(slots: CupPickSlot[], fixtures: CupPickFixture[]):
 		}
 	}
 	return total
-}
-
-function formatKickoff(kickoff: Date | null): string | undefined {
-	if (!kickoff) return undefined
-	try {
-		return kickoff.toLocaleString(undefined, {
-			weekday: 'short',
-			day: 'numeric',
-			month: 'short',
-			hour: '2-digit',
-			minute: '2-digit',
-		})
-	} catch {
-		return undefined
-	}
-}
-
-function formatDeadlineLabel(deadline: Date | null | undefined): string {
-	if (!deadline) return 'Deadline not set'
-	try {
-		return `Deadline ${deadline.toLocaleString(undefined, {
-			weekday: 'short',
-			day: 'numeric',
-			month: 'short',
-			hour: '2-digit',
-			minute: '2-digit',
-		})}`
-	} catch {
-		return 'Deadline not set'
-	}
 }
 
 export function CupPick({
@@ -208,7 +179,6 @@ export function CupPick({
 	}
 
 	const projectedGain = computeProjectedGain(slots, fixtures)
-	const deadlineLabel = formatDeadlineLabel(deadline ?? null)
 
 	return (
 		<div className="space-y-3">
@@ -218,7 +188,14 @@ export function CupPick({
 				projectedGain={projectedGain}
 			/>
 			<div className="rounded-lg bg-foreground text-background px-3 py-2 text-xs">
-				{deadlineLabel} · rank {numberOfPicks} picks
+				{deadline ? (
+					<>
+						Deadline <LocalDateTime date={deadline} />
+					</>
+				) : (
+					'Deadline not set'
+				)}{' '}
+				· rank {numberOfPicks} picks
 			</div>
 			<div className="grid gap-3 md:grid-cols-[1fr_320px]">
 				<div>
@@ -250,7 +227,7 @@ export function CupPick({
 										shortName: f.awayShort,
 										badgeUrl: f.awayBadgeUrl,
 									}}
-									kickoff={formatKickoff(f.kickoff)}
+									kickoff={f.kickoff}
 									selectedSide={slot?.pickedSide ?? null}
 									tierValue={tier.value}
 									tierMax={3}

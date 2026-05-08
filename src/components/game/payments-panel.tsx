@@ -162,5 +162,11 @@ function rowSubtitle(p: AdminPayment): string {
 }
 
 function formatDate(d: Date): string {
-	return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+	// Admin-facing payment confirmations. Pinned to Europe/London for stability;
+	// admins are UK-based and the day/month label doesn't shift across most TZs.
+	return d.toLocaleDateString('en-GB', {
+		day: 'numeric',
+		month: 'short',
+		timeZone: 'Europe/London',
+	})
 }

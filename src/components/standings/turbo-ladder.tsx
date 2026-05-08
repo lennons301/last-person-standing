@@ -1,6 +1,7 @@
 'use client'
 
 import { AlertTriangle, CheckCircle2, Flame, Target, XCircle, Zap } from 'lucide-react'
+import { LocalDateTime } from '@/components/local-datetime'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { cn } from '@/lib/utils'
 
@@ -220,15 +221,15 @@ function FixtureRow({
 								vs
 							</span>
 							{fixture.kickoff && (
-								<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
-									{fixture.kickoff.toLocaleDateString('en-GB', {
+								<LocalDateTime
+									date={fixture.kickoff}
+									options={{
 										weekday: 'short',
-									})}{' '}
-									{fixture.kickoff.toLocaleTimeString('en-GB', {
 										hour: '2-digit',
 										minute: '2-digit',
-									})}
-								</span>
+									}}
+									className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight"
+								/>
 							)}
 						</>
 					)}

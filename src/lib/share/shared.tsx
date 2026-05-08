@@ -119,11 +119,14 @@ export function Header({
 }
 
 export function Footer({ generatedAt }: { generatedAt: Date }): ReactElement {
-	const dateLabel = generatedAt.toLocaleDateString('en-GB', {
+	// Share/OG images render server-only — use Europe/London for deterministic
+	// output (matches the SSR fallback used by <LocalDateTime />).
+	const dateLabel = new Intl.DateTimeFormat('en-GB', {
 		day: 'numeric',
 		month: 'short',
 		year: 'numeric',
-	})
+		timeZone: 'Europe/London',
+	}).format(generatedAt)
 	return (
 		<div
 			style={{
