@@ -81,7 +81,12 @@ export async function getCupStandingsData(
 		with: {
 			competition: true,
 			currentRound: {
-				with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
+				with: {
+					fixtures: {
+						with: { homeTeam: true, awayTeam: true },
+						orderBy: (fx, { asc }) => asc(fx.kickoff),
+					},
+				},
 			},
 			players: true,
 		},
@@ -263,7 +268,12 @@ export async function getCupLadderData(
 		with: {
 			competition: true,
 			currentRound: {
-				with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
+				with: {
+					fixtures: {
+						with: { homeTeam: true, awayTeam: true },
+						orderBy: (fx, { asc }) => asc(fx.kickoff),
+					},
+				},
 			},
 		},
 	})

@@ -23,7 +23,14 @@ export async function getGameDetail(gameId: string, userId: string) {
 		where: eq(game.id, gameId),
 		with: {
 			competition: true,
-			currentRound: { with: { fixtures: { with: { homeTeam: true, awayTeam: true } } } },
+			currentRound: {
+				with: {
+					fixtures: {
+						with: { homeTeam: true, awayTeam: true },
+						orderBy: (fx, { asc }) => asc(fx.kickoff),
+					},
+				},
+			},
 			players: true,
 			picks: {
 				with: {
@@ -347,7 +354,10 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
 		with: {
-			fixtures: { with: { homeTeam: true, awayTeam: true } },
+			fixtures: {
+				with: { homeTeam: true, awayTeam: true },
+				orderBy: (fx, { asc }) => asc(fx.kickoff),
+			},
 			competition: true,
 		},
 	})
@@ -417,7 +427,10 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
 		with: {
-			fixtures: { with: { homeTeam: true, awayTeam: true } },
+			fixtures: {
+				with: { homeTeam: true, awayTeam: true },
+				orderBy: (fx, { asc }) => asc(fx.kickoff),
+			},
 			competition: true,
 		},
 	})
@@ -867,7 +880,14 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
 		with: {
-			currentRound: { with: { fixtures: { with: { homeTeam: true, awayTeam: true } } } },
+			currentRound: {
+				with: {
+					fixtures: {
+						with: { homeTeam: true, awayTeam: true },
+						orderBy: (fx, { asc }) => asc(fx.kickoff),
+					},
+				},
+			},
 			players: true,
 		},
 	})
@@ -930,7 +950,12 @@ export async function getClassicPlannerData(
 				with: {
 					rounds: {
 						orderBy: (r, { asc }) => asc(r.number),
-						with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
+						with: {
+							fixtures: {
+								with: { homeTeam: true, awayTeam: true },
+								orderBy: (fx, { asc }) => asc(fx.kickoff),
+							},
+						},
 					},
 				},
 			},

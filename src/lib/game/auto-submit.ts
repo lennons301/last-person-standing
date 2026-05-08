@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { fixture } from '@/lib/schema/competition'
 import { gamePlayer, pick, plannedPick } from '@/lib/schema/game'
@@ -23,8 +23,13 @@ export async function submitPlannedPick(
 	})
 	if (existingPick) return { submitted: false, reason: 'already-picked' }
 
-	// Find the fixture where this team plays in this round
-	const fixturesInRound = await db.query.fixture.findMany({ where: eq(fixture.roundId, roundId) })
+	// Find the fixture where this team plays in this round. Ordered by kickoff
+	// so when a team has multiple fixtures in a round (e.g. PL rearrangements),
+	// the auto-submit picks the earliest one deterministically.
+	const fixturesInRound = await db.query.fixture.findMany({
+		where: eq(fixture.roundId, roundId),
+		orderBy: [asc(fixture.kickoff)],
+	})
 	const fx = fixturesInRound.find((f) => f.homeTeamId === teamId || f.awayTeamId === teamId)
 	if (!fx) return { submitted: false, reason: 'team-not-in-round' }
 
