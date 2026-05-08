@@ -230,7 +230,14 @@ export async function getShareLiveData(
 		with: {
 			competition: {
 				with: {
-					rounds: { with: { fixtures: { with: { homeTeam: true, awayTeam: true } } } },
+					rounds: {
+						with: {
+							fixtures: {
+								with: { homeTeam: true, awayTeam: true },
+								orderBy: (fx, { asc }) => asc(fx.kickoff),
+							},
+						},
+					},
 				},
 			},
 			players: true,

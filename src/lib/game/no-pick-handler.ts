@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne } from 'drizzle-orm'
+import { and, asc, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
@@ -86,6 +86,7 @@ async function applyRule2Classic(
 	const fixtures = await db.query.fixture.findMany({
 		where: eq(fixture.roundId, roundId),
 		with: { homeTeam: true, awayTeam: true },
+		orderBy: [asc(fixture.kickoff)],
 	})
 	const usedPicks = await db.query.pick.findMany({
 		where: and(eq(pick.gameId, gameId), eq(pick.gamePlayerId, player.id)),
