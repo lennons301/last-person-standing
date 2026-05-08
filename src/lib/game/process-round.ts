@@ -83,6 +83,7 @@ export async function processGameRound(gameId: string, roundId: string) {
 			return {
 				gamePlayerId: p.id,
 				pickedTeamId: playerPick?.teamId ?? '',
+				pickedFixtureId: playerPick?.fixtureId ?? null,
 			}
 		})
 
