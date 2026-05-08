@@ -38,7 +38,7 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 	const [entryFee, setEntryFee] = useState(10)
 	const [startingLives, setStartingLives] = useState(0)
 	const [numberOfPicks, setNumberOfPicks] = useState(10)
-	const [allowRebuys, setAllowRebuys] = useState(false)
+	const [allowRebuys, setAllowRebuys] = useState(true)
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
