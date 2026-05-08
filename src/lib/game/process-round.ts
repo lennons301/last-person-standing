@@ -52,6 +52,7 @@ export async function processGameRound(gameId: string, roundId: string) {
 		with: {
 			fixtures: {
 				with: { homeTeam: true, awayTeam: true },
+				orderBy: (fx, { asc }) => asc(fx.kickoff),
 			},
 		},
 	})
@@ -118,7 +119,7 @@ export async function processGameRound(gameId: string, roundId: string) {
 		if (gameData.competition.type === 'group_knockout') {
 			const allRounds = await db.query.round.findMany({
 				where: eq(round.competitionId, gameData.competitionId),
-				with: { fixtures: true },
+				with: { fixtures: { orderBy: (fx, { asc }) => asc(fx.kickoff) } },
 			})
 			const finishedKnockoutFixtures: WcFixture[] = allRounds.flatMap((r) =>
 				r.fixtures.map((f) => ({

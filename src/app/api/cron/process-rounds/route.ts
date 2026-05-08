@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 		// Check if the round's fixtures are all finished
 		const roundData = await db.query.round.findFirst({
 			where: eq(round.id, g.currentRoundId),
-			with: { fixtures: true },
+			with: { fixtures: { orderBy: (fx, { asc }) => asc(fx.kickoff) } },
 		})
 
 		if (!roundData) continue

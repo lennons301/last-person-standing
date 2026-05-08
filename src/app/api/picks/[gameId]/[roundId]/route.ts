@@ -67,7 +67,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	// Get round (with team relations so cup-mode validation can inspect tiers)
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
-		with: { fixtures: { with: { homeTeam: true, awayTeam: true } } },
+		with: {
+			fixtures: {
+				with: { homeTeam: true, awayTeam: true },
+				orderBy: (fx, { asc }) => asc(fx.kickoff),
+			},
+		},
 	})
 	if (!roundData) {
 		return NextResponse.json({ error: 'Round not found' }, { status: 404 })
@@ -119,7 +124,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			// Load all rounds + fixtures for the competition to check tournament elimination
 			const allRounds = await db.query.round.findMany({
 				where: eq(round.competitionId, gameData.competitionId),
-				with: { fixtures: true },
+				with: {
+					fixtures: {
+						orderBy: (fx, { asc }) => asc(fx.kickoff),
+					},
+				},
 			})
 			const finishedKnockoutFixtures = allRounds.flatMap((r) =>
 				r.fixtures.map((f) => ({
