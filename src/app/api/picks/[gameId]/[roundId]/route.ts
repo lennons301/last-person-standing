@@ -89,7 +89,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	}
 
 	if (gameData.gameMode === 'classic') {
-		const { teamId } = body as { teamId: string }
+		const { teamId, fixtureId } = body as { teamId: string; fixtureId?: string }
 
 		// Get previously used teams (for the TARGET player, not the admin)
 		const previousPicks = await db.query.pick.findMany({
@@ -98,6 +98,25 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		const usedTeamIds = previousPicks.filter((p) => p.roundId !== roundId).map((p) => p.teamId)
 
 		const fixtureTeamIds = roundData.fixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId])
+
+		// If fixtureId provided, verify it's in this round and the team plays in
+		// it. Required for the multi-fixture-per-team case (e.g. PL rearrangements
+		// where Man City plays twice in GW36 — picking the team alone is ambiguous).
+		// Falls back to .find() for backwards compat with old clients (will pick
+		// the earliest fixture by kickoff because the query is now ordered).
+		let resolvedFixture = roundData.fixtures.find(
+			(f) => f.homeTeamId === teamId || f.awayTeamId === teamId,
+		)
+		if (fixtureId) {
+			const fx = roundData.fixtures.find((f) => f.id === fixtureId)
+			if (!fx) {
+				return NextResponse.json({ error: 'fixture-not-in-round' }, { status: 400 })
+			}
+			if (fx.homeTeamId !== teamId && fx.awayTeamId !== teamId) {
+				return NextResponse.json({ error: 'team-not-in-fixture' }, { status: 400 })
+			}
+			resolvedFixture = fx
+		}
 
 		const allowEliminatedRebuy = Boolean(
 			body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
@@ -161,11 +180,6 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			}
 		}
 
-		// Find the fixture this team is in
-		const teamFixture = roundData.fixtures.find(
-			(f) => f.homeTeamId === teamId || f.awayTeamId === teamId,
-		)
-
 		// Delete existing pick for this player+round if it exists, then insert new one.
 		// We cannot use onConflictDoUpdate because the unique index includes confidenceRank,
 		// which is null for classic picks, and PostgreSQL treats nulls as distinct.
@@ -185,7 +199,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 					gamePlayerId: targetGamePlayer.id,
 					roundId,
 					teamId,
-					fixtureId: teamFixture?.id,
+					fixtureId: resolvedFixture?.id,
 				})
 				.returning()
 			newPick = picks[0]

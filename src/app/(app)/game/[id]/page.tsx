@@ -203,6 +203,7 @@ export default async function GameDetailPage({
 					fixtures={classicPickData.fixtures}
 					usedTeamsByRound={classicPickData.usedTeamsByRound}
 					existingPickTeamId={classicPickData.existingPickTeamId}
+					existingPickFixtureId={classicPickData.existingPickFixtureId}
 					chain={classicPlannerData?.chain}
 					futureRounds={classicPlannerData?.futureRounds}
 					actingAs={actingAsForPickUI}

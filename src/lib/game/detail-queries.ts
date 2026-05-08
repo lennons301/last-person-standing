@@ -411,6 +411,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 		fixtures,
 		usedTeamsByRound,
 		existingPickTeamId: currentPick?.teamId ?? null,
+		existingPickFixtureId: currentPick?.fixtureId ?? null,
 	}
 }
 

@@ -34,11 +34,17 @@ interface ClassicPickProps {
 	fixtures: ClassicPickFixture[]
 	usedTeamsByRound: Record<string, string>
 	existingPickTeamId: string | null
+	existingPickFixtureId: string | null
 	chain?: { slots: ChainSlot[]; summary: ChainSummary }
 	futureRounds?: PlannerRoundInput[]
 	planHandlers?: ClassicPickPlanHandlers
 	/** When set, the admin is picking on behalf of this player. */
 	actingAs?: { gamePlayerId: string; userName: string }
+}
+
+interface PickSelection {
+	fixtureId: string
+	teamId: string
 }
 
 export function ClassicPick({
@@ -51,13 +57,18 @@ export function ClassicPick({
 	fixtures,
 	usedTeamsByRound,
 	existingPickTeamId,
+	existingPickFixtureId,
 	chain,
 	futureRounds,
 	planHandlers,
 	actingAs,
 }: ClassicPickProps) {
 	const router = useRouter()
-	const [selectedTeamId, setSelectedTeamId] = useState<string | null>(existingPickTeamId)
+	const initialSelection: PickSelection | null =
+		existingPickTeamId && existingPickFixtureId
+			? { fixtureId: existingPickFixtureId, teamId: existingPickTeamId }
+			: null
+	const [selection, setSelection] = useState<PickSelection | null>(initialSelection)
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	// Collapse fixtures by default if a pick is already locked in
@@ -66,19 +77,28 @@ export function ClassicPick({
 	function handlePick(fixture: ClassicPickFixture, side: 'home' | 'away') {
 		const teamId = side === 'home' ? fixture.home.id : fixture.away.id
 		if (usedTeamsByRound[teamId]) return
-		setSelectedTeamId(teamId === selectedTeamId ? null : teamId)
+		// Toggle off if clicking the same team in the same fixture; otherwise move
+		// the selection to (this fixture, this team). Picking a different fixture
+		// for the same team still moves the selection — the team isn't "used"
+		// against itself, just relocated.
+		if (selection?.fixtureId === fixture.id && selection?.teamId === teamId) {
+			setSelection(null)
+		} else {
+			setSelection({ fixtureId: fixture.id, teamId })
+		}
 		setError(null)
 	}
 
 	async function handleSubmit() {
-		if (!selectedTeamId) return
+		if (!selection) return
 		setLoading(true)
 		setError(null)
 		const res = await fetch(`/api/picks/${gameId}/${roundId}`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				teamId: selectedTeamId,
+				teamId: selection.teamId,
+				fixtureId: selection.fixtureId,
 				...(actingAs ? { actingAs: actingAs.gamePlayerId } : {}),
 			}),
 		})
@@ -93,16 +113,21 @@ export function ClassicPick({
 		router.refresh()
 	}
 
-	const selectedFixture = fixtures.find(
-		(f) => f.home.id === selectedTeamId || f.away.id === selectedTeamId,
-	)
-	const selectedTeam =
-		selectedFixture?.home.id === selectedTeamId ? selectedFixture?.home : selectedFixture?.away
-	const selectedSide = selectedFixture?.home.id === selectedTeamId ? 'home' : 'away'
+	const selectedFixture = selection ? fixtures.find((f) => f.id === selection.fixtureId) : null
+	const selectedTeam = selectedFixture
+		? selectedFixture.home.id === selection?.teamId
+			? selectedFixture.home
+			: selectedFixture.away
+		: null
+	const selectedSide: 'home' | 'away' | undefined = selectedFixture
+		? selectedFixture.home.id === selection?.teamId
+			? 'home'
+			: 'away'
+		: undefined
 
 	// Find the fixture for the existing (locked) pick
-	const lockedFixture = existingPickTeamId
-		? fixtures.find((f) => f.home.id === existingPickTeamId || f.away.id === existingPickTeamId)
+	const lockedFixture = existingPickFixtureId
+		? fixtures.find((f) => f.id === existingPickFixtureId)
 		: null
 	const lockedTeam = lockedFixture
 		? lockedFixture.home.id === existingPickTeamId
@@ -173,19 +198,29 @@ export function ClassicPick({
 				</div>
 
 				{fixtures.map((fixture) => {
-					const homeUsed = usedTeamsByRound[fixture.home.id]
-					const awayUsed = usedTeamsByRound[fixture.away.id]
+					const isSelectedFixture = fixture.id === selection?.fixtureId
+					// "Used in another fixture this round": the team has been clicked in a
+					// DIFFERENT fixture in this round. Treats Man City vs Brentford and Man
+					// City vs Crystal Palace as alternate slots for the same team, with one
+					// pick burning the team for the round (Option B + grey-out per UX call).
+					const homeUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.home.id
+					const awayUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.away.id
+					const homeUsedPriorRound = !!usedTeamsByRound[fixture.home.id]
+					const awayUsedPriorRound = !!usedTeamsByRound[fixture.away.id]
+
+					const homeUsed = homeUsedThisRound || homeUsedPriorRound
+					const awayUsed = awayUsedThisRound || awayUsedPriorRound
+
 					let usedSide: 'home' | 'away' | 'both' | null = null
 					if (homeUsed && awayUsed) usedSide = 'both'
 					else if (homeUsed) usedSide = 'home'
 					else if (awayUsed) usedSide = 'away'
 
-					const selected =
-						fixture.home.id === selectedTeamId
+					const selected = isSelectedFixture
+						? fixture.home.id === selection?.teamId
 							? 'home'
-							: fixture.away.id === selectedTeamId
-								? 'away'
-								: null
+							: 'away'
+						: null
 
 					return (
 						<FixtureRow
@@ -212,14 +247,18 @@ export function ClassicPick({
 							selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name
 						} (${selectedSide === 'home' ? 'H' : 'A'})`}
 						actionLabel={
-							existingPickTeamId === selectedTeamId
+							existingPickFixtureId === selection?.fixtureId &&
+							existingPickTeamId === selection?.teamId
 								? 'Already locked'
 								: actingAs
 									? `Submit as ${actingAs.userName}`
 									: 'Lock in pick'
 						}
 						onConfirm={handleSubmit}
-						disabled={existingPickTeamId === selectedTeamId}
+						disabled={
+							existingPickFixtureId === selection?.fixtureId &&
+							existingPickTeamId === selection?.teamId
+						}
 						loading={loading}
 					/>
 				)}
