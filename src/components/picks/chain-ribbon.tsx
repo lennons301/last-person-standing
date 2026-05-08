@@ -15,6 +15,7 @@ export type ChainSlotState =
 export interface ChainSlot {
 	roundId: string
 	roundNumber: number
+	roundLabel: string
 	state: ChainSlotState
 }
 
@@ -75,7 +76,7 @@ function Slot({ slot }: { slot: ChainSlot }) {
 	)
 	return (
 		<div className={wrapperClass}>
-			<div className="text-[9px] uppercase text-muted-foreground">GW{slot.roundNumber}</div>
+			<div className="text-[9px] uppercase text-muted-foreground">{slot.roundLabel}</div>
 			{'teamShort' in s && s.teamShort ? (
 				<div
 					className="mx-auto mt-1 h-7 w-7 rounded-full text-white text-[9px] font-bold flex items-center justify-center"

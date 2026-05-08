@@ -18,6 +18,7 @@ import {
 	getTurboPickData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
+import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { user } from '@/lib/schema/auth'
 import { gamePlayer } from '@/lib/schema/game'
@@ -190,6 +191,17 @@ export default async function GameDetailPage({
 	const now = new Date()
 	const roundDeadlinePassed = !!game.currentRound?.deadline && now >= game.currentRound.deadline
 
+	const competitionType = game.competition.type as 'league' | 'knockout' | 'group_knockout'
+	const headerRoundInfo = game.currentRound
+		? {
+				label: roundLabel(competitionType, game.currentRound.number),
+				longLabel: roundLabelLong(competitionType, game.currentRound.number),
+				deadline: game.currentRound.deadline,
+				deadlinePassed: roundDeadlinePassed,
+				roundCompleted: game.currentRound.status === 'completed',
+			}
+		: null
+
 	const pickSection =
 		game.currentRound && isAlive && !roundDeadlinePassed ? (
 			game.gameMode === 'classic' && classicPickData ? (
@@ -274,6 +286,7 @@ export default async function GameDetailPage({
 				otherPayments: game.otherPayments,
 				adminPayments: game.adminPayments,
 				myCurrentRoundPick: game.myCurrentRoundPick,
+				currentRound: headerRoundInfo,
 				defaultShareVariant: game.defaultShareVariant,
 				liveShareAvailable: game.liveShareAvailable,
 				winnerShareAvailable: game.winnerShareAvailable,

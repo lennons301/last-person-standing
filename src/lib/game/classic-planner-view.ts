@@ -20,6 +20,7 @@ export interface PlannerRoundInput {
 	roundId: string
 	roundNumber: number
 	roundName: string
+	roundLabel: string
 	deadline: Date | null
 	fixturesTbc: boolean
 	fixtures: PlannerFixture[]
@@ -32,6 +33,7 @@ export interface ChainRoundRow {
 	id: string
 	number: number
 	name: string | null
+	label: string
 	status: 'upcoming' | 'open' | 'active' | 'completed'
 }
 
@@ -81,6 +83,7 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 				return {
 					roundId: r.id,
 					roundNumber: r.number,
+					roundLabel: r.label,
 					state: plan.autoSubmit
 						? {
 								kind: 'planned-locked',
@@ -97,6 +100,7 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 			return {
 				roundId: r.id,
 				roundNumber: r.number,
+				roundLabel: r.label,
 				state: {
 					kind: 'current',
 					teamShort: input.currentPick?.teamShortName ?? null,
@@ -112,6 +116,7 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 				return {
 					roundId: r.id,
 					roundNumber: r.number,
+					roundLabel: r.label,
 					state: { kind: 'win', teamShort: past.teamShortName, teamColour: past.teamColour },
 				}
 			}
@@ -119,6 +124,7 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 				return {
 					roundId: r.id,
 					roundNumber: r.number,
+					roundLabel: r.label,
 					state: { kind: 'draw', teamShort: past.teamShortName, teamColour: past.teamColour },
 				}
 			}
@@ -126,6 +132,7 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 				return {
 					roundId: r.id,
 					roundNumber: r.number,
+					roundLabel: r.label,
 					state: { kind: 'loss', teamShort: past.teamShortName, teamColour: past.teamColour },
 				}
 			}
@@ -137,6 +144,7 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 			return {
 				roundId: r.id,
 				roundNumber: r.number,
+				roundLabel: r.label,
 				state: plan.autoSubmit
 					? {
 							kind: 'planned-locked',
@@ -152,10 +160,20 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 		}
 
 		if (input.upcomingRoundsFixturesTbc.has(r.id)) {
-			return { roundId: r.id, roundNumber: r.number, state: { kind: 'tbc' } }
+			return {
+				roundId: r.id,
+				roundNumber: r.number,
+				roundLabel: r.label,
+				state: { kind: 'tbc' },
+			}
 		}
 
-		return { roundId: r.id, roundNumber: r.number, state: { kind: 'empty' } }
+		return {
+			roundId: r.id,
+			roundNumber: r.number,
+			roundLabel: r.label,
+			state: { kind: 'empty' },
+		}
 	})
 
 	const played = input.pastPicks.length
@@ -176,6 +194,7 @@ export interface FutureRoundRow {
 	id: string
 	number: number
 	name: string | null
+	label: string
 	deadline: Date | null
 	fixtures: Array<{
 		id: string
@@ -259,7 +278,8 @@ export function buildPlannerRounds(input: BuildPlannerRoundsInput): PlannerRound
 		return {
 			roundId: r.id,
 			roundNumber: r.number,
-			roundName: r.name ?? `GW${r.number}`,
+			roundLabel: r.label,
+			roundName: r.name ?? r.label,
 			deadline: r.deadline,
 			fixturesTbc,
 			fixtures,

@@ -111,20 +111,22 @@ export class FootballDataAdapter implements CompetitionAdapter {
 			.sort(([a], [b]) => a - b)
 			.map(([matchday, matches]) => {
 				const playable = matches.filter((m) => m.homeTeam.id != null && m.awayTeam.id != null)
-				// Round deadline = earliest kickoff in the round. Picks lock when the
-				// first match starts. football-data doesn't supply a separate
-				// deadline concept (unlike FPL), so we derive from kickoffs. Knockout
-				// rounds with TBD fixtures have no kickoffs yet — deadline stays null
-				// until the bracket is published and the next bootstrap sync runs.
+				// Round deadline = earliest kickoff − 90 minutes. Matches the FPL
+				// convention (FPL's event.deadline_time is 90 min before the first
+				// match) and aligns with public team-news release. football-data
+				// doesn't supply a separate deadline concept, so we derive from
+				// kickoffs. Knockout rounds with TBD fixtures have no kickoffs yet
+				// — deadline stays null until the bracket is published.
 				const earliestKickoff = playable
 					.map((m) => new Date(m.utcDate).getTime())
 					.filter((t) => Number.isFinite(t))
 					.reduce((min, t) => (min === null || t < min ? t : min), null as number | null)
+				const deadline = earliestKickoff != null ? new Date(earliestKickoff - 90 * 60 * 1000) : null
 				return {
 					externalId: String(matchday),
 					number: matchday,
 					name: `Matchday ${matchday}`,
-					deadline: earliestKickoff != null ? new Date(earliestKickoff) : null,
+					deadline,
 					finished: matches.every((m) => m.status === 'FINISHED'),
 					fixtures: playable.map(
 						(m): AdapterFixture => ({

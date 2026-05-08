@@ -1,8 +1,17 @@
 'use client'
 
-import { Share2, Users } from 'lucide-react'
+import { Clock, Share2, Users } from 'lucide-react'
+import { LocalDateTime } from '@/components/local-datetime'
 import { Button } from '@/components/ui/button'
 import type { PotBreakdown } from '@/lib/game-logic/prizes'
+
+export interface GameHeaderRoundInfo {
+	label: string // short, e.g. "GW36" / "MD1" / "R16"
+	longLabel: string // long, e.g. "Gameweek 36" / "Matchday 1"
+	deadline: Date | null
+	deadlinePassed: boolean
+	roundCompleted: boolean
+}
 
 interface GameHeaderProps {
 	name: string
@@ -16,6 +25,7 @@ interface GameHeaderProps {
 	aliveCount: number
 	status: string
 	inviteCode: string
+	currentRound: GameHeaderRoundInfo | null
 	onShare: () => void
 }
 
@@ -29,7 +39,9 @@ export function GameHeader({
 	entryFee,
 	playerCount,
 	aliveCount,
+	status,
 	inviteCode,
+	currentRound,
 	onShare,
 }: GameHeaderProps) {
 	const hasPending = potBreakdown.pending !== '0.00'
@@ -71,6 +83,42 @@ export function GameHeader({
 				</div>
 			</div>
 
+			{currentRound && status !== 'completed' && (
+				<div className="border-t border-border bg-muted/20 px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+					<div className="flex items-center gap-3 min-w-0">
+						<RoundStatusPill
+							deadlinePassed={currentRound.deadlinePassed}
+							completed={currentRound.roundCompleted}
+						/>
+						<div className="min-w-0">
+							<div className="font-display text-sm font-semibold leading-tight">
+								{currentRound.longLabel}
+							</div>
+							<div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+								<Clock className="h-3 w-3" />
+								{currentRound.deadline ? (
+									<>
+										Deadline{' '}
+										<LocalDateTime
+											date={currentRound.deadline}
+											options={{
+												weekday: 'short',
+												day: 'numeric',
+												month: 'short',
+												hour: '2-digit',
+												minute: '2-digit',
+											}}
+										/>
+									</>
+								) : (
+									<>Deadline TBC</>
+								)}
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
 			<div className="border-t border-border bg-muted/30 px-5 py-2 flex items-center justify-between gap-3 flex-wrap">
 				<div className="text-xs text-muted-foreground">
 					Invite code: <span className="font-mono font-semibold text-foreground">{inviteCode}</span>
@@ -81,5 +129,33 @@ export function GameHeader({
 				</Button>
 			</div>
 		</div>
+	)
+}
+
+function RoundStatusPill({
+	deadlinePassed,
+	completed,
+}: {
+	deadlinePassed: boolean
+	completed: boolean
+}) {
+	if (completed) {
+		return (
+			<span className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded bg-muted text-muted-foreground">
+				Completed
+			</span>
+		)
+	}
+	if (deadlinePassed) {
+		return (
+			<span className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded bg-[var(--draw-bg)] text-[var(--draw)]">
+				Locked
+			</span>
+		)
+	}
+	return (
+		<span className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded bg-[var(--alive-bg)] text-[var(--alive)]">
+			Open
+		</span>
 	)
 }

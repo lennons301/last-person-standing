@@ -89,10 +89,11 @@ describe('FootballDataAdapter', () => {
 		expect(rounds[0].fixtures).toHaveLength(2)
 	})
 
-	it('derives round deadline from earliest fixture kickoff', async () => {
+	it('derives round deadline from earliest fixture kickoff − 90 minutes', async () => {
 		const rounds = await adapter.fetchRounds()
-		// mockMatches earliest kickoff is 2025-08-16T15:00:00Z
-		expect(rounds[0].deadline).toEqual(new Date('2025-08-16T15:00:00Z'))
+		// mockMatches earliest kickoff is 2025-08-16T15:00:00Z, deadline is 90m
+		// before that to match FPL's deadline_time convention (team news release).
+		expect(rounds[0].deadline).toEqual(new Date('2025-08-16T13:30:00Z'))
 	})
 
 	it('returns null deadline when round has no playable fixtures (e.g. WC knockout pre-draw)', async () => {

@@ -12,6 +12,7 @@ import {
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
+import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { calculatePot } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
@@ -780,10 +781,12 @@ export async function getProgressGridData(
 		touchedRoundIds.has(r.id),
 	)
 
+	const competitionType = gameData.competition.type as 'league' | 'knockout' | 'group_knockout'
 	const rounds: GridRound[] = completedAndCurrentRounds.map((r) => ({
 		id: r.id,
 		number: r.number,
-		name: r.name ?? `GW${r.number}`,
+		name: r.name ?? roundLabelLong(competitionType, r.number),
+		label: roundLabel(competitionType, r.number),
 		isStartingRound: r.number === 1,
 	}))
 
@@ -875,13 +878,18 @@ export async function getProgressGridData(
 			}
 		}
 
+		const eliminatedRoundNumber = p.eliminatedRoundId
+			? gameData.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number
+			: undefined
 		return {
 			id: p.id,
 			name: userNames.get(p.userId) ?? 'Player',
 			status: p.status,
-			eliminatedRoundNumber: p.eliminatedRoundId
-				? gameData.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number
-				: undefined,
+			eliminatedRoundNumber,
+			eliminatedRoundLabel:
+				eliminatedRoundNumber != null
+					? roundLabel(competitionType, eliminatedRoundNumber)
+					: undefined,
 			cellsByRoundId,
 		}
 	})
@@ -999,10 +1007,12 @@ export async function getClassicPlannerData(
 	const currentRoundNumber = currentRoundId
 		? (gameData.competition.rounds.find((r) => r.id === currentRoundId)?.number ?? null)
 		: null
+	const competitionType = gameData.competition.type as 'league' | 'knockout' | 'group_knockout'
 	const rounds: ChainRoundRow[] = gameData.competition.rounds.map((r) => ({
 		id: r.id,
 		number: r.number,
 		name: r.name,
+		label: roundLabel(competitionType, r.number),
 		status: deriveGameRoundStatus({
 			round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
 			game: { currentRoundId, currentRoundNumber },
@@ -1078,6 +1088,7 @@ export async function getClassicPlannerData(
 			id: r.id,
 			number: r.number,
 			name: r.name,
+			label: roundLabel(competitionType, r.number),
 			deadline: r.deadline,
 			fixtures: r.fixtures.map((f) => ({
 				id: f.id,

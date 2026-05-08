@@ -402,6 +402,7 @@ function PlannerSection({
 							roundId={r.roundId}
 							roundNumber={r.roundNumber}
 							roundName={r.roundName}
+							roundLabel={r.roundLabel}
 							deadline={r.deadline}
 							fixturesTbc={r.fixturesTbc}
 							fixtures={r.fixtures}
