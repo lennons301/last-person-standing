@@ -766,8 +766,14 @@ export async function getProgressGridData(
 		? gameData.players.find((p) => p.userId === viewerUserId)?.id
 		: undefined
 
+	// Include the game's current round even if its DB status is still
+	// 'upcoming' (deadline > 48h away — see OPEN_WINDOW_MS in
+	// bootstrap-competitions). For WC games this is the common case before the
+	// tournament kicks off: round.status stays 'upcoming' for weeks even though
+	// the game is created and players can pick. Without this, the progress
+	// grid renders zero columns until the deadline approaches.
 	const completedAndCurrentRounds = gameData.competition.rounds.filter(
-		(r) => r.status !== 'upcoming',
+		(r) => r.status !== 'upcoming' || r.id === gameData.currentRoundId,
 	)
 
 	const rounds: GridRound[] = completedAndCurrentRounds.map((r) => ({
