@@ -405,6 +405,8 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 
 	return {
 		roundName: roundData.name ?? `GW${roundData.number}`,
+		roundNumber: roundData.number,
+		competitionId: roundData.competitionId,
 		deadline: roundData.deadline,
 		fixtures,
 		usedTeamsByRound,
@@ -468,6 +470,8 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 
 	return {
 		roundName: roundData.name ?? `GW${roundData.number}`,
+		roundNumber: roundData.number,
+		competitionId: roundData.competitionId,
 		deadline: roundData.deadline,
 		fixtures,
 		existingPicks: existingPicks.map((p) => ({

@@ -28,6 +28,8 @@ interface ClassicPickProps {
 	gameId: string
 	roundId: string
 	roundName: string
+	roundNumber: number
+	competitionId: string
 	deadline: Date | null
 	fixtures: ClassicPickFixture[]
 	usedTeamsByRound: Record<string, string>
@@ -43,6 +45,8 @@ export function ClassicPick({
 	gameId,
 	roundId,
 	roundName,
+	roundNumber,
+	competitionId,
 	deadline,
 	fixtures,
 	usedTeamsByRound,
@@ -194,6 +198,8 @@ export function ClassicPick({
 							usedLabel={usedSide === 'both' ? `Both used` : undefined}
 							onPickHome={() => handlePick(fixture, 'home')}
 							onPickAway={() => handlePick(fixture, 'away')}
+							competitionId={competitionId}
+							roundNumber={roundNumber}
 						/>
 					)
 				})}

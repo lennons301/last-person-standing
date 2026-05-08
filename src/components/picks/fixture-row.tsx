@@ -1,11 +1,14 @@
 'use client'
 
+import { ChevronRight } from 'lucide-react'
 import type React from 'react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { FormDots, type FormResult } from './form-dots'
 import { HeartIcon } from './heart-icon'
 import { PlusNBadge } from './plus-n-badge'
 import { TeamBadge } from './team-badge'
+import { TeamFormSheet } from './team-form-sheet'
 import { TierPips } from './tier-pips'
 
 export interface FixtureTeamInfo {
@@ -36,14 +39,16 @@ export interface FixtureRowProps {
 	onPickAway?: () => void
 	disabledSide?: 'home' | 'away' | 'both' | null
 	disabledReason?: string
-	// Tier strip (per-fixture annotations)
 	tierValue?: number
 	tierMax?: 3 | 5
 	plusN?: number
 	showHeart?: boolean
-	// Per-side state
 	homeState?: SideState
 	awayState?: SideState
+	// Required for the form-detail sheet. Optional only for old callsites that
+	// don't yet pass them — when omitted, the form row is non-tappable.
+	competitionId?: string
+	roundNumber?: number
 }
 
 export function FixtureRow({
@@ -63,9 +68,13 @@ export function FixtureRow({
 	showHeart,
 	homeState,
 	awayState,
+	competitionId,
+	roundNumber,
 }: FixtureRowProps) {
 	const isFullyUsed = usedSide === 'both'
 	const showTierStrip = tierValue != null || plusN != null || showHeart
+	const [sheetTeam, setSheetTeam] = useState<'home' | 'away' | null>(null)
+	const sheetEnabled = !!competitionId
 
 	return (
 		<div className={cn(isFullyUsed && 'opacity-30 pointer-events-none')}>
@@ -79,48 +88,154 @@ export function FixtureRow({
 					{kickoff && <span className="ml-auto">{kickoff}</span>}
 				</div>
 			)}
-			<div
-				className={cn(
-					'rounded-lg border border-border bg-card flex items-stretch transition-all overflow-hidden',
-				)}
-			>
-				<TeamPickButton
-					team={home}
-					side="home"
-					selected={selectedSide === 'home'}
-					used={usedSide === 'home'}
-					disabled={disabledSide === 'home' || disabledSide === 'both'}
-					disabledReason={disabledReason}
-					state={homeState}
-					onClick={onPickHome}
-				/>
-				<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[64px] bg-muted/30 border-l border-r border-border">
-					<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
-						vs
-					</span>
-					{kickoff && !showTierStrip && (
-						<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
-							{kickoff}
+			<div className="rounded-lg border border-border bg-card overflow-hidden">
+				<div className="flex items-stretch transition-all">
+					<TeamPickButton
+						team={home}
+						side="home"
+						selected={selectedSide === 'home'}
+						used={usedSide === 'home'}
+						disabled={disabledSide === 'home' || disabledSide === 'both'}
+						disabledReason={disabledReason}
+						state={homeState}
+						onClick={onPickHome}
+					/>
+					<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[56px] bg-muted/30 border-l border-r border-border">
+						<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+							vs
+						</span>
+						{kickoff && !showTierStrip && (
+							<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
+								{kickoff}
+							</span>
+						)}
+					</div>
+					<TeamPickButton
+						team={away}
+						side="away"
+						selected={selectedSide === 'away'}
+						used={usedSide === 'away'}
+						disabled={disabledSide === 'away' || disabledSide === 'both'}
+						disabledReason={disabledReason}
+						state={awayState}
+						onClick={onPickAway}
+					/>
+					{usedLabel && (
+						<span className="text-[0.7rem] text-muted-foreground px-2 self-center shrink-0">
+							{usedLabel}
 						</span>
 					)}
 				</div>
-				<TeamPickButton
-					team={away}
-					side="away"
-					selected={selectedSide === 'away'}
-					used={usedSide === 'away'}
-					disabled={disabledSide === 'away' || disabledSide === 'both'}
-					disabledReason={disabledReason}
-					state={awayState}
-					onClick={onPickAway}
-				/>
-				{usedLabel && (
-					<span className="text-[0.7rem] text-muted-foreground px-2 self-center shrink-0">
-						{usedLabel}
-					</span>
+				{Boolean(home.form?.length || away.form?.length) && (
+					<FormBar
+						home={home}
+						away={away}
+						sheetEnabled={sheetEnabled}
+						onOpenSheet={(side) => setSheetTeam(side)}
+					/>
 				)}
 			</div>
+
+			{sheetEnabled && competitionId && (
+				<TeamFormSheet
+					open={sheetTeam !== null}
+					onOpenChange={(open) => {
+						if (!open) setSheetTeam(null)
+					}}
+					teamId={sheetTeam === 'home' ? home.id : away.id}
+					competitionId={competitionId}
+					opponentTeamId={sheetTeam === 'home' ? away.id : home.id}
+					beforeRoundNumber={roundNumber}
+					teamPreview={sheetTeam === 'home' ? home : away}
+					opponentPreview={
+						sheetTeam === 'home' ? { shortName: away.shortName } : { shortName: home.shortName }
+					}
+				/>
+			)}
 		</div>
+	)
+}
+
+interface FormBarProps {
+	home: FixtureTeamInfo
+	away: FixtureTeamInfo
+	sheetEnabled: boolean
+	onOpenSheet: (side: 'home' | 'away') => void
+}
+
+function FormBar({ home, away, sheetEnabled, onOpenSheet }: FormBarProps) {
+	return (
+		<div className="grid grid-cols-2 border-t border-border bg-muted/40">
+			<FormHalf
+				team={home}
+				side="home"
+				sheetEnabled={sheetEnabled}
+				onOpenSheet={() => onOpenSheet('home')}
+			/>
+			<FormHalf
+				team={away}
+				side="away"
+				sheetEnabled={sheetEnabled}
+				onOpenSheet={() => onOpenSheet('away')}
+			/>
+		</div>
+	)
+}
+
+interface FormHalfProps {
+	team: FixtureTeamInfo
+	side: 'home' | 'away'
+	sheetEnabled: boolean
+	onOpenSheet: () => void
+}
+
+function FormHalf({ team, side, sheetEnabled, onOpenSheet }: FormHalfProps) {
+	const isHome = side === 'home'
+	const content = (
+		<>
+			{team.leaguePosition != null && !isHome && (
+				<span className="text-[10px] text-muted-foreground font-medium font-mono mr-2">
+					{ordinal(team.leaguePosition)}
+				</span>
+			)}
+			{team.form && team.form.length > 0 && <FormDots results={team.form} size="sm" />}
+			{team.leaguePosition != null && isHome && (
+				<span className="text-[10px] text-muted-foreground font-medium font-mono ml-2">
+					{ordinal(team.leaguePosition)}
+				</span>
+			)}
+			{sheetEnabled && (
+				<ChevronRight
+					className={cn(
+						'w-3 h-3 text-muted-foreground/60',
+						isHome ? 'mr-0.5' : 'ml-0.5 rotate-180',
+					)}
+					aria-hidden
+				/>
+			)}
+		</>
+	)
+
+	const baseCls = cn(
+		'flex items-center px-3 py-2 transition-colors',
+		isHome ? 'flex-row-reverse justify-start' : 'flex-row justify-start',
+	)
+
+	if (!sheetEnabled) {
+		return <div className={baseCls}>{content}</div>
+	}
+	return (
+		<button
+			type="button"
+			onClick={onOpenSheet}
+			className={cn(
+				baseCls,
+				'hover:bg-muted/70 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset',
+			)}
+			aria-label={`Open form details for ${team.name}`}
+		>
+			{content}
+		</button>
 	)
 }
 
@@ -151,11 +266,6 @@ function TeamPickButton({
 	const stateCls = sideClass(state)
 	const chip = sideChip(state)
 
-	/*
-	 * Layout goal: symmetric, badge nearest the centre "vs" divider.
-	 * Home:  [name / position+form — right aligned]  [BADGE]
-	 * Away:  [BADGE]  [name / position+form — left aligned]
-	 */
 	return (
 		<button
 			type="button"
@@ -173,34 +283,12 @@ function TeamPickButton({
 		>
 			<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="lg" responsive />
 			<div
-				className={cn('flex flex-col gap-1.5 min-w-0 flex-1', isHome ? 'items-end' : 'items-start')}
+				className={cn('flex flex-col gap-0.5 min-w-0 flex-1', isHome ? 'items-end' : 'items-start')}
 			>
-				{/* Country/long names truncate to first chars on narrow phones — show
-				 * the 3-letter shortName instead and switch to the full name from `sm`
-				 * upward. Keeps the touch target useful and avoids "Argen…" / "C". */}
 				<span className="font-semibold text-base leading-tight truncate w-full">
 					<span className="sm:hidden">{team.shortName}</span>
 					<span className="hidden sm:inline">{team.name}</span>
 				</span>
-				<div className="flex items-center gap-2">
-					{team.leaguePosition != null && (
-						<span className="text-xs text-muted-foreground font-medium">
-							{ordinal(team.leaguePosition)}
-						</span>
-					)}
-					{/* sm-and-up uses larger dots; below sm we shrink so the form guide
-					 * stays inside the row even when the team name is long. */}
-					{team.form && team.form.length > 0 && (
-						<>
-							<span className="sm:hidden">
-								<FormDots results={team.form} size="sm" />
-							</span>
-							<span className="hidden sm:inline">
-								<FormDots results={team.form} size="md" />
-							</span>
-						</>
-					)}
-				</div>
 				{chip && <div className={cn('flex', isHome ? 'justify-end' : 'justify-start')}>{chip}</div>}
 			</div>
 		</button>
