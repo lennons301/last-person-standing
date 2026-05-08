@@ -155,6 +155,7 @@ describe('isCrucial', () => {
 		goals: 0,
 		hasSubmitted: true,
 		eliminatedRoundNumber: null,
+		eliminatedRoundLabel: null,
 		picks: [],
 	})
 

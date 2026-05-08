@@ -43,6 +43,7 @@ export interface TurboRoundSummary {
 	id: string
 	number: number
 	name: string
+	label: string
 	status: 'open' | 'active' | 'completed'
 	players: TurboPlayerRow[]
 	fixtures: LadderFixture[]
@@ -156,7 +157,7 @@ export function TurboStandings({
 											: 'text-muted-foreground hover:text-foreground',
 									)}
 								>
-									GW{r.number}
+									{r.label}
 								</button>
 							))}
 						</div>

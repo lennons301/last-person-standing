@@ -77,7 +77,7 @@ export function CupGrid({ data, showAdminActions, gameId }: CupGridProps) {
 			<div className="p-4 md:p-5 border-b border-border">
 				<h2 className="font-display text-2xl font-semibold">Cup Standings</h2>
 				<p className="text-sm text-muted-foreground mt-1">
-					GW{data.roundNumber} ·{' '}
+					{data.roundLabel} ·{' '}
 					{data.roundStatus === 'open'
 						? 'Picks hidden until deadline'
 						: data.roundStatus === 'active'
@@ -96,6 +96,7 @@ export function CupGrid({ data, showAdminActions, gameId }: CupGridProps) {
 						maxLives={data.maxLives}
 						position={idx + 1}
 						roundNumber={data.roundNumber}
+						roundLabel={data.roundLabel}
 						liveMeta={liveMeta}
 						pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
 						showAdminActions={showAdminActions}
@@ -116,6 +117,7 @@ export function CupGrid({ data, showAdminActions, gameId }: CupGridProps) {
 								maxLives={data.maxLives}
 								position={alive.length + idx + 1}
 								roundNumber={data.roundNumber}
+								roundLabel={data.roundLabel}
 								liveMeta={liveMeta}
 								pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
 								showAdminActions={showAdminActions}
@@ -161,6 +163,7 @@ function PlayerRow({
 	maxLives,
 	position,
 	roundNumber,
+	roundLabel,
 	liveMeta,
 	pickFixtureByRank,
 	showAdminActions,
@@ -173,6 +176,7 @@ function PlayerRow({
 	maxLives: number
 	position: number
 	roundNumber: number
+	roundLabel: string
 	liveMeta: LiveRowMeta
 	pickFixtureByRank?: Map<number, string>
 	showAdminActions?: boolean
@@ -205,8 +209,12 @@ function PlayerRow({
 					</span>
 				)}
 				{!player.hasSubmitted && <Badge tone="warn">NO PICKS</Badge>}
-				{isOut && <Badge tone="danger">OUT GW{player.eliminatedRoundNumber ?? '?'}</Badge>}
-				{!isOut && liveEliminated && <Badge tone="danger">OUT GW{roundNumber}</Badge>}
+				{isOut && (
+					<Badge tone="danger">
+						OUT {player.eliminatedRoundLabel ?? `GW${player.eliminatedRoundNumber ?? '?'}`}
+					</Badge>
+				)}
+				{!isOut && liveEliminated && <Badge tone="danger">OUT {roundLabel}</Badge>}
 				{showAdminActions && gameId && !isOut && !player.hasSubmitted && roundStatus === 'open' && (
 					<a
 						href={`/game/${gameId}?actingAs=${player.id}`}

@@ -14,6 +14,7 @@ const baseCupData = {
 	gameId: 'g1',
 	roundId: 'r1',
 	roundNumber: 7,
+	roundLabel: 'GW7',
 	roundStatus: 'active' as const,
 	numberOfPicks: 10,
 	maxLives: 3,
@@ -38,6 +39,7 @@ const fixture = {
 	header: baseHeader,
 	cupData: baseCupData as never,
 	roundNumber: 7,
+	roundLabel: 'GW7',
 	overflowCount: 0,
 	matchupsLegend: 'BRA v SER · ENG v USA',
 }
@@ -56,6 +58,7 @@ describe('cupLiveLayout', () => {
 			header: baseHeader,
 			cupData: { ...baseCupData, players: [] } as never,
 			roundNumber: 7,
+			roundLabel: 'GW7',
 			overflowCount: 0,
 			matchupsLegend: 'BRA v SER · ENG v USA',
 		}
@@ -93,6 +96,7 @@ describe('cupLiveLayout', () => {
 			header: baseHeader,
 			cupData: { ...baseCupData, players: [...manyAlive, ...manyElim] } as never,
 			roundNumber: 7,
+			roundLabel: 'GW7',
 			overflowCount: 6,
 			matchupsLegend: 'BRA v SER · ENG v USA',
 		}
@@ -133,6 +137,7 @@ describe('cupLiveLayout', () => {
 			header: baseHeader,
 			cupData: { ...baseCupData, players } as never,
 			roundNumber: 7,
+			roundLabel: 'GW7',
 			overflowCount: 0,
 			matchupsLegend: 'BRA v SER · ENG v USA',
 		}

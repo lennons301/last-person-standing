@@ -163,7 +163,7 @@ export function classicWinnerLayout(
 									justifyContent: 'flex-end',
 								}}
 							>
-								{`GW${r.eliminatedRoundNumber}`}
+								{r.eliminatedRoundLabel}
 							</div>
 						</div>
 					))}

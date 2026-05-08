@@ -45,7 +45,7 @@ export function classicLiveLayout(data: Extract<LiveShareData, { mode: 'classic'
 				competitionName={data.header.competitionName}
 				pot={data.header.pot}
 				livePill
-				livePillLabel={`LIVE GW${data.roundNumber}`}
+				livePillLabel={`LIVE ${data.roundLabel}`}
 			/>
 			<div
 				style={{

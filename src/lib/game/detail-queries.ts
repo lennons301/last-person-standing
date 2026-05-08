@@ -558,6 +558,7 @@ export async function getTurboStandingsData(
 	}
 
 	const now = new Date()
+	const turboCompetitionType = gameData.competition.type as 'league' | 'knockout' | 'group_knockout'
 
 	return {
 		rounds: visibleRounds.map((r) => {
@@ -718,7 +719,8 @@ export async function getTurboStandingsData(
 			return {
 				id: r.id,
 				number: r.number,
-				name: r.name ?? `GW${r.number}`,
+				name: r.name ?? roundLabelLong(turboCompetitionType, r.number),
+				label: roundLabel(turboCompetitionType, r.number),
 				// Per-game round status — see src/lib/game/round-status.ts.
 				status: deriveGameRoundStatus({
 					round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },

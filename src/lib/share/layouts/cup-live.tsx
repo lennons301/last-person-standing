@@ -47,7 +47,7 @@ export function cupLiveLayout(data: Extract<LiveShareData, { mode: 'cup' }>): La
 				competitionName={data.header.competitionName}
 				pot={data.header.pot}
 				livePill
-				livePillLabel={`LIVE GW${data.roundNumber}`}
+				livePillLabel={`LIVE ${data.roundLabel}`}
 			/>
 			<div
 				style={{
