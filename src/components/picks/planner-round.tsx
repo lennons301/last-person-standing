@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { LocalDateTime } from '@/components/local-datetime'
 import { cn } from '@/lib/utils'
 import { FixtureRow } from './fixture-row'
 
@@ -67,7 +68,11 @@ export function PlannerRound(props: PlannerRoundProps) {
 					</div>
 					{props.deadline && (
 						<div className="text-[11px] text-muted-foreground">
-							Deadline {formatDeadline(props.deadline)}
+							Deadline{' '}
+							<LocalDateTime
+								date={props.deadline}
+								options={{ weekday: 'short', day: 'numeric', month: 'short' }}
+							/>
 						</div>
 					)}
 				</div>
@@ -120,7 +125,7 @@ export function PlannerRound(props: PlannerRoundProps) {
 							name: f.awayTeam.name,
 							badgeUrl: f.awayTeam.badgeUrl,
 						}}
-						kickoff={f.kickoff ? formatKickoff(f.kickoff) : undefined}
+						kickoff={f.kickoff ?? undefined}
 						homeState={
 							homeIsPlan
 								? { kind: planKind }
@@ -159,18 +164,4 @@ export function PlannerRound(props: PlannerRoundProps) {
 			)}
 		</div>
 	)
-}
-
-function formatDeadline(d: Date): string {
-	return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-}
-
-function formatKickoff(d: Date): string {
-	return d.toLocaleString('en-GB', {
-		weekday: 'short',
-		day: 'numeric',
-		month: 'short',
-		hour: '2-digit',
-		minute: '2-digit',
-	})
 }

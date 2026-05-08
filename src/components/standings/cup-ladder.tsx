@@ -2,6 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, Flame, Target, Zap } from 'lucide-react'
 import { useLiveGame } from '@/components/live/use-live-game'
+import { LocalDateTime } from '@/components/local-datetime'
 import { HeartIcon } from '@/components/picks/heart-icon'
 import { PlusNBadge } from '@/components/picks/plus-n-badge'
 import { TeamBadge } from '@/components/picks/team-badge'
@@ -221,13 +222,15 @@ function CupFixtureCard({
 								vs
 							</span>
 							{fixture.kickoff && (
-								<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
-									{fixture.kickoff.toLocaleDateString('en-GB', { weekday: 'short' })}{' '}
-									{fixture.kickoff.toLocaleTimeString('en-GB', {
+								<LocalDateTime
+									date={fixture.kickoff}
+									options={{
+										weekday: 'short',
 										hour: '2-digit',
 										minute: '2-digit',
-									})}
-								</span>
+									}}
+									className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight"
+								/>
 							)}
 						</>
 					)}

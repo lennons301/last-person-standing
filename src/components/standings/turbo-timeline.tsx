@@ -1,6 +1,7 @@
 'use client'
 
 import { Flame, Hourglass, Target, XCircle } from 'lucide-react'
+import { LocalDateTime } from '@/components/local-datetime'
 import { cn } from '@/lib/utils'
 import type { LadderFixture, LadderPrediction } from './turbo-ladder'
 
@@ -18,9 +19,8 @@ interface TurboTimelineProps {
 // A "kickoff slot" is a unique kickoff time across the round's fixtures.
 interface KickoffSlot {
 	key: string
-	label: string // e.g. "Sat 15:00"
-	fullLabel: string // e.g. "Sat 17 Jan, 15:00"
-	time: number // epoch ms
+	kickoff: Date // header rendered via <LocalDateTime />
+	time: number // epoch ms — used for sorting only
 	fixtures: LadderFixture[]
 }
 
@@ -50,8 +50,7 @@ export function TurboTimeline({ fixtures, players }: TurboTimelineProps) {
 		if (!slot) {
 			slot = {
 				key,
-				label: `${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
-				fullLabel: `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
+				kickoff: d,
 				time: d.getTime(),
 				fixtures: [],
 			}
@@ -209,9 +208,11 @@ export function TurboTimeline({ fixtures, players }: TurboTimelineProps) {
 								dropouts > 0 && 'border-[var(--eliminated)]/40',
 							)}
 						>
-							<div className="font-semibold uppercase tracking-wide text-[0.65rem] text-muted-foreground">
-								{slot.label}
-							</div>
+							<LocalDateTime
+								date={slot.kickoff}
+								options={{ weekday: 'short', hour: '2-digit', minute: '2-digit' }}
+								className="font-semibold uppercase tracking-wide text-[0.65rem] text-muted-foreground block"
+							/>
 							<div className="mt-1 text-foreground font-medium">
 								{slot.fixtures.length} {slot.fixtures.length === 1 ? 'fixture' : 'fixtures'}
 							</div>

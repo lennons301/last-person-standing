@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { LocalDateTime } from '@/components/local-datetime'
 
 interface RebuyBannerProps {
 	gameId: string
@@ -50,12 +51,12 @@ export function RebuyBanner({
 		}
 	}
 
-	const deadlineStr = round2Deadline.toLocaleString('en-GB', {
-		day: 'numeric',
-		month: 'short',
-		hour: '2-digit',
-		minute: '2-digit',
-	})
+	const deadlineLabel = (
+		<LocalDateTime
+			date={round2Deadline}
+			options={{ day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }}
+		/>
+	)
 
 	if (pendingPayment) {
 		return (
@@ -85,7 +86,7 @@ export function RebuyBanner({
 				You're out of round 1 — buy back in for £{entryFee}
 			</div>
 			<p className="mt-1 text-xs text-muted-foreground">
-				Rebuys close at the round 2 deadline ({deadlineStr}).
+				Rebuys close at the round 2 deadline ({deadlineLabel}).
 			</p>
 			<button
 				type="button"

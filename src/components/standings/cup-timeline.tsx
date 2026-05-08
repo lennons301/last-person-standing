@@ -2,6 +2,7 @@
 
 import { XCircle } from 'lucide-react'
 import { useLiveGame } from '@/components/live/use-live-game'
+import { LocalDateTime } from '@/components/local-datetime'
 import type { CupLadderData, CupLadderFixture } from '@/lib/game/cup-standings-queries'
 import { cn } from '@/lib/utils'
 
@@ -12,9 +13,8 @@ interface CupTimelineProps {
 // A "kickoff slot" is a unique kickoff time across the round's fixtures.
 interface KickoffSlot {
 	key: string
-	label: string // e.g. "Sat 15:00"
-	fullLabel: string // e.g. "Sat 17 Jan, 15:00"
-	time: number // epoch ms
+	kickoff: Date // header rendered via <LocalDateTime />
+	time: number // epoch ms — used for sorting only
 	fixtures: CupLadderFixture[]
 }
 
@@ -51,8 +51,7 @@ export function CupTimeline({ data }: CupTimelineProps) {
 		if (!slot) {
 			slot = {
 				key,
-				label: `${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
-				fullLabel: `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
+				kickoff: d,
 				time: d.getTime(),
 				fixtures: [],
 			}
@@ -157,9 +156,11 @@ export function CupTimeline({ data }: CupTimelineProps) {
 				<div />
 				{slots.map((slot) => (
 					<div key={slot.key} className="rounded-md border border-border bg-card p-2.5 text-xs">
-						<div className="font-semibold uppercase tracking-wide text-[0.65rem] text-muted-foreground">
-							{slot.label}
-						</div>
+						<LocalDateTime
+							date={slot.kickoff}
+							options={{ weekday: 'short', hour: '2-digit', minute: '2-digit' }}
+							className="font-semibold uppercase tracking-wide text-[0.65rem] text-muted-foreground block"
+						/>
 						<div className="mt-1 text-foreground font-medium">
 							{slot.fixtures.length} {slot.fixtures.length === 1 ? 'fixture' : 'fixtures'}
 						</div>

@@ -3,6 +3,7 @@
 import { ChevronRight } from 'lucide-react'
 import type React from 'react'
 import { useState } from 'react'
+import { LocalDateTime } from '@/components/local-datetime'
 import { cn } from '@/lib/utils'
 import { FormDots, type FormResult } from './form-dots'
 import { HeartIcon } from './heart-icon'
@@ -31,7 +32,8 @@ export type SideState =
 export interface FixtureRowProps {
 	home: FixtureTeamInfo
 	away: FixtureTeamInfo
-	kickoff?: string
+	/** ISO string. Rendered in the user's local timezone via <LocalDateTime />. */
+	kickoff?: string | Date | null
 	selectedSide?: 'home' | 'away' | null
 	usedSide?: 'home' | 'away' | 'both' | null
 	usedLabel?: string
@@ -85,7 +87,11 @@ export function FixtureRow({
 						<TierPips value={tierValue as 0 | 1 | 2 | 3 | 4 | 5} max={tierMax} />
 					)}
 					{plusN != null && <PlusNBadge value={plusN} />}
-					{kickoff && <span className="ml-auto">{kickoff}</span>}
+					{kickoff && (
+						<span className="ml-auto">
+							<LocalDateTime date={kickoff} />
+						</span>
+					)}
 				</div>
 			)}
 			<div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -105,9 +111,10 @@ export function FixtureRow({
 							vs
 						</span>
 						{kickoff && !showTierStrip && (
-							<span className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight">
-								{kickoff}
-							</span>
+							<LocalDateTime
+								date={kickoff}
+								className="text-[0.7rem] text-muted-foreground mt-1 text-center leading-tight"
+							/>
 						)}
 					</div>
 					<TeamPickButton
