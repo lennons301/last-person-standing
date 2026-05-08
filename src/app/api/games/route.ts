@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { generateInviteCode } from '@/lib/game/invite-code'
+import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { competition, round } from '@/lib/schema/competition'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
@@ -117,6 +118,10 @@ export async function POST(request: Request) {
 			amount: entryFee,
 		})
 	}
+
+	// Round status follows game lifecycle: starting a game on this round
+	// flips it from 'upcoming' to 'open' if it isn't already.
+	await openRoundForGame(firstRound.id)
 
 	return NextResponse.json(newGame, { status: 201 })
 }

@@ -1,11 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
-	db: { query: { competition: { findMany: vi.fn() } } },
+	db: {
+		query: {
+			competition: { findMany: vi.fn() },
+			game: { findMany: vi.fn().mockResolvedValue([]) },
+		},
+	},
 }))
 
 vi.mock('@/lib/game/bootstrap-competitions', () => ({
-	syncCompetition: vi.fn().mockResolvedValue({ rounds: 0, fixtures: 0, transitionedRoundIds: [] }),
+	syncCompetition: vi
+		.fn()
+		.mockResolvedValue({ rounds: 0, fixtures: 0, deadlinePassedRoundIds: [] }),
 	mergeFootballDataIds: vi.fn().mockResolvedValue(undefined),
 	scheduleUpcomingFixturePolls: vi.fn().mockResolvedValue(undefined),
 }))
@@ -14,6 +21,14 @@ vi.mock('@/lib/game/no-pick-handler', () => ({
 	processDeadlineLock: vi
 		.fn()
 		.mockResolvedValue({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 }),
+}))
+
+vi.mock('@/lib/game/process-round', () => ({
+	advanceGameIfReady: vi.fn().mockResolvedValue({ advanced: false, reason: 'not-active' }),
+}))
+
+vi.mock('@/lib/game/round-lifecycle', () => ({
+	openRoundForGame: vi.fn().mockResolvedValue(undefined),
 }))
 
 import { db } from '@/lib/db'
@@ -40,7 +55,7 @@ describe('daily-sync route', () => {
 		vi.mocked(syncCompetition).mockResolvedValue({
 			rounds: 0,
 			fixtures: 0,
-			transitionedRoundIds: [],
+			deadlinePassedRoundIds: [],
 		})
 		await POST(
 			new Request('http://x', {
@@ -56,7 +71,7 @@ describe('daily-sync route', () => {
 		vi.mocked(syncCompetition).mockResolvedValue({
 			rounds: 1,
 			fixtures: 10,
-			transitionedRoundIds: [],
+			deadlinePassedRoundIds: [],
 		})
 		await POST(
 			new Request('http://x', {
@@ -73,8 +88,8 @@ describe('daily-sync route', () => {
 			{ id: 'c2' },
 		] as never)
 		vi.mocked(syncCompetition)
-			.mockResolvedValueOnce({ rounds: 2, fixtures: 20, transitionedRoundIds: ['r1', 'r2'] })
-			.mockResolvedValueOnce({ rounds: 1, fixtures: 10, transitionedRoundIds: ['r3'] })
+			.mockResolvedValueOnce({ rounds: 2, fixtures: 20, deadlinePassedRoundIds: ['r1', 'r2'] })
+			.mockResolvedValueOnce({ rounds: 1, fixtures: 10, deadlinePassedRoundIds: ['r3'] })
 
 		const res = await POST(
 			new Request('http://x', {

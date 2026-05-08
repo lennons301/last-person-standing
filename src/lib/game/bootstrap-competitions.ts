@@ -1,19 +1,15 @@
 import { and, eq, gt, inArray, lt } from 'drizzle-orm'
 import { FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter } from '@/lib/data/fpl'
-import { enqueueAutoSubmit, enqueuePollScoresAt } from '@/lib/data/qstash'
+import { enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
 import { competition, fixture, round, team } from '@/lib/schema/competition'
-import { plannedPick } from '@/lib/schema/game'
 
 export interface BootstrapOptions {
 	footballDataApiKey?: string
 }
-
-const OPEN_WINDOW_MS = 48 * 3600 * 1000
-const AUTO_SUBMIT_LEAD_MS = 60_000
 
 type CompetitionRow = typeof competition.$inferSelect
 
@@ -257,9 +253,9 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 export async function syncCompetition(
 	comp: CompetitionRow,
 	opts: BootstrapOptions,
-): Promise<{ rounds: number; fixtures: number; transitionedRoundIds: string[] }> {
+): Promise<{ rounds: number; fixtures: number; deadlinePassedRoundIds: string[] }> {
 	const adapter = adapterFor(comp, opts)
-	if (!adapter) return { rounds: 0, fixtures: 0, transitionedRoundIds: [] }
+	if (!adapter) return { rounds: 0, fixtures: 0, deadlinePassedRoundIds: [] }
 
 	const key = comp.dataSource === 'fpl' ? 'fpl' : 'football_data'
 	const adapterTeams = await adapter.fetchTeams()
@@ -303,27 +299,25 @@ export async function syncCompetition(
 
 	const adapterRounds = await adapter.fetchRounds()
 	let totalFixtures = 0
-	const transitionedRoundIds: string[] = []
+	const deadlinePassedRoundIds: string[] = []
 	for (const ar of adapterRounds) {
 		const existingRound = await db.query.round.findFirst({
 			where: and(eq(round.competitionId, comp.id), eq(round.number, ar.number)),
 		})
+		// Round status now follows game lifecycle, not wall-clock time:
+		//   'upcoming' → 'open' on game creation / round advance (see api/games
+		//                and process-round.ts:advanceGameToNextRound)
+		//   'open' → 'completed' on processGameRound
+		// Bootstrap only mirrors the adapter's `finished` flag (all fixtures
+		// finished, so the round can be considered settled at the data layer)
+		// and otherwise preserves whatever state the game lifecycle has set.
 		const newStatus: 'upcoming' | 'open' | 'active' | 'completed' = ar.finished
 			? 'completed'
-			: ar.deadline && ar.deadline.getTime() - Date.now() < OPEN_WINDOW_MS
-				? 'open'
-				: (existingRound?.status ?? 'upcoming')
+			: (existingRound?.status ?? 'upcoming')
 		let roundId: string
-		// T-48h: pre-lock window opens. Used to enqueue the planned-pick auto-submit
-		// job (fires at T-60s). Does NOT signal the deadline has passed.
-		const transitioningToOpen =
-			!!existingRound && existingRound.status !== 'open' && newStatus === 'open'
-		// Actual deadline passed: the round is still `open` in the DB (we have not
-		// transitioned it to `active` yet) AND its deadline is in the past. This is
-		// what drives `processDeadlineLock` (rules 2 and 3) — firing earlier would
-		// elim/auto-pick players who still have time to submit. The handler is
-		// idempotent so it is safe to re-fire on subsequent sync runs until the
-		// round advances to `active`/`completed`.
+		// Detect deadlines that have just passed for an open round. Drives
+		// processDeadlineLock (no-pick handler) — idempotent, so safe to fire on
+		// subsequent sync runs until the round advances to 'completed'.
 		const nowForDeadline = new Date()
 		const deadlineHasPassed =
 			!!existingRound &&
@@ -354,19 +348,8 @@ export async function syncCompetition(
 			roundId = created.id
 		}
 
-		if (transitioningToOpen && ar.deadline) {
-			const plans = await db.query.plannedPick.findMany({
-				where: eq(plannedPick.roundId, roundId),
-			})
-			const autoPlans = plans.filter((p) => p.autoSubmit)
-			const notBefore = new Date(ar.deadline.getTime() - AUTO_SUBMIT_LEAD_MS)
-			for (const p of autoPlans) {
-				await enqueueAutoSubmit(p.gamePlayerId, p.roundId, p.teamId, notBefore)
-			}
-		}
-
 		if (deadlineHasPassed) {
-			transitionedRoundIds.push(roundId)
+			deadlinePassedRoundIds.push(roundId)
 		}
 
 		for (const af of ar.fixtures) {
@@ -416,7 +399,7 @@ export async function syncCompetition(
 		}
 	}
 
-	return { rounds: adapterRounds.length, fixtures: totalFixtures, transitionedRoundIds }
+	return { rounds: adapterRounds.length, fixtures: totalFixtures, deadlinePassedRoundIds }
 }
 
 export async function applyPotAssignments(
