@@ -766,8 +766,18 @@ export async function getProgressGridData(
 		? gameData.players.find((p) => p.userId === viewerUserId)?.id
 		: undefined
 
-	const completedAndCurrentRounds = gameData.competition.rounds.filter(
-		(r) => r.status !== 'upcoming',
+	// Show only rounds the GAME has touched, not every round the competition
+	// happens to have completed in the wider world. A round counts as touched
+	// if any player has a pick on it OR it's the game's current round. This
+	// keeps a brand-new PL game and a brand-new WC game looking identical
+	// (one column for the current round) rather than diverging based on how
+	// much of each competition has already played out.
+	const touchedRoundIds = new Set<string>()
+	for (const p of gameData.picks) touchedRoundIds.add(p.roundId)
+	if (gameData.currentRoundId) touchedRoundIds.add(gameData.currentRoundId)
+
+	const completedAndCurrentRounds = gameData.competition.rounds.filter((r) =>
+		touchedRoundIds.has(r.id),
 	)
 
 	const rounds: GridRound[] = completedAndCurrentRounds.map((r) => ({
