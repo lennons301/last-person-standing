@@ -34,6 +34,7 @@ interface PlannerRoundProps {
 	roundId: string
 	roundNumber: number
 	roundName: string
+	roundLabel: string
 	deadline: Date | null
 	fixturesTbc: boolean
 	fixtures: PlannerFixture[]
@@ -51,7 +52,7 @@ export function PlannerRound(props: PlannerRoundProps) {
 		return (
 			<div className="rounded-xl border border-border bg-muted/30 px-3 py-3 opacity-55">
 				<div className="flex justify-between items-center">
-					<div className="font-semibold text-sm">GW{props.roundNumber} · Fixtures TBC</div>
+					<div className="font-semibold text-sm">{props.roundLabel} · Fixtures TBC</div>
 					<span className="text-[11px] text-muted-foreground">
 						Planner unlocks when fixtures are published
 					</span>
@@ -64,7 +65,7 @@ export function PlannerRound(props: PlannerRoundProps) {
 			<div className="flex justify-between items-center mb-2">
 				<div>
 					<div className="font-semibold text-sm">
-						GW{props.roundNumber} · {props.roundName}
+						{props.roundLabel} · {props.roundName}
 					</div>
 					{props.deadline && (
 						<div className="text-[11px] text-muted-foreground">

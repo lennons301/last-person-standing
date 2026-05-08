@@ -23,6 +23,8 @@ export interface GridRound {
 	id: string
 	number: number
 	name: string
+	/** Short label for column headers, e.g. "GW1" / "MD1" / "R16". */
+	label: string
 	isStartingRound?: boolean
 }
 
@@ -50,6 +52,7 @@ export interface GridPlayer {
 	name: string
 	status: 'alive' | 'eliminated' | 'winner'
 	eliminatedRoundNumber?: number
+	eliminatedRoundLabel?: string
 	cellsByRoundId: Record<string, GridCell>
 }
 
@@ -208,7 +211,7 @@ export function ProgressGrid({
 										key={r.id}
 										className="font-medium text-muted-foreground text-center pb-3 px-1"
 									>
-										GW{r.number}
+										{r.label}
 									</th>
 								))}
 								<th className="pb-3 pl-4 min-w-[80px] text-right">Status</th>
@@ -279,7 +282,7 @@ export function ProgressGrid({
 												<td key={r.id} className="px-1 text-center align-middle">
 													<GridCellView
 														cell={cell}
-														roundNumber={r.number}
+														roundLabel={r.label}
 														showOpponents={showOpponents}
 														bump={bump}
 													/>
@@ -293,7 +296,7 @@ export function ProgressGrid({
 												</span>
 											) : player.status === 'eliminated' ? (
 												<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-[var(--eliminated-bg)] text-[var(--eliminated)]">
-													GW{player.eliminatedRoundNumber}
+													{player.eliminatedRoundLabel ?? `GW${player.eliminatedRoundNumber}`}
 												</span>
 											) : (
 												<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-yellow-100 text-yellow-900">
@@ -314,12 +317,12 @@ export function ProgressGrid({
 
 function GridCellView({
 	cell,
-	roundNumber,
+	roundLabel,
 	showOpponents,
 	bump,
 }: {
 	cell: GridCell
-	roundNumber: number
+	roundLabel: string
 	showOpponents: boolean
 	bump?: 'up' | 'down' | null
 }) {
@@ -430,8 +433,8 @@ function GridCellView({
 							: ' — Pending'
 	const autoPart = cell.isAuto ? ' (auto-pick)' : ''
 	const tooltipLabel = cell.teamShortName
-		? `${cell.teamShortName}${opponentPart}${scorePart}${resultPart}${autoPart} (GW${roundNumber})`
-		: `GW${roundNumber}`
+		? `${cell.teamShortName}${opponentPart}${scorePart}${resultPart}${autoPart} (${roundLabel})`
+		: roundLabel
 
 	return (
 		<Tooltip>

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { AdminPanel } from '@/components/game/admin-panel'
 import { AutoPickBanner } from '@/components/game/auto-pick-banner'
-import { GameHeader } from '@/components/game/game-header'
+import { GameHeader, type GameHeaderRoundInfo } from '@/components/game/game-header'
 import { MyPaymentStrip } from '@/components/game/my-payment-strip'
 import { OtherPlayersPayments } from '@/components/game/other-players-payments'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
@@ -43,6 +43,7 @@ interface GameDetailViewProps {
 			teamShortName: string
 			kickoffLabel: string
 		} | null
+		currentRound: GameHeaderRoundInfo | null
 		defaultShareVariant: 'standings' | 'live' | 'winner'
 		liveShareAvailable: boolean
 		winnerShareAvailable: boolean
@@ -100,6 +101,7 @@ export function GameDetailView({
 					aliveCount={game.aliveCount}
 					status={game.status}
 					inviteCode={game.inviteCode}
+					currentRound={game.currentRound}
 					onShare={() => setShareOpen(true)}
 				/>
 
