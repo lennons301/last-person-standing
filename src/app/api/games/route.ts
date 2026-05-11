@@ -4,7 +4,7 @@ import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { generateInviteCode } from '@/lib/game/invite-code'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
-import { competition, round } from '@/lib/schema/competition'
+import { competition, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -58,19 +58,51 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'Competition not found' }, { status: 404 })
 	}
 
-	// Cup mode requires FIFA pot tier differences, which only exist for
-	// group_knockout competitions. On league competitions there's no source
-	// of truth for tiers — cup-tier.ts silently returns 0, breaking the
-	// lives/upset mechanic. Reject at the API boundary so the UI gate can't
-	// be bypassed.
-	if (gameMode === 'cup' && comp.type !== 'group_knockout') {
+	// Cup mode is designed for cup competitions (knockout / group_knockout —
+	// e.g. World Cup, FA Cup, League Cup). It's not appropriate for league
+	// competitions like the PL where the format doesn't match. Reject at the
+	// API boundary so the UI gate can't be bypassed.
+	if (gameMode === 'cup' && comp.type === 'league') {
 		return NextResponse.json(
 			{
-				error: 'cup-mode-requires-group-knockout',
-				message: 'Cup mode is only available for tournaments with tier-based seeding.',
+				error: 'cup-mode-not-on-league',
+				message: 'Cup mode is for cup competitions only.',
 			},
 			{ status: 400 },
 		)
+	}
+
+	// Group-knockout cup mode needs FIFA pot tags on every team — tier-diff
+	// maths reads `external_ids.fifa_pot` and silently returns 0 when missing,
+	// which would make underdog picks unrewarded. Refuse to create the game
+	// until daily-sync has finished tagging the roster.
+	if (gameMode === 'cup' && comp.type === 'group_knockout') {
+		const compRounds = await db.query.round.findMany({
+			where: eq(round.competitionId, competitionId),
+			with: { fixtures: true },
+		})
+		const teamIds = new Set<string>()
+		for (const r of compRounds) {
+			for (const f of r.fixtures) {
+				teamIds.add(f.homeTeamId)
+				teamIds.add(f.awayTeamId)
+			}
+		}
+		if (teamIds.size > 0) {
+			const teams = await db.query.team.findMany({ where: inArray(team.id, [...teamIds]) })
+			const untagged = teams.filter(
+				(t) => (t.externalIds as Record<string, unknown> | null)?.fifa_pot == null,
+			)
+			if (untagged.length > 0) {
+				return NextResponse.json(
+					{
+						error: 'pot-coverage-incomplete',
+						message: `Cup mode needs FIFA pot tags on every team. ${untagged.length} team(s) are missing: ${untagged.map((t) => t.name).join(', ')}. Re-run the daily sync or check WC_2026_POTS.`,
+					},
+					{ status: 400 },
+				)
+			}
+		}
 	}
 
 	const inviteCode = generateInviteCode()
@@ -119,12 +151,10 @@ export async function POST(request: Request) {
 		})
 		.returning()
 
-	// Creator automatically joins the game. Cup mode needs livesRemaining
-	// seeded from modeConfig.startingLives — the schema default of 0 leaves
-	// players with no lives and breaks the cup upset/save mechanic.
-	// Defaults match the form: cup → 3, other modes → 0 (field ignored).
-	const configLives = (modeConfig as { startingLives?: number } | null)?.startingLives
-	const creatorStartingLives = configLives ?? (gameMode === 'cup' ? 3 : 0)
+	// Creator automatically joins the game. Lives are earned via underdog
+	// picks in cup mode, not handed out — default 0. Form lets the creator
+	// override if they want a more forgiving game.
+	const creatorStartingLives = (modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
 	await db.insert(gamePlayer).values({
 		gameId: newGame.id,
 		userId: session.user.id,

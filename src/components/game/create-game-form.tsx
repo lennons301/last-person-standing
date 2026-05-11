@@ -36,10 +36,10 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 	const [mode, setMode] = useState<GameMode | null>(null)
 	const [hasEntryFee, setHasEntryFee] = useState(true)
 	const [entryFee, setEntryFee] = useState(10)
-	// Cup default: 3 lives. Matches downstream `modeConfig.startingLives ?? 3`
-	// fallback in game-detail page; setting it explicitly in the form means
-	// new cup games are playable out of the box.
-	const [startingLives, setStartingLives] = useState(3)
+	// Cup default: 0 lives. Lives are earned by picking underdogs, not given
+	// freely at the start. The creator can raise this if they want a more
+	// forgiving game, but the design default matches the predecessor app.
+	const [startingLives, setStartingLives] = useState(0)
 	const [numberOfPicks, setNumberOfPicks] = useState(10)
 	const [allowRebuys, setAllowRebuys] = useState(true)
 	const [loading, setLoading] = useState(false)
@@ -124,36 +124,35 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 						<Label>Game mode</Label>
 						<div className="grid gap-2 mt-2">
 							{(['classic', 'turbo', 'cup'] as const).map((m) => {
-								// Cup mode relies on FIFA pot tier differences, which only exist
-								// for group_knockout competitions (currently just WC 2026). On
-								// the PL the tier system has no source of truth and silently
-								// flattens — so the mode is disabled there entirely.
+								// Cup mode is for cup competitions (knockout, group_knockout —
+								// e.g. World Cup, FA Cup, League Cup). It's disabled for league
+								// competitions like the PL, where the format doesn't match what
+								// cup mode is designed for.
 								const selectedCompetition = competitions.find((c) => c.id === competitionId)
-								const isCupOnUnsupported =
-									m === 'cup' && selectedCompetition?.type !== 'group_knockout'
+								const isCupOnLeague = m === 'cup' && selectedCompetition?.type === 'league'
 								return (
 									<button
 										key={m}
 										type="button"
 										onClick={() => {
-											if (isCupOnUnsupported) return
+											if (isCupOnLeague) return
 											setMode(m)
 										}}
-										disabled={isCupOnUnsupported}
+										disabled={isCupOnLeague}
 										className={cn(
 											'text-left p-3 rounded-lg border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 											mode === m
 												? 'border-[var(--alive)] bg-[var(--alive-bg)]'
 												: 'border-border hover:border-muted-foreground bg-card',
-											isCupOnUnsupported && 'opacity-50 cursor-not-allowed hover:border-border',
+											isCupOnLeague && 'opacity-50 cursor-not-allowed hover:border-border',
 										)}
 									>
 										<div className="font-display font-semibold capitalize">{m}</div>
 										<div className="text-xs text-muted-foreground mt-0.5">
 											{MODE_DESCRIPTIONS[m]}
-											{isCupOnUnsupported && (
+											{isCupOnLeague && (
 												<span className="block mt-1 text-[var(--eliminated)] font-medium">
-													Cup mode requires a tournament with tier-based seeding (e.g. World Cup).
+													Cup mode is for cup competitions only (e.g. World Cup, FA Cup).
 												</span>
 											)}
 										</div>

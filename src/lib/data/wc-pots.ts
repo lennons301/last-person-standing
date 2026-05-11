@@ -8,18 +8,20 @@ export interface WcTeamPot {
 }
 
 // Populated from the FIFA World Cup 2026 final draw held on 5 December 2025
-// at the John F. Kennedy Center for the Performing Arts, Washington, D.C.
-// Cross-referenced against Al Jazeera and NBC Sports coverage of the draw.
+// at the John F. Kennedy Center for the Performing Arts, Washington, D.C.,
+// updated for European + Intercontinental playoff winners (March 2026).
 //
-// footballDataId values should eventually come from football-data.org's
-// /competitions/WC/teams endpoint after the first daily sync runs. Until
-// that lookup has been performed they are intentionally left blank so the
-// helpers below degrade gracefully (potForTeamName still works by name).
+// Team names must match what football-data.org returns from /competitions/WC.
+// `applyPotAssignments` matches by lower-cased name and writes `fifa_pot`
+// into the team's `external_ids` JSONB; cup-tier maths reads it from there.
 //
-// TODO: populate footballDataId for every entry from football-data.org
-// /competitions/WC/teams once the first daily sync has run. Until then,
-// getPotFor() will not match any team and consumers should fall back to
-// potForTeamName().
+// This is a hand-maintained reference dataset on a 4-year cycle. No public
+// API exposes FIFA pot/seeding data — football-data carries only id/name/
+// tla/crest. The pots are fixed for the duration of WC 2026 once the
+// playoffs resolved in March 2026.
+//
+// `footballDataId` is currently unused in match logic but kept on the type
+// so a future bootstrap pass can backfill IDs if desired.
 export const WC_2026_POTS: WcTeamPot[] = [
 	// Pot 1 — three co-hosts plus nine highest-ranked qualifiers
 	// (FIFA/Coca-Cola Men's World Ranking issued 19 November 2025).
@@ -64,21 +66,22 @@ export const WC_2026_POTS: WcTeamPot[] = [
 	{ footballDataId: '', name: 'Saudi Arabia', pot: 3 },
 	{ footballDataId: '', name: 'South Africa', pot: 3 },
 
-	// Pot 4 — six confirmed qualifiers plus six playoff-winner placeholders.
-	// European playoff paths A-D and the two intercontinental playoff winners
-	// resolve in March 2026; they are marked tbd until the draw is updated.
+	// Pot 4 — six direct qualifiers + four European playoff winners + two
+	// intercontinental playoff winners (all resolved March 2026).
 	{ footballDataId: '', name: 'Jordan', pot: 4 },
-	{ footballDataId: '', name: 'Cape Verde', pot: 4 },
+	{ footballDataId: '', name: 'Cape Verde Islands', pot: 4 },
 	{ footballDataId: '', name: 'Ghana', pot: 4 },
 	{ footballDataId: '', name: 'Curaçao', pot: 4 },
 	{ footballDataId: '', name: 'Haiti', pot: 4 },
 	{ footballDataId: '', name: 'New Zealand', pot: 4 },
-	{ footballDataId: '', name: 'European Playoff Winner A', pot: 4, tbd: true },
-	{ footballDataId: '', name: 'European Playoff Winner B', pot: 4, tbd: true },
-	{ footballDataId: '', name: 'European Playoff Winner C', pot: 4, tbd: true },
-	{ footballDataId: '', name: 'European Playoff Winner D', pot: 4, tbd: true },
-	{ footballDataId: '', name: 'Intercontinental Playoff Winner 1', pot: 4, tbd: true },
-	{ footballDataId: '', name: 'Intercontinental Playoff Winner 2', pot: 4, tbd: true },
+	// European playoff winners (March 2026)
+	{ footballDataId: '', name: 'Bosnia-Herzegovina', pot: 4 },
+	{ footballDataId: '', name: 'Czechia', pot: 4 },
+	{ footballDataId: '', name: 'Sweden', pot: 4 },
+	{ footballDataId: '', name: 'Turkey', pot: 4 },
+	// Intercontinental playoff winners (March 2026)
+	{ footballDataId: '', name: 'Congo DR', pot: 4 },
+	{ footballDataId: '', name: 'Iraq', pot: 4 },
 ]
 
 export function getPotFor(footballDataId: string): FifaPot | null {

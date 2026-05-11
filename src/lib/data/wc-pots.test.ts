@@ -2,11 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { getPotFor, potForTeamName, WC_2026_POTS } from './wc-pots'
 
 describe('WC 2026 pot data', () => {
-	it('has 48 teams once populated', () => {
-		// Guard: fail loudly if someone commits an empty list.
-		if (WC_2026_POTS.length > 0) {
-			expect(WC_2026_POTS).toHaveLength(48)
-		}
+	it('has exactly 48 teams', () => {
+		expect(WC_2026_POTS).toHaveLength(48)
 	})
 
 	it('every entry has a valid pot (1-4)', () => {
@@ -16,10 +13,23 @@ describe('WC 2026 pot data', () => {
 	})
 
 	it('exposes 12 teams per pot', () => {
-		if (WC_2026_POTS.length !== 48) return
 		for (const pot of [1, 2, 3, 4] as const) {
 			expect(WC_2026_POTS.filter((t) => t.pot === pot)).toHaveLength(12)
 		}
+	})
+
+	it('has no tbd placeholders — playoffs resolved March 2026', () => {
+		expect(WC_2026_POTS.filter((t) => t.tbd)).toHaveLength(0)
+	})
+
+	it('has no placeholder names', () => {
+		const placeholders = WC_2026_POTS.filter((t) => /playoff winner|tbd|placeholder/i.test(t.name))
+		expect(placeholders).toEqual([])
+	})
+
+	it('has no duplicate team names', () => {
+		const names = WC_2026_POTS.map((t) => t.name.toLowerCase())
+		expect(new Set(names).size).toBe(names.length)
 	})
 
 	it('getPotFor returns null for unknown IDs', () => {
@@ -27,7 +37,6 @@ describe('WC 2026 pot data', () => {
 	})
 
 	it('potForTeamName is case insensitive', () => {
-		if (WC_2026_POTS.length === 0) return
 		const first = WC_2026_POTS[0]
 		expect(potForTeamName(first.name.toUpperCase())).toBe(first.pot)
 	})

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
+	applyPotAssignments,
 	mergeFootballDataIds,
 	scheduleUpcomingFixturePolls,
 	syncCompetition,
@@ -28,11 +29,16 @@ export async function POST(request: Request) {
 	const deadlineLockedRoundIds: string[] = []
 	for (const c of comps) {
 		const summary = await syncCompetition(c, { footballDataApiKey: apiKey })
-		results.push({
+		const entry: {
+			competitionId: string
+			rounds: number
+			fixtures: number
+			pots?: { matched: number; unmatched: string[] }
+		} = {
 			competitionId: c.id,
 			rounds: summary.rounds,
 			fixtures: summary.fixtures,
-		})
+		}
 		if (summary.deadlinePassedRoundIds?.length) {
 			deadlineLockedRoundIds.push(...summary.deadlinePassedRoundIds)
 		}
@@ -41,6 +47,13 @@ export async function POST(request: Request) {
 		if (c.dataSource === 'fpl' && apiKey) {
 			await mergeFootballDataIds(c, apiKey)
 		}
+		// Group-knockout competitions (e.g. World Cup) need FIFA pot assignments
+		// on every team for cup-mode tier-difference maths. Run on every sync so
+		// late-arriving teams (playoff winners) get tagged without a redeploy.
+		if (c.type === 'group_knockout') {
+			entry.pots = await applyPotAssignments(c.id)
+		}
+		results.push(entry)
 	}
 
 	// Reconciliation: any active game whose currentRoundId still points at an
