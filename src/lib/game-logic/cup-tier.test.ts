@@ -7,10 +7,14 @@ describe('computeTierDifference', () => {
 	const pot2 = { externalIds: { fifa_pot: 2 } }
 	const noPot = { externalIds: {} }
 
-	it('returns homePot - awayPot for group_knockout', () => {
-		expect(computeTierDifference(pot1, pot4, 'group_knockout')).toBe(-3)
-		expect(computeTierDifference(pot4, pot1, 'group_knockout')).toBe(3)
-		expect(computeTierDifference(pot1, pot2, 'group_knockout')).toBe(-1)
+	it('returns positive when home is the stronger side (lower pot number)', () => {
+		// pot 1 = strongest. Spain (pot 1) home vs Cape Verde (pot 4) away
+		// → home 3 tiers stronger → +3.
+		expect(computeTierDifference(pot1, pot4, 'group_knockout')).toBe(3)
+		// Inverse: away is much stronger → home is 3 tiers weaker → -3.
+		expect(computeTierDifference(pot4, pot1, 'group_knockout')).toBe(-3)
+		// Pot 1 home vs pot 2 away: home 1 tier stronger → +1.
+		expect(computeTierDifference(pot1, pot2, 'group_knockout')).toBe(1)
 	})
 
 	it('returns 0 when a pot is missing', () => {
