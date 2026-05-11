@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 interface CreateGameFormProps {
-	competitions: Array<{ id: string; name: string }>
+	competitions: Array<{ id: string; name: string; type: string }>
 }
 
 type GameMode = 'classic' | 'turbo' | 'cup'
@@ -123,22 +123,43 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 					<div>
 						<Label>Game mode</Label>
 						<div className="grid gap-2 mt-2">
-							{(['classic', 'turbo', 'cup'] as const).map((m) => (
-								<button
-									key={m}
-									type="button"
-									onClick={() => setMode(m)}
-									className={cn(
-										'text-left p-3 rounded-lg border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-										mode === m
-											? 'border-[var(--alive)] bg-[var(--alive-bg)]'
-											: 'border-border hover:border-muted-foreground bg-card',
-									)}
-								>
-									<div className="font-display font-semibold capitalize">{m}</div>
-									<div className="text-xs text-muted-foreground mt-0.5">{MODE_DESCRIPTIONS[m]}</div>
-								</button>
-							))}
+							{(['classic', 'turbo', 'cup'] as const).map((m) => {
+								// Cup mode relies on FIFA pot tier differences, which only exist
+								// for group_knockout competitions (currently just WC 2026). On
+								// the PL the tier system has no source of truth and silently
+								// flattens — so the mode is disabled there entirely.
+								const selectedCompetition = competitions.find((c) => c.id === competitionId)
+								const isCupOnUnsupported =
+									m === 'cup' && selectedCompetition?.type !== 'group_knockout'
+								return (
+									<button
+										key={m}
+										type="button"
+										onClick={() => {
+											if (isCupOnUnsupported) return
+											setMode(m)
+										}}
+										disabled={isCupOnUnsupported}
+										className={cn(
+											'text-left p-3 rounded-lg border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+											mode === m
+												? 'border-[var(--alive)] bg-[var(--alive-bg)]'
+												: 'border-border hover:border-muted-foreground bg-card',
+											isCupOnUnsupported && 'opacity-50 cursor-not-allowed hover:border-border',
+										)}
+									>
+										<div className="font-display font-semibold capitalize">{m}</div>
+										<div className="text-xs text-muted-foreground mt-0.5">
+											{MODE_DESCRIPTIONS[m]}
+											{isCupOnUnsupported && (
+												<span className="block mt-1 text-[var(--eliminated)] font-medium">
+													Cup mode requires a tournament with tier-based seeding (e.g. World Cup).
+												</span>
+											)}
+										</div>
+									</button>
+								)
+							})}
 						</div>
 					</div>
 				)}

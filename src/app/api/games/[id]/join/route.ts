@@ -18,7 +18,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 		return NextResponse.json({ error: 'Game not found' }, { status: 404 })
 	}
 
-	if (gameData.status !== 'open') {
+	// Allow joining 'open' and 'active' games. Games are created in 'active'
+	// state directly (the 'open' enum value is currently unused by the
+	// creation flow), so requiring 'open' here would reject every invite-code
+	// join. Only 'completed' (game ended) and 'setup' (admin still configuring)
+	// are blocked.
+	if (gameData.status === 'completed' || gameData.status === 'setup') {
 		return NextResponse.json({ error: 'Game is not accepting new players' }, { status: 400 })
 	}
 
@@ -34,9 +39,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 	// Cup mode players start with a configurable number of lives. Without this
 	// the cup mechanic is broken (the lives field stays at the schema default
 	// of 0 and players never earn the upset bonus). Other modes ignore the
-	// field; it's safe to set it universally.
-	const startingLives =
-		(gameData.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	// field; defaults match the form (cup → 3, other modes → 0).
+	const configLives = (gameData.modeConfig as { startingLives?: number } | null)?.startingLives
+	const startingLives = configLives ?? (gameData.gameMode === 'cup' ? 3 : 0)
 
 	const [player] = await db
 		.insert(gamePlayer)

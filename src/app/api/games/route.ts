@@ -58,6 +58,21 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'Competition not found' }, { status: 404 })
 	}
 
+	// Cup mode requires FIFA pot tier differences, which only exist for
+	// group_knockout competitions. On league competitions there's no source
+	// of truth for tiers — cup-tier.ts silently returns 0, breaking the
+	// lives/upset mechanic. Reject at the API boundary so the UI gate can't
+	// be bypassed.
+	if (gameMode === 'cup' && comp.type !== 'group_knockout') {
+		return NextResponse.json(
+			{
+				error: 'cup-mode-requires-group-knockout',
+				message: 'Cup mode is only available for tournaments with tier-based seeding.',
+			},
+			{ status: 400 },
+		)
+	}
+
 	const inviteCode = generateInviteCode()
 
 	// Link to the competition's earliest still-pickable round. A round is
@@ -107,7 +122,9 @@ export async function POST(request: Request) {
 	// Creator automatically joins the game. Cup mode needs livesRemaining
 	// seeded from modeConfig.startingLives — the schema default of 0 leaves
 	// players with no lives and breaks the cup upset/save mechanic.
-	const creatorStartingLives = (modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	// Defaults match the form: cup → 3, other modes → 0 (field ignored).
+	const configLives = (modeConfig as { startingLives?: number } | null)?.startingLives
+	const creatorStartingLives = configLives ?? (gameMode === 'cup' ? 3 : 0)
 	await db.insert(gamePlayer).values({
 		gameId: newGame.id,
 		userId: session.user.id,

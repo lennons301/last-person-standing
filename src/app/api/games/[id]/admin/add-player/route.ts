@@ -37,8 +37,11 @@ export async function POST(
 		return NextResponse.json({ error: 'already-in-game' }, { status: 409 })
 	}
 
-	const startingLives =
-		(gameRow.modeConfig as { startingLives?: number } | null)?.startingLives ?? 1
+	// Lives only matter in cup mode. Other modes ignore the field, so 0 is the
+	// right default. For cup, fall back to 3 if modeConfig somehow missing
+	// startingLives (matches form default + downstream `?? 3` fallbacks).
+	const configLives = (gameRow.modeConfig as { startingLives?: number } | null)?.startingLives
+	const startingLives = configLives ?? (gameRow.gameMode === 'cup' ? 3 : 0)
 	const [inserted] = await db
 		.insert(gamePlayer)
 		.values({
