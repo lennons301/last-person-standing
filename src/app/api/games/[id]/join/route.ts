@@ -31,11 +31,19 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 		return NextResponse.json({ error: 'Already a member of this game' }, { status: 400 })
 	}
 
+	// Cup mode players start with a configurable number of lives. Without this
+	// the cup mechanic is broken (the lives field stays at the schema default
+	// of 0 and players never earn the upset bonus). Other modes ignore the
+	// field; it's safe to set it universally.
+	const startingLives =
+		(gameData.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+
 	const [player] = await db
 		.insert(gamePlayer)
 		.values({
 			gameId: id,
 			userId: session.user.id,
+			livesRemaining: startingLives,
 		})
 		.returning()
 

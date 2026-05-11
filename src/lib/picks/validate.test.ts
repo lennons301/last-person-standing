@@ -173,4 +173,51 @@ describe('validateCupPicks', () => {
 		})
 		expect(result).toEqual({ valid: true })
 	})
+
+	it('accepts a partial ranking (fewer than numberOfPicks)', () => {
+		const result = validateCupPicks({
+			...base,
+			numberOfPicks: 10,
+			fixtures: [
+				{ fixtureId: 'f1', tierDifference: 0 },
+				{ fixtureId: 'f2', tierDifference: 0 },
+			],
+			picks: [
+				{ fixtureId: 'f1', confidenceRank: 1, predictedResult: 'home_win', pickedTeam: 'home' },
+				{ fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
+			],
+		})
+		expect(result).toEqual({ valid: true })
+	})
+
+	it('rejects zero picks', () => {
+		const result = validateCupPicks({ ...base, picks: [] })
+		expect(result).toEqual({ valid: false, reason: 'At least one pick required' })
+	})
+
+	it('rejects too many picks', () => {
+		const result = validateCupPicks({
+			...base,
+			numberOfPicks: 1,
+			picks: [
+				{ fixtureId: 'f1', confidenceRank: 1, predictedResult: 'home_win', pickedTeam: 'home' },
+				{ fixtureId: 'f2', confidenceRank: 2, predictedResult: 'home_win', pickedTeam: 'home' },
+			],
+		})
+		expect(result).toEqual({ valid: false, reason: 'Too many picks — maximum is 1' })
+	})
+
+	it('rejects ranks not starting from 1', () => {
+		const result = validateCupPicks({
+			...base,
+			picks: [
+				{ fixtureId: 'f1', confidenceRank: 2, predictedResult: 'away_win', pickedTeam: 'away' },
+				{ fixtureId: 'f2', confidenceRank: 3, predictedResult: 'home_win', pickedTeam: 'home' },
+			],
+		})
+		expect(result).toEqual({
+			valid: false,
+			reason: 'Confidence ranks must be unique sequential integers from 1',
+		})
+	})
 })
