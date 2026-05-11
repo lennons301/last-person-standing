@@ -402,34 +402,6 @@ export async function syncCompetition(
 	return { rounds: adapterRounds.length, fixtures: totalFixtures, deadlinePassedRoundIds }
 }
 
-/**
- * Common alternative spellings football-data sometimes uses vs the canonical
- * FIFA / WC_2026_POTS names. Keyed by the football-data spelling; resolved to
- * the WC_2026_POTS name. Extend as new mismatches surface.
- */
-const FD_TEAM_NAME_ALIASES: Record<string, string> = {
-	// Note: keys + values both run through the diacritic-stripping step before
-	// lookup, so entries are listed as plain-ASCII lowercase. Aliases here are
-	// for genuine name differences only; diacritic mismatches resolve themselves.
-	"cote d'ivoire": 'ivory coast',
-	'korea republic': 'south korea',
-	'republic of korea': 'south korea',
-	'islamic republic of iran': 'iran',
-	usa: 'united states',
-	'united states of america': 'united states',
-	'cabo verde': 'cape verde',
-	'cape verde islands': 'cape verde',
-}
-
-/** Strip diacritics + lowercase for tolerant name matching. */
-function normaliseTeamName(name: string): string {
-	const lower = name.toLowerCase().trim()
-	// NFD decomposes characters with diacritics; strip combining marks
-	// (Unicode range U+0300-U+036F).
-	const stripped = lower.normalize('NFD').replace(/[̀-ͯ]/g, '')
-	return FD_TEAM_NAME_ALIASES[stripped] ?? stripped
-}
-
 export async function applyPotAssignments(
 	competitionId: string,
 ): Promise<{ matched: number; unmatched: string[] }> {
@@ -449,24 +421,18 @@ export async function applyPotAssignments(
 	const teams = await db.query.team.findMany({
 		where: inArray(team.id, [...teamIds]),
 	})
-
-	// Pre-build the pot lookup once: keys are normalised names (diacritic-stripped,
-	// lowercased, alias-resolved). This way each team-side match is O(1).
-	const potByNormalisedName = new Map<string, (typeof WC_2026_POTS)[number]>()
-	for (const p of WC_2026_POTS) {
-		potByNormalisedName.set(normaliseTeamName(p.name), p)
-	}
-
 	let matched = 0
 	const unmatched: string[] = []
 	for (const t of teams) {
 		const fdId = (t.externalIds as Record<string, string | number> | null)?.football_data
 		// Match by football-data ID first (when WC_2026_POTS has been backfilled
-		// from /competitions/WC/teams), fall back to normalised team name.
+		// from /competitions/WC/teams), fall back to team name. Name matching
+		// covers the common case today: pots are seeded with names only and
+		// football-data uses canonical country names that align with the list.
 		const entry =
 			(fdId
 				? WC_2026_POTS.find((p) => p.footballDataId && p.footballDataId === String(fdId))
-				: undefined) ?? potByNormalisedName.get(normaliseTeamName(t.name))
+				: undefined) ?? WC_2026_POTS.find((p) => p.name.toLowerCase() === t.name.toLowerCase())
 		if (!entry) {
 			unmatched.push(t.name)
 			continue

@@ -4,7 +4,7 @@ import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { generateInviteCode } from '@/lib/game/invite-code'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
-import { competition, round } from '@/lib/schema/competition'
+import { competition, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -70,6 +70,39 @@ export async function POST(request: Request) {
 			},
 			{ status: 400 },
 		)
+	}
+
+	// Group-knockout cup mode needs FIFA pot tags on every team — tier-diff
+	// maths reads `external_ids.fifa_pot` and silently returns 0 when missing,
+	// which would make underdog picks unrewarded. Refuse to create the game
+	// until daily-sync has finished tagging the roster.
+	if (gameMode === 'cup' && comp.type === 'group_knockout') {
+		const compRounds = await db.query.round.findMany({
+			where: eq(round.competitionId, competitionId),
+			with: { fixtures: true },
+		})
+		const teamIds = new Set<string>()
+		for (const r of compRounds) {
+			for (const f of r.fixtures) {
+				teamIds.add(f.homeTeamId)
+				teamIds.add(f.awayTeamId)
+			}
+		}
+		if (teamIds.size > 0) {
+			const teams = await db.query.team.findMany({ where: inArray(team.id, [...teamIds]) })
+			const untagged = teams.filter(
+				(t) => (t.externalIds as Record<string, unknown> | null)?.fifa_pot == null,
+			)
+			if (untagged.length > 0) {
+				return NextResponse.json(
+					{
+						error: 'pot-coverage-incomplete',
+						message: `Cup mode needs FIFA pot tags on every team. ${untagged.length} team(s) are missing: ${untagged.map((t) => t.name).join(', ')}. Re-run the daily sync or check WC_2026_POTS.`,
+					},
+					{ status: 400 },
+				)
+			}
+		}
 	}
 
 	const inviteCode = generateInviteCode()

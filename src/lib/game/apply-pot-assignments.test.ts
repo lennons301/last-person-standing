@@ -53,45 +53,6 @@ describe('applyPotAssignments', () => {
 		expect(result.unmatched).toEqual([])
 	})
 
-	it("matches teams whose football-data names differ via alias (Côte d'Ivoire → Ivory Coast)", async () => {
-		dbMock.query.round.findMany.mockResolvedValue([
-			{ fixtures: [{ homeTeamId: 't-ci', awayTeamId: 't-ci' }] },
-		] as never)
-		dbMock.query.team.findMany.mockResolvedValue([
-			{ id: 't-ci', name: "Côte d'Ivoire", externalIds: {} },
-		] as never)
-
-		const result = await applyPotAssignments('c1')
-		expect(result.matched).toBe(1)
-		expect(result.unmatched).toEqual([])
-	})
-
-	it('matches teams with diacritic differences (Curacao → Curaçao)', async () => {
-		dbMock.query.round.findMany.mockResolvedValue([
-			{ fixtures: [{ homeTeamId: 't', awayTeamId: 't' }] },
-		] as never)
-		dbMock.query.team.findMany.mockResolvedValue([
-			{ id: 't', name: 'Curacao', externalIds: {} },
-		] as never)
-
-		const result = await applyPotAssignments('c1')
-		expect(result.matched).toBe(1)
-		expect(result.unmatched).toEqual([])
-	})
-
-	it('matches Korea Republic → South Korea via alias', async () => {
-		dbMock.query.round.findMany.mockResolvedValue([
-			{ fixtures: [{ homeTeamId: 't', awayTeamId: 't' }] },
-		] as never)
-		dbMock.query.team.findMany.mockResolvedValue([
-			{ id: 't', name: 'Korea Republic', externalIds: {} },
-		] as never)
-
-		const result = await applyPotAssignments('c1')
-		expect(result.matched).toBe(1)
-		expect(result.unmatched).toEqual([])
-	})
-
 	it('reports unmatched teams (e.g. unfilled playoff winner)', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 		dbMock.query.round.findMany.mockResolvedValue([
