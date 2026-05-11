@@ -36,12 +36,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 		return NextResponse.json({ error: 'Already a member of this game' }, { status: 400 })
 	}
 
-	// Cup mode players start with a configurable number of lives. Without this
-	// the cup mechanic is broken (the lives field stays at the schema default
-	// of 0 and players never earn the upset bonus). Other modes ignore the
-	// field; defaults match the form (cup → 3, other modes → 0).
-	const configLives = (gameData.modeConfig as { startingLives?: number } | null)?.startingLives
-	const startingLives = configLives ?? (gameData.gameMode === 'cup' ? 3 : 0)
+	// Honour modeConfig.startingLives if the game creator set one. Default 0:
+	// in cup mode lives are earned via underdog picks, not handed out.
+	const startingLives =
+		(gameData.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
 
 	const [player] = await db
 		.insert(gamePlayer)

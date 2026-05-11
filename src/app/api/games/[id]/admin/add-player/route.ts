@@ -37,11 +37,10 @@ export async function POST(
 		return NextResponse.json({ error: 'already-in-game' }, { status: 409 })
 	}
 
-	// Lives only matter in cup mode. Other modes ignore the field, so 0 is the
-	// right default. For cup, fall back to 3 if modeConfig somehow missing
-	// startingLives (matches form default + downstream `?? 3` fallbacks).
-	const configLives = (gameRow.modeConfig as { startingLives?: number } | null)?.startingLives
-	const startingLives = configLives ?? (gameRow.gameMode === 'cup' ? 3 : 0)
+	// Honour modeConfig.startingLives if set; default 0 (lives are earned via
+	// underdog picks in cup mode, not handed out).
+	const startingLives =
+		(gameRow.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
 	const [inserted] = await db
 		.insert(gamePlayer)
 		.values({
