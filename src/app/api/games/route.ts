@@ -104,10 +104,14 @@ export async function POST(request: Request) {
 		})
 		.returning()
 
-	// Creator automatically joins the game
+	// Creator automatically joins the game. Cup mode needs livesRemaining
+	// seeded from modeConfig.startingLives — the schema default of 0 leaves
+	// players with no lives and breaks the cup upset/save mechanic.
+	const creatorStartingLives = (modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
 	await db.insert(gamePlayer).values({
 		gameId: newGame.id,
 		userId: session.user.id,
+		livesRemaining: creatorStartingLives,
 	})
 
 	// Create payment record if entry fee is set

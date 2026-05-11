@@ -78,18 +78,23 @@ export function validateCupPicks(
 	if (!input.isCurrentRound) return { valid: false, reason: 'Round is not open for picks' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
-	if (input.picks.length !== input.numberOfPicks)
+	// Cup mode allows partial rankings — players can submit 1..numberOfPicks
+	// picks. Matches predecessor app behaviour. Turbo still requires the full
+	// count (see validateTurboPicks).
+	if (input.picks.length < 1) return { valid: false, reason: 'At least one pick required' }
+	if (input.picks.length > input.numberOfPicks)
 		return {
 			valid: false,
-			reason: `Expected ${input.numberOfPicks} picks, got ${input.picks.length}`,
+			reason: `Too many picks — maximum is ${input.numberOfPicks}`,
 		}
 
 	const fixtureSet = new Set(input.picks.map((p) => p.fixtureId))
 	if (fixtureSet.size !== input.picks.length)
 		return { valid: false, reason: 'Duplicate fixture in picks' }
 
+	// Ranks must be 1..picks.length contiguous starting from 1.
 	const ranks = input.picks.map((p) => p.confidenceRank).sort((a, b) => a - b)
-	const expected = Array.from({ length: input.numberOfPicks }, (_, i) => i + 1)
+	const expected = Array.from({ length: input.picks.length }, (_, i) => i + 1)
 	if (JSON.stringify(ranks) !== JSON.stringify(expected))
 		return { valid: false, reason: 'Confidence ranks must be unique sequential integers from 1' }
 

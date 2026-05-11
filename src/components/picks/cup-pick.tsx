@@ -114,8 +114,11 @@ export function CupPick({
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
-	// Min picks to submit — default 60% of N, rounded up. Tunable later.
-	const minPicks = Math.ceil(numberOfPicks * 0.6)
+	// Predecessor app allowed any number of ranked picks (1..numberOfPicks).
+	// The previous 60% minimum was spec drift — restoring the predecessor's
+	// behaviour avoids the silent server/UI mismatch where the UI allowed 60%
+	// but the server demanded the full count.
+	const minPicks = 1
 
 	function handlePickTeam(fixtureId: string, side: 'home' | 'away') {
 		if (readonly) return
@@ -280,11 +283,6 @@ export function CupPick({
 							? 'Submitting...'
 							: (submitLabelOverride ?? `Submit ${slots.length} of ${numberOfPicks} picks`)}
 					</button>
-					{slots.length > 0 && slots.length < minPicks && (
-						<p className="mt-2 text-xs text-muted-foreground">
-							Rank at least {minPicks} picks before submitting.
-						</p>
-					)}
 					{error && (
 						<p className="mt-2 text-xs text-[var(--eliminated)]" role="alert">
 							{error}

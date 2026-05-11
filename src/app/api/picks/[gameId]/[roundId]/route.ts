@@ -4,7 +4,7 @@ import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { validateWcClassicPick, wcRoundStage } from '@/lib/game-logic/wc-classic'
-import { validateClassicPick, validateTurboPicks } from '@/lib/picks/validate'
+import { validateClassicPick, validateCupPicks, validateTurboPicks } from '@/lib/picks/validate'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
@@ -230,49 +230,52 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
 	)
 
-	const validation = validateTurboPicks(
-		{
-			playerStatus: targetGamePlayer.status,
-			isCurrentRound: gameData.currentRoundId === roundId,
-			deadline: roundData.deadline,
-			now,
-			numberOfPicks,
-			fixtureIds: roundData.fixtures.map((f) => f.id),
-			picks: pickEntries,
-		},
-		{ allowEliminatedRebuy: allowEliminatedRebuyMulti },
-	)
-
-	if (!validation.valid) {
-		return NextResponse.json({ error: validation.reason }, { status: 400 })
-	}
-
-	// Cup mode: reject submissions that include any restricted pick (picking a team
-	// more than 1 tier below its opponent). The UI already hides these, but the API
-	// must enforce it defensively.
 	if (gameData.gameMode === 'cup') {
-		for (const entry of pickEntries as Array<{
-			fixtureId: string
-			predictedResult: string
-		}>) {
-			const fx = roundData.fixtures.find((f) => f.id === entry.fixtureId)
-			if (!fx) continue
-			if (entry.predictedResult !== 'home_win' && entry.predictedResult !== 'away_win') continue
-			const tierDiff = computeTierDifference(fx.homeTeam, fx.awayTeam, gameData.competition.type)
-			// A positive tierDiff means the home team is in a worse (higher-pot) tier.
-			// Picking the home side when tierDiff > 1 means picking a team > 1 tier below;
-			// picking the away side when tierDiff < -1 is the same case on the other side.
-			const tierFromPicked = entry.predictedResult === 'home_win' ? tierDiff : -tierDiff
-			if (tierFromPicked > 1) {
-				return NextResponse.json(
-					{
-						error: 'restricted',
-						fixtureId: entry.fixtureId,
-						predictedResult: entry.predictedResult,
-					},
-					{ status: 400 },
-				)
-			}
+		// Cup uses its own validator: partial rankings (1..numberOfPicks) allowed,
+		// plus the tier-restriction rule (no picking a team >1 tier below its
+		// opponent). Previously the API was routing cup submissions through
+		// validateTurboPicks which required the full count and never enforced
+		// the tier rule via the validator — restricted-pick check happened
+		// downstream which was the only thing keeping the rule alive.
+		const cupFixtures = roundData.fixtures.map((f) => ({
+			fixtureId: f.id,
+			tierDifference: computeTierDifference(f.homeTeam, f.awayTeam, gameData.competition.type),
+		}))
+		const cupValidation = validateCupPicks(
+			{
+				playerStatus: targetGamePlayer.status,
+				isCurrentRound: gameData.currentRoundId === roundId,
+				deadline: roundData.deadline,
+				now,
+				numberOfPicks,
+				fixtures: cupFixtures,
+				picks: pickEntries.map((p) => ({
+					fixtureId: p.fixtureId,
+					confidenceRank: p.confidenceRank,
+					predictedResult: p.predictedResult,
+					pickedTeam: p.predictedResult === 'away_win' ? 'away' : 'home',
+				})),
+			},
+			{ allowEliminatedRebuy: allowEliminatedRebuyMulti },
+		)
+		if (!cupValidation.valid) {
+			return NextResponse.json({ error: cupValidation.reason }, { status: 400 })
+		}
+	} else {
+		const validation = validateTurboPicks(
+			{
+				playerStatus: targetGamePlayer.status,
+				isCurrentRound: gameData.currentRoundId === roundId,
+				deadline: roundData.deadline,
+				now,
+				numberOfPicks,
+				fixtureIds: roundData.fixtures.map((f) => f.id),
+				picks: pickEntries,
+			},
+			{ allowEliminatedRebuy: allowEliminatedRebuyMulti },
+		)
+		if (!validation.valid) {
+			return NextResponse.json({ error: validation.reason }, { status: 400 })
 		}
 	}
 

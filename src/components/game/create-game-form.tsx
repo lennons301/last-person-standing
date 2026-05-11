@@ -36,7 +36,10 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 	const [mode, setMode] = useState<GameMode | null>(null)
 	const [hasEntryFee, setHasEntryFee] = useState(true)
 	const [entryFee, setEntryFee] = useState(10)
-	const [startingLives, setStartingLives] = useState(0)
+	// Cup default: 3 lives. Matches downstream `modeConfig.startingLives ?? 3`
+	// fallback in game-detail page; setting it explicitly in the form means
+	// new cup games are playable out of the box.
+	const [startingLives, setStartingLives] = useState(3)
 	const [numberOfPicks, setNumberOfPicks] = useState(10)
 	const [allowRebuys, setAllowRebuys] = useState(true)
 	const [loading, setLoading] = useState(false)
