@@ -36,7 +36,7 @@ export interface AdapterFixture {
 	homeTeamExternalId: string
 	awayTeamExternalId: string
 	kickoff: Date | null
-	status: 'scheduled' | 'live' | 'finished' | 'postponed'
+	status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 	homeScore: number | null
 	awayScore: number | null
 }
@@ -45,5 +45,5 @@ export interface AdapterFixtureScore {
 	externalId: string
 	homeScore: number
 	awayScore: number
-	status: 'live' | 'finished'
+	status: 'live' | 'finished' | 'cancelled'
 }

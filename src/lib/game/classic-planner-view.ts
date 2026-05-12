@@ -40,7 +40,7 @@ export interface ChainRoundRow {
 export interface ChainPastPickRow {
 	roundId: string
 	teamId: string
-	result: 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_life'
+	result: 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_life' | 'void'
 	teamShortName: string
 	teamColour: string | null
 }

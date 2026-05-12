@@ -393,9 +393,15 @@ export async function syncCompetition(
 						},
 					})
 					.where(eq(fixture.id, existingFixture.id))
-				// Capture transition for post-loop settlement. Same logic as
-				// live-poll: only fires once per transition.
-				if (existingFixture.status !== 'finished' && af.status === 'finished') {
+				// Capture transition for post-loop settlement. Settlement covers
+				// both happy-path (finished with scores) and cancellation
+				// (cancelled / postponed → cancelled). settleFixture routes
+				// internally to the void path when status is cancelled.
+				const wasTerminal =
+					existingFixture.status === 'finished' || existingFixture.status === 'cancelled'
+				const nowTerminal =
+					af.status === 'finished' || af.status === 'cancelled' || af.status === 'postponed'
+				if (!wasTerminal && nowTerminal) {
 					transitionedToFinishedIds.push(existingFixture.id)
 				}
 			} else {

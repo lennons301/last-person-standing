@@ -26,6 +26,12 @@ export interface GridRound {
 	/** Short label for column headers, e.g. "GW1" / "MD1" / "R16". */
 	label: string
 	isStartingRound?: boolean
+	/**
+	 * Non-null when this round was voided (classic threshold crossed —
+	 * see cancellation design doc). UI renders the column with prominent
+	 * "round voided" treatment.
+	 */
+	voidedAt?: Date | string | null
 }
 
 export interface GridCell {
@@ -40,6 +46,8 @@ export interface GridCell {
 		| 'skull'
 		| 'empty'
 		| 'no_pick'
+		/** Pick on a cancelled fixture (or pick in a voided round). */
+		| 'void'
 	teamShortName?: string
 	opponentShortName?: string
 	homeAway?: 'H' | 'A'
@@ -209,9 +217,19 @@ export function ProgressGrid({
 								{visibleRounds.map((r) => (
 									<th
 										key={r.id}
-										className="font-medium text-muted-foreground text-center pb-3 px-1"
+										className={cn(
+											'font-medium text-muted-foreground text-center pb-3 px-1',
+											r.voidedAt && 'bg-sky-100/60 dark:bg-sky-900/30 border-x border-sky-300/40',
+										)}
 									>
-										{r.label}
+										<div className="flex flex-col items-center leading-tight">
+											{r.voidedAt && (
+												<span className="text-[0.55rem] font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+													Voided
+												</span>
+											)}
+											<span>{r.label}</span>
+										</div>
 									</th>
 								))}
 								<th className="pb-3 pl-4 min-w-[80px] text-right">Status</th>
@@ -279,7 +297,14 @@ export function ProgressGrid({
 											const cell = player.cellsByRoundId[r.id] ?? { result: 'empty' }
 											const bump = rowBump && r.id === bumpRoundId ? rowBump : null
 											return (
-												<td key={r.id} className="px-1 text-center align-middle">
+												<td
+													key={r.id}
+													className={cn(
+														'px-1 text-center align-middle',
+														r.voidedAt &&
+															'bg-sky-100/30 dark:bg-sky-900/20 border-x border-sky-300/40',
+													)}
+												>
 													<GridCellView
 														cell={cell}
 														roundLabel={r.label}
@@ -363,6 +388,35 @@ function GridCellView({
 				</TooltipTrigger>
 				<TooltipContent>
 					<p className="text-xs">No pick yet</p>
+				</TooltipContent>
+			</Tooltip>
+		)
+	}
+	if (cell.result === 'void') {
+		// Fixture cancelled (or round voided). Distinct visual — soft blue
+		// tile with VOID label — so the absence of a result is clear vs
+		// the neutral 'pending'. The only cell-state where we deliberately
+		// diverge from "settled-style visual" because there's no settled
+		// equivalent.
+		return (
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<span
+						className={cn(
+							'relative inline-flex flex-col items-center justify-center rounded bg-sky-100 text-sky-700 font-semibold leading-tight cursor-help dark:bg-sky-900/40 dark:text-sky-300',
+							width,
+							height,
+						)}
+					>
+						<span className="text-[0.6rem] uppercase tracking-wider">Void</span>
+						{cell.teamShortName && (
+							<span className="text-[0.55rem] font-medium opacity-80">{cell.teamShortName}</span>
+						)}
+						{bump && <BumpBadge kind={bump} />}
+					</span>
+				</TooltipTrigger>
+				<TooltipContent>
+					<p className="text-xs">Fixture cancelled — pick voided, you stay alive.</p>
 				</TooltipContent>
 			</Tooltip>
 		)

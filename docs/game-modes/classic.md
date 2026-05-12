@@ -91,6 +91,20 @@ For `group_knockout` comps, also `validateWcClassicPick`: blocks picks of teams 
 }
 ```
 
+## Cancellation
+
+When a fixture's status flips to `cancelled` (or `postponed` — auto-cancelled), `settleFixture` routes to the void path. For classic:
+
+- **Per-pick void.** `pick.result = 'void'`, `pick.cancellation_reason = 'cancelled'`. Player stays alive. Team usage stays — the team can't be re-picked later. UI renders a distinct void cell.
+- **Round-void threshold.** If, after settling a cancellation, >50% of the round's fixtures are cancelled OR >5 absolute, `voidWholeRound` fires:
+  - `round.voided_at = now`, `round.status = 'completed'`.
+  - Every pick on the round → `result='void'`, `cancellation_reason='round-voided'`, even previously-settled wins/losses/draws.
+  - Players eliminated by this round are reinstated to `'alive'`.
+  - Team usage for `round-voided` picks is filtered out at validation time — teams are released.
+  - All games on this round advance via the standard flow.
+
+See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`](../superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md).
+
 ## Smoke coverage
 
 `scripts/smoke/lifecycle.smoke.test.ts`, `lifecycle: classic-PL` + `lifecycle: classic-WC`:

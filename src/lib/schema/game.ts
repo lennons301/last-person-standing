@@ -28,6 +28,11 @@ export const pickResultEnum = pgEnum('pick_result', [
 	'loss',
 	'draw',
 	'saved_by_life',
+	// Fixture cancelled (or postponed → auto-cancel). Distinct from `pending`
+	// because the pick is settled-as-non-event. Queries that count "real"
+	// settled outcomes should exclude this. See
+	// docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md.
+	'void',
 ])
 
 // -- Tables --
@@ -102,6 +107,9 @@ export const pick = pgTable(
 		// life_spent when a save consumed a life).
 		lifeGained: integer('life_gained').notNull().default(0),
 		lifeSpent: boolean('life_spent').notNull().default(false),
+		// Free-text reason on void picks: 'postponed' | 'cancelled' | 'round-voided'.
+		// Null for any non-void pick. See cancellation design doc.
+		cancellationReason: text('cancellation_reason'),
 		autoSubmitted: boolean('auto_submitted').notNull().default(false),
 		isAuto: boolean('is_auto').notNull().default(false),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
