@@ -123,6 +123,14 @@ Cup mode on `group_knockout` competitions requires every team to carry an `exter
 }
 ```
 
+## Cancellation
+
+When a cup pick's fixture is cancelled, `pick.result = 'void'`, `life_gained=0`, `life_spent=false`. The whole-game re-eval (`reevaluateCupGame`) iterates rank-ordered and explicitly skips voided picks. Streak/lives state at the next rank picks up from the previous non-voided rank — voided picks contribute nothing positive or negative.
+
+No automatic round-void in cup; admin refunds via the existing endpoint if needed.
+
+See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`](../superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md).
+
 ## Smoke coverage
 
 `scripts/smoke/lifecycle.smoke.test.ts`, `lifecycle: cup-WC`:

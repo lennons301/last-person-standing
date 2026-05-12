@@ -8,6 +8,7 @@ export type PickResultState =
 	| 'hidden'
 	| 'restricted'
 	| 'pending'
+	| 'void'
 
 export interface LiveFixture {
 	id: string
@@ -45,6 +46,7 @@ export interface LivePick {
 		| 'settled-win'
 		| 'settled-loss'
 		| 'pending'
+		| 'void'
 		| null
 }
 

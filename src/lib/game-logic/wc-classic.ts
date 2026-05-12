@@ -9,7 +9,7 @@ export interface WcFixture {
 	awayTeamId: string
 	homeScore: number | null
 	awayScore: number | null
-	status: 'scheduled' | 'live' | 'finished' | 'postponed'
+	status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 	stage: 'group' | 'knockout'
 }
 

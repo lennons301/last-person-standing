@@ -77,6 +77,14 @@ For an in-progress fixture:
 }
 ```
 
+## Cancellation
+
+When a turbo pick's fixture is cancelled, `pick.result = 'void'` and the streak evaluator walks past it as if it weren't in the input. A 10-pick turbo with one cancelled fixture effectively becomes a 9-pick game — the streak counts ranks 1..(k-1) plus rank (k+1)..N, skipping the voided rank entirely.
+
+No automatic round-void in turbo; admin refunds via the existing endpoint if the situation calls for it.
+
+See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`](../superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md).
+
 ## Smoke coverage
 
 `scripts/smoke/lifecycle.smoke.test.ts`, `lifecycle: turbo-PL`:

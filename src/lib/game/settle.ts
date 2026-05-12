@@ -49,6 +49,8 @@ export interface SettleResult {
 	classicEliminated: number
 	turboSettled: number
 	cupGamesReevaluated: number
+	picksVoided: number
+	roundsVoided: string[]
 	gamesCompleted: string[]
 	gamesAdvanced: string[]
 	roundsCompleted: string[]
@@ -61,6 +63,8 @@ function emptyResult(fixtureId: string): SettleResult {
 		classicEliminated: 0,
 		turboSettled: 0,
 		cupGamesReevaluated: 0,
+		picksVoided: 0,
+		roundsVoided: [],
 		gamesCompleted: [],
 		gamesAdvanced: [],
 		roundsCompleted: [],
@@ -79,6 +83,20 @@ export async function settleFixture(fixtureId: string): Promise<SettleResult> {
 		},
 	})
 	if (!fx) return result
+
+	// Normalise postponed → cancelled at the boundary. Per the cancellation
+	// design, postponed PL fixtures are typically moved to other matchdays
+	// and the survivor game has to roll over rather than block — so any
+	// postponed status counts as cancellation for settlement purposes.
+	if (fx.status === 'postponed') {
+		await db.update(fixture).set({ status: 'cancelled' }).where(eq(fixture.id, fixtureId))
+		fx.status = 'cancelled'
+	}
+
+	if (fx.status === 'cancelled') {
+		return voidFixtureInternal(fx, result)
+	}
+
 	if (fx.status !== 'finished') return result
 	if (fx.homeScore == null || fx.awayScore == null) return result
 
@@ -264,14 +282,18 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 
 		// Build the input list for evaluateCupPicks — only picks whose fixture
 		// has both scores (`pending` fixtures are excluded; their pick.result
-		// stays `'pending'`).
+		// stays `'pending'`). Cancelled fixtures are skipped — the pick's
+		// `'void'` row was already persisted by voidFixtureInternal; the
+		// streak math walks past it naturally because it's not in the input.
 		const settleable: Array<{
 			pickRow: (typeof existingPicks)[number]
 			fixture: (typeof g.currentRound.fixtures)[number]
 		}> = []
 		for (const p of playerPicks) {
+			if (p.result === 'void') continue
 			const fx = g.currentRound.fixtures.find((f) => f.id === p.fixtureId)
 			if (!fx) continue
+			if (fx.status === 'cancelled') continue
 			if (fx.homeScore == null || fx.awayScore == null) continue
 			settleable.push({ pickRow: p, fixture: fx })
 		}
@@ -369,10 +391,15 @@ async function checkAndMaybeCompleteOrAdvance(
 	const allRoundFixtures = await db.query.fixture.findMany({
 		where: eq(fixture.roundId, roundId),
 	})
+	// A round is "all done" when every fixture has reached a terminal
+	// state — either finished with scores OR cancelled. Cancelled
+	// fixtures don't block round advancement.
 	const allFinished =
 		allRoundFixtures.length > 0 &&
 		allRoundFixtures.every(
-			(f) => f.status === 'finished' && f.homeScore != null && f.awayScore != null,
+			(f) =>
+				(f.status === 'finished' && f.homeScore != null && f.awayScore != null) ||
+				f.status === 'cancelled',
 		)
 
 	// Per-mode completion check. Classic + cup check after every pick
@@ -428,8 +455,12 @@ async function collectTurboPlayerResults(gameId: string, roundId: string) {
 		with: { fixture: true },
 	})
 	return players.map((p) => {
+		// Skip void picks — the streak evaluator walks past as if they
+		// weren't in the input. Equivalent to a 9-pick game when one
+		// fixture was cancelled.
 		const playerPicks = picks
 			.filter((pk) => pk.gamePlayerId === p.id)
+			.filter((pk) => pk.result !== 'void')
 			.map((pk) => ({
 				confidenceRank: pk.confidenceRank ?? 0,
 				predictedResult: (pk.predictedResult ?? 'draw') as 'home_win' | 'draw' | 'away_win',
@@ -545,7 +576,11 @@ export async function sweepGameSettlement(gameId: string): Promise<SettleResult[
 	})
 	if (!g || g.status !== 'active' || !g.currentRound) return []
 	const fixtureIds = g.currentRound.fixtures
-		.filter((f) => f.status === 'finished' && f.homeScore != null && f.awayScore != null)
+		.filter(
+			(f) =>
+				(f.status === 'finished' && f.homeScore != null && f.awayScore != null) ||
+				f.status === 'cancelled',
+		)
 		.map((f) => f.id)
 	const results: SettleResult[] = []
 	for (const fid of fixtureIds) {
@@ -573,6 +608,167 @@ export async function sweepAllActiveGames(): Promise<{
 		fixturesSettled += results.length
 	}
 	return { gamesChecked: activeGames.length, fixturesSettled }
+}
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* Cancellation / void                                                     */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Per-mode void handler — called when a fixture's status becomes
+ * `'cancelled'` (or `'postponed'` is normalised to cancelled by the
+ * caller). Persists `pick.result = 'void'` for every still-pending
+ * pick on the fixture, marks the cancellation reason, then dispatches
+ * mode-specific cleanup:
+ *
+ *   - **Classic:** pick is voided; player stays alive; team usage
+ *     stays consumed (validation reads pick.teamId regardless of
+ *     result, so the team remains in `usedTeamIds`). The exception is
+ *     when the whole round is voided — see `voidWholeRound`.
+ *   - **Turbo:** pick is voided; the streak evaluator (when the round
+ *     fully settles) walks past void picks.
+ *   - **Cup:** pick is voided; `reevaluateCupGame` is re-run, which
+ *     iterates rank-ordered and naturally skips voids.
+ *
+ * Then checks the classic round-void threshold and the standard
+ * completion-or-advance flow.
+ *
+ * See docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md.
+ */
+async function voidFixtureInternal(
+	fx: FixtureWithRound,
+	result: SettleResult,
+): Promise<SettleResult> {
+	const picks = await db.query.pick.findMany({
+		where: eq(pick.fixtureId, fx.id),
+		with: { game: { with: { competition: true } } },
+	})
+
+	// Per-pick void for any picks directly on this fixture. Guard on
+	// `result === 'pending'` so already-settled rows aren't retroactively
+	// overwritten by a late cancellation; the round-void path is the only
+	// place that retroactively overwrites settled picks.
+	for (const p of picks) {
+		if (p.result !== 'pending') continue
+		await db
+			.update(pick)
+			.set({
+				result: 'void',
+				cancellationReason: 'cancelled',
+				goalsScored: 0,
+				lifeGained: 0,
+				lifeSpent: false,
+			})
+			.where(eq(pick.id, p.id))
+		result.picksVoided++
+	}
+
+	// Find every game whose currentRoundId points at this fixture's round.
+	// A cancellation can void the whole round even when the cancelled
+	// fixture itself had no picks (the threshold is a property of the
+	// round's fixtures, not the picks on this specific cancellation).
+	const gamesOnRound = await db.query.game.findMany({
+		where: and(eq(game.currentRoundId, fx.round.id), eq(game.status, 'active')),
+	})
+
+	for (const g of gamesOnRound) {
+		// Cup mode: re-run whole-game evaluation. Picks-of-this-fixture were
+		// already voided above; re-eval recomputes streak/lives accordingly.
+		if (g.gameMode === 'cup') {
+			const changed = await reevaluateCupGame(g.id)
+			if (changed) result.cupGamesReevaluated++
+		}
+
+		// Classic only: check the round-void threshold. If crossed, void
+		// the whole round (releases teams, reinstates same-round
+		// eliminations, advances games).
+		if (g.gameMode === 'classic') {
+			const threshold = await classicVoidThresholdCrossed(fx.round.id)
+			if (threshold && !result.roundsVoided.includes(fx.round.id)) {
+				await voidWholeRound(fx.round.id, result)
+			}
+		}
+
+		// Standard completion / advance flow. checkAndMaybeCompleteOrAdvance
+		// already treats cancelled fixtures as terminal — they don't block
+		// round completion.
+		await checkAndMaybeCompleteOrAdvance(g.id, fx.round.id, fx.round.number, result)
+	}
+
+	return result
+}
+
+/**
+ * Has the classic round-void threshold been crossed? Fires when:
+ *   - >50% of the round's fixtures have status='cancelled', OR
+ *   - >5 fixtures absolute (catches 7-fixture rounds where 4 cancellations
+ *     are <50% but still represent enough disruption to void).
+ */
+async function classicVoidThresholdCrossed(roundId: string): Promise<boolean> {
+	const fixtures = await db.query.fixture.findMany({ where: eq(fixture.roundId, roundId) })
+	if (fixtures.length === 0) return false
+	const cancelled = fixtures.filter((f) => f.status === 'cancelled').length
+	return cancelled / fixtures.length > 0.5 || cancelled > 5
+}
+
+/**
+ * Whole-round void for classic. Triggered when too many fixtures in a
+ * round get cancelled (see `classicVoidThresholdCrossed`).
+ *
+ * Behaviour:
+ *  1. round.voided_at = now; round.status = 'completed'.
+ *  2. Every pick on the round → result='void', reason='round-voided'.
+ *     This *retroactively voids* picks that already settled (win/loss
+ *     /draw) — the round outcome is now meaningless.
+ *  3. Players eliminated by this round are reinstated to 'alive'.
+ *  4. Team usage for round-voided picks is filtered out at validation
+ *     time (validate.ts reads `cancellationReason !== 'round-voided'`),
+ *     so the teams are effectively released.
+ *  5. Games currently sitting on this round get completion-checked +
+ *     advanced via the standard flow.
+ */
+async function voidWholeRound(roundId: string, result: SettleResult): Promise<void> {
+	const r = await db.query.round.findFirst({
+		where: eq(round.id, roundId),
+	})
+	if (!r) return
+	if (r.voidedAt != null) return // already voided
+
+	await db
+		.update(round)
+		.set({ voidedAt: new Date(), status: 'completed' })
+		.where(eq(round.id, roundId))
+
+	// Void every pick on the round. Includes settled rows — the round is
+	// being torn down.
+	const roundPicks = await db.query.pick.findMany({
+		where: eq(pick.roundId, roundId),
+	})
+	for (const p of roundPicks) {
+		await db
+			.update(pick)
+			.set({
+				result: 'void',
+				cancellationReason: 'round-voided',
+				goalsScored: 0,
+				lifeGained: 0,
+				lifeSpent: false,
+			})
+			.where(eq(pick.id, p.id))
+	}
+	result.picksVoided += roundPicks.length
+	result.roundsVoided.push(roundId)
+
+	// Reinstate players eliminated by this round. Players eliminated in
+	// earlier rounds stay eliminated — their rounds still happened.
+	await db
+		.update(gamePlayer)
+		.set({
+			status: 'alive',
+			eliminatedRoundId: null,
+			eliminatedReason: null,
+		})
+		.where(and(eq(gamePlayer.eliminatedRoundId, roundId), eq(gamePlayer.status, 'eliminated')))
 }
 
 /**

@@ -91,11 +91,17 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	if (gameData.gameMode === 'classic') {
 		const { teamId, fixtureId } = body as { teamId: string; fixtureId?: string }
 
-		// Get previously used teams (for the TARGET player, not the admin)
+		// Get previously used teams (for the TARGET player, not the admin).
+		// Round-voided picks are excluded — the round didn't happen and the
+		// team is released. Per-fixture cancellations stay in the list
+		// (team consumed per the design).
 		const previousPicks = await db.query.pick.findMany({
 			where: and(eq(pick.gamePlayerId, targetGamePlayer.id), eq(pick.gameId, gameId)),
 		})
-		const usedTeamIds = previousPicks.filter((p) => p.roundId !== roundId).map((p) => p.teamId)
+		const usedTeamIds = previousPicks
+			.filter((p) => p.roundId !== roundId)
+			.filter((p) => p.cancellationReason !== 'round-voided')
+			.map((p) => p.teamId)
 
 		const fixtureTeamIds = roundData.fixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId])
 

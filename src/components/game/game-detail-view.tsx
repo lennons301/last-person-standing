@@ -10,6 +10,7 @@ import { OtherPlayersPayments } from '@/components/game/other-players-payments'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import { type AdminPayment, PaymentsPanel } from '@/components/game/payments-panel'
 import { ShareDialog } from '@/components/game/share-dialog'
+import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
 import { LiveProvider } from '@/components/live/live-provider'
 import { LiveScoreTicker } from '@/components/live/live-score-ticker'
 import { CupStandings } from '@/components/standings/cup-standings'
@@ -88,6 +89,11 @@ export function GameDetailView({
 						kickoffLabel={game.myCurrentRoundPick.kickoffLabel}
 					/>
 				)}
+
+				<VoidedPickBanner
+					gameId={game.id}
+					gameMode={game.gameMode as 'classic' | 'turbo' | 'cup'}
+				/>
 
 				<GameHeader
 					name={game.name}

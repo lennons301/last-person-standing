@@ -32,6 +32,11 @@ export const fixtureStatusEnum = pgEnum('fixture_status', [
 	'live',
 	'finished',
 	'postponed',
+	// Fixture won't be played. settle.ts normalises adapter-reported
+	// 'postponed' to this when the matchday boundary is crossed (per the
+	// cancellation design — postponed PL fixtures move to other matchdays,
+	// the survivor game has to roll over).
+	'cancelled',
 ])
 
 // -- Tables --
@@ -56,6 +61,11 @@ export const round = pgTable('round', {
 	name: varchar('name', { length: 100 }),
 	status: roundStatusEnum('status').notNull().default('upcoming'),
 	deadline: timestamp('deadline'),
+	// Set when classic-mode round-void threshold (>50% or >5 absolute
+	// fixtures cancelled) fires. round.status still flips to 'completed'
+	// so game advancement runs; voided_at lets the UI render the
+	// prominent "round voided" treatment without inferring it.
+	voidedAt: timestamp('voided_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

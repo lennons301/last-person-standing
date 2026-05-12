@@ -94,7 +94,12 @@ export async function POST(request: Request) {
 					})
 					.where(eq(fixture.id, existing.id))
 
-				if (existing.status !== 'finished' && score.status === 'finished') {
+				// Capture any transition into a terminal state (finished or
+				// cancelled). settleFixture internally dispatches to the void
+				// path when the new status is cancelled.
+				const wasTerminal = existing.status === 'finished' || existing.status === 'cancelled'
+				const nowTerminal = score.status === 'finished' || score.status === 'cancelled'
+				if (!wasTerminal && nowTerminal) {
 					transitionedFixtureIds.push(existing.id)
 				}
 				totalUpdated++

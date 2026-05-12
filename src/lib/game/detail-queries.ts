@@ -827,6 +827,7 @@ export async function getProgressGridData(
 		name: r.name ?? roundLabelLong(competitionType, r.number),
 		label: roundLabel(competitionType, r.number),
 		isStartingRound: r.number === 1,
+		voidedAt: r.voidedAt ?? null,
 	}))
 
 	// Get user names for players
@@ -890,8 +891,12 @@ export async function getProgressGridData(
 			// is that an in-progress pick renders with the same treatment as the
 			// settled equivalent. Fixture status (live ticker / kickoff time)
 			// conveys "in progress" to the viewer.
+			//
+			// Voided picks (fixture cancelled or whole round voided) get the
+			// distinct 'void' cell — no settled equivalent exists.
 			let resultForCell: GridCell['result']
-			if (thePick.result === 'win') resultForCell = 'win'
+			if (thePick.result === 'void') resultForCell = 'void'
+			else if (thePick.result === 'win') resultForCell = 'win'
 			else if (thePick.result === 'loss') resultForCell = 'loss'
 			else if (thePick.result === 'draw') resultForCell = r.number === 1 ? 'draw_exempt' : 'loss'
 			else if (thePick.result === 'saved_by_life') resultForCell = 'saved'
@@ -1080,7 +1085,7 @@ function computeLiveProjection(input: {
 		awayTeamId: string
 		homeScore: number | null
 		awayScore: number | null
-		status: 'scheduled' | 'live' | 'finished' | 'postponed'
+		status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 		homeTeam: { id: string; externalIds: Record<string, string | number> | null }
 		awayTeam: { id: string; externalIds: Record<string, string | number> | null }
 	}>
@@ -1131,6 +1136,7 @@ type LiveProjectedOutcome =
 	| 'settled-win'
 	| 'settled-loss'
 	| 'pending'
+	| 'void'
 
 function projectOutcomeForPick(
 	p: typeof pick.$inferSelect,
@@ -1144,6 +1150,7 @@ function projectOutcomeForPick(
 		  }
 		| undefined,
 ): LiveProjectedOutcome {
+	if (p.result === 'void') return 'void'
 	if (p.result === 'saved_by_life') return 'saved-by-life'
 	if (p.result === 'win') return 'settled-win'
 	if (p.result === 'loss') return 'settled-loss'
@@ -1152,6 +1159,9 @@ function projectOutcomeForPick(
 		// settled-win-equivalent for visual parity.
 		return 'settled-win'
 	}
+	// Fixture cancelled but pick.result not yet persisted as 'void' (race
+	// during settlement) — surface as void anyway.
+	if (fx?.status === 'cancelled') return 'void'
 	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
 	const isFinished = fx.status === 'finished'
 	const pickedHome = p.teamId === fx.homeTeamId
@@ -1197,10 +1207,13 @@ function projectClassicPlayer(
 	const allowRebuys = input.modeConfig?.allowRebuys === true
 	const isStartingRound = input.roundNumber === 1 && !allowRebuys
 	// Classic has one pick per round; project elimination if any in-progress
-	// pick is losing/drawing AND not in starting round.
+	// pick is losing/drawing AND not in starting round. Voided picks don't
+	// count — player stays alive on them per the cancellation design.
 	for (const p of playerPicks) {
+		if (p.result === 'void') continue
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
-		if (!fx || fx.homeScore == null || fx.awayScore == null) continue
+		if (!fx || fx.status === 'cancelled') continue
+		if (fx.homeScore == null || fx.awayScore == null) continue
 		const pickedHome = p.teamId === fx.homeTeamId
 		const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
 		const otherScore = pickedHome ? fx.awayScore : fx.homeScore
@@ -1228,11 +1241,15 @@ function projectTurboPlayer(
 		return { streak: 0, lives: 0, status: 'eliminated' }
 	}
 	// Project streak through rank order, treating in-progress fixtures by
-	// current score. Stops at the first projected loss.
+	// current score. Stops at the first projected loss. Voided picks are
+	// skipped (streak walks past them as if they weren't in the input).
 	let streak = 0
 	for (const p of playerPicks) {
+		if (p.result === 'void') continue
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
-		if (!fx || fx.homeScore == null || fx.awayScore == null) break
+		if (!fx) break
+		if (fx.status === 'cancelled') continue
+		if (fx.homeScore == null || fx.awayScore == null) break
 		const actualOutcome =
 			fx.homeScore > fx.awayScore ? 'home_win' : fx.awayScore > fx.homeScore ? 'away_win' : 'draw'
 		if (p.predictedResult === actualOutcome) streak++
@@ -1272,8 +1289,11 @@ function projectCupPlayer(
 		tierDifference: number
 	}> = []
 	for (const p of playerPicks) {
+		if (p.result === 'void') continue
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
-		if (!fx || fx.homeScore == null || fx.awayScore == null) continue
+		if (!fx) continue
+		if (fx.status === 'cancelled') continue
+		if (fx.homeScore == null || fx.awayScore == null) continue
 		const pickedTeam: 'home' | 'away' = p.teamId === fx.homeTeamId ? 'home' : 'away'
 		const tierDiff = computeTierDifference(
 			fx.homeTeam,
