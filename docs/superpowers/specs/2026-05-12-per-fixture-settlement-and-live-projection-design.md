@@ -1,6 +1,6 @@
 # Per-fixture settlement + live projection
 
-**Status:** Draft. Awaiting review.
+**Status:** Reviewed and approved 2026-05-12. Implementation in same PR.
 **Author:** Claude, paired with Sean.
 **Date:** 2026-05-12.
 **Supersedes:** the closed PR #44 (`fix/lifecycle-reconcile`) which built reconciliation on top of round-batched processing.
@@ -216,7 +216,7 @@ Open question: do we persist `life_gained` / `life_spent` per pick, or recompute
 ## Edge cases
 
 1. **Fixture rescheduled after settlement.** Adapter reports a `finished` fixture as `live` again, or moves it to a different matchday. Settlement is idempotent on `pick.result`, but a "un-finish" might require reverting elimination + reopening a closed round. **Decision:** treat this as a serious event — surface a warning, don't silently un-settle. This is rare enough to be a manual ops action.
-2. **Pick on a fixture that gets cancelled/postponed.** Today `processGameRound` would block forever (fixture never `finished`). With per-fixture settlement, the pick stays `'pending'` indefinitely. Need a path to settle cancelled picks (treat as `'loss'`? Re-prompt the player?). **Out of scope for this design — flag as separate concern.**
+2. **Pick on a fixture that gets cancelled/postponed.** Today `processGameRound` would block forever (fixture never `finished`). With per-fixture settlement, the pick stays `'pending'` indefinitely. **Follow-up:** separate spec needed for cancellation semantics (loss vs refund vs re-prompt) and round-completion recomputation. Out of scope this PR.
 3. **Settlement during sync overwrite.** `syncCompetition` already overwrites `fixture.status`. If it transitions a finished fixture back to live (rare; data correction), the elimination already happened. **Decision:** match #1 — manual ops only.
 4. **Race between live-poll and sync.** Both can call `settleFixture` concurrently. Idempotent by design (`if pick.result !== 'pending' return`). Cup re-eval is naturally idempotent (recomputes same value). Player elimination guard: `if status === 'alive' set status = 'eliminated'` — second call no-ops.
 5. **Cup pick on a fixture finishing OUT of confidence-rank order.** Friday fixture is pick #5; Saturday is pick #1. Saturday finishes first. Re-eval iterates rank-ordered, only finished fixtures. Pick #1 settles (Saturday). Pick #5 stays pending (Friday hasn't finished yet — wait, that's reversed; let me redo). Actually: if Saturday (rank 1) finishes first, we settle rank 1. Rank 5 (Friday) hasn't finished, stays pending. Player's lives state after the settled picks is set. When Friday's fixture finishes, re-eval again — now ranks 1 + 5 both settle; rank 5's outcome may or may not affect streak break depending on rank 2-4 (which may still be pending). This works correctly because re-eval is whole-game and only operates on finished fixtures.
@@ -267,25 +267,29 @@ CI runs them after the unit suite; local: `just smoke`.
 
 ## Plan of work
 
-PR sequencing — each independent and reviewable:
+**One PR** containing everything: schema migration, `settleFixture` core + per-mode dispatch, wire points, projection in `getLivePayload`, UI consumption, smoke harness rewrite, docs refresh, stuck-game sweep.
 
-1. **PR A: `settleFixture` core** — pure helper + tests + classic dispatch + classic eliminations + classic completion check. Wire into `live-poll` + `syncCompetition`. New smoke scenarios 1-3 + 6. Replace `processGameRound`'s classic branch with a `settleFixture` loop. Stuck-Brighton migration script (one-off).
-2. **PR B: turbo dispatch** — turbo branch of `settleFixture`; per-fixture pick settle; round-batched completion preserved. Smoke scenario 1 for turbo.
-3. **PR C: cup dispatch** — `reevaluateCupGame`; persistent `life_gained`/`life_spent` columns (or reuse `goals_scored`?); cup completion check. Smoke scenarios 4-5.
-4. **PR D: live projection** — extend `getLivePayload`; wire `projectPickOutcome` and per-player projected aggregates. Update standings components. Smoke scenario 7.
-5. **PR E: state-machine docs refresh** — rewrite `docs/game-modes/{classic,turbo,cup}.md` to describe per-fixture behaviour. Re-add the "Adding a new competition" checklist (it was in the closed PR #44).
+Internal commit ordering for reviewability:
 
-Estimated scope: PR A and D are the heaviest; B and C are mechanical extensions; E is doc-only.
+1. Schema migration (`life_gained`, `life_spent` on `pick`).
+2. `settleFixture` core + classic dispatch + tests.
+3. Turbo dispatch (settle per-fixture, completion still round-batched).
+4. Cup dispatch (`reevaluateCupGame` — whole-game re-eval).
+5. Wire `settleFixture` into `live-poll` + `syncCompetition` write sites; refactor `processGameRound` + `reconcileGameState` to call `settleFixture`.
+6. Server-side projection in `getLivePayload`; standings components consume projected fields.
+7. Smoke harness rewrite (scenarios 1-7).
+8. `docs/game-modes/` rewrite + AGENTS.md "Adding a new competition" checklist.
+9. Migration sweep for currently-stuck games (Brighton).
 
 ---
 
-## Open questions
+## Resolved decisions (2026-05-12 review)
 
-1. **Cup pick-detail columns.** Do we add `life_gained: int` + `life_spent: bool` to the `pick` schema (matches predecessor), or keep computing on read? Persistence is cleaner; needs a migration.
-2. **Projected aggregates on `gamePlayer`?** Do we persist `projectedX` fields or compute purely from the live payload? Recommend live-only — no DB writes, easier to reason about.
-3. **What does "winning" look like on the classic progress grid?** A solid green-tinted cell? A small `→ WIN` chip? Need design tokens / mockup alignment.
-4. **Cancelled / postponed fixtures.** Out of scope of this design but a real gap. Flag and tackle separately.
-5. **`reconcileGameState` retention.** Once per-fixture settlement covers the happy path, do we keep reconcile? Recommend yes — page SSR call costs ~50ms and self-heals anything that slipped past settlement (network failure on settle, future bugs). The four-trigger pattern from PR #44 is still right; only the helper's *body* changes (call settle instead of processGameRound).
+1. **Cup pick-detail columns:** **persist** `life_gained` (int) + `life_spent` (boolean) on `pick`. Drizzle migration. Drop `computeLivesGained`/`computeLivesSpent` helpers in `cup-standings-queries.ts` — read the stored values.
+2. **Projected aggregates:** **live-only**. No DB writes. Computed inside `getLivePayload` per request.
+3. **In-progress pick visuals:** **render with the same visual treatment as a settled pick of that result.** A winning in-progress pick shows as the winning-pick cell; a losing in-progress pick shows as the losing-pick cell. No special "in-progress" cell variant. Players orient via fixture status (live ticker, kickoff time, `LIVE` / `HT` pill on the fixture card) — the cell colour represents the projected result, with the understanding that nothing is persisted until the fixture finishes. Applies uniformly across progress-grid, turbo cells, cup grid + ladder.
+4. **Cancelled / postponed fixtures:** **out of scope this PR.** Tracked as follow-up; needs its own spec covering settle semantics (loss? refund? re-prompt?), round-completion recomputation, and UI affordances.
+5. **`reconcileGameState`:** **keep**, body rewritten to call `settleFixture` for any finished-but-pending fixture in the game. Same four trigger points (SSR / live API / daily-sync / manual cron). Safety net only — should rarely have work to do once per-fixture settlement is in place.
 
 ---
 

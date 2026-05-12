@@ -17,8 +17,23 @@ vi.mock('@/lib/data/match-window', () => ({
 }))
 
 vi.mock('@/lib/data/qstash', () => ({
-	enqueueProcessRound: vi.fn().mockResolvedValue(undefined),
 	enqueuePollScores: vi.fn().mockResolvedValue(undefined),
+}))
+
+const { settleFixtureMock } = vi.hoisted(() => ({
+	settleFixtureMock: vi.fn().mockResolvedValue({
+		fixtureId: '',
+		classicSettled: 0,
+		classicEliminated: 0,
+		turboSettled: 0,
+		cupGamesReevaluated: 0,
+		gamesCompleted: [],
+		gamesAdvanced: [],
+		roundsCompleted: [],
+	}),
+}))
+vi.mock('@/lib/game/settle', () => ({
+	settleFixture: settleFixtureMock,
 }))
 
 const footballDataAdapterCtor = vi.fn()
@@ -41,7 +56,7 @@ vi.mock('@/lib/data/football-data', async () => {
 })
 
 import { hasActiveFixture } from '@/lib/data/match-window'
-import { enqueuePollScores, enqueueProcessRound } from '@/lib/data/qstash'
+import { enqueuePollScores } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
 import { POST } from './route'
 
@@ -100,11 +115,23 @@ describe('poll-scores short-circuit', () => {
 				competition: { externalId: 'PL', dataSource: 'football_data' },
 			},
 		] as never)
-		vi.mocked(db.select).mockReturnValue({
-			from: () => ({
-				where: () => Promise.resolve([{ id: 'f1', kickoff: new Date(), roundId: 'r1' }]),
-			}),
-		} as never)
+		// Two distinct select() calls: (a) the up-front fixturesInRounds
+		// snapshot, then (b) per-score row lookups inside the inner loop.
+		// Mock the snapshot's response first, then the per-score lookup
+		// finds the existing fixture id by ext_id.
+		const selectMock = vi
+			.fn()
+			.mockReturnValueOnce({
+				from: () => ({
+					where: () => Promise.resolve([{ id: 'f1', kickoff: new Date(), roundId: 'r1' }]),
+				}),
+			})
+			.mockReturnValue({
+				from: () => ({
+					where: () => Promise.resolve([{ id: 'f1', status: 'live' }]),
+				}),
+			})
+		vi.mocked(db.select).mockImplementation(selectMock as never)
 		vi.mocked(hasActiveFixture).mockReturnValue(true)
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({ id: 'r1', number: 5 } as never)
 		fetchLiveScoresMock.mockResolvedValue([
@@ -162,7 +189,7 @@ describe('poll-scores short-circuit', () => {
 		expect(enqueuePollScores).not.toHaveBeenCalled()
 	})
 
-	it('enqueues process_round when the last fixture transitions to finished', async () => {
+	it('calls settleFixture for every fixture that transitions to finished', async () => {
 		vi.mocked(db.query.game.findMany).mockResolvedValue([
 			{
 				id: 'game-1',
@@ -170,29 +197,36 @@ describe('poll-scores short-circuit', () => {
 				competition: { externalId: 'PL', dataSource: 'football_data' },
 			},
 		] as never)
-		vi.mocked(db.select).mockReturnValue({
-			from: () => ({
-				where: () => Promise.resolve([{ id: 'fx-1-internal', status: 'live', roundId: 'r1' }]),
-			}),
-		} as never)
+		// First select(): fixturesInRounds snapshot. Subsequent select()s:
+		// per-score existing-fixture lookups; both return a live row so the
+		// transition non-finished → finished triggers settleFixture.
+		const selectMock = vi
+			.fn()
+			.mockReturnValueOnce({
+				from: () => ({
+					where: () =>
+						Promise.resolve([{ id: 'fx-1-internal', kickoff: new Date(), roundId: 'r1' }]),
+				}),
+			})
+			.mockReturnValue({
+				from: () => ({
+					where: () => Promise.resolve([{ id: 'fx-1-internal', status: 'live' }]),
+				}),
+			})
+		vi.mocked(db.select).mockImplementation(selectMock as never)
 		vi.mocked(hasActiveFixture).mockReturnValue(true)
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({ id: 'r1', number: 7 } as never)
 		fetchLiveScoresMock.mockResolvedValue([
 			{ externalId: 'fx-1', homeScore: 2, awayScore: 1, status: 'finished' },
 		])
-		// All fixtures in r1 are finished — triggers enqueue.
-		vi.mocked(db.query.fixture.findMany).mockResolvedValue([
-			{ status: 'finished' },
-			{ status: 'finished' },
-		] as never)
 		const whereMock = vi.fn().mockResolvedValue(undefined)
 		const setMock = vi.fn(() => ({ where: whereMock }))
 		vi.mocked(db.update).mockReturnValue({ set: setMock } as never)
 
 		await POST(authedRequest())
 
-		expect(enqueueProcessRound).toHaveBeenCalledTimes(1)
-		expect(enqueueProcessRound).toHaveBeenCalledWith('game-1', 'r1')
+		expect(settleFixtureMock).toHaveBeenCalledTimes(1)
+		expect(settleFixtureMock).toHaveBeenCalledWith('fx-1-internal')
 	})
 
 	it('constructs one adapter per distinct competition code', async () => {

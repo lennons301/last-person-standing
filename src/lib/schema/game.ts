@@ -94,6 +94,14 @@ export const pick = pgTable(
 		predictedResult: varchar('predicted_result', { length: 10 }),
 		result: pickResultEnum('result').notNull().default('pending'),
 		goalsScored: integer('goals_scored'),
+		// Cup-mode bookkeeping: persisted by reevaluateCupGame on each settlement.
+		// Replaces the read-time recomputation that used to live in
+		// cup-standings-queries.computeLivesGained / computeLivesSpent.
+		// Non-cup picks: always 0 / false. Cup picks: as evaluated by
+		// evaluateCupPicks (lives_gained on underdog wins / 2-tier-plus draws,
+		// life_spent when a save consumed a life).
+		lifeGained: integer('life_gained').notNull().default(0),
+		lifeSpent: boolean('life_spent').notNull().default(false),
 		autoSubmitted: boolean('auto_submitted').notNull().default(false),
 		isAuto: boolean('is_auto').notNull().default(false),
 		createdAt: timestamp('created_at').defaultNow().notNull(),

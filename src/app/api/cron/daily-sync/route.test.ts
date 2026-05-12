@@ -10,9 +10,12 @@ vi.mock('@/lib/db', () => ({
 }))
 
 vi.mock('@/lib/game/bootstrap-competitions', () => ({
-	syncCompetition: vi
-		.fn()
-		.mockResolvedValue({ rounds: 0, fixtures: 0, deadlinePassedRoundIds: [] }),
+	syncCompetition: vi.fn().mockResolvedValue({
+		rounds: 0,
+		fixtures: 0,
+		deadlinePassedRoundIds: [],
+		settledFixtureIds: [],
+	}),
 	mergeFootballDataIds: vi.fn().mockResolvedValue(undefined),
 	scheduleUpcomingFixturePolls: vi.fn().mockResolvedValue(undefined),
 }))
@@ -56,6 +59,7 @@ describe('daily-sync route', () => {
 			rounds: 0,
 			fixtures: 0,
 			deadlinePassedRoundIds: [],
+			settledFixtureIds: [],
 		})
 		await POST(
 			new Request('http://x', {
@@ -72,6 +76,7 @@ describe('daily-sync route', () => {
 			rounds: 1,
 			fixtures: 10,
 			deadlinePassedRoundIds: [],
+			settledFixtureIds: [],
 		})
 		await POST(
 			new Request('http://x', {
@@ -88,8 +93,18 @@ describe('daily-sync route', () => {
 			{ id: 'c2' },
 		] as never)
 		vi.mocked(syncCompetition)
-			.mockResolvedValueOnce({ rounds: 2, fixtures: 20, deadlinePassedRoundIds: ['r1', 'r2'] })
-			.mockResolvedValueOnce({ rounds: 1, fixtures: 10, deadlinePassedRoundIds: ['r3'] })
+			.mockResolvedValueOnce({
+				rounds: 2,
+				fixtures: 20,
+				deadlinePassedRoundIds: ['r1', 'r2'],
+				settledFixtureIds: [],
+			})
+			.mockResolvedValueOnce({
+				rounds: 1,
+				fixtures: 10,
+				deadlinePassedRoundIds: ['r3'],
+				settledFixtureIds: [],
+			})
 
 		const res = await POST(
 			new Request('http://x', {

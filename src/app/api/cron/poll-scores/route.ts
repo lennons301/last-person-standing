@@ -2,8 +2,9 @@ import { eq, inArray, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
 import { hasActiveFixture } from '@/lib/data/match-window'
-import { enqueuePollScores, enqueueProcessRound } from '@/lib/data/qstash'
+import { enqueuePollScores } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
+import { settleFixture } from '@/lib/game/settle'
 import { fixture, round } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
 
@@ -99,17 +100,12 @@ export async function POST(request: Request) {
 				totalUpdated++
 			}
 
-			if (transitionedFixtureIds.length > 0) {
-				const roundFixtures = await db.query.fixture.findMany({
-					where: eq(fixture.roundId, roundId),
-				})
-				const allFinished = roundFixtures.every((f) => f.status === 'finished')
-				if (allFinished) {
-					const gamesForRound = dispatchableGames.filter((g) => g.currentRoundId === roundId)
-					for (const g of gamesForRound) {
-						await enqueueProcessRound(g.id, roundId)
-					}
-				}
+			// Per-fixture settlement: every transition triggers immediate pick
+			// settlement, elimination, and game-completion checks for that
+			// fixture's picks. Replaces the old round-batched
+			// enqueueProcessRound path.
+			for (const fid of transitionedFixtureIds) {
+				await settleFixture(fid)
 			}
 		}
 	}

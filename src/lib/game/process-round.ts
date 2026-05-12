@@ -1,23 +1,9 @@
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import {
-	applyAutoCompletion,
-	checkClassicCompletion,
-	checkCupCompletion,
-	checkTurboCompletion,
-} from '@/lib/game/auto-complete'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
-import { processClassicRound } from '@/lib/game-logic/classic'
-import { evaluateCupPicks } from '@/lib/game-logic/cup'
-import { computeTierDifference } from '@/lib/game-logic/cup-tier'
-import { calculateTurboStandings, evaluateTurboPicks } from '@/lib/game-logic/turbo'
-import {
-	computeWcClassicAutoElims,
-	type WcFixture,
-	wcRoundStage,
-} from '@/lib/game-logic/wc-classic'
-import { round } from '@/lib/schema/competition'
-import { game, gamePlayer, pick } from '@/lib/schema/game'
+import { settleFixture, sweepGameSettlement } from '@/lib/game/settle'
+import { fixture, round } from '@/lib/schema/competition'
+import { game } from '@/lib/schema/game'
 
 /**
  * Advance the game's currentRoundId pointer to the next round in the
@@ -76,288 +62,49 @@ export async function advanceGameIfReady(
 	return { advanced: result.advanced, reason: result.reason ?? 'advanced' }
 }
 
+/**
+ * Per-round sweep wrapper. Picks every finished fixture in the named round
+ * that still has pending picks and runs settleFixture on it. Settlement
+ * itself is per-fixture (see lib/game/settle.ts); this just walks the round.
+ *
+ * Kept exported so:
+ *  - the qstash handler can still dispatch by (gameId, roundId) for
+ *    backwards compatibility with any in-flight queued jobs;
+ *  - the manual ops cron (/api/cron/process-rounds) and reconcile path
+ *    both have a coarse-grained entry point to a game's settlement state.
+ */
 export async function processGameRound(gameId: string, roundId: string) {
-	const gameData = await db.query.game.findFirst({
-		where: eq(game.id, gameId),
-		with: { players: true, competition: true },
-	})
-	if (!gameData) throw new Error(`Game ${gameId} not found`)
-
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
 		with: {
-			fixtures: {
-				with: { homeTeam: true, awayTeam: true },
-				orderBy: (fx, { asc }) => asc(fx.kickoff),
-			},
+			fixtures: { orderBy: (fx, { asc }) => asc(fx.kickoff) },
 		},
 	})
 	if (!roundData) throw new Error(`Round ${roundId} not found`)
 
-	// Check all fixtures are finished
-	const allFinished = roundData.fixtures.every((f) => f.status === 'finished')
-	if (!allFinished) return { processed: false, reason: 'Not all fixtures finished' }
-
-	const alivePlayers = gameData.players.filter((p) => p.status === 'alive')
-
-	const allPicks = await db.query.pick.findMany({
-		where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
-	})
-
-	if (gameData.gameMode === 'classic') {
-		const completedFixtures = roundData.fixtures
-			.filter((f) => f.homeScore != null && f.awayScore != null)
-			.map((f) => ({
-				id: f.id,
-				homeTeamId: f.homeTeamId,
-				awayTeamId: f.awayTeamId,
-				homeScore: f.homeScore as number,
-				awayScore: f.awayScore as number,
-			}))
-
-		const playerPicks = alivePlayers.map((p) => {
-			const playerPick = allPicks.find((pk) => pk.gamePlayerId === p.id)
-			return {
-				gamePlayerId: p.id,
-				pickedTeamId: playerPick?.teamId ?? '',
-				pickedFixtureId: playerPick?.fixtureId ?? null,
-			}
-		})
-
-		const allowRebuys =
-			(gameData.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
-		const isStartingRound = roundData.number === 1 && !allowRebuys
-
-		const result = processClassicRound({
-			players: playerPicks,
-			fixtures: completedFixtures,
-			isStartingRound,
-		})
-
-		// Update picks and player statuses
-		for (const pr of result.results) {
-			const playerPick = allPicks.find((pk) => pk.gamePlayerId === pr.gamePlayerId)
-			if (playerPick) {
-				await db
-					.update(pick)
-					.set({ result: pr.result, goalsScored: pr.goalsScored })
-					.where(eq(pick.id, playerPick.id))
-			}
-			if (pr.eliminated) {
-				await db
-					.update(gamePlayer)
-					.set({ status: 'eliminated', eliminatedRoundId: roundId })
-					.where(eq(gamePlayer.id, pr.gamePlayerId))
-			}
-		}
-
-		let eliminations = result.results.filter((r) => r.eliminated).length
-
-		if (gameData.competition.type === 'group_knockout') {
-			const allRounds = await db.query.round.findMany({
-				where: eq(round.competitionId, gameData.competitionId),
-				with: { fixtures: { orderBy: (fx, { asc }) => asc(fx.kickoff) } },
-			})
-			const finishedKnockoutFixtures: WcFixture[] = allRounds.flatMap((r) =>
-				r.fixtures.map((f) => ({
-					id: f.id,
-					roundId: r.id,
-					homeTeamId: f.homeTeamId,
-					awayTeamId: f.awayTeamId,
-					homeScore: f.homeScore,
-					awayScore: f.awayScore,
-					status: f.status,
-					stage: wcRoundStage(r.number),
-				})),
-			)
-			const remainingRounds = allRounds
-				.filter((r) => r.status !== 'completed' && r.id !== roundId)
-				.map((r) => ({
-					id: r.id,
-					fixtures: r.fixtures.map((f) => ({
-						id: f.id,
-						roundId: r.id,
-						homeTeamId: f.homeTeamId,
-						awayTeamId: f.awayTeamId,
-						homeScore: f.homeScore,
-						awayScore: f.awayScore,
-						status: f.status,
-						stage: wcRoundStage(r.number),
-					})),
-				}))
-
-			// Reload alive players after the classic updates above
-			const aliveAfter = await db.query.gamePlayer.findMany({
-				where: and(eq(gamePlayer.gameId, gameId), eq(gamePlayer.status, 'alive')),
-			})
-			const picksForAlive = await db.query.pick.findMany({
-				where: eq(pick.gameId, gameId),
-			})
-			const alivePlayersForAutoElim = aliveAfter.map((p) => ({
-				gamePlayerId: p.id,
-				usedTeamIds: picksForAlive.filter((pk) => pk.gamePlayerId === p.id).map((pk) => pk.teamId),
-			}))
-
-			const autoElims = computeWcClassicAutoElims({
-				alivePlayers: alivePlayersForAutoElim,
-				remainingRounds,
-				finishedKnockoutFixtures,
-			})
-
-			for (const ae of autoElims) {
-				await db
-					.update(gamePlayer)
-					.set({ status: 'eliminated', eliminatedRoundId: roundId })
-					.where(eq(gamePlayer.id, ae.gamePlayerId))
-			}
-			eliminations += autoElims.length
-		}
-
-		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
-
-		const completion = await checkClassicCompletion(
-			gameId,
-			gameData.competitionId,
-			roundId,
-			roundData.number,
-		)
-		if (completion.completed) {
-			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
-			return { processed: true, eliminations, completed: true, reason: completion.reason }
-		}
-
-		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
-		return { processed: true, eliminations }
+	const finishedFixtures = roundData.fixtures.filter(
+		(f) => f.status === 'finished' && f.homeScore != null && f.awayScore != null,
+	)
+	let settled = 0
+	for (const f of finishedFixtures) {
+		const r = await settleFixture(f.id)
+		settled += r.classicSettled + r.turboSettled
 	}
+	// Sweep again via the game-scoped helper to catch any round-completion /
+	// advancement that should have fired for THIS game in particular (the
+	// per-fixture call settles cross-game state, but post-settle game
+	// advance is keyed on the game's currentRoundId, so a game-scoped sweep
+	// is a clean way to wrap up).
+	await sweepGameSettlement(gameId)
 
-	if (gameData.gameMode === 'turbo') {
-		const playerResults = []
-		for (const player of alivePlayers) {
-			const playerPicks = allPicks
-				.filter((pk) => pk.gamePlayerId === player.id)
-				.map((pk) => {
-					const f = roundData.fixtures.find((fx) => fx.id === pk.fixtureId)
-					return {
-						confidenceRank: pk.confidenceRank ?? 0,
-						predictedResult: (pk.predictedResult ?? 'draw') as 'home_win' | 'draw' | 'away_win',
-						homeScore: f?.homeScore ?? 0,
-						awayScore: f?.awayScore ?? 0,
-					}
-				})
-
-			const result = evaluateTurboPicks(playerPicks)
-			playerResults.push({
-				gamePlayerId: player.id,
-				streak: result.streak,
-				goalsInStreak: result.goalsInStreak,
-			})
-
-			// Update each pick result
-			for (const pr of result.pickResults) {
-				const matchingPick = allPicks.find(
-					(pk) => pk.gamePlayerId === player.id && pk.confidenceRank === pr.confidenceRank,
-				)
-				if (matchingPick) {
-					await db
-						.update(pick)
-						.set({ result: pr.correct ? 'win' : 'loss', goalsScored: pr.goals })
-						.where(eq(pick.id, matchingPick.id))
-				}
-			}
-		}
-
-		const standings = calculateTurboStandings(playerResults)
-		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
-
-		// Turbo is a single-round format. Auto-complete and never advance.
-		const completion = checkTurboCompletion(playerResults)
-		await applyAutoCompletion(gameId, completion.winnerPlayerIds)
-		return {
-			processed: true,
-			eliminations: 0,
-			standings,
-			completed: true,
-			reason: completion.reason,
-		}
-	}
-
-	if (gameData.gameMode === 'cup') {
-		let eliminations = 0
-		for (const player of alivePlayers) {
-			const playerCupPicks = allPicks
-				.filter((pk) => pk.gamePlayerId === player.id)
-				.map((pk) => {
-					const f = roundData.fixtures.find((fx) => fx.id === pk.fixtureId)
-					const pickedTeam: 'home' | 'away' = pk.teamId === f?.homeTeamId ? 'home' : 'away'
-					const tierDifference = f
-						? computeTierDifference(f.homeTeam, f.awayTeam, gameData.competition.type)
-						: 0
-					return {
-						confidenceRank: pk.confidenceRank ?? 0,
-						pickedTeam,
-						homeScore: f?.homeScore ?? 0,
-						awayScore: f?.awayScore ?? 0,
-						tierDifference,
-					}
-				})
-
-			const startingLives = player.livesRemaining
-			const result = evaluateCupPicks(playerCupPicks, startingLives)
-
-			await db
-				.update(gamePlayer)
-				.set({
-					livesRemaining: result.finalLives,
-					...(result.eliminated
-						? { status: 'eliminated' as const, eliminatedRoundId: roundId }
-						: {}),
-				})
-				.where(eq(gamePlayer.id, player.id))
-
-			if (result.eliminated) eliminations++
-
-			// Update each pick result
-			for (const pr of result.pickResults) {
-				const matchingPick = allPicks.find(
-					(pk) => pk.gamePlayerId === player.id && pk.confidenceRank === pr.confidenceRank,
-				)
-				if (matchingPick) {
-					// Map cup result to DB pick_result enum
-					const dbResult =
-						pr.result === 'win'
-							? ('win' as const)
-							: pr.result === 'draw_success'
-								? ('draw' as const)
-								: pr.result === 'saved_by_life'
-									? ('saved_by_life' as const)
-									: ('loss' as const) // 'loss' and 'restricted' both map to 'loss'
-					await db
-						.update(pick)
-						.set({
-							result: dbResult,
-							goalsScored: pr.goalsCounted,
-						})
-						.where(eq(pick.id, matchingPick.id))
-				}
-			}
-		}
-
-		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
-
-		const completion = await checkCupCompletion(
-			gameId,
-			gameData.competitionId,
-			roundId,
-			roundData.number,
-		)
-		if (completion.completed) {
-			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
-			return { processed: true, eliminations, completed: true, reason: completion.reason }
-		}
-
-		await advanceGameToNextRound(gameId, gameData.competitionId, roundData.number)
-		return { processed: true, eliminations }
-	}
-
-	return { processed: false, reason: 'Unknown game mode' }
+	return { processed: settled > 0, fixturesSettled: settled }
 }
+
+/**
+ * Used by tests / older code that wanted the underlying primitive. New
+ * code should call settleFixture directly.
+ */
+export { settleFixture } from '@/lib/game/settle'
+// Avoid unused-import lint warning while keeping fixture/round imports
+// for the round walker above.
+export const _settleRefs = { fixture, round }

@@ -5,6 +5,7 @@ import { enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
+import { settleFixture } from '@/lib/game/settle'
 import { competition, fixture, round, team } from '@/lib/schema/competition'
 
 export interface BootstrapOptions {
@@ -253,9 +254,14 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 export async function syncCompetition(
 	comp: CompetitionRow,
 	opts: BootstrapOptions,
-): Promise<{ rounds: number; fixtures: number; deadlinePassedRoundIds: string[] }> {
+): Promise<{
+	rounds: number
+	fixtures: number
+	deadlinePassedRoundIds: string[]
+	settledFixtureIds: string[]
+}> {
 	const adapter = adapterFor(comp, opts)
-	if (!adapter) return { rounds: 0, fixtures: 0, deadlinePassedRoundIds: [] }
+	if (!adapter) return { rounds: 0, fixtures: 0, deadlinePassedRoundIds: [], settledFixtureIds: [] }
 
 	const key = comp.dataSource === 'fpl' ? 'fpl' : 'football_data'
 	const adapterTeams = await adapter.fetchTeams()
@@ -300,6 +306,11 @@ export async function syncCompetition(
 	const adapterRounds = await adapter.fetchRounds()
 	let totalFixtures = 0
 	const deadlinePassedRoundIds: string[] = []
+	// Fixtures whose status transitioned non-finished → finished during this
+	// sync run. Settled after the loop so the round/fixture writes are all
+	// committed first, then per-fixture pick settlement runs against the
+	// final state.
+	const transitionedToFinishedIds: string[] = []
 	for (const ar of adapterRounds) {
 		const existingRound = await db.query.round.findFirst({
 			where: and(eq(round.competitionId, comp.id), eq(round.number, ar.number)),
@@ -382,6 +393,11 @@ export async function syncCompetition(
 						},
 					})
 					.where(eq(fixture.id, existingFixture.id))
+				// Capture transition for post-loop settlement. Same logic as
+				// live-poll: only fires once per transition.
+				if (existingFixture.status !== 'finished' && af.status === 'finished') {
+					transitionedToFinishedIds.push(existingFixture.id)
+				}
 			} else {
 				await db.insert(fixture).values({
 					roundId,
@@ -399,7 +415,19 @@ export async function syncCompetition(
 		}
 	}
 
-	return { rounds: adapterRounds.length, fixtures: totalFixtures, deadlinePassedRoundIds }
+	// Run per-fixture settlement for every fixture that flipped finished
+	// during this sync. Done after the loop so all related round/fixture
+	// rows are committed and settle reads consistent state.
+	for (const fid of transitionedToFinishedIds) {
+		await settleFixture(fid)
+	}
+
+	return {
+		rounds: adapterRounds.length,
+		fixtures: totalFixtures,
+		deadlinePassedRoundIds,
+		settledFixtureIds: transitionedToFinishedIds,
+	}
 }
 
 export async function applyPotAssignments(
