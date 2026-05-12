@@ -106,6 +106,26 @@ After a season rollover:
 
 Fixture-level coverage gaps are warn-only (rescheduled / late-published matches fill in on subsequent bootstrap runs). Team gaps fail loudly because every team must be matchable for live scoring to work.
 
+## Lifecycle reconciliation
+
+The game lifecycle (pick → fixture finish → evaluate → eliminate → advance) is driven by `processGameRound`. In production that function has exactly one fast-path trigger (live-poll observing a fixture transition to `finished`) and three recovery surfaces:
+
+1. **Game-detail page SSR** — every viewer of `/game/[id]` calls `reconcileGameState(id)` before render.
+2. **`GET /api/games/[id]/live`** — the browser polls this every 30 s; the route calls `reconcileGameState` before computing the payload.
+3. **Daily-sync cron** — calls `reconcileAllActiveGames` as a 24 h safety net for games nobody has viewed.
+
+`reconcileGameState` and `processGameRound` are idempotent (round.status='completed' short-circuit), so concurrent invocations are safe. Never add a fourth trigger path — extend an existing one. See `src/lib/game/reconcile.ts`.
+
+## Adding a new competition
+
+Before merging a PR that introduces a new competition:
+
+1. **Bootstrap path.** Add the competition to `bootstrapCompetitions` in `src/lib/game/bootstrap-competitions.ts`. Confirm `syncCompetition` runs end-to-end against the chosen adapter (FPL / football-data / manual).
+2. **Live scoring.** If the new competition is FPL-bootstrapped, confirm `mergeFootballDataIds` runs without throwing on its team set; add to `FPL_TO_FD_TLA` if any team-code mismatch surfaces. If it's football-data-native, no merge step is needed.
+3. **Cup-mode requirements.** If the competition supports `cup` mode, ensure every team gets a `fifa_pot` (or equivalent tier marker) via a `applyPotAssignments`-style step run from daily-sync, and update game-creation gating to require 100 % coverage. Cup-tier maths silently returns 0 for untagged teams — never let it ship without runtime validation.
+4. **Smoke scenarios.** For *every* game mode supported on the new competition, add a scenario to `scripts/smoke/lifecycle.smoke.test.ts`. Each scenario must seed the relevant fixtures, write final scores directly (the missed-transition path), call `reconcileGameState`, and assert pick.result / player.status / round.status / advancement. Run `just smoke` locally; CI runs them automatically. **This is the integration test that prevents the "all unit tests pass but the cron flow is broken" failure class.**
+5. **State-machine docs.** Update `docs/game-modes/` if the new competition introduces a state transition not already documented (e.g. group-stage → knockout boundary handling, mid-tournament auto-elimination).
+
 ## Platform Context
 
 Platform standards and choices: see ~/code/platform/

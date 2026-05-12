@@ -94,6 +94,14 @@ export async function processGameRound(gameId: string, roundId: string) {
 	})
 	if (!roundData) throw new Error(`Round ${roundId} not found`)
 
+	// Idempotency guard: if this round is already completed, bail. Multiple
+	// recovery surfaces (page SSR, live endpoint, daily-sync) can race; we want
+	// the second-and-onwards caller to no-op rather than re-evaluating picks
+	// and re-firing eliminations/events.
+	if (roundData.status === 'completed') {
+		return { processed: false, reason: 'already-completed' }
+	}
+
 	// Check all fixtures are finished
 	const allFinished = roundData.fixtures.every((f) => f.status === 'finished')
 	if (!allFinished) return { processed: false, reason: 'Not all fixtures finished' }

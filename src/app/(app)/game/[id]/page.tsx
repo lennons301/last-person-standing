@@ -18,6 +18,7 @@ import {
 	getTurboPickData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
+import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { user } from '@/lib/schema/auth'
@@ -45,6 +46,14 @@ export default async function GameDetailPage({
 	const session = await requireSession()
 	const { id } = await params
 	const resolvedSearchParams = await searchParams
+
+	// Self-healing reconciliation: every viewer of a game page acts as a
+	// recovery trigger. If the current round has all fixtures finished but
+	// hasn't been processed (e.g. live-poll missed the transition), this
+	// catches it before we render. Idempotent — concurrent viewers no-op
+	// after the first. See lib/game/reconcile.ts.
+	await reconcileGameState(id)
+
 	const game = await getGameDetail(id, session.user.id)
 	if (!game) notFound()
 

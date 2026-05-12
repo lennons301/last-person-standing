@@ -70,6 +70,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec drizzle-kit migrate
       - run: pnpm exec vitest run
+      - run: pnpm exec vitest run --config vitest.smoke.config.ts
+        name: Smoke (lifecycle integration)
 
   build:
     name: Build
