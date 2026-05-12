@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getGameDetailMock, getLivePayloadMock } = vi.hoisted(() => ({
+const { getGameDetailMock, getLivePayloadMock, reconcileMock } = vi.hoisted(() => ({
 	getGameDetailMock: vi.fn(),
 	getLivePayloadMock: vi.fn(),
+	reconcileMock: vi.fn().mockResolvedValue({ ok: true, action: 'noop', reason: 'test' }),
 }))
 
 vi.mock('@/lib/auth-helpers', () => ({
@@ -12,6 +13,10 @@ vi.mock('@/lib/auth-helpers', () => ({
 vi.mock('@/lib/game/detail-queries', () => ({
 	getGameDetail: getGameDetailMock,
 	getLivePayload: getLivePayloadMock,
+}))
+
+vi.mock('@/lib/game/reconcile', () => ({
+	reconcileGameState: reconcileMock,
 }))
 
 import { GET } from './route'

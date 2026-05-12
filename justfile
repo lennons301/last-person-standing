@@ -10,6 +10,11 @@ test *args:
 test-watch *args:
     pnpm exec vitest {{args}}
 
+# Lifecycle smoke tests — real Postgres, per-fixture settlement + projection.
+# Requires `docker compose up -d` + `just db-migrate` first.
+smoke *args:
+    pnpm exec vitest run --config vitest.smoke.config.ts {{args}}
+
 lint:
     pnpm exec biome check --write .
 

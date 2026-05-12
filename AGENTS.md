@@ -106,6 +106,30 @@ After a season rollover:
 
 Fixture-level coverage gaps are warn-only (rescheduled / late-published matches fill in on subsequent bootstrap runs). Team gaps fail loudly because every team must be matchable for live scoring to work.
 
+## Per-fixture settlement
+
+The game lifecycle (pick → fixture finish → evaluate → eliminate → advance) is driven by `settleFixture` (`src/lib/game/settle.ts`). It's called from every place `fixture.status='finished'` is written: `/api/cron/poll-scores` (live observation) and `syncCompetition` (bootstrap + daily-sync mirror).
+
+Round completion is **emergent** — a round is done when every fixture in it has been settled. There is no separate round-batched processing step.
+
+Recovery surfaces (idempotent safety nets, in case the inline settle missed something):
+1. Game-detail page SSR → `reconcileGameState(gameId)`.
+2. `GET /api/games/[id]/live` → same.
+3. Daily-sync cron → `reconcileAllActiveGames`.
+4. Manual `POST /api/cron/process-rounds` → same.
+
+Never add a fifth trigger path — extend an existing one. See `docs/game-modes/README.md` for the full settlement model + state machines.
+
+## Adding a new competition
+
+Before merging a PR that introduces a new competition:
+
+1. **Bootstrap path.** Add the competition to `bootstrapCompetitions`. Confirm `syncCompetition` runs end-to-end against the chosen adapter (FPL / football-data / manual).
+2. **Live scoring.** If FPL-bootstrapped, confirm `mergeFootballDataIds` doesn't throw on the team set; add to `FPL_TO_FD_TLA` if any team-code mismatch surfaces. If football-data-native, no merge step.
+3. **Cup-mode requirements.** If the competition supports `cup`, ensure every team has its tier marker (FIFA pot for WC; design a per-competition equivalent for new comps) and that game creation refuses to start a cup game with incomplete coverage. Cup-tier maths silently returns 0 for untagged teams — never let it ship without runtime validation.
+4. **Smoke scenarios.** For every game mode supported on the new competition, add a scenario to `scripts/smoke/lifecycle.smoke.test.ts`. Each scenario must seed fixtures, write final scores directly, call `settleFixture` (or `liveFixture` + `getLivePayload` for projection cases), and assert the relevant state. Local: `just smoke`; CI runs it automatically.
+5. **State-machine docs.** Update `docs/game-modes/` if the new competition introduces a state transition not already documented (e.g. group-stage → knockout boundary handling, mid-tournament auto-elimination).
+
 ## Platform Context
 
 Platform standards and choices: see ~/code/platform/

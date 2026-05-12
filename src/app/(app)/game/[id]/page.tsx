@@ -18,6 +18,7 @@ import {
 	getTurboPickData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
+import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { user } from '@/lib/schema/auth'
@@ -45,6 +46,12 @@ export default async function GameDetailPage({
 	const session = await requireSession()
 	const { id } = await params
 	const resolvedSearchParams = await searchParams
+
+	// Self-healing safety-net: every viewer triggers a reconcile pass.
+	// Per-fixture settlement (lib/game/settle.ts) is the primary path; this
+	// catches anything the inline settle missed. Idempotent.
+	await reconcileGameState(id)
+
 	const game = await getGameDetail(id, session.user.id)
 	if (!game) notFound()
 

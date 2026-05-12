@@ -8,7 +8,7 @@ import {
 	syncCompetition,
 } from '@/lib/game/bootstrap-competitions'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
-import { advanceGameIfReady } from '@/lib/game/process-round'
+import { reconcileAllActiveGames } from '@/lib/game/reconcile'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { competition } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
@@ -74,14 +74,12 @@ export async function POST(request: Request) {
 		}
 	}
 
-	// Retry advancement for any games stuck on a completed round (next round
-	// was TBD when last processed — typically WC bracket pre-publication).
-	const advanced: string[] = []
-	for (const g of activeGames) {
-		if (!g.currentRoundId) continue
-		const r = await advanceGameIfReady(g.id)
-		if (r.advanced) advanced.push(g.id)
-	}
+	// 24h safety-net: sweep all active games through reconcile. Per-fixture
+	// settlement (called inline above from syncCompetition) handles the
+	// happy path; this catches anything missed (network failure on the
+	// inline settle, an in-flight migration, future bugs). settleFixture is
+	// idempotent so this is a no-op for healthy games.
+	const reconcileSummary = await reconcileAllActiveGames()
 
 	// Pre-schedule a poll-scores trigger for every upcoming fixture across all
 	// competitions. Each fixture gets its own QStash trigger 10 min before
@@ -100,6 +98,6 @@ export async function POST(request: Request) {
 		competitions: results,
 		deadlineLock,
 		reconciledRoundIds,
-		advanced,
+		reconcile: reconcileSummary,
 	})
 }

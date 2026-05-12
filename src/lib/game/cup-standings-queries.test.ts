@@ -69,30 +69,29 @@ describe('mapPickResult', () => {
 })
 
 describe('computeLivesGained', () => {
-	it('returns 0 when pick did not win', () => {
-		expect(computeLivesGained({ result: 'loss' }, -3)).toBe(0)
-		expect(computeLivesGained({ result: 'pending' }, -3)).toBe(0)
-		expect(computeLivesGained({ result: 'saved_by_life' }, -3)).toBe(0)
+	it('reads the persisted life_gained column', () => {
+		// Lives gained are now written by reevaluateCupGame from
+		// evaluateCupPicks at settlement time, not recomputed on read.
+		expect(computeLivesGained({ lifeGained: 0 })).toBe(0)
+		expect(computeLivesGained({ lifeGained: 2 })).toBe(2)
+		expect(computeLivesGained({ lifeGained: 3 })).toBe(3)
 	})
 
-	it('returns 0 for a win on a neutral or favourite pick', () => {
-		expect(computeLivesGained({ result: 'win' }, 0)).toBe(0)
-		expect(computeLivesGained({ result: 'win' }, -1)).toBe(0)
-		expect(computeLivesGained({ result: 'win' }, 2)).toBe(0)
-	})
-
-	it('returns |tier| lives for an upset win where tier <= -2', () => {
-		expect(computeLivesGained({ result: 'win' }, -2)).toBe(2)
-		expect(computeLivesGained({ result: 'win' }, -3)).toBe(3)
+	it('defaults to 0 when the column is null/undefined', () => {
+		expect(computeLivesGained({})).toBe(0)
+		expect(computeLivesGained({ lifeGained: null })).toBe(0)
 	})
 })
 
 describe('computeLivesSpent', () => {
-	it('returns 1 when saved_by_life, otherwise 0', () => {
+	it('reads the persisted life_spent column', () => {
+		expect(computeLivesSpent({ lifeSpent: true })).toBe(1)
+		expect(computeLivesSpent({ lifeSpent: false })).toBe(0)
+	})
+
+	it('falls back to result==="saved_by_life" for rows without the column', () => {
 		expect(computeLivesSpent({ result: 'saved_by_life' })).toBe(1)
 		expect(computeLivesSpent({ result: 'win' })).toBe(0)
-		expect(computeLivesSpent({ result: 'loss' })).toBe(0)
-		expect(computeLivesSpent({ result: 'pending' })).toBe(0)
 	})
 })
 

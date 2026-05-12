@@ -1,10 +1,13 @@
-import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { advanceGameIfReady, processGameRound } from '@/lib/game/process-round'
-import { round } from '@/lib/schema/competition'
-import { game } from '@/lib/schema/game'
+import { reconcileAllActiveGames } from '@/lib/game/reconcile'
 
+/**
+ * Manual ops safety-net. Production settlement runs per-fixture
+ * (lib/game/settle.ts) on every poll-scores transition and on
+ * syncCompetition; reconciliation also runs on every game-page view +
+ * /api/games/[id]/live poll + daily-sync. This endpoint is just a fast
+ * way to kick the same code from a shell.
+ */
 export async function POST(request: Request) {
 	const secret = process.env.CRON_SECRET
 	if (!secret) {
@@ -13,44 +16,6 @@ export async function POST(request: Request) {
 	if (request.headers.get('authorization') !== `Bearer ${secret}`) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 	}
-
-	// Find active games with a current round
-	const activeGames = await db.query.game.findMany({
-		where: eq(game.status, 'active'),
-	})
-
-	const results = []
-
-	for (const g of activeGames) {
-		if (!g.currentRoundId) continue
-
-		// Check if the round's fixtures are all finished
-		const roundData = await db.query.round.findFirst({
-			where: eq(round.id, g.currentRoundId),
-			with: { fixtures: { orderBy: (fx, { asc }) => asc(fx.kickoff) } },
-		})
-
-		if (!roundData) continue
-
-		const allFinished = roundData.fixtures.every(
-			(f) => f.status === 'finished' && f.homeScore != null && f.awayScore != null,
-		)
-
-		if (!allFinished) continue
-
-		const result = await processGameRound(g.id, g.currentRoundId)
-		results.push({ gameId: g.id, ...result })
-	}
-
-	// Retry advancement for games stuck pointing at a completed round —
-	// happens when the next round was TBD at process-time (e.g. WC bracket
-	// not yet published). Idempotent (no-op for healthy games).
-	const advanced: string[] = []
-	for (const g of activeGames) {
-		if (!g.currentRoundId) continue
-		const r = await advanceGameIfReady(g.id)
-		if (r.advanced) advanced.push(g.id)
-	}
-
-	return NextResponse.json({ processed: results, advanced })
+	const summary = await reconcileAllActiveGames()
+	return NextResponse.json(summary)
 }
