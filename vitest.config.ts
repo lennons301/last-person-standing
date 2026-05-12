@@ -9,7 +9,15 @@ export default defineConfig({
 		environment: 'node',
 		// Don't pick up tests from local git worktrees (stale snapshots of older
 		// branches). Only the primary checkout's tests are authoritative.
-		exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/.worktrees/**'],
+		// Smoke tests live in scripts/smoke and need a real Postgres — run them
+		// via `just smoke` (or vitest.smoke.config.ts), not in this suite.
+		exclude: [
+			'**/node_modules/**',
+			'**/dist/**',
+			'**/.next/**',
+			'**/.worktrees/**',
+			'**/*.smoke.test.ts',
+		],
 	},
 	resolve: {
 		alias: {

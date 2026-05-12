@@ -14,9 +14,11 @@ import {
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
+import { evaluateCupPicks } from '@/lib/game-logic/cup'
+import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { calculatePot } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
-import { game, pick, plannedPick } from '@/lib/schema/game'
+import { game, type gamePlayer, pick, plannedPick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
 export async function getGameDetail(gameId: string, userId: string) {
@@ -572,16 +574,39 @@ export async function getTurboStandingsData(
 				const isOwnPick = viewerGamePlayerId === p.id
 				const hideCells = isRoundOpen && (options?.hideOpenRoundPicks || !isOwnPick)
 
-				// Compute streak + goals from this player's picks (only for completed rounds)
+				// Streak + goals. For completed rounds: persisted pick.result drives
+				// it. For in-progress rounds: project from current scores — same
+				// rule, but `pk.result === 'pending'` falls through to a per-fixture
+				// score check. Players see their live streak update as fixtures
+				// progress, in addition to the projection in /api/games/[id]/live.
 				let streak = 0
 				let goals = 0
-				if (!isRoundOpen) {
+				{
 					let broken = false
 					for (const pk of playerPicks) {
 						if (broken) continue
-						if (pk.result === 'win') {
+						let correctForStreak: boolean | null
+						if (pk.result === 'win') correctForStreak = true
+						else if (pk.result === 'loss') correctForStreak = false
+						else if (pk.fixture && pk.fixture.homeScore != null && pk.fixture.awayScore != null) {
+							const actual =
+								pk.fixture.homeScore > pk.fixture.awayScore
+									? 'home_win'
+									: pk.fixture.awayScore > pk.fixture.homeScore
+										? 'away_win'
+										: 'draw'
+							correctForStreak = pk.predictedResult === actual
+						} else correctForStreak = null // unstarted fixture — stop counting
+						if (correctForStreak === null) break
+						if (correctForStreak) {
 							streak++
-							goals += pk.goalsScored ?? 0
+							// Use persisted goalsScored if settled; otherwise project.
+							if (pk.result === 'win') goals += pk.goalsScored ?? 0
+							else if (pk.fixture) {
+								if (pk.predictedResult === 'home_win') goals += pk.fixture.homeScore ?? 0
+								else if (pk.predictedResult === 'away_win') goals += pk.fixture.awayScore ?? 0
+								else goals += (pk.fixture.homeScore ?? 0) + (pk.fixture.awayScore ?? 0)
+							}
 						} else {
 							broken = true
 						}
@@ -597,11 +622,23 @@ export async function getTurboStandingsData(
 							: undefined
 					const prediction = (pk.predictedResult ?? 'draw') as 'home_win' | 'draw' | 'away_win'
 
+					// In-progress projection: pending picks on fixtures with live
+					// scores render as win/loss based on the current actual outcome.
+					// Same visual as a settled pick of that result; fixture status
+					// communicates that nothing is finalised yet.
 					let result: 'win' | 'loss' | 'pending' | 'hidden'
 					if (hideCells) result = 'hidden'
 					else if (pk.result === 'win') result = 'win'
 					else if (pk.result === 'loss') result = 'loss'
-					else result = 'pending'
+					else if (pk.fixture && pk.fixture.homeScore != null && pk.fixture.awayScore != null) {
+						const actualOutcome: 'home_win' | 'draw' | 'away_win' =
+							pk.fixture.homeScore > pk.fixture.awayScore
+								? 'home_win'
+								: pk.fixture.awayScore > pk.fixture.homeScore
+									? 'away_win'
+									: 'draw'
+						result = prediction === actualOutcome ? 'win' : 'loss'
+					} else result = 'pending'
 
 					return {
 						rank: pk.confidenceRank ?? 0,
@@ -847,12 +884,20 @@ export async function getProgressGridData(
 
 			// In classic, draws eliminate after the starting round — render them as losses.
 			// The starting round is round number 1 (first gameweek exemption).
+			//
+			// For in-progress fixtures (pending result but fixture has scores), we
+			// project the cell visuals from the live score — the design decision
+			// is that an in-progress pick renders with the same treatment as the
+			// settled equivalent. Fixture status (live ticker / kickoff time)
+			// conveys "in progress" to the viewer.
 			let resultForCell: GridCell['result']
 			if (thePick.result === 'win') resultForCell = 'win'
 			else if (thePick.result === 'loss') resultForCell = 'loss'
 			else if (thePick.result === 'draw') resultForCell = r.number === 1 ? 'draw_exempt' : 'loss'
 			else if (thePick.result === 'saved_by_life') resultForCell = 'saved'
-			else resultForCell = 'pending'
+			else {
+				resultForCell = projectClassicCellFromFixture(thePick, r.number === 1)
+			}
 
 			let opponentShortName: string | undefined
 			let homeAway: 'H' | 'A' | undefined
@@ -910,6 +955,7 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
 		with: {
+			competition: true,
 			currentRound: {
 				with: {
 					fixtures: {
@@ -929,7 +975,8 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 			})
 		: []
 
-	const fixtures = (gameData.currentRound?.fixtures ?? []).map((f) => ({
+	const fixturesRaw = gameData.currentRound?.fixtures ?? []
+	const fixtures = fixturesRaw.map((f) => ({
 		id: f.id,
 		kickoff: f.kickoff,
 		homeScore: f.homeScore,
@@ -938,6 +985,17 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		homeShort: f.homeTeam.shortName,
 		awayShort: f.awayTeam.shortName,
 	}))
+
+	// Build live projection.
+	const proj = computeLiveProjection({
+		gameMode: gameData.gameMode,
+		competitionType: gameData.competition.type,
+		modeConfig: gameData.modeConfig as { allowRebuys?: boolean; startingLives?: number } | null,
+		roundNumber: gameData.currentRound?.number ?? null,
+		fixtures: fixturesRaw,
+		picks: picksInRound,
+		players: gameData.players,
+	})
 
 	return {
 		gameId: gameData.id,
@@ -951,15 +1009,305 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 			confidenceRank: p.confidenceRank,
 			predictedResult: p.predictedResult,
 			result: p.result,
+			projectedOutcome: proj.pickProjections.get(p.id) ?? null,
 		})),
-		players: gameData.players.map((p) => ({
-			id: p.id,
-			userId: p.userId,
-			status: p.status,
-			livesRemaining: p.livesRemaining,
-		})),
+		players: gameData.players.map((p) => {
+			const projection = proj.playerProjections.get(p.id)
+			return {
+				id: p.id,
+				userId: p.userId,
+				status: p.status,
+				livesRemaining: p.livesRemaining,
+				projectedLivesRemaining: projection?.lives ?? p.livesRemaining,
+				projectedStreak: projection?.streak ?? 0,
+				projectedStatus: projection?.status ?? (p.status === 'eliminated' ? 'eliminated' : 'alive'),
+			}
+		}),
 		viewerUserId,
 		updatedAt: new Date().toISOString(),
+	}
+}
+
+/**
+ * Project a classic progress-grid cell from the fixture's current scores.
+ * Used when pick.result is still 'pending' — renders the cell with the
+ * same visual treatment as a settled pick of the projected result.
+ *
+ * Falls back to 'pending' (neutral cell) when the fixture has no scores
+ * yet (pre-kickoff).
+ */
+function projectClassicCellFromFixture(
+	thePick: {
+		teamId: string
+		fixture?: {
+			homeTeamId: string
+			awayTeamId: string
+			homeScore: number | null
+			awayScore: number | null
+		} | null
+	},
+	isStartingRound: boolean,
+): GridCell['result'] {
+	const fx = thePick.fixture
+	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
+	const pickedHome = thePick.teamId === fx.homeTeamId
+	const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
+	const otherScore = pickedHome ? fx.awayScore : fx.homeScore
+	if (pickedScore > otherScore) return 'win'
+	if (pickedScore < otherScore) return 'loss'
+	return isStartingRound ? 'draw_exempt' : 'loss'
+}
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* Live projection                                                         */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Compute live projection for the current round. For each pick, emit a
+ * projected outcome based on the fixture's current scores (settled picks
+ * pass through; in-progress fixtures get `winning`/`drawing`/`losing`).
+ * For each player, derive aggregates (streak, lives, alive/eliminated)
+ * by running the mode-specific evaluator over the projection set.
+ */
+function computeLiveProjection(input: {
+	gameMode: 'classic' | 'turbo' | 'cup'
+	competitionType: string
+	modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
+	roundNumber: number | null
+	fixtures: Array<{
+		id: string
+		homeTeamId: string
+		awayTeamId: string
+		homeScore: number | null
+		awayScore: number | null
+		status: 'scheduled' | 'live' | 'finished' | 'postponed'
+		homeTeam: { id: string; externalIds: Record<string, string | number> | null }
+		awayTeam: { id: string; externalIds: Record<string, string | number> | null }
+	}>
+	picks: Array<typeof pick.$inferSelect>
+	players: Array<typeof gamePlayer.$inferSelect>
+}): {
+	pickProjections: Map<string, LiveProjectedOutcome>
+	playerProjections: Map<string, { streak: number; lives: number; status: 'alive' | 'eliminated' }>
+} {
+	const pickProjections = new Map<string, LiveProjectedOutcome>()
+	const playerProjections = new Map<
+		string,
+		{ streak: number; lives: number; status: 'alive' | 'eliminated' }
+	>()
+
+	const fixtureById = new Map(input.fixtures.map((f) => [f.id, f]))
+
+	for (const p of input.picks) {
+		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
+		pickProjections.set(p.id, projectOutcomeForPick(p, fx))
+	}
+
+	for (const player of input.players) {
+		const playerPicks = input.picks
+			.filter((p) => p.gamePlayerId === player.id)
+			.sort((a, b) => (a.confidenceRank ?? 99) - (b.confidenceRank ?? 99))
+
+		if (input.gameMode === 'classic') {
+			playerProjections.set(
+				player.id,
+				projectClassicPlayer(player, playerPicks, fixtureById, input),
+			)
+		} else if (input.gameMode === 'turbo') {
+			playerProjections.set(player.id, projectTurboPlayer(player, playerPicks, fixtureById))
+		} else if (input.gameMode === 'cup') {
+			playerProjections.set(player.id, projectCupPlayer(player, playerPicks, fixtureById, input))
+		}
+	}
+
+	return { pickProjections, playerProjections }
+}
+
+type LiveProjectedOutcome =
+	| 'winning'
+	| 'drawing'
+	| 'losing'
+	| 'saved-by-life'
+	| 'settled-win'
+	| 'settled-loss'
+	| 'pending'
+
+function projectOutcomeForPick(
+	p: typeof pick.$inferSelect,
+	fx:
+		| {
+				homeTeamId: string
+				awayTeamId: string
+				homeScore: number | null
+				awayScore: number | null
+				status: string
+		  }
+		| undefined,
+): LiveProjectedOutcome {
+	if (p.result === 'saved_by_life') return 'saved-by-life'
+	if (p.result === 'win') return 'settled-win'
+	if (p.result === 'loss') return 'settled-loss'
+	if (p.result === 'draw') {
+		// Cup may have draw_success persisted as 'draw' result; treat as
+		// settled-win-equivalent for visual parity.
+		return 'settled-win'
+	}
+	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
+	const isFinished = fx.status === 'finished'
+	const pickedHome = p.teamId === fx.homeTeamId
+	const predicted = p.predictedResult
+	if (predicted) {
+		// Turbo / cup style: predictedResult drives projection.
+		const actualOutcome =
+			fx.homeScore > fx.awayScore ? 'home_win' : fx.awayScore > fx.homeScore ? 'away_win' : 'draw'
+		if (predicted === actualOutcome) return isFinished ? 'settled-win' : 'winning'
+		return isFinished ? 'settled-loss' : 'losing'
+	}
+	// Classic: picked team must win.
+	const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
+	const otherScore = pickedHome ? fx.awayScore : fx.homeScore
+	if (pickedScore > otherScore) return isFinished ? 'settled-win' : 'winning'
+	if (pickedScore < otherScore) return isFinished ? 'settled-loss' : 'losing'
+	return isFinished ? 'settled-loss' : 'drawing'
+}
+
+function projectClassicPlayer(
+	player: typeof gamePlayer.$inferSelect,
+	playerPicks: Array<typeof pick.$inferSelect>,
+	fixtureById: Map<
+		string,
+		{
+			id: string
+			homeTeamId: string
+			awayTeamId: string
+			homeScore: number | null
+			awayScore: number | null
+			status: string
+		}
+	>,
+	input: {
+		modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
+		roundNumber: number | null
+	},
+): { streak: number; lives: number; status: 'alive' | 'eliminated' } {
+	if (player.status === 'eliminated') {
+		return { streak: 0, lives: 0, status: 'eliminated' }
+	}
+	if (playerPicks.length === 0) return { streak: 0, lives: 0, status: 'alive' }
+	const allowRebuys = input.modeConfig?.allowRebuys === true
+	const isStartingRound = input.roundNumber === 1 && !allowRebuys
+	// Classic has one pick per round; project elimination if any in-progress
+	// pick is losing/drawing AND not in starting round.
+	for (const p of playerPicks) {
+		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
+		if (!fx || fx.homeScore == null || fx.awayScore == null) continue
+		const pickedHome = p.teamId === fx.homeTeamId
+		const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
+		const otherScore = pickedHome ? fx.awayScore : fx.homeScore
+		const wouldLose = pickedScore <= otherScore // includes draw
+		if (wouldLose && !isStartingRound) {
+			return { streak: 0, lives: 0, status: 'eliminated' }
+		}
+	}
+	return { streak: 0, lives: 0, status: 'alive' }
+}
+
+function projectTurboPlayer(
+	player: typeof gamePlayer.$inferSelect,
+	playerPicks: Array<typeof pick.$inferSelect>,
+	fixtureById: Map<
+		string,
+		{
+			homeScore: number | null
+			awayScore: number | null
+			status: string
+		}
+	>,
+): { streak: number; lives: number; status: 'alive' | 'eliminated' } {
+	if (player.status === 'eliminated') {
+		return { streak: 0, lives: 0, status: 'eliminated' }
+	}
+	// Project streak through rank order, treating in-progress fixtures by
+	// current score. Stops at the first projected loss.
+	let streak = 0
+	for (const p of playerPicks) {
+		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
+		if (!fx || fx.homeScore == null || fx.awayScore == null) break
+		const actualOutcome =
+			fx.homeScore > fx.awayScore ? 'home_win' : fx.awayScore > fx.homeScore ? 'away_win' : 'draw'
+		if (p.predictedResult === actualOutcome) streak++
+		else break
+	}
+	return { streak, lives: 0, status: 'alive' }
+}
+
+function projectCupPlayer(
+	player: typeof gamePlayer.$inferSelect,
+	playerPicks: Array<typeof pick.$inferSelect>,
+	fixtureById: Map<
+		string,
+		{
+			homeTeamId: string
+			awayTeamId: string
+			homeScore: number | null
+			awayScore: number | null
+			status: string
+			homeTeam: { externalIds: Record<string, string | number> | null }
+			awayTeam: { externalIds: Record<string, string | number> | null }
+		}
+	>,
+	input: { competitionType: string; modeConfig: { startingLives?: number } | null },
+): { streak: number; lives: number; status: 'alive' | 'eliminated' } {
+	if (player.status === 'eliminated') {
+		return { streak: 0, lives: 0, status: 'eliminated' }
+	}
+	// Build cup-pick inputs from all picks where the fixture has scores
+	// (settled OR in-progress). Run through evaluateCupPicks with the
+	// starting lives the player would have had at the start of the round.
+	const inputs: Array<{
+		confidenceRank: number
+		pickedTeam: 'home' | 'away'
+		homeScore: number
+		awayScore: number
+		tierDifference: number
+	}> = []
+	for (const p of playerPicks) {
+		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
+		if (!fx || fx.homeScore == null || fx.awayScore == null) continue
+		const pickedTeam: 'home' | 'away' = p.teamId === fx.homeTeamId ? 'home' : 'away'
+		const tierDiff = computeTierDifference(
+			fx.homeTeam,
+			fx.awayTeam,
+			input.competitionType as 'league' | 'knockout' | 'group_knockout',
+		)
+		inputs.push({
+			confidenceRank: p.confidenceRank ?? 0,
+			pickedTeam,
+			homeScore: fx.homeScore,
+			awayScore: fx.awayScore,
+			tierDifference: tierDiff,
+		})
+	}
+	if (inputs.length === 0) {
+		return { streak: 0, lives: player.livesRemaining, status: 'alive' }
+	}
+	// Starting lives for the round: player.livesRemaining represents lives
+	// AT THIS MOMENT — re-eval starts from this, then accumulates from
+	// scratch over the picks. To project the round's outcome consistently
+	// across both settled + projected fixtures, we start from "lives before
+	// this round started". For mid-round live state we approximate with the
+	// current persisted livesRemaining; this drifts slightly post-settle
+	// (since some lives may already be persisted) but the design accepts
+	// that — live aggregates are inherently approximate.
+	const startingLives = input.modeConfig?.startingLives ?? player.livesRemaining
+	const result = evaluateCupPicks(inputs, startingLives)
+	const streak = result.pickResults.filter(
+		(r) => r.result === 'win' || r.result === 'draw_success' || r.result === 'saved_by_life',
+	).length
+	return {
+		streak,
+		lives: result.finalLives,
+		status: result.eliminated ? 'eliminated' : 'alive',
 	}
 }
 

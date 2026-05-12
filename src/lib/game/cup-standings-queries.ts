@@ -151,7 +151,14 @@ export async function getCupStandingsData(
 			const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
 			const tierFromPicked = pickedSide === 'home' ? tierFromHome : -tierFromHome
 			const hidden = hideOpenPicks && !isViewer
-			const mapped = mapPickResult(pk.result)
+			// Pending picks on in-progress fixtures project as winning / losing
+			// based on current score — same visual as a settled pick. Cup-
+			// specific outcomes (draw_success, saved_by_life) only appear post-
+			// settlement when the streak/lives state is known.
+			const mapped =
+				pk.result === 'pending'
+					? projectCupCellFromFixture(pickedSide, fx)
+					: mapPickResult(pk.result)
 			return {
 				gamePlayerId: p.id,
 				confidenceRank: pk.confidenceRank ?? 0,
@@ -162,7 +169,7 @@ export async function getCupStandingsData(
 				pickedSide,
 				tierDifference: tierFromPicked,
 				result: hidden ? 'hidden' : mapped,
-				livesGained: hidden ? 0 : computeLivesGained(pk, tierFromPicked),
+				livesGained: hidden ? 0 : computeLivesGained(pk),
 				livesSpent: hidden ? 0 : computeLivesSpent(pk),
 				goalsCounted: pk.goalsScored ?? 0,
 			}
@@ -221,14 +228,43 @@ export function mapPickResult(r: string): 'win' | 'saved_by_life' | 'loss' | 'pe
 	}
 }
 
-export function computeLivesGained(pk: { result: string }, tierFromPicked: number): number {
-	if (pk.result !== 'win') return 0
-	if (tierFromPicked <= -2) return Math.abs(tierFromPicked)
-	return 0
+/**
+ * Project the cell visual for a still-pending cup pick from the
+ * fixture's current score. Same outcome buckets the settled mapping
+ * uses (`win` / `loss` / `pending`). Cup-specific saved_by_life /
+ * draw_success outcomes need streak + lives context and only appear
+ * once the pick is fully settled by reevaluateCupGame.
+ */
+function projectCupCellFromFixture(
+	pickedSide: 'home' | 'away',
+	fx: { homeScore: number | null; awayScore: number | null },
+): 'win' | 'loss' | 'pending' {
+	if (fx.homeScore == null || fx.awayScore == null) return 'pending'
+	const pickedScore = pickedSide === 'home' ? fx.homeScore : fx.awayScore
+	const otherScore = pickedSide === 'home' ? fx.awayScore : fx.homeScore
+	if (pickedScore > otherScore) return 'win'
+	if (pickedScore < otherScore) return 'loss'
+	// Draw — in cup, draws can be 'draw_success' (underdog) or 'loss'
+	// (favourite/same-tier). Without streak context, render as loss for
+	// the in-progress projection; the post-settlement value corrects it.
+	return 'loss'
 }
 
-export function computeLivesSpent(pk: { result: string }): number {
-	return pk.result === 'saved_by_life' ? 1 : 0
+/**
+ * Lives gained/spent now come from persisted `pick.life_gained` /
+ * `pick.life_spent` (written by `reevaluateCupGame` in
+ * `lib/game/settle.ts`). These helpers preserve the original recompute
+ * signature for callers that still need a pure-function shape (tests).
+ */
+export function computeLivesGained(pk: { lifeGained?: number | null; result?: string }): number {
+	return pk.lifeGained ?? 0
+}
+
+export function computeLivesSpent(pk: { lifeSpent?: boolean | null; result?: string }): number {
+	if (pk.lifeSpent === true) return 1
+	// Backwards-compat for any rows written before the column existed.
+	if (pk.result === 'saved_by_life') return 1
+	return 0
 }
 
 export function computeStreak(picks: CupStandingsPick[]): number {

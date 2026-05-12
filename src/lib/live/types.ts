@@ -26,6 +26,26 @@ export interface LivePick {
 	confidenceRank: number | null
 	predictedResult: 'home_win' | 'away_win' | 'draw' | null
 	result: PickResultState | null
+	/**
+	 * Projected outcome for in-progress fixtures, computed server-side by
+	 * `projectPickOutcome`. Renders with the SAME visual treatment as a
+	 * settled pick of the equivalent result — `winning` displays like
+	 * `settled-win`, `losing` like `settled-loss`. Fixture status conveys
+	 * "in progress" to the viewer.
+	 *
+	 * `null` for picks on unstarted fixtures (no projection possible),
+	 * `'settled-win'` / `'settled-loss'` / `'saved-by-life'` for picks
+	 * whose `pick.result` is already persisted.
+	 */
+	projectedOutcome?:
+		| 'winning'
+		| 'drawing'
+		| 'losing'
+		| 'saved-by-life'
+		| 'settled-win'
+		| 'settled-loss'
+		| 'pending'
+		| null
 }
 
 export interface LivePlayer {
@@ -33,6 +53,22 @@ export interface LivePlayer {
 	userId: string
 	status: 'active' | 'eliminated'
 	livesRemaining: number
+	/**
+	 * Live aggregates — "if scores stayed as they are right now". Computed
+	 * server-side per request from settled picks + projected outcomes for
+	 * in-progress fixtures. Not persisted.
+	 *
+	 * - `projectedLivesRemaining`: cup only. For classic/turbo, equals
+	 *   `livesRemaining` (always 0 in those modes).
+	 * - `projectedStreak`: turbo + cup. For classic, always 0.
+	 * - `projectedStatus`: 'alive' or 'eliminated' if the current fixture
+	 *   state held. Classic: dies on first in-progress losing pick after
+	 *   the starting round. Cup: dies on streak break with no lives.
+	 *   Turbo: no per-round elimination.
+	 */
+	projectedLivesRemaining?: number
+	projectedStreak?: number
+	projectedStatus?: 'alive' | 'eliminated'
 }
 
 export interface LivePayload {
