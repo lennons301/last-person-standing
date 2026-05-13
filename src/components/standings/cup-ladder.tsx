@@ -4,7 +4,6 @@ import { AlertTriangle, CheckCircle2, Flame, Target, Zap } from 'lucide-react'
 import { useLiveGame } from '@/components/live/use-live-game'
 import { LocalDateTime } from '@/components/local-datetime'
 import { HeartIcon } from '@/components/picks/heart-icon'
-import { PlusNBadge } from '@/components/picks/plus-n-badge'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { TierPips } from '@/components/picks/tier-pips'
 import type {
@@ -164,6 +163,13 @@ function CupFixtureCard({
 	const displayAway = liveFixture?.awayScore != null ? liveFixture.awayScore : fixture.awayScore
 	const score = displayHome != null && displayAway != null ? `${displayHome}–${displayAway}` : null
 
+	// Which side is the underdog? Anchors the +N lives indicator to the
+	// team that earns the bonus (rather than the centred vs-box, where
+	// it isn't obvious which team the badge applies to). Matches the
+	// pick-interface treatment in FixtureRow.
+	const underdogSide: 'home' | 'away' | null =
+		fixture.tierDifference > 0 ? 'away' : fixture.tierDifference < 0 ? 'home' : null
+
 	return (
 		<div
 			className={cn(
@@ -192,7 +198,12 @@ function CupFixtureCard({
 						<span className="font-semibold text-base truncate w-full text-right">
 							{fixture.homeTeam.name}
 						</span>
-						<span className="text-xs text-muted-foreground">Home</span>
+						<div className="flex items-center gap-1.5 justify-end">
+							<span className="text-xs text-muted-foreground">Home</span>
+							{underdogSide === 'home' && fixture.plusN > 0 && (
+								<UnderdogBonusChip value={fixture.plusN} />
+							)}
+						</div>
 					</div>
 				</div>
 				<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[96px] bg-muted/30 border-l border-r border-border">
@@ -234,11 +245,14 @@ function CupFixtureCard({
 							)}
 						</>
 					)}
-					<div className="mt-1.5 flex items-center gap-1">
-						<TierPips value={Math.min(fixture.plusN, 3) as 0 | 1 | 2 | 3} max={3} />
-						{fixture.plusN >= 1 && <PlusNBadge value={fixture.plusN} />}
-						{fixture.heart && <HeartIcon size={12} />}
-					</div>
+					{/* Generic tier-gap indicator (heart + pips). The actionable
+					    +N badge has moved next to the underdog team's name. */}
+					{(fixture.heart || fixture.plusN > 0) && (
+						<div className="mt-1.5 flex items-center gap-1">
+							<TierPips value={Math.min(fixture.plusN, 3) as 0 | 1 | 2 | 3} max={3} />
+							{fixture.heart && <HeartIcon size={12} />}
+						</div>
+					)}
 				</div>
 				<div className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0">
 					<TeamBadge
@@ -248,7 +262,12 @@ function CupFixtureCard({
 					/>
 					<div className="flex flex-col items-start min-w-0">
 						<span className="font-semibold text-base truncate w-full">{fixture.awayTeam.name}</span>
-						<span className="text-xs text-muted-foreground">Away</span>
+						<div className="flex items-center gap-1.5">
+							<span className="text-xs text-muted-foreground">Away</span>
+							{underdogSide === 'away' && fixture.plusN > 0 && (
+								<UnderdogBonusChip value={fixture.plusN} />
+							)}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -358,4 +377,23 @@ function BackerChip({ backer }: { backer: CupLadderBacker }) {
 
 function outcomeLabel(o: 'home_win' | 'draw' | 'away_win'): string {
 	return o === 'home_win' ? 'HOME' : o === 'away_win' ? 'AWAY' : 'DRAW'
+}
+
+/**
+ * Lives-gain indicator sitting next to the underdog team's name. Matches
+ * the pick-interface chip styling so the bonus is attributed to the
+ * actual team that earns it, not the centred vs-box.
+ */
+function UnderdogBonusChip({ value }: { value: number }) {
+	const strong = value >= 2
+	return (
+		<span
+			className={cn(
+				'inline-flex items-center rounded px-1.5 py-[1px] text-[10px] font-bold leading-none',
+				strong ? 'bg-amber-100 text-amber-900' : 'bg-muted text-foreground/80',
+			)}
+		>
+			+{value} {value === 1 ? 'life' : 'lives'}
+		</span>
+	)
 }
