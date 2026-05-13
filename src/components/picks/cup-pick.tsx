@@ -3,6 +3,7 @@
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { LocalDateTime } from '@/components/local-datetime'
+import { Disclosure } from '@/components/ui/disclosure'
 import { cn } from '@/lib/utils'
 import { FixtureRow, type SideState } from './fixture-row'
 import { HeartIcon } from './heart-icon'
@@ -211,11 +212,13 @@ export function CupPick({
 				· rank {numberOfPicks} picks
 			</div>
 			<div className="grid gap-3 md:grid-cols-[1fr_320px]">
-				<div>
-					<div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-						Available fixtures
-					</div>
-					<div className="space-y-3">
+				<Disclosure
+					className="order-2 md:order-1"
+					title="Available fixtures"
+					subtitle={`${fixtures.length} fixture${fixtures.length === 1 ? '' : 's'} this round`}
+					defaultOpen
+				>
+					<div className="space-y-3 p-3">
 						{fixtures.map((f) => {
 							const tier = tierForDisplay(f)
 							const slot = slots.find((s) => s.fixtureId === f.id)
@@ -257,49 +260,53 @@ export function CupPick({
 							)
 						})}
 					</div>
-				</div>
-				<div>
-					<div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-						Your picks, ranked
-					</div>
-					<div className="space-y-1.5">
-						{Array.from({ length: numberOfPicks }, (_, i) => i + 1).map((rank) => {
-							const slot = slots.find((s) => s.confidenceRank === rank)
-							if (!slot) return <EmptySlot key={rank} rank={rank} />
-							return (
-								<CupRankedRow
-									key={rank}
-									slot={slot}
-									fixtures={fixtures}
-									isFirst={rank === 1}
-									isLast={rank === slots.length}
-									onMoveUp={() => handleReorder(rank, rank - 1)}
-									onMoveDown={() => handleReorder(rank, rank + 1)}
-									onRemove={() => handleRemoveSlot(rank)}
-								/>
-							)
-						})}
-					</div>
-					<button
-						type="button"
-						className={cn(
-							'mt-3 w-full rounded bg-foreground text-background py-3 font-semibold',
-							'disabled:opacity-50 disabled:cursor-not-allowed',
-							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+				</Disclosure>
+				<Disclosure
+					className="order-1 md:order-2"
+					title="Your picks, ranked"
+					subtitle={`${slots.length} of ${numberOfPicks} selected${slots.length < minPicks ? ` — need ${minPicks}` : ''}`}
+					defaultOpen
+				>
+					<div className="p-3">
+						<div className="space-y-1.5">
+							{Array.from({ length: numberOfPicks }, (_, i) => i + 1).map((rank) => {
+								const slot = slots.find((s) => s.confidenceRank === rank)
+								if (!slot) return <EmptySlot key={rank} rank={rank} />
+								return (
+									<CupRankedRow
+										key={rank}
+										slot={slot}
+										fixtures={fixtures}
+										isFirst={rank === 1}
+										isLast={rank === slots.length}
+										onMoveUp={() => handleReorder(rank, rank - 1)}
+										onMoveDown={() => handleReorder(rank, rank + 1)}
+										onRemove={() => handleRemoveSlot(rank)}
+									/>
+								)
+							})}
+						</div>
+						<button
+							type="button"
+							className={cn(
+								'mt-3 w-full rounded bg-foreground text-background py-3 font-semibold',
+								'disabled:opacity-50 disabled:cursor-not-allowed',
+								'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+							)}
+							disabled={readonly || slots.length < minPicks || loading}
+							onClick={handleSubmit}
+						>
+							{loading
+								? 'Submitting...'
+								: (submitLabelOverride ?? `Submit ${slots.length} of ${numberOfPicks} picks`)}
+						</button>
+						{error && (
+							<p className="mt-2 text-xs text-[var(--eliminated)]" role="alert">
+								{error}
+							</p>
 						)}
-						disabled={readonly || slots.length < minPicks || loading}
-						onClick={handleSubmit}
-					>
-						{loading
-							? 'Submitting...'
-							: (submitLabelOverride ?? `Submit ${slots.length} of ${numberOfPicks} picks`)}
-					</button>
-					{error && (
-						<p className="mt-2 text-xs text-[var(--eliminated)]" role="alert">
-							{error}
-						</p>
-					)}
-				</div>
+					</div>
+				</Disclosure>
 			</div>
 		</div>
 	)
