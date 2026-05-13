@@ -50,9 +50,19 @@ interface CupPickProps {
 	roundNumber?: number
 }
 
-function tierForDisplay(fixture: CupPickFixture): { value: number; plusN: number; heart: boolean } {
+function tierForDisplay(fixture: CupPickFixture): {
+	value: number
+	plusN: number
+	heart: boolean
+	underdogSide: 'home' | 'away' | null
+} {
 	const abs = Math.abs(fixture.tierDifference)
-	return { value: abs, plusN: abs, heart: abs >= 2 }
+	// tierDifference > 0 → home stronger → underdog is away.
+	// tierDifference < 0 → away stronger → underdog is home.
+	// tierDifference === 0 → no underdog (no bonus available).
+	const underdogSide: 'home' | 'away' | null =
+		fixture.tierDifference > 0 ? 'away' : fixture.tierDifference < 0 ? 'home' : null
+	return { value: abs, plusN: abs, heart: abs >= 2, underdogSide }
 }
 
 function sideRestricted(
@@ -236,6 +246,7 @@ export function CupPick({
 									tierMax={3}
 									plusN={tier.plusN}
 									showHeart={tier.heart}
+									underdogSide={tier.underdogSide}
 									homeState={homeState}
 									awayState={awayState}
 									onPickHome={() => handlePickTeam(f.id, 'home')}

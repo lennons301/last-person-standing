@@ -45,6 +45,14 @@ export interface FixtureRowProps {
 	tierMax?: 3 | 5
 	plusN?: number
 	showHeart?: boolean
+	/**
+	 * Which side is the underdog (lower tier) — used to anchor the +N
+	 * lives indicator to the team that earns the bonus. Without this,
+	 * the +N sits on the top strip and the viewer has to know which
+	 * pot each team is in to work it out. With it, the badge lives on
+	 * the underdog's pick button directly.
+	 */
+	underdogSide?: 'home' | 'away' | null
 	homeState?: SideState
 	awayState?: SideState
 	// Required for the form-detail sheet. Optional only for old callsites that
@@ -74,6 +82,7 @@ export function FixtureRow({
 	tierMax,
 	plusN,
 	showHeart,
+	underdogSide,
 	homeState,
 	awayState,
 	competitionId,
@@ -81,7 +90,13 @@ export function FixtureRow({
 	children,
 }: FixtureRowProps) {
 	const isFullyUsed = usedSide === 'both'
-	const showTierStrip = tierValue != null || plusN != null || showHeart
+	// The +N badge moves onto the underdog team's button when we know
+	// which side it is. The top strip keeps heart + pips as the generic
+	// "this fixture has a tier gap" indicator; the actionable bonus
+	// indicator goes where the click happens.
+	const bonusLivesOnButton = underdogSide && plusN ? plusN : 0
+	const showTopPlusN = !underdogSide && plusN != null && plusN > 0
+	const showTierStrip = tierValue != null || showTopPlusN || showHeart
 	const [sheetTeam, setSheetTeam] = useState<'home' | 'away' | null>(null)
 	const sheetEnabled = !!competitionId
 
@@ -93,7 +108,7 @@ export function FixtureRow({
 					{tierValue != null && (
 						<TierPips value={tierValue as 0 | 1 | 2 | 3 | 4 | 5} max={tierMax} />
 					)}
-					{plusN != null && <PlusNBadge value={plusN} />}
+					{showTopPlusN && plusN != null && <PlusNBadge value={plusN} />}
 					{kickoff && (
 						<span className="ml-auto">
 							<LocalDateTime date={kickoff} />
@@ -112,6 +127,7 @@ export function FixtureRow({
 						disabledReason={disabledReason}
 						state={homeState}
 						onClick={onPickHome}
+						bonusLives={underdogSide === 'home' ? bonusLivesOnButton : 0}
 					/>
 					<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[56px] bg-muted/30 border-l border-r border-border">
 						<span className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
@@ -133,6 +149,7 @@ export function FixtureRow({
 						disabledReason={disabledReason}
 						state={awayState}
 						onClick={onPickAway}
+						bonusLives={underdogSide === 'away' ? bonusLivesOnButton : 0}
 					/>
 					{usedLabel && (
 						<span className="text-[0.7rem] text-muted-foreground px-2 self-center shrink-0">
@@ -263,6 +280,13 @@ interface TeamPickButtonProps {
 	disabledReason?: string
 	state?: SideState
 	onClick?: () => void
+	/**
+	 * Lives gained if this team's pick wins (cup mode, when this side is
+	 * the underdog). Rendered as a chip on the button so the bonus is
+	 * attributed unambiguously to the team that earns it. 0 / undefined
+	 * hides the chip.
+	 */
+	bonusLives?: number
 }
 
 function TeamPickButton({
@@ -273,6 +297,7 @@ function TeamPickButton({
 	disabled,
 	state,
 	onClick,
+	bonusLives,
 }: TeamPickButtonProps) {
 	const stateBlocksClick =
 		state?.kind === 'restricted' || state?.kind === 'used' || state?.kind === 'planned-elsewhere'
@@ -280,6 +305,7 @@ function TeamPickButton({
 	const isHome = side === 'home'
 	const stateCls = sideClass(state)
 	const chip = sideChip(state)
+	const showBonus = !!bonusLives && bonusLives > 0
 
 	return (
 		<button
@@ -304,7 +330,27 @@ function TeamPickButton({
 					<span className="sm:hidden">{team.shortName}</span>
 					<span className="hidden sm:inline">{team.name}</span>
 				</span>
-				{chip && <div className={cn('flex', isHome ? 'justify-end' : 'justify-start')}>{chip}</div>}
+				{(showBonus || chip) && (
+					<div
+						className={cn(
+							'flex items-center gap-1.5 flex-wrap',
+							isHome ? 'justify-end' : 'justify-start',
+						)}
+					>
+						{showBonus && (
+							<span
+								className={cn(
+									'inline-flex items-center gap-0.5 rounded px-1.5 py-[1px] text-[10px] font-bold leading-none',
+									bonusLives >= 2 ? 'bg-amber-100 text-amber-900' : 'bg-muted text-foreground/80',
+								)}
+								title={`Pick ${team.name} — win earns +${bonusLives} ${bonusLives === 1 ? 'life' : 'lives'}`}
+							>
+								+{bonusLives} {bonusLives === 1 ? 'life' : 'lives'}
+							</span>
+						)}
+						{chip}
+					</div>
+				)}
 			</div>
 		</button>
 	)
