@@ -188,25 +188,22 @@ function CupFixtureCard({
 
 			{/* Fixture header */}
 			<div className="flex items-stretch">
-				<div className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0 flex-row-reverse">
+				<div className="flex items-center gap-3 px-3 py-3 flex-1 min-w-0 flex-row-reverse">
 					<TeamBadge
 						shortName={fixture.homeTeam.shortName}
 						badgeUrl={fixture.homeTeam.badgeUrl}
 						size="lg"
 					/>
 					<div className="flex flex-col items-end min-w-0">
-						<span className="font-semibold text-base truncate w-full text-right">
+						<span className="font-semibold text-sm sm:text-base truncate w-full text-right">
 							{fixture.homeTeam.name}
 						</span>
-						<div className="flex items-center gap-1.5 justify-end">
-							<span className="text-xs text-muted-foreground">Home</span>
-							{underdogSide === 'home' && fixture.plusN > 0 && (
-								<UnderdogBonusChip value={fixture.plusN} />
-							)}
-						</div>
+						{underdogSide === 'home' && fixture.plusN > 0 && (
+							<UnderdogBonusChip value={fixture.plusN} />
+						)}
 					</div>
 				</div>
-				<div className="flex flex-col items-center justify-center px-3 shrink-0 min-w-[96px] bg-muted/30 border-l border-r border-border">
+				<div className="flex flex-col items-center justify-center px-2 shrink-0 min-w-[72px] sm:min-w-[88px] bg-muted/30 border-l border-r border-border">
 					{score ? (
 						<>
 							<span className="font-display font-bold text-lg leading-none">{score}</span>
@@ -254,20 +251,19 @@ function CupFixtureCard({
 						</div>
 					)}
 				</div>
-				<div className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0">
+				<div className="flex items-center gap-3 px-3 py-3 flex-1 min-w-0">
 					<TeamBadge
 						shortName={fixture.awayTeam.shortName}
 						badgeUrl={fixture.awayTeam.badgeUrl}
 						size="lg"
 					/>
 					<div className="flex flex-col items-start min-w-0">
-						<span className="font-semibold text-base truncate w-full">{fixture.awayTeam.name}</span>
-						<div className="flex items-center gap-1.5">
-							<span className="text-xs text-muted-foreground">Away</span>
-							{underdogSide === 'away' && fixture.plusN > 0 && (
-								<UnderdogBonusChip value={fixture.plusN} />
-							)}
-						</div>
+						<span className="font-semibold text-sm sm:text-base truncate w-full">
+							{fixture.awayTeam.name}
+						</span>
+						{underdogSide === 'away' && fixture.plusN > 0 && (
+							<UnderdogBonusChip value={fixture.plusN} />
+						)}
 					</div>
 				</div>
 			</div>
