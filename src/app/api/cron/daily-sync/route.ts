@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { serializeError } from '@/lib/cron/serialize-error'
+import type { FplPreFetched } from '@/lib/data/fpl'
 import { db } from '@/lib/db'
 import {
 	applyPotAssignments,
@@ -17,6 +18,14 @@ import { cronRun } from '@/lib/schema/ops'
 
 const ROUTE = '/api/cron/daily-sync'
 
+interface DailySyncBody {
+	// Pre-fetched FPL payloads, supplied by the GH Actions workflow that
+	// owns this cron's schedule (see .github/workflows/daily-sync.yml).
+	// Required for FPL-sourced competitions because FPL's Cloudflare 403s
+	// Vercel egress.
+	fpl?: FplPreFetched
+}
+
 export async function POST(request: Request) {
 	const secret = process.env.CRON_SECRET
 	if (!secret) {
@@ -29,6 +38,7 @@ export async function POST(request: Request) {
 	const startedAt = new Date()
 	const startTs = Date.now()
 	try {
+		const body = await readJsonBody(request)
 		const apiKey = process.env.FOOTBALL_DATA_API_KEY
 		const comps = await db.query.competition.findMany({
 			where: eq(competition.status, 'active'),
@@ -36,7 +46,10 @@ export async function POST(request: Request) {
 		const results = []
 		const deadlineLockedRoundIds: string[] = []
 		for (const c of comps) {
-			const summary = await syncCompetition(c, { footballDataApiKey: apiKey })
+			const summary = await syncCompetition(c, {
+				footballDataApiKey: apiKey,
+				fplData: body.fpl,
+			})
 			const entry: {
 				competitionId: string
 				rounds: number
@@ -134,5 +147,21 @@ async function recordRun(
 	} catch (logErr) {
 		// Don't let the audit-trail insert mask the real outcome.
 		console.error('[cron/daily-sync] failed to record cron_run', logErr)
+	}
+}
+
+async function readJsonBody(request: Request): Promise<DailySyncBody> {
+	// Empty body (manual curl with no payload) is a valid call — we'll have
+	// no pre-fetched FPL data and the FPL sync will 500 with a clear
+	// AdapterFetchError. GH-Actions-driven calls supply { fpl: ... }.
+	// We don't rely on content-length because test Request objects don't
+	// always set it; we just try to read and parse, treating any failure as
+	// "no body".
+	try {
+		const text = await request.text()
+		if (!text) return {}
+		return JSON.parse(text) as DailySyncBody
+	} catch {
+		return {}
 	}
 }

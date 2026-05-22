@@ -22,12 +22,12 @@ const FPL_HEADERS: Record<string, string> = {
 	'Accept-Language': 'en-GB,en;q=0.9',
 }
 
-interface FplBootstrap {
+export interface FplBootstrap {
 	teams: Array<{ id: number; name: string; short_name: string; code: number }>
 	events: Array<{ id: number; name: string; deadline_time: string; finished: boolean }>
 }
 
-interface FplFixture {
+export interface FplFixture {
 	id: number
 	event: number | null
 	team_h: number
@@ -40,9 +40,26 @@ interface FplFixture {
 	team_a_score: number | null
 }
 
+/**
+ * Optional pre-fetched payloads. Supply both to bypass network entirely —
+ * the use case is "GH Actions fetched FPL, POSTed JSON to Vercel, Vercel
+ * sync logic runs against the payload" (see /api/cron/daily-sync). Vercel
+ * egress IPs are blocked by FPL's Cloudflare, so we must NOT call FPL from
+ * Vercel — pre-fetched mode is the supported path in production.
+ */
+export interface FplPreFetched {
+	bootstrap: FplBootstrap
+	fixtures: FplFixture[]
+}
+
 export class FplAdapter implements CompetitionAdapter {
-	private bootstrapCache: FplBootstrap | null = null
-	private fixturesCache: FplFixture[] | null = null
+	private bootstrapCache: FplBootstrap | null
+	private fixturesCache: FplFixture[] | null
+
+	constructor(preFetched?: FplPreFetched) {
+		this.bootstrapCache = preFetched?.bootstrap ?? null
+		this.fixturesCache = preFetched?.fixtures ?? null
+	}
 
 	private async getBootstrap(): Promise<FplBootstrap> {
 		if (this.bootstrapCache) return this.bootstrapCache
