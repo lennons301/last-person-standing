@@ -59,20 +59,22 @@ export function TurboLadder({ fixtures, players, roundStatus }: TurboLadderProps
 
 	const unplayed = fixtures.filter((f) => f.actualOutcome == null)
 	const played = fixtures.filter((f) => f.actualOutcome != null)
+	const isPreDeadline = roundStatus === 'open'
 
 	// Work out which still-to-play fixtures are "crucial" — streaks would diverge
-	// based on outcome, meaning the leaderboard could still change.
+	// based on outcome, meaning the leaderboard could still change. Skipped
+	// pre-deadline so we don't leak the pick distribution.
 	const crucialFixtureIds = new Set<string>()
-	for (const f of unplayed) {
-		const outcomeCounts = { home_win: 0, draw: 0, away_win: 0 }
-		for (const p of f.predictions) {
-			outcomeCounts[p.prediction]++
-		}
-		// If predictions are split across at least 2 outcomes with 2+ players each,
-		// or if more than ~60% of players are on one side, consider it "key"
-		const distinct = Object.values(outcomeCounts).filter((c) => c >= 1).length
-		if (distinct >= 2 && f.predictions.length >= 2) {
-			crucialFixtureIds.add(f.id)
+	if (!isPreDeadline) {
+		for (const f of unplayed) {
+			const outcomeCounts = { home_win: 0, draw: 0, away_win: 0 }
+			for (const p of f.predictions) {
+				outcomeCounts[p.prediction]++
+			}
+			const distinct = Object.values(outcomeCounts).filter((c) => c >= 1).length
+			if (distinct >= 2 && f.predictions.length >= 2) {
+				crucialFixtureIds.add(f.id)
+			}
 		}
 	}
 
@@ -127,7 +129,13 @@ export function TurboLadder({ fixtures, players, roundStatus }: TurboLadderProps
 					</h3>
 					<div className="space-y-2">
 						{unplayed.map((f) => (
-							<FixtureRow key={f.id} fixture={f} crucial={crucialFixtureIds.has(f.id)} showPaths />
+							<FixtureRow
+								key={f.id}
+								fixture={f}
+								crucial={crucialFixtureIds.has(f.id)}
+								showPaths={!isPreDeadline}
+								isPreDeadline={isPreDeadline}
+							/>
 						))}
 					</div>
 				</div>
@@ -155,10 +163,12 @@ function FixtureRow({
 	fixture,
 	crucial,
 	showPaths,
+	isPreDeadline,
 }: {
 	fixture: LadderFixture
 	crucial?: boolean
 	showPaths?: boolean
+	isPreDeadline?: boolean
 }) {
 	const outcomeCounts = { home_win: 0, draw: 0, away_win: 0 }
 	for (const p of fixture.predictions) {
@@ -248,58 +258,65 @@ function FixtureRow({
 			</div>
 
 			{/* Predictions breakdown */}
-			<div className="border-t border-border bg-muted/10 px-4 py-3">
-				<div className="flex items-center justify-between mb-2">
-					<span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-						Predictions
-					</span>
-					<div className="flex items-center gap-3 text-xs text-muted-foreground">
-						<SplitBar outcome="home_win" count={outcomeCounts.home_win} total={total} />
-						<SplitBar outcome="draw" count={outcomeCounts.draw} total={total} />
-						<SplitBar outcome="away_win" count={outcomeCounts.away_win} total={total} />
-					</div>
+			{isPreDeadline ? (
+				<div className="border-t border-border bg-muted/10 px-4 py-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+					<span className="text-base leading-none">🔒</span>
+					<span>Picks hidden until the deadline passes</span>
 				</div>
-
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-					<PredictionGroup
-						label="Home win"
-						outcome="home_win"
-						predictions={byOutcome('home_win')}
-						isCorrectOutcome={fixture.actualOutcome === 'home_win'}
-						isPlayed={isPlayed}
-					/>
-					<PredictionGroup
-						label="Draw"
-						outcome="draw"
-						predictions={byOutcome('draw')}
-						isCorrectOutcome={fixture.actualOutcome === 'draw'}
-						isPlayed={isPlayed}
-					/>
-					<PredictionGroup
-						label="Away win"
-						outcome="away_win"
-						predictions={byOutcome('away_win')}
-						isCorrectOutcome={fixture.actualOutcome === 'away_win'}
-						isPlayed={isPlayed}
-					/>
-				</div>
-
-				{streakBreakers.length > 0 && (
-					<div className="mt-3 pt-3 border-t border-border flex items-center gap-2 text-xs">
-						<XCircle className="h-3.5 w-3.5 text-[var(--eliminated)] shrink-0" />
-						<span className="font-semibold text-[var(--eliminated)]">Streak ended:</span>
-						<span className="text-muted-foreground">
-							{streakBreakers.map((p) => p.playerName).join(', ')}
+			) : (
+				<div className="border-t border-border bg-muted/10 px-4 py-3">
+					<div className="flex items-center justify-between mb-2">
+						<span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+							Predictions
 						</span>
+						<div className="flex items-center gap-3 text-xs text-muted-foreground">
+							<SplitBar outcome="home_win" count={outcomeCounts.home_win} total={total} />
+							<SplitBar outcome="draw" count={outcomeCounts.draw} total={total} />
+							<SplitBar outcome="away_win" count={outcomeCounts.away_win} total={total} />
+						</div>
 					</div>
-				)}
 
-				{showPaths && !isPlayed && (
-					<div className="mt-3 pt-3 border-t border-border text-xs">
-						<PathsToSuccess fixture={fixture} outcomeCounts={outcomeCounts} />
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+						<PredictionGroup
+							label="Home win"
+							outcome="home_win"
+							predictions={byOutcome('home_win')}
+							isCorrectOutcome={fixture.actualOutcome === 'home_win'}
+							isPlayed={isPlayed}
+						/>
+						<PredictionGroup
+							label="Draw"
+							outcome="draw"
+							predictions={byOutcome('draw')}
+							isCorrectOutcome={fixture.actualOutcome === 'draw'}
+							isPlayed={isPlayed}
+						/>
+						<PredictionGroup
+							label="Away win"
+							outcome="away_win"
+							predictions={byOutcome('away_win')}
+							isCorrectOutcome={fixture.actualOutcome === 'away_win'}
+							isPlayed={isPlayed}
+						/>
 					</div>
-				)}
-			</div>
+
+					{streakBreakers.length > 0 && (
+						<div className="mt-3 pt-3 border-t border-border flex items-center gap-2 text-xs">
+							<XCircle className="h-3.5 w-3.5 text-[var(--eliminated)] shrink-0" />
+							<span className="font-semibold text-[var(--eliminated)]">Streak ended:</span>
+							<span className="text-muted-foreground">
+								{streakBreakers.map((p) => p.playerName).join(', ')}
+							</span>
+						</div>
+					)}
+
+					{showPaths && !isPlayed && (
+						<div className="mt-3 pt-3 border-t border-border text-xs">
+							<PathsToSuccess fixture={fixture} outcomeCounts={outcomeCounts} />
+						</div>
+					)}
+				</div>
+			)}
 		</div>
 	)
 }
