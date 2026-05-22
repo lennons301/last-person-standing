@@ -93,6 +93,52 @@ describe('daily-sync route', () => {
 		})
 	})
 
+	it('threads pre-fetched FPL data from the POST body into syncCompetition', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([{ id: 'c1' }] as never)
+		vi.mocked(syncCompetition).mockResolvedValue({
+			rounds: 0,
+			fixtures: 0,
+			deadlinePassedRoundIds: [],
+			settledFixtureIds: [],
+		})
+		const fplPayload = { bootstrap: { teams: [], events: [] }, fixtures: [] }
+		await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: {
+					authorization: 'Bearer test-secret',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({ fpl: fplPayload }),
+			}),
+		)
+		expect(syncCompetition).toHaveBeenCalledWith(
+			{ id: 'c1' },
+			expect.objectContaining({ fplData: fplPayload }),
+		)
+	})
+
+	it('treats an empty body as "no pre-fetched data" without erroring', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([{ id: 'c1' }] as never)
+		vi.mocked(syncCompetition).mockResolvedValue({
+			rounds: 0,
+			fixtures: 0,
+			deadlinePassedRoundIds: [],
+			settledFixtureIds: [],
+		})
+		const res = await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: { authorization: 'Bearer test-secret' },
+			}),
+		)
+		expect(res.status).toBe(200)
+		expect(syncCompetition).toHaveBeenCalledWith(
+			{ id: 'c1' },
+			expect.objectContaining({ fplData: undefined }),
+		)
+	})
+
 	it('returns 401 without auth', async () => {
 		const res = await POST(new Request('http://x', { method: 'POST' }))
 		expect(res.status).toBe(401)

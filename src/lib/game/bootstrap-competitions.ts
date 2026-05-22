@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, lt } from 'drizzle-orm'
 import { FootballDataAdapter } from '@/lib/data/football-data'
-import { FplAdapter } from '@/lib/data/fpl'
+import { FplAdapter, type FplPreFetched } from '@/lib/data/fpl'
 import { enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
@@ -10,6 +10,10 @@ import { competition, fixture, round, team } from '@/lib/schema/competition'
 
 export interface BootstrapOptions {
 	footballDataApiKey?: string
+	// Pre-fetched FPL payloads — required in production because FPL's
+	// Cloudflare 403s Vercel egress (see /api/cron/daily-sync). GH Actions
+	// fetches and ships them in the POST body.
+	fplData?: FplPreFetched
 }
 
 type CompetitionRow = typeof competition.$inferSelect
@@ -489,7 +493,7 @@ export async function applyPotAssignments(
 }
 
 function adapterFor(comp: CompetitionRow, opts: BootstrapOptions): CompetitionAdapter | null {
-	if (comp.dataSource === 'fpl') return new FplAdapter()
+	if (comp.dataSource === 'fpl') return new FplAdapter(opts.fplData)
 	if (comp.dataSource === 'football_data') {
 		if (!opts.footballDataApiKey) return null
 		if (!comp.externalId) return null

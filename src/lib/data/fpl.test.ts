@@ -83,7 +83,11 @@ describe('FplAdapter', () => {
 	it('sends a browser-like User-Agent so Cloudflare does not 403 the request', async () => {
 		// Default Node fetch UA gets 403/empty body on Cloudflare-fronted FPL from
 		// cloud-provider IPs (root cause of the 24-day daily-sync outage —
-		// 2026-04-28 → 2026-05-22). Lock the workaround in with a test.
+		// 2026-04-28 → 2026-05-22). Lock the workaround in with a test. Note:
+		// the UA alone wasn't enough (Cloudflare TLS-fingerprints too); the
+		// production fix is pre-fetched mode via GH Actions, but we keep the UA
+		// for the residual case where someone runs the adapter from a friendly
+		// network.
 		await adapter.fetchTeams()
 		const fetchMock = vi.mocked(globalThis.fetch)
 		expect(fetchMock).toHaveBeenCalled()
@@ -92,5 +96,20 @@ describe('FplAdapter', () => {
 		expect(headers).toBeDefined()
 		expect(headers['User-Agent']).toMatch(/Mozilla\/5\.0/)
 		expect(headers.Accept).toContain('application/json')
+	})
+
+	it('uses pre-fetched payloads instead of making network calls when provided', async () => {
+		// The pre-fetched path is how production runs — GH Actions fetches FPL
+		// (Cloudflare allows their IPs) and POSTs the JSON to Vercel for
+		// processing. The adapter must not call fetch at all when payloads are
+		// supplied.
+		const fetchSpy = vi.mocked(globalThis.fetch)
+		fetchSpy.mockClear()
+		const preFetched = new FplAdapter({ bootstrap: mockBootstrap, fixtures: mockFixtures })
+		const teams = await preFetched.fetchTeams()
+		const rounds = await preFetched.fetchRounds()
+		expect(teams).toHaveLength(2)
+		expect(rounds).toHaveLength(2)
+		expect(fetchSpy).not.toHaveBeenCalled()
 	})
 })

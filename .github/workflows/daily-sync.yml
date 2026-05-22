@@ -1,0 +1,53 @@
+name: Daily sync
+
+# Owns the schedule for /api/cron/daily-sync. Vercel's built-in cron used to
+# do this but FPL's Cloudflare 403s Vercel egress IPs (24 days of silent
+# failures captured in cron_run table; see PR #50 + #51 history). GH Actions
+# runners reach FPL fine, so this workflow fetches the FPL payloads here and
+# POSTs them to Vercel for processing + DB writes.
+#
+# Schedule note: GitHub-hosted free-tier scheduled jobs can lag by 30-60min;
+# that's fine for a daily data refresh. workflow_dispatch is also wired up
+# for manual triggers.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: daily-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch FPL payloads
+        id: fetch
+        run: |
+          set -euo pipefail
+          curl -sSf -o /tmp/bootstrap.json https://fantasy.premierleague.com/api/bootstrap-static/
+          curl -sSf -o /tmp/fixtures.json https://fantasy.premierleague.com/api/fixtures/
+          jq -n \
+            --slurpfile b /tmp/bootstrap.json \
+            --slurpfile f /tmp/fixtures.json \
+            '{fpl: {bootstrap: $b[0], fixtures: $f[0]}}' \
+            > /tmp/payload.json
+          echo "payload bytes: $(wc -c < /tmp/payload.json)"
+      - name: POST to Vercel daily-sync
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VERCEL_PROD_URL: ${{ secrets.VERCEL_PROD_URL }}
+        run: |
+          set -euo pipefail
+          # `--fail-with-body` so non-2xx responses produce both a non-zero
+          # exit AND a printed body — the body carries the AdapterFetchError
+          # context from /api/cron/daily-sync's try/catch.
+          curl -sS --fail-with-body \
+            -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/payload.json \
+            -w "\nHTTP %{http_code} in %{time_total}s\n" \
+            "${VERCEL_PROD_URL}/api/cron/daily-sync"
