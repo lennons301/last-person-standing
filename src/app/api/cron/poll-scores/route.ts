@@ -1,5 +1,6 @@
 import { eq, inArray, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import { serializeError } from '@/lib/cron/serialize-error'
 import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
 import { hasActiveFixture } from '@/lib/data/match-window'
 import { enqueuePollScores } from '@/lib/data/qstash'
@@ -22,6 +23,16 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'FOOTBALL_DATA_API_KEY not configured' }, { status: 500 })
 	}
 
+	try {
+		return await pollScores(apiKey)
+	} catch (err) {
+		const serialized = serializeError(err)
+		console.error('[cron/poll-scores] failed', serialized)
+		return NextResponse.json({ error: serialized }, { status: 500 })
+	}
+}
+
+async function pollScores(apiKey: string): Promise<NextResponse> {
 	const activeGames = await db.query.game.findMany({
 		where: eq(game.status, 'active'),
 		with: { currentRound: true, competition: true },

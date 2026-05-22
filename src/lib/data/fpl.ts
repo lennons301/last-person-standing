@@ -1,3 +1,4 @@
+import { fetchJson } from './fetch-json'
 import type {
 	AdapterFixture,
 	AdapterFixtureScore,
@@ -32,15 +33,13 @@ export class FplAdapter implements CompetitionAdapter {
 
 	private async getBootstrap(): Promise<FplBootstrap> {
 		if (this.bootstrapCache) return this.bootstrapCache
-		const res = await fetch(`${FPL_BASE}/bootstrap-static/`)
-		this.bootstrapCache = (await res.json()) as FplBootstrap
+		this.bootstrapCache = await fetchJson<FplBootstrap>(`${FPL_BASE}/bootstrap-static/`)
 		return this.bootstrapCache
 	}
 
 	private async getFixtures(): Promise<FplFixture[]> {
 		if (this.fixturesCache) return this.fixturesCache
-		const res = await fetch(`${FPL_BASE}/fixtures/`)
-		this.fixturesCache = (await res.json()) as FplFixture[]
+		this.fixturesCache = await fetchJson<FplFixture[]>(`${FPL_BASE}/fixtures/`)
 		return this.fixturesCache
 	}
 
