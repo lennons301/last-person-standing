@@ -1,4 +1,5 @@
 import type { competition } from '@/lib/schema/competition'
+import { fetchJson } from './fetch-json'
 import type {
 	AdapterFixture,
 	AdapterFixtureScore,
@@ -69,10 +70,9 @@ export class FootballDataAdapter implements CompetitionAdapter {
 	) {}
 
 	private async request<T>(path: string): Promise<T> {
-		const res = await fetch(`${BASE_URL}${path}`, {
+		return fetchJson<T>(`${BASE_URL}${path}`, {
 			headers: { 'X-Auth-Token': this.apiKey },
 		})
-		return res.json() as Promise<T>
 	}
 
 	async fetchTeams(): Promise<AdapterTeam[]> {
