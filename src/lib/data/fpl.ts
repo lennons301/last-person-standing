@@ -9,6 +9,19 @@ import type {
 
 const FPL_BASE = 'https://fantasy.premierleague.com/api'
 
+// FPL is fronted by Cloudflare, which 403s the default Node fetch UA from
+// cloud-provider egress IPs (observed via the cron_run audit trail on
+// 2026-05-22: 24 days of daily-sync silently failing with status=403,
+// body=""). A realistic browser UA + Accept headers gets us through —
+// every other FPL API client in the wild does the same. Not abusive: this
+// is one request per FPL endpoint per daily-sync run.
+const FPL_HEADERS: Record<string, string> = {
+	'User-Agent':
+		'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+	Accept: 'application/json, text/plain, */*',
+	'Accept-Language': 'en-GB,en;q=0.9',
+}
+
 interface FplBootstrap {
 	teams: Array<{ id: number; name: string; short_name: string; code: number }>
 	events: Array<{ id: number; name: string; deadline_time: string; finished: boolean }>
@@ -33,13 +46,17 @@ export class FplAdapter implements CompetitionAdapter {
 
 	private async getBootstrap(): Promise<FplBootstrap> {
 		if (this.bootstrapCache) return this.bootstrapCache
-		this.bootstrapCache = await fetchJson<FplBootstrap>(`${FPL_BASE}/bootstrap-static/`)
+		this.bootstrapCache = await fetchJson<FplBootstrap>(`${FPL_BASE}/bootstrap-static/`, {
+			headers: FPL_HEADERS,
+		})
 		return this.bootstrapCache
 	}
 
 	private async getFixtures(): Promise<FplFixture[]> {
 		if (this.fixturesCache) return this.fixturesCache
-		this.fixturesCache = await fetchJson<FplFixture[]>(`${FPL_BASE}/fixtures/`)
+		this.fixturesCache = await fetchJson<FplFixture[]>(`${FPL_BASE}/fixtures/`, {
+			headers: FPL_HEADERS,
+		})
 		return this.fixturesCache
 	}
 

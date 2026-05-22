@@ -79,4 +79,18 @@ describe('FplAdapter', () => {
 		expect(rounds[0].fixtures[0].status).toBe('finished')
 		expect(rounds[1].fixtures[0].status).toBe('scheduled')
 	})
+
+	it('sends a browser-like User-Agent so Cloudflare does not 403 the request', async () => {
+		// Default Node fetch UA gets 403/empty body on Cloudflare-fronted FPL from
+		// cloud-provider IPs (root cause of the 24-day daily-sync outage —
+		// 2026-04-28 → 2026-05-22). Lock the workaround in with a test.
+		await adapter.fetchTeams()
+		const fetchMock = vi.mocked(globalThis.fetch)
+		expect(fetchMock).toHaveBeenCalled()
+		const [, init] = fetchMock.mock.calls[0]
+		const headers = (init as RequestInit | undefined)?.headers as Record<string, string>
+		expect(headers).toBeDefined()
+		expect(headers['User-Agent']).toMatch(/Mozilla\/5\.0/)
+		expect(headers.Accept).toContain('application/json')
+	})
 })
