@@ -29,7 +29,10 @@ jobs:
           set -euo pipefail
           curl -sSf -o /tmp/bootstrap.json https://fantasy.premierleague.com/api/bootstrap-static/
           curl -sSf -o /tmp/fixtures.json https://fantasy.premierleague.com/api/fixtures/
-          jq -n \
+          # -c (compact output) keeps the payload near the FPL response sizes
+          # (~3MB combined) instead of jq's default pretty-print, which doubled
+          # the size to ~6MB and exceeded Vercel's 4.5MB function body limit.
+          jq -cn \
             --slurpfile b /tmp/bootstrap.json \
             --slurpfile f /tmp/fixtures.json \
             '{fpl: {bootstrap: $b[0], fixtures: $f[0]}}' \
