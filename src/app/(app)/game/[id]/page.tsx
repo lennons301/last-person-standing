@@ -1,10 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import { Flame, Heart, ListChecks, Target } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
 import { RebuyBanner } from '@/components/game/rebuy-banner'
-import type { WinnerBannerEntry } from '@/components/game/winner-banner'
 import { ClassicPick } from '@/components/picks/classic-pick'
 import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
@@ -22,8 +20,8 @@ import {
 } from '@/lib/game/detail-queries'
 import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
+import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
-import { calculatePayouts } from '@/lib/game-logic/prizes'
 import { user } from '@/lib/schema/auth'
 import { gamePlayer } from '@/lib/schema/game'
 
@@ -135,80 +133,19 @@ export default async function GameDetailPage({
 	const cupStandingsData =
 		game.gameMode === 'cup' ? await getCupLadderData(game.id, session.user.id) : null
 
-	// Winner banner: rendered above standings on completed games. Splits + tied
-	// finishes (multiple players with status='winner') get a "split pot" header
-	// and the per-winner pot share comes from calculatePayouts so the maths
-	// matches the share card. Per-mode stats are filled in below.
-	const winnerBanner: { winners: WinnerBannerEntry[]; runnerUpName?: string } | null = (() => {
-		if (game.status !== 'completed') return null
-		const winnerPlayers = game.players.filter((p) => p.status === 'winner')
-		if (winnerPlayers.length === 0) return null
-		const payouts = calculatePayouts(
-			game.pot.total,
-			winnerPlayers.map((p) => p.userId),
-		)
-		const potShareFor = (userId: string) =>
-			payouts.find((po) => po.userId === userId)?.amount ?? '0.00'
-
-		if (game.gameMode === 'turbo' && turboStandingsData && turboStandingsData.rounds.length > 0) {
-			const lastRound = turboStandingsData.rounds[turboStandingsData.rounds.length - 1]
-			const winners: WinnerBannerEntry[] = winnerPlayers.map((p) => {
-				const tp = lastRound.players.find((x) => x.id === p.id)
-				return {
-					userId: p.userId,
-					name: tp?.name ?? 'Player',
-					potShare: potShareFor(p.userId),
-					stats: [
-						{ icon: Flame, value: tp?.streak ?? 0, label: 'streak' },
-						{ icon: Target, value: tp?.goals ?? 0, label: 'goals' },
-					],
-				}
-			})
-			const winnerIds = new Set(winnerPlayers.map((p) => p.id))
-			const runnerUp = [...lastRound.players]
-				.filter((tp) => !winnerIds.has(tp.id))
-				.sort((a, b) => b.streak - a.streak || b.goals - a.goals)[0]
-			return { winners, runnerUpName: runnerUp?.name }
-		}
-
-		if (game.gameMode === 'cup' && cupStandingsData) {
-			const winners: WinnerBannerEntry[] = winnerPlayers.map((p) => {
-				const cp = cupStandingsData.players.find((x) => x.id === p.id)
-				return {
-					userId: p.userId,
-					name: cp?.name ?? 'Player',
-					potShare: potShareFor(p.userId),
-					stats: [
-						{ icon: Heart, value: cp?.livesRemaining ?? 0, label: 'lives' },
-						{ icon: Flame, value: cp?.streak ?? 0, label: 'streak' },
-						{ icon: Target, value: cp?.goals ?? 0, label: 'goals' },
-					],
-				}
-			})
-			const winnerIds = new Set(winnerPlayers.map((p) => p.id))
-			const others = [...cupStandingsData.players]
-				.filter((cp) => !winnerIds.has(cp.id))
-				.sort(
-					(a, b) => b.livesRemaining - a.livesRemaining || b.streak - a.streak || b.goals - a.goals,
-				)
-			return { winners, runnerUpName: others[0]?.name }
-		}
-
-		if (game.gameMode === 'classic') {
-			// Classic doesn't carry per-player streak/goals; surface rounds-survived
-			// (the highest round number in the grid) so the banner has a stat.
-			const roundsPlayed = classicGrid?.rounds.length ?? 0
-			const winners: WinnerBannerEntry[] = winnerPlayers.map((p) => ({
-				userId: p.userId,
-				name: classicGrid?.players.find((x) => x.id === p.id)?.name ?? 'Player',
-				potShare: potShareFor(p.userId),
-				stats: [{ icon: ListChecks, value: roundsPlayed || '—', label: 'rounds' }],
-			}))
-			return { winners }
-		}
-
-		return null
-	})()
+	// Winner banner: rendered above standings on completed games. Built by a pure
+	// function so its output can be unit-tested for JSON-serializability — the
+	// prop crosses the Server → Client Component boundary, and a function ref
+	// here crashes the whole page render (PR #55 → #57 incident).
+	const winnerBanner = buildWinnerBanner({
+		gameMode: game.gameMode as 'classic' | 'turbo' | 'cup',
+		gameStatus: game.status,
+		potTotal: game.pot.total,
+		players: game.players,
+		turboStandings: turboStandingsData,
+		cupStandings: cupStandingsData,
+		classicGrid,
+	})
 
 	// Alive check is on the TARGET player (acting-as) or the viewer's own membership.
 	const targetPlayerStatus = actingAsTarget
