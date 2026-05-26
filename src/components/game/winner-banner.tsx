@@ -1,7 +1,21 @@
-import type { LucideIcon } from 'lucide-react'
+import { Flame, Heart, ListChecks, type LucideIcon, Target } from 'lucide-react'
+
+// String keys, not function refs — the page that builds this prop runs as a
+// Server Component, so values that cross the GameDetailView boundary must be
+// JSON-serializable. Passing a lucide-react component directly (`icon: Flame`)
+// throws "An error occurred in the Server Components render." at runtime on
+// any completed game.
+export type WinnerStatIcon = 'flame' | 'target' | 'heart' | 'list-checks'
+
+const ICONS: Record<WinnerStatIcon, LucideIcon> = {
+	flame: Flame,
+	target: Target,
+	heart: Heart,
+	'list-checks': ListChecks,
+}
 
 export interface WinnerStat {
-	icon: LucideIcon
+	iconKey: WinnerStatIcon
 	value: number | string
 	label: string
 }
@@ -46,7 +60,7 @@ export function WinnerBanner({ winners, runnerUpName }: WinnerBannerProps) {
 							{w.stats.length > 0 && (
 								<div className="mt-0.5 flex items-center gap-3 text-xs text-amber-800">
 									{w.stats.map((s) => {
-										const Icon = s.icon
+										const Icon = ICONS[s.iconKey]
 										return (
 											<span key={s.label} className="inline-flex items-center gap-1">
 												<Icon className="h-3 w-3" />
