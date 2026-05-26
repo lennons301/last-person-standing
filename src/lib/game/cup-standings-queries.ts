@@ -82,7 +82,18 @@ export async function getCupStandingsData(
 	const g = await db.query.game.findFirst({
 		where: (t, { eq: eqOp }) => eqOp(t.id, gameId),
 		with: {
-			competition: true,
+			competition: {
+				with: {
+					rounds: {
+						with: {
+							fixtures: {
+								with: { homeTeam: true, awayTeam: true },
+								orderBy: (fx, { asc }) => asc(fx.kickoff),
+							},
+						},
+					},
+				},
+			},
 			currentRound: {
 				with: {
 					fixtures: {
@@ -94,10 +105,27 @@ export async function getCupStandingsData(
 			players: true,
 		},
 	})
-	if (!g?.currentRound) return null
+	if (!g) return null
+
+	// Game-completed safety net: `applyAutoCompletion` nulls out currentRoundId
+	// when a cup game finishes, so without a fallback the ladder vanishes the
+	// moment the trophy is decided. Fall back to the latest round with picks
+	// (the round where the championship was won).
+	let displayRound = g.currentRound
+	if (!displayRound) {
+		const picksByRound = await db.query.pick.findMany({
+			where: eq(pick.gameId, gameId),
+		})
+		const pickRoundIds = new Set(picksByRound.map((p) => p.roundId))
+		const candidateRounds = g.competition.rounds
+			.filter((r) => pickRoundIds.has(r.id))
+			.sort((a, b) => b.number - a.number)
+		displayRound = candidateRounds[0] ?? null
+	}
+	if (!displayRound) return null
 
 	const allPicks = await db.query.pick.findMany({
-		where: and(eq(pick.gameId, gameId), eq(pick.roundId, g.currentRound.id)),
+		where: and(eq(pick.gameId, gameId), eq(pick.roundId, displayRound.id)),
 	})
 
 	// User-name lookup — mirror the pattern in getTurboStandingsData.
@@ -121,14 +149,13 @@ export async function getCupStandingsData(
 	// still be in 'active' state until processGameRound completes.
 	const now = new Date()
 	const hideOpenPicks =
-		g.currentRound.status !== 'completed' &&
-		(!g.currentRound.deadline || now < g.currentRound.deadline)
+		displayRound.status !== 'completed' && (!displayRound.deadline || now < displayRound.deadline)
 
 	const players: CupStandingsPlayer[] = g.players.map((p) => {
 		const isViewer = p.userId === viewerUserId
 		const myPicks = allPicks.filter((pk) => pk.gamePlayerId === p.id)
 		const picks: CupStandingsPick[] = myPicks.map((pk) => {
-			const fx = g.currentRound?.fixtures.find((f) => f.id === pk.fixtureId)
+			const fx = displayRound.fixtures.find((f) => f.id === pk.fixtureId)
 			if (!fx) {
 				// Shouldn't happen — pick referencing a fixture not in the round — but
 				// be defensive rather than throwing at the query layer.
@@ -194,18 +221,24 @@ export async function getCupStandingsData(
 
 	return {
 		gameId: g.id,
-		roundId: g.currentRound.id,
-		roundNumber: g.currentRound.number,
-		roundLabel: roundLabel(competitionType, g.currentRound.number),
+		roundId: displayRound.id,
+		roundNumber: displayRound.number,
+		roundLabel: roundLabel(competitionType, displayRound.number),
 		// Per-game derived round status — see src/lib/game/round-status.ts.
+		// Passes the game's currentRoundId / number so derivation returns
+		// 'completed' for a finished game even when displayRound is a past round.
 		roundStatus: deriveGameRoundStatus({
 			round: {
-				id: g.currentRound.id,
-				number: g.currentRound.number,
-				status: g.currentRound.status,
-				deadline: g.currentRound.deadline,
+				id: displayRound.id,
+				number: displayRound.number,
+				status: displayRound.status,
+				deadline: displayRound.deadline,
 			},
-			game: { currentRoundId: g.currentRound.id, currentRoundNumber: g.currentRound.number },
+			game: {
+				currentRoundId: g.currentRoundId,
+				currentRoundNumber:
+					g.competition.rounds.find((r) => r.id === g.currentRoundId)?.number ?? null,
+			},
 			now,
 		}) as 'open' | 'active' | 'completed',
 		maxLives: (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 3,
@@ -305,7 +338,8 @@ export async function getCupLadderData(
 	const base = await getCupStandingsData(gameId, viewerUserId)
 	if (!base) return null
 
-	// Re-fetch the round fixtures so we have team details + scores.
+	// Re-fetch fixtures for the round we're displaying (which may be a past
+	// round on a completed game — see displayRound logic in getCupStandingsData).
 	const g = await db.query.game.findFirst({
 		where: (t, { eq: eqOp }) => eqOp(t.id, gameId),
 		with: {
@@ -320,9 +354,25 @@ export async function getCupLadderData(
 			},
 		},
 	})
-	if (!g?.currentRound) return null
+	if (!g) return null
 
-	const fixturesRaw = g.currentRound.fixtures
+	const fixturesRaw = await (async () => {
+		if (g.currentRound && g.currentRound.id === base.roundId) {
+			return g.currentRound.fixtures
+		}
+		// Completed-game path: getCupStandingsData picked a past round; refetch its fixtures.
+		const roundFixtures = await db.query.round.findFirst({
+			where: (t, { eq: eqOp }) => eqOp(t.id, base.roundId),
+			with: {
+				fixtures: {
+					with: { homeTeam: true, awayTeam: true },
+					orderBy: (fx, { asc }) => asc(fx.kickoff),
+				},
+			},
+		})
+		return roundFixtures?.fixtures ?? null
+	})()
+	if (!fixturesRaw) return null
 
 	const fixtures: CupLadderFixture[] = fixturesRaw.map((fx) => {
 		const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)

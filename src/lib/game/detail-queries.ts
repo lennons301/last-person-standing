@@ -539,15 +539,24 @@ export async function getTurboStandingsData(
 			: []
 	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
 
-	// Turbo is a single-gameweek game — only surface the round this game is tied to.
-	const visibleRounds = gameData.currentRound ? [gameData.currentRound] : []
+	// Turbo is a single-gameweek game — surface the one round this game is tied to.
+	// `currentRound` is nulled out when the game completes (see settle.ts), so on
+	// completed games we recover the round from picks instead. Without this, the
+	// standings grid disappears the moment a turbo game finishes.
+	const pickRoundIds = new Set(
+		gameData.picks.map((pk) => pk.roundId).filter((id): id is string => id != null),
+	)
+	const visibleRounds = gameData.currentRound
+		? [gameData.currentRound]
+		: gameData.competition.rounds.filter((r) => pickRoundIds.has(r.id))
+	const primaryRoundId = visibleRounds[0]?.id ?? gameData.currentRoundId
 
 	// Precompute each player's streak progression so we can mark streak-breaker cells
 	// at the fixture level in the ladder view.
 	const playerStreakBreakRank = new Map<string, number | null>() // playerId -> rank where streak broke, or null
 	for (const p of gameData.players) {
 		const picks = gameData.picks
-			.filter((pk) => pk.gamePlayerId === p.id && pk.roundId === gameData.currentRoundId)
+			.filter((pk) => pk.gamePlayerId === p.id && pk.roundId === primaryRoundId)
 			.sort((a, b) => (a.confidenceRank ?? 99) - (b.confidenceRank ?? 99))
 		let broken: number | null = null
 		for (const pk of picks) {
@@ -564,7 +573,20 @@ export async function getTurboStandingsData(
 
 	return {
 		rounds: visibleRounds.map((r) => {
-			const isRoundOpen = r.status !== 'completed'
+			// Per-game round status — see src/lib/game/round-status.ts. `r.status`
+			// alone isn't enough: the competition-level round flips to 'completed'
+			// only after every fixture has settled, which can be 2+ days after the
+			// pick deadline. We need the deadline-aware derived status so picks
+			// reveal the moment the deadline passes, not when the last whistle blows.
+			const derivedStatus = deriveGameRoundStatus({
+				round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
+				game: {
+					currentRoundId: gameData.currentRoundId,
+					currentRoundNumber: gameData.currentRound?.number ?? null,
+				},
+				now,
+			})
+			const isRoundOpen = derivedStatus === 'open'
 
 			const players = gameData.players.map((p) => {
 				const playerPicks = gameData.picks
@@ -758,15 +780,7 @@ export async function getTurboStandingsData(
 				number: r.number,
 				name: r.name ?? roundLabelLong(turboCompetitionType, r.number),
 				label: roundLabel(turboCompetitionType, r.number),
-				// Per-game round status — see src/lib/game/round-status.ts.
-				status: deriveGameRoundStatus({
-					round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
-					game: {
-						currentRoundId: gameData.currentRoundId,
-						currentRoundNumber: gameData.currentRound?.number ?? null,
-					},
-					now,
-				}) as 'open' | 'active' | 'completed',
+				status: derivedStatus as 'open' | 'active' | 'completed',
 				players,
 				fixtures,
 			}
@@ -830,6 +844,25 @@ export async function getProgressGridData(
 		voidedAt: r.voidedAt ?? null,
 	}))
 
+	// Pre-compute per-game derived status for each round. Using `r.status` alone
+	// keeps picks locked even after the deadline (round.status flips to
+	// 'completed' only when every fixture has settled). The derived status
+	// returns 'open' only while deadline > now.
+	const now = new Date()
+	const currentRoundNumber =
+		gameData.competition.rounds.find((r) => r.id === gameData.currentRoundId)?.number ?? null
+	const derivedRoundStatus = new Map<string, 'upcoming' | 'open' | 'active' | 'completed'>()
+	for (const r of gameData.competition.rounds) {
+		derivedRoundStatus.set(
+			r.id,
+			deriveGameRoundStatus({
+				round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
+				game: { currentRoundId: gameData.currentRoundId, currentRoundNumber },
+				now,
+			}),
+		)
+	}
+
 	// Get user names for players
 	const { user } = await import('@/lib/schema/auth')
 	const userRows =
@@ -862,11 +895,11 @@ export async function getProgressGridData(
 					continue
 				}
 			}
-			const round = gameData.competition.rounds.find((cr) => cr.id === r.id)
-			const isRoundOpen = round?.status !== 'completed'
+			const isRoundOpen = derivedRoundStatus.get(r.id) === 'open'
 			const isOwnPick = viewerGamePlayerId && thePick?.gamePlayerId === viewerGamePlayerId
-			// If the round is open and either the viewer isn't the picker or the caller
-			// has requested a shared-view (hide everything current) — hide the team info.
+			// If the round is open (deadline hasn't passed yet) and either the viewer
+			// isn't the picker or the caller has requested a shared-view (hide
+			// everything current) — hide the team info.
 			const hideTeam = isRoundOpen && (options?.hideAllCurrentPicks || !isOwnPick)
 
 			if (!thePick) {
