@@ -20,7 +20,12 @@
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '@/lib/db'
-import { getLivePayload } from '@/lib/game/detail-queries'
+import { getCupLadderData, getCupStandingsData } from '@/lib/game/cup-standings-queries'
+import {
+	getLivePayload,
+	getProgressGridData,
+	getTurboStandingsData,
+} from '@/lib/game/detail-queries'
 import { settleFixture } from '@/lib/game/settle'
 import { round as roundTable } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
@@ -527,5 +532,373 @@ describe('live projection', () => {
 		const payload = await getLivePayload(gameId, 'u')
 		const projected = payload?.players.find((p) => p.id === gp)?.projectedStreak
 		expect(projected).toBe(2)
+	})
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* Post-deadline + post-completion visibility                              */
+/*                                                                         */
+/* Regression coverage for: picks staying locked behind the lock icon      */
+/* AFTER the deadline (because the competition round's status flag only    */
+/* flips to 'completed' once every fixture has settled — sometimes 2+ days */
+/* later); and standings/ladder vanishing the moment a game completes      */
+/* (because applyAutoCompletion nulls out currentRoundId for every mode).  */
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe('post-deadline + post-completion visibility', () => {
+	it("classic: progress grid reveals other players' picks once deadline passes", async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		// Round is 'open' at the competition level (one fixture pending) but deadline has passed.
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'open',
+			deadline: new Date(Date.now() - 60_000),
+		})
+		await makeRound(compId, {
+			number: 3,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fx = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		await makePick({ gameId, gamePlayerId: gpMe, roundId: r2, teamId: a, fixtureId: fx })
+		await makePick({ gameId, gamePlayerId: gpOther, roundId: r2, teamId: b, fixtureId: fx })
+		// NB: fixture is still pending; nothing has settled. This is exactly the
+		// post-deadline-but-pre-final-whistle window where the original bug bit.
+
+		const grid = await getProgressGridData(gameId, 'u-me')
+		const otherRow = grid?.players.find((p) => p.id === gpOther)
+		expect(otherRow?.cellsByRoundId[r2]?.result).not.toBe('locked')
+	})
+
+	it('turbo: standings keep showing the round + reveal picks once deadline passes', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const teams: string[] = []
+		for (let i = 0; i < 4; i++) {
+			teams.push(await makeTeam({ name: `T${i}`, shortName: `T${i}` }))
+		}
+		const r1 = await makeRound(compId, {
+			number: 1,
+			status: 'open',
+			deadline: new Date(Date.now() - 60_000),
+		})
+		const fx1 = await makeFixture({ roundId: r1, homeTeamId: teams[0], awayTeamId: teams[1] })
+		const fx2 = await makeFixture({ roundId: r1, homeTeamId: teams[2], awayTeamId: teams[3] })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'turbo',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2 },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		await makePick({
+			gameId,
+			gamePlayerId: gpMe,
+			roundId: r1,
+			teamId: teams[0],
+			fixtureId: fx1,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpOther,
+			roundId: r1,
+			teamId: teams[2],
+			fixtureId: fx2,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+
+		const standings = await getTurboStandingsData(gameId, 'u-me')
+		expect(standings?.rounds.length).toBe(1)
+		const others = standings?.rounds[0].players.find((p) => p.id === gpOther)
+		expect(others?.picks.every((c) => c.result !== 'hidden')).toBe(true)
+	})
+
+	it('turbo: standings survive game completion (currentRoundId null)', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fx = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'turbo',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1 },
+		})
+		const gp = await makePlayer({ gameId, userId: 'u' })
+		await makePick({
+			gameId,
+			gamePlayerId: gp,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+
+		// Finish the single fixture — turbo auto-completes, currentRoundId is nulled.
+		await finishFixture(fx, 1, 0)
+		await settleFixture(fx)
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		expect(g?.currentRoundId).toBeNull()
+
+		// Standings query must still return the round/players/picks for the UI
+		// to render the post-game grid + winner banner.
+		const standings = await getTurboStandingsData(gameId, 'u')
+		expect(standings?.rounds.length).toBe(1)
+		expect(standings?.rounds[0].players[0].picks.length).toBe(1)
+		expect(standings?.rounds[0].status).toBe('completed')
+	})
+
+	it('cup: standings ladder survives game completion (falls back to last picked round)', async () => {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', fifaPot: 2 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', fifaPot: 2 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		await makeRound(compId, {
+			number: 2,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fx = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1, startingLives: 0 },
+		})
+		// 2 players — one wins on the only fixture, the other loses → alive=1 → auto-completion.
+		const gpWin = await makePlayer({ gameId, userId: 'u-win', livesRemaining: 0 })
+		const gpLose = await makePlayer({ gameId, userId: 'u-lose', livesRemaining: 0 })
+		await makePick({
+			gameId,
+			gamePlayerId: gpWin,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpLose,
+			roundId: r1,
+			teamId: b,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+
+		await finishFixture(fx, 1, 0)
+		await settleFixture(fx)
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		expect(g?.currentRoundId).toBeNull()
+
+		// Without the displayRound fallback, getCupStandingsData would return null
+		// here and the WC ladder would vanish the moment the trophy is decided.
+		const cup = await getCupStandingsData(gameId, 'u-win')
+		expect(cup).not.toBeNull()
+		expect(cup?.roundId).toBe(r1)
+		expect(cup?.roundStatus).toBe('completed')
+		expect(cup?.players.length).toBe(2)
+	})
+
+	it('cup: getCupLadderData (the function the page actually calls) survives game completion', async () => {
+		// Regression guard for the ladder-side fixturesRaw fallback added alongside
+		// the displayRound fix. If that path is broken, the cup page renders the
+		// banner + empty standings — same UX failure as the original bug.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', fifaPot: 2 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', fifaPot: 2 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		await makeRound(compId, {
+			number: 2,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fx = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1, startingLives: 0 },
+		})
+		const gpWin = await makePlayer({ gameId, userId: 'u-win', livesRemaining: 0 })
+		const gpLose = await makePlayer({ gameId, userId: 'u-lose', livesRemaining: 0 })
+		await makePick({
+			gameId,
+			gamePlayerId: gpWin,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpLose,
+			roundId: r1,
+			teamId: b,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+
+		await finishFixture(fx, 1, 0)
+		await settleFixture(fx)
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		expect(g?.currentRoundId).toBeNull()
+
+		const ladder = await getCupLadderData(gameId, 'u-win')
+		expect(ladder).not.toBeNull()
+		expect(ladder?.roundId).toBe(r1)
+		expect(ladder?.fixtures.length).toBe(1)
+		expect(ladder?.fixtures[0].id).toBe(fx)
+		expect(ladder?.players.length).toBe(2)
+	})
+
+	it('classic: progress grid hides other players picks BEFORE the deadline', async () => {
+		// Regression guard for the opposite of the deadline-reveal fix: when the
+		// deadline is still in the future, other players' picks must show as
+		// 'locked', not their team name.
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		await makeRound(compId, {
+			number: 3,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 172_800_000),
+		})
+		const fx = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		await makePick({ gameId, gamePlayerId: gpMe, roundId: r2, teamId: a, fixtureId: fx })
+		await makePick({ gameId, gamePlayerId: gpOther, roundId: r2, teamId: b, fixtureId: fx })
+
+		const grid = await getProgressGridData(gameId, 'u-me')
+		const myRow = grid?.players.find((p) => p.id === gpMe)
+		const otherRow = grid?.players.find((p) => p.id === gpOther)
+		// My own pick stays visible; the other player's pick is locked behind the icon.
+		expect(myRow?.cellsByRoundId[r2]?.result).not.toBe('locked')
+		expect(otherRow?.cellsByRoundId[r2]?.result).toBe('locked')
+	})
+
+	it('turbo: standings hide other players picks BEFORE the deadline', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const teams: string[] = []
+		for (let i = 0; i < 4; i++) {
+			teams.push(await makeTeam({ name: `T${i}`, shortName: `T${i}` }))
+		}
+		const r1 = await makeRound(compId, {
+			number: 1,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fx1 = await makeFixture({ roundId: r1, homeTeamId: teams[0], awayTeamId: teams[1] })
+		const fx2 = await makeFixture({ roundId: r1, homeTeamId: teams[2], awayTeamId: teams[3] })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'turbo',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2 },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		await makePick({
+			gameId,
+			gamePlayerId: gpMe,
+			roundId: r1,
+			teamId: teams[0],
+			fixtureId: fx1,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpOther,
+			roundId: r1,
+			teamId: teams[2],
+			fixtureId: fx2,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+
+		const standings = await getTurboStandingsData(gameId, 'u-me')
+		const me = standings?.rounds[0].players.find((p) => p.id === gpMe)
+		const others = standings?.rounds[0].players.find((p) => p.id === gpOther)
+		// My picks remain visible (not hidden); other player's are hidden.
+		expect(me?.picks.every((c) => c.result !== 'hidden')).toBe(true)
+		expect(others?.picks.every((c) => c.result === 'hidden')).toBe(true)
+	})
+
+	it('cup: standings hide other players picks BEFORE the deadline', async () => {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', fifaPot: 2 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', fifaPot: 2 })
+		const r1 = await makeRound(compId, {
+			number: 1,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fx = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1, startingLives: 3 },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me', livesRemaining: 3 })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other', livesRemaining: 3 })
+		await makePick({
+			gameId,
+			gamePlayerId: gpMe,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpOther,
+			roundId: r1,
+			teamId: b,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+
+		const cup = await getCupStandingsData(gameId, 'u-me')
+		const me = cup?.players.find((p) => p.id === gpMe)
+		const others = cup?.players.find((p) => p.id === gpOther)
+		expect(me?.picks.every((c) => c.result !== 'hidden')).toBe(true)
+		expect(others?.picks.every((c) => c.result === 'hidden')).toBe(true)
 	})
 })

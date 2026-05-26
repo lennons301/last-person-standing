@@ -16,7 +16,7 @@ vi.mock('@/lib/db', () => ({
 	},
 }))
 
-const { findFirstMock } = mocks
+const { findFirstMock, findManyMock, selectMock } = mocks
 
 import {
 	type CupLadderBacker,
@@ -36,15 +36,54 @@ describe('getCupStandingsData', () => {
 		expect(await getCupStandingsData('g1', 'u1')).toBeNull()
 	})
 
-	it('returns null when there is no current round', async () => {
+	it('returns null when there is no current round AND no picks (game has no past rounds to fall back to)', async () => {
 		findFirstMock.mockResolvedValue({
 			id: 'g',
+			currentRoundId: null,
 			currentRound: null,
 			players: [],
-			competition: { type: 'group_knockout' },
+			competition: { type: 'group_knockout', rounds: [] },
 			modeConfig: {},
 		})
+		findManyMock.mockResolvedValue([])
 		expect(await getCupStandingsData('g1', 'u1')).toBeNull()
+	})
+
+	it('falls back to the latest round with picks when game has completed (currentRound is null)', async () => {
+		// Game completed: applyAutoCompletion has set currentRoundId=null. The ladder
+		// should still render, showing the round where the trophy was decided.
+		const r1 = {
+			id: 'r1',
+			number: 1,
+			status: 'completed' as const,
+			deadline: new Date('2026-05-01T12:00:00Z'),
+			fixtures: [],
+		}
+		const r2 = {
+			id: 'r2',
+			number: 2,
+			status: 'completed' as const,
+			deadline: new Date('2026-05-08T12:00:00Z'),
+			fixtures: [],
+		}
+		findFirstMock.mockResolvedValue({
+			id: 'g',
+			currentRoundId: null,
+			currentRound: null,
+			players: [],
+			competition: { type: 'group_knockout', rounds: [r1, r2] },
+			modeConfig: {},
+		})
+		// First findMany call: picks-by-game (round resolution). Second: picks-for-display-round.
+		findManyMock.mockResolvedValueOnce([{ roundId: 'r2' }]).mockResolvedValueOnce([])
+		// Mock the user-name lookup (db.select(...).from(...).where(...))
+		selectMock.mockReturnValue({
+			from: () => ({ where: () => Promise.resolve([]) }),
+		})
+		const result = await getCupStandingsData('g1', 'u1')
+		expect(result).not.toBeNull()
+		expect(result?.roundId).toBe('r2')
+		expect(result?.roundStatus).toBe('completed')
 	})
 })
 

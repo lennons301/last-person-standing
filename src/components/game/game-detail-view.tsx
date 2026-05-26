@@ -11,6 +11,7 @@ import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import { type AdminPayment, PaymentsPanel } from '@/components/game/payments-panel'
 import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
+import { WinnerBanner, type WinnerBannerEntry } from '@/components/game/winner-banner'
 import { LiveProvider } from '@/components/live/live-provider'
 import { LiveScoreTicker } from '@/components/live/live-score-ticker'
 import { CupStandings } from '@/components/standings/cup-standings'
@@ -61,6 +62,10 @@ interface GameDetailViewProps {
 		rounds: TurboRoundSummary[]
 		numberOfPicks: number
 	} | null
+	winnerBanner?: {
+		winners: WinnerBannerEntry[]
+		runnerUpName?: string
+	} | null
 	cupStandings?: CupLadderData | null
 }
 
@@ -69,6 +74,7 @@ export function GameDetailView({
 	pickSection,
 	classicGrid,
 	turboStandings,
+	winnerBanner,
 	cupStandings,
 }: GameDetailViewProps) {
 	const [shareOpen, setShareOpen] = useState(false)
@@ -131,6 +137,10 @@ export function GameDetailView({
 				)}
 
 				<div className="mb-6">{pickSection}</div>
+
+				{winnerBanner && winnerBanner.winners.length > 0 && (
+					<WinnerBanner winners={winnerBanner.winners} runnerUpName={winnerBanner.runnerUpName} />
+				)}
 
 				{classicGrid && (
 					<ProgressGrid
