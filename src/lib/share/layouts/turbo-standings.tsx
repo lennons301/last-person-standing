@@ -4,7 +4,7 @@ import { Footer, Header, modeLabel, OverflowTailRow } from '../shared'
 
 const ALIVE_CAP = 20
 const ELIM_CAP = 10
-const ROW_HEIGHT = 48
+const ROW_HEIGHT = 56
 
 export interface LayoutRender {
 	jsx: ReactElement
@@ -126,38 +126,82 @@ export function turboStandingsLayout(
 								const pick = player.picks.find((pp) => pp.rank === i + 1)
 								let bg = 'transparent'
 								let border = '1px dashed #e8e6e1'
-								let text = ''
 								let color = '#fff'
-								// Cell text: the picked team's shortName (or 'DRAW' for a draw
-								// prediction). Single-letter H/A/D was unreadable for viewers —
-								// matches the in-app TurboCell behavior now.
-								const pickedTeamLabel = pick
+								// Two-line cell:
+								//   primary = picked team shortName (or 'DRAW')
+								//   secondary = opponent context, so the fixture is identifiable
+								//     home_win → "v {awayShort}"
+								//     away_win → "@ {homeShort}"
+								//     draw     → "{homeShort}-{awayShort}"
+								// Single-line H/D/A or a bare 'DRAW' loses the fixture identity
+								// when the image gets shared without context — fixed PR #58 follow-up.
+								const primary = pick
 									? pick.prediction === 'home_win'
 										? pick.homeShort
 										: pick.prediction === 'away_win'
 											? pick.awayShort
 											: 'DRAW'
 									: ''
+								const secondary = pick
+									? pick.prediction === 'home_win'
+										? `v ${pick.awayShort}`
+										: pick.prediction === 'away_win'
+											? `@ ${pick.homeShort}`
+											: `${pick.homeShort}-${pick.awayShort}`
+									: ''
+								let isHidden = false
 								if (pick) {
 									if (pick.result === 'hidden') {
 										bg = '#f0eee9'
 										color = '#6b6b6b'
-										text = '🔒'
 										border = 'none'
+										isHidden = true
 									} else if (pick.result === 'win') {
 										bg = '#16a34a'
-										text = pickedTeamLabel
 										border = 'none'
 									} else if (pick.result === 'loss') {
 										bg = '#dc2626'
-										text = pickedTeamLabel
 										border = 'none'
 									} else {
 										bg = '#2563eb'
-										text = pickedTeamLabel
 										border = 'none'
 									}
 								}
+								// Satori (Vercel's JSX-to-image renderer) needs `display: flex`
+								// on every element AND a single child per conditional branch —
+								// React Fragments inside a flex column don't reliably stack.
+								// Wrapping the two lines in a single nested flex-column div fixes
+								// the "MUN" + "v LIV" rendering side-by-side instead of stacked.
+								const cellContent = isHidden ? (
+									<div style={{ display: 'flex', fontSize: '14px' }}>🔒</div>
+								) : pick ? (
+									<div
+										style={{
+											display: 'flex',
+											flexDirection: 'column',
+											alignItems: 'center',
+											justifyContent: 'center',
+										}}
+									>
+										<div style={{ display: 'flex', fontSize: '12px', lineHeight: 1 }}>
+											{primary}
+										</div>
+										<div
+											style={{
+												display: 'flex',
+												fontSize: '9px',
+												fontWeight: 600,
+												opacity: 0.85,
+												lineHeight: 1,
+												marginTop: '3px',
+											}}
+										>
+											{secondary}
+										</div>
+									</div>
+								) : (
+									<div style={{ display: 'flex' }} />
+								)
 								return (
 									<div
 										// biome-ignore lint/suspicious/noArrayIndexKey: rank columns are stable
@@ -165,7 +209,7 @@ export function turboStandingsLayout(
 										style={{
 											display: 'flex',
 											flex: 1,
-											height: '34px',
+											height: '42px',
 											borderRadius: '4px',
 											background: bg,
 											border,
@@ -173,10 +217,9 @@ export function turboStandingsLayout(
 											alignItems: 'center',
 											justifyContent: 'center',
 											fontWeight: 700,
-											fontSize: '12px',
 										}}
 									>
-										{text}
+										{cellContent}
 									</div>
 								)
 							})}

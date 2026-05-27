@@ -148,12 +148,14 @@ describe('turboStandingsLayout', () => {
 		expect(text).toContain('CHE')
 		// Draw prediction → 'DRAW' label.
 		expect(text).toContain('DRAW')
-		// And critically — the bare-letter labels are no longer the only thing
-		// in the cells. Confirm none of the single-letter prediction badges
-		// land as a top-level cell text.
-		// (The letters could legitimately appear inside player names, so we
-		// just assert the team codes are present rather than asserting H/D/A
-		// absence outright.)
+		// Secondary fixture-context line:
+		//   home_win → "v {awayShort}"
+		expect(text).toContain('v LIV')
+		//   away_win → "@ {homeShort}"
+		expect(text).toContain('@ ARS')
+		//   draw     → "{homeShort}-{awayShort}" — keyword 'DRAW' alone isn't
+		//   enough to identify the fixture once the image is shared out of context.
+		expect(text).toContain('TOT-EVE')
 	})
 
 	it('caps overflow when more than 30 players', () => {
