@@ -4,12 +4,14 @@ import { auth } from '@/lib/auth'
 
 // Paths that bypass the Better Auth session check in this proxy.
 // /auth — login page renders for unauthenticated users.
+// /forgot-password, /reset-password — password reset flow needs to be reachable
+//   without a session (the whole point — user has forgotten how to sign in).
 // /api/auth — Better Auth's own request handler.
 // /api/cron — every route under this checks CRON_SECRET (or QStash signature
 //   for qstash-handler) at the route level. The proxy must let them through
 //   so route-level auth can run; otherwise GitHub Actions and QStash callbacks
 //   get redirected to /auth.
-const publicPaths = ['/auth', '/api/auth', '/api/cron']
+const publicPaths = ['/auth', '/forgot-password', '/reset-password', '/api/auth', '/api/cron']
 
 export const config = {
 	matcher: ['/((?!_next/static|_next/image|favicon.ico|public).*)'],
