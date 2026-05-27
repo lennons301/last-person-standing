@@ -128,6 +128,16 @@ export function turboStandingsLayout(
 								let border = '1px dashed #e8e6e1'
 								let text = ''
 								let color = '#fff'
+								// Cell text: the picked team's shortName (or 'DRAW' for a draw
+								// prediction). Single-letter H/A/D was unreadable for viewers —
+								// matches the in-app TurboCell behavior now.
+								const pickedTeamLabel = pick
+									? pick.prediction === 'home_win'
+										? pick.homeShort
+										: pick.prediction === 'away_win'
+											? pick.awayShort
+											: 'DRAW'
+									: ''
 								if (pick) {
 									if (pick.result === 'hidden') {
 										bg = '#f0eee9'
@@ -136,30 +146,15 @@ export function turboStandingsLayout(
 										border = 'none'
 									} else if (pick.result === 'win') {
 										bg = '#16a34a'
-										text =
-											pick.prediction === 'home_win'
-												? 'H'
-												: pick.prediction === 'away_win'
-													? 'A'
-													: 'D'
+										text = pickedTeamLabel
 										border = 'none'
 									} else if (pick.result === 'loss') {
 										bg = '#dc2626'
-										text =
-											pick.prediction === 'home_win'
-												? 'H'
-												: pick.prediction === 'away_win'
-													? 'A'
-													: 'D'
+										text = pickedTeamLabel
 										border = 'none'
 									} else {
 										bg = '#2563eb'
-										text =
-											pick.prediction === 'home_win'
-												? 'H'
-												: pick.prediction === 'away_win'
-													? 'A'
-													: 'D'
+										text = pickedTeamLabel
 										border = 'none'
 									}
 								}
