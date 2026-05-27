@@ -40,6 +40,22 @@ const VARIANT_LABEL: Record<Variant, string> = {
 	winner: 'Winner',
 }
 
+// Captions for native share sheets when sending the image to existing
+// players. NOT the same as the invite blurb — when you share a standings
+// screenshot to your group chat, you don't want "Join me in <game>" tacked
+// onto it. The invite blurb stays on the dedicated WhatsApp invite button
+// up top.
+function captionFor(variant: Variant, gameName: string): string {
+	switch (variant) {
+		case 'standings':
+			return `${gameName} — standings`
+		case 'live':
+			return `${gameName} — live update`
+		case 'winner':
+			return `${gameName} — winner 🏆`
+	}
+}
+
 export function ShareDialog({
 	open,
 	onOpenChange,
@@ -103,7 +119,7 @@ export function ShareDialog({
 			await navigator.share({
 				files: [file],
 				title: `${gameName} — ${VARIANT_LABEL[variant]}`,
-				text: inviteMessage,
+				text: captionFor(variant, gameName),
 			})
 		} catch (err) {
 			// AbortError fires when the user dismisses the native sheet — treat
