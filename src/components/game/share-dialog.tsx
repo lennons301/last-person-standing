@@ -1,8 +1,8 @@
 'use client'
 
-import { Check, Copy, Download, MessageCircle } from 'lucide-react'
+import { Check, Copy, Download, MessageCircle, Share2 } from 'lucide-react'
 import Image from 'next/image'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
 	Dialog,
@@ -54,6 +54,9 @@ export function ShareDialog({
 }: ShareDialogProps) {
 	const [copied, setCopied] = useState(false)
 	const [variant, setVariant] = useState<Variant>(defaultVariant)
+	const [canShareFiles, setCanShareFiles] = useState(false)
+	const [sharing, setSharing] = useState(false)
+	const [shareError, setShareError] = useState<string | null>(null)
 
 	const inviteMessage = `Join me in ${gameName} on Last Person Standing — £${pot} pot. ${inviteUrl}`
 	const whatsappHref = `https://wa.me/?text=${encodeURIComponent(inviteMessage)}`
@@ -64,10 +67,52 @@ export function ShareDialog({
 			? `/api/share/${variant}/${gameId}`
 			: `/api/share/${variant}/${gameId}?t=${cacheBust}`
 
+	// Feature-detect Web Share API with file support. iOS Safari + Chrome
+	// Android present a native share sheet (WhatsApp, Messages, Mail, …)
+	// when files are passed. Desktop browsers usually don't — they fall
+	// back to the Download button. The probe constructs a tiny dummy file
+	// because navigator.canShare won't return true without seeing one.
+	useEffect(() => {
+		if (typeof navigator === 'undefined' || !navigator.canShare) return
+		try {
+			const probe = new File([''], 'probe.png', { type: 'image/png' })
+			setCanShareFiles(navigator.canShare({ files: [probe] }))
+		} catch {
+			setCanShareFiles(false)
+		}
+	}, [])
+
 	async function handleCopy() {
 		await navigator.clipboard.writeText(inviteUrl)
 		setCopied(true)
 		setTimeout(() => setCopied(false), 2000)
+	}
+
+	async function handleShareImage() {
+		setShareError(null)
+		setSharing(true)
+		try {
+			const response = await fetch(imageUrl)
+			if (!response.ok) throw new Error(`Failed to fetch image (${response.status})`)
+			const blob = await response.blob()
+			const filename = `${gameName.replace(/\s+/g, '-')}-${variant}.png`
+			const file = new File([blob], filename, { type: blob.type || 'image/png' })
+			if (!navigator.canShare?.({ files: [file] })) {
+				throw new Error('Sharing files is not supported on this device')
+			}
+			await navigator.share({
+				files: [file],
+				title: `${gameName} — ${VARIANT_LABEL[variant]}`,
+				text: inviteMessage,
+			})
+		} catch (err) {
+			// AbortError fires when the user dismisses the native sheet — treat
+			// as a quiet cancel rather than an error.
+			if (err instanceof DOMException && err.name === 'AbortError') return
+			setShareError(err instanceof Error ? err.message : 'Share failed')
+		} finally {
+			setSharing(false)
+		}
 	}
 
 	return (
@@ -134,6 +179,19 @@ export function ShareDialog({
 										</SelectItem>
 									</SelectContent>
 								</Select>
+								{canShareFiles && (
+									<Button
+										type="button"
+										variant="default"
+										size="sm"
+										className="gap-1.5"
+										onClick={handleShareImage}
+										disabled={sharing}
+									>
+										<Share2 className="h-3.5 w-3.5" />
+										{sharing ? 'Opening…' : 'Share'}
+									</Button>
+								)}
 								<Button asChild variant="outline" size="sm" className="gap-1.5">
 									<a href={imageUrl} download={`${gameName.replace(/\s+/g, '-')}-${variant}.png`}>
 										<Download className="h-3.5 w-3.5" />
@@ -142,6 +200,7 @@ export function ShareDialog({
 								</Button>
 							</div>
 						</div>
+						{shareError && <p className="text-xs text-[var(--eliminated)]">{shareError}</p>}
 						<div className="rounded-md border border-border bg-muted/30 overflow-hidden">
 							<Image
 								src={imageUrl}
