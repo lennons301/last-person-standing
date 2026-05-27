@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ export function AuthForm() {
 	const router = useRouter()
 	const searchParams = useSearchParams()
 	const callbackUrl = searchParams.get('callbackUrl') || '/'
+	const resetSuccess = searchParams.get('reset') === 'success'
 
 	const [error, setError] = useState<string | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -66,13 +68,26 @@ export function AuthForm() {
 				</TabsList>
 
 				<TabsContent value="signin">
+					{resetSuccess && (
+						<div className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+							Password updated. Sign in with your new password.
+						</div>
+					)}
 					<form onSubmit={handleSignIn} className="space-y-3">
 						<div>
 							<Label htmlFor="email-signin">Email</Label>
 							<Input id="email-signin" name="email" type="email" required autoComplete="email" />
 						</div>
 						<div>
-							<Label htmlFor="password-signin">Password</Label>
+							<div className="flex items-baseline justify-between">
+								<Label htmlFor="password-signin">Password</Label>
+								<Link
+									href="/forgot-password"
+									className="text-xs text-muted-foreground hover:text-foreground underline"
+								>
+									Forgot?
+								</Link>
+							</div>
 							<Input
 								id="password-signin"
 								name="password"
