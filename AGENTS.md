@@ -12,7 +12,7 @@ Football survivor picks game — private games where friends pick teams each rou
 - **Auth:** Better Auth (email + password, database-backed sessions)
 - **UI:** shadcn/ui + Tailwind CSS
 - **Testing:** Vitest
-- **Deployment:** Vercel (lhr1 region) — production: <https://last-person-standing-theta.vercel.app> (live since Phase 4.5, 2026-04-28)
+- **Deployment:** Vercel (lhr1 region) — production: <https://last-person-standing.app> (custom domain since 2026-06-04; `last-person-standing-theta.vercel.app` 308-redirects to it for backwards compatibility)
 
 ## Commands
 
