@@ -25,6 +25,7 @@ KEYS=(
   QSTASH_TOKEN
   QSTASH_CURRENT_SIGNING_KEY
   QSTASH_NEXT_SIGNING_KEY
+  RESEND_API_KEY
 )
 
 cd "$(dirname "$0")/.."
@@ -46,8 +47,10 @@ for k in "${KEYS[@]}"; do
   fi
   # Remove any existing preview value (ignore errors when it doesn't exist)
   vercel env rm "$k" "$VERCEL_ENV" --yes >/dev/null 2>&1 || true
-  # Push the new value via stdin (non-interactive)
-  printf '%s' "$val" | vercel env add "$k" "$VERCEL_ENV" >/dev/null 2>&1
+  # Push the new value. Newer Vercel CLIs (50.x+) require --value for
+  # non-interactive use; stdin-based piping triggers a "guidance" prompt
+  # instead of silently accepting input.
+  vercel env add "$k" "$VERCEL_ENV" --value "$val" --yes --force >/dev/null 2>&1
   echo "  $k: ✓"
 done
 
