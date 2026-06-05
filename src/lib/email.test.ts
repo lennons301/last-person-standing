@@ -39,7 +39,7 @@ describe('sendPasswordResetEmail', () => {
 		expect(call.subject).toMatch(/reset/i)
 		expect(call.text).toContain('https://lps.example/reset?token=abc')
 		expect(call.text).toContain('Alice')
-		expect(call.from).toContain('onboarding@resend.dev')
+		expect(call.from).toContain('noreply@last-person-standing.app')
 	})
 
 	it('uses a generic greeting when no displayName is supplied', async () => {

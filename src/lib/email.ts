@@ -8,10 +8,10 @@ import { Resend } from 'resend'
 // If RESEND_API_KEY is missing, the wrapper logs the email instead of sending
 // so flows still work without a key.
 
-const FROM_ADDRESS = 'Last Person Standing <onboarding@resend.dev>'
-// onboarding@resend.dev is Resend's shared sandbox sender. Works without DNS
-// verification but only delivers to the workspace owner's email address. When
-// a custom domain is verified, swap this for noreply@<domain>.
+const FROM_ADDRESS = 'Last Person Standing <noreply@last-person-standing.app>'
+// last-person-standing.app is verified in our LPS Resend workspace
+// (separate from moontide's account — Resend free tier is one verified
+// domain per workspace). Delivers to any recipient address.
 
 let resendClient: Resend | null = null
 function getResend(): Resend | null {
