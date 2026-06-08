@@ -84,11 +84,78 @@ export const WC_2026_POTS: WcTeamPot[] = [
 	{ footballDataId: '', name: 'Iraq', pot: 4 },
 ]
 
+/**
+ * Maps a football-data.org canonical team name → the `name` we use in
+ * WC_2026_POTS. Mirrors the `FPL_TO_FD_TLA` pattern in
+ * `bootstrap-competitions.ts`: a small hand-maintained bridge for the cases
+ * where our reference list and the data source disagree on a country's name.
+ *
+ * Key is the football-data name (lower-cased at lookup time), value is the
+ * matching `WC_2026_POTS[].name`. `applyPotAssignments` consults this before
+ * falling back to a direct name match, so a WC team whose football-data name
+ * differs from our list still resolves to a pot.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ TODO(#65 — UNVERIFIED ASSUMPTIONS, Sean to confirm against live feed): │
+ * │                                                                        │
+ * │ Every entry below is an EDUCATED GUESS at football-data.org's          │
+ * │ canonical WC team name. This branch was written WITHOUT live           │
+ * │ football-data creds, so NONE of these strings have been checked        │
+ * │ against an actual /competitions/WC/matches response. The #65 spike     │
+ * │ dumps the real team names — reconcile this map against that dump and   │
+ * │ delete / correct any entry that doesn't match. If football-data        │
+ * │ actually returns the same name we already use, drop that entry         │
+ * │ (the direct name match handles it).                                    │
+ * │                                                                        │
+ * │ Assumed aliases (football-data name → our WC_2026_POTS name):          │
+ * │   'Korea Republic'            → 'South Korea'                          │
+ * │   'Czech Republic'            → 'Czechia'                              │
+ * │   'Türkiye' / 'Turkiye'       → 'Turkey'                               │
+ * │   'Cape Verde'                → 'Cape Verde Islands'                   │
+ * │   'DR Congo' / 'Congo DR'     → 'Congo DR'                             │
+ * │   'Bosnia and Herzegovina' /                                           │
+ * │     'Bosnia-Herzegovina'      → 'Bosnia-Herzegovina'                   │
+ * │   'Curacao'                   → 'Curaçao' (ASCII fallback for the ç)   │
+ * │   'Côte d'Ivoire' / 'Cote d'Ivoire' /                                │
+ * │     'Ivory Coast'             → 'Ivory Coast'                          │
+ * │   'USA' / 'United States of America' → 'United States'                │
+ * │                                                                        │
+ * │ Entries that map a name onto itself are defensive no-ops — harmless    │
+ * │ if football-data already matches our list, but they keep the full set  │
+ * │ of guessed spellings documented in one place for the #65 reconcile.    │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export const FD_NAME_TO_WC_POT_NAME: Record<string, string> = {
+	'korea republic': 'South Korea',
+	'czech republic': 'Czechia',
+	türkiye: 'Turkey',
+	turkiye: 'Turkey',
+	'cape verde': 'Cape Verde Islands',
+	'dr congo': 'Congo DR',
+	'congo dr': 'Congo DR',
+	'bosnia and herzegovina': 'Bosnia-Herzegovina',
+	'bosnia-herzegovina': 'Bosnia-Herzegovina',
+	curacao: 'Curaçao',
+	'ivory coast': 'Ivory Coast',
+	"côte d'ivoire": 'Ivory Coast',
+	"cote d'ivoire": 'Ivory Coast',
+	usa: 'United States',
+	'united states of america': 'United States',
+}
+
 export function getPotFor(footballDataId: string): FifaPot | null {
 	if (!footballDataId) return null
 	return WC_2026_POTS.find((t) => t.footballDataId === footballDataId)?.pot ?? null
 }
 
+/**
+ * Resolve a football-data team name to a FIFA pot. Tries, in order:
+ *   1. the alias map (football-data name → our reference name), then
+ *   2. a direct case-insensitive match against WC_2026_POTS[].name.
+ * Returns null when neither resolves — callers treat that as "untagged".
+ */
 export function potForTeamName(name: string): FifaPot | null {
-	return WC_2026_POTS.find((t) => t.name.toLowerCase() === name.toLowerCase())?.pot ?? null
+	const aliased = FD_NAME_TO_WC_POT_NAME[name.toLowerCase()]
+	const target = (aliased ?? name).toLowerCase()
+	return WC_2026_POTS.find((t) => t.name.toLowerCase() === target)?.pot ?? null
 }

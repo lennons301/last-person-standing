@@ -13,6 +13,7 @@ const { dbMock } = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/db', () => ({ db: dbMock }))
 
+import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { applyPotAssignments } from './bootstrap-competitions'
 
 describe('applyPotAssignments', () => {
@@ -53,8 +54,7 @@ describe('applyPotAssignments', () => {
 		expect(result.unmatched).toEqual([])
 	})
 
-	it('reports unmatched teams (e.g. unfilled playoff winner)', async () => {
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	it('THROWS naming the unmatched team(s) when any WC team has no pot', async () => {
 		dbMock.query.round.findMany.mockResolvedValue([
 			{
 				fixtures: [{ homeTeamId: 't-known', awayTeamId: 't-unknown' }],
@@ -65,13 +65,53 @@ describe('applyPotAssignments', () => {
 			{ id: 't-unknown', name: 'Italy', externalIds: {} }, // not in WC_2026_POTS
 		] as never)
 
+		// Fail-loud: an untagged WC team blocks cup creation + zeroes tier-diff,
+		// so we surface it at sync time rather than warning and limping on.
+		await expect(applyPotAssignments('c1')).rejects.toThrow(/Italy/)
+	})
+
+	it('resolves football-data canonical names via the alias map', async () => {
+		// These are the names football-data is assumed to return that differ from
+		// WC_2026_POTS — they must resolve through FD_NAME_TO_WC_POT_NAME, not the
+		// direct name match. (Assumed spellings; see TODO(#65) in wc-pots.ts.)
+		dbMock.query.round.findMany.mockResolvedValue([
+			{
+				fixtures: [
+					{ homeTeamId: 't-kor', awayTeamId: 't-cze' },
+					{ homeTeamId: 't-tur', awayTeamId: 't-cgo' },
+				],
+			},
+		] as never)
+		dbMock.query.team.findMany.mockResolvedValue([
+			{ id: 't-kor', name: 'Korea Republic', externalIds: {} },
+			{ id: 't-cze', name: 'Czech Republic', externalIds: {} },
+			{ id: 't-tur', name: 'Türkiye', externalIds: {} },
+			{ id: 't-cgo', name: 'DR Congo', externalIds: {} },
+		] as never)
+
+		const result = await applyPotAssignments('c1')
+		expect(result.matched).toBe(4)
+		expect(result.unmatched).toEqual([])
+	})
+
+	it('prefers football-data ID over name when WC_2026_POTS is backfilled', async () => {
+		// Team name is deliberately wrong; only a backfilled ID can match it.
+		// Skips automatically while WC_2026_POTS carries no footballDataId (today).
+		const withId = WC_2026_POTS.find((p) => p.footballDataId)
+		if (!withId) return
+		dbMock.query.round.findMany.mockResolvedValue([
+			{ fixtures: [{ homeTeamId: 't', awayTeamId: 't' }] },
+		] as never)
+		dbMock.query.team.findMany.mockResolvedValue([
+			{
+				id: 't',
+				name: 'Not A Real Country Name',
+				externalIds: { football_data: withId.footballDataId },
+			},
+		] as never)
+
 		const result = await applyPotAssignments('c1')
 		expect(result.matched).toBe(1)
-		expect(result.unmatched).toEqual(['Italy'])
-		expect(warn).toHaveBeenCalledWith(
-			expect.stringContaining('not in WC_2026_POTS'),
-			expect.stringContaining('Italy'),
-		)
-		warn.mockRestore()
+		expect(result.unmatched).toEqual([])
 	})
 })
