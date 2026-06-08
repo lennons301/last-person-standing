@@ -1,6 +1,8 @@
 'use client'
 
-import { Clock, Share2, Users } from 'lucide-react'
+import { Clock, Info, Share2, Users } from 'lucide-react'
+import { useState } from 'react'
+import { GameRulesDialog } from '@/components/game/game-rules-dialog'
 import { LocalDateTime } from '@/components/local-datetime'
 import { Button } from '@/components/ui/button'
 import type { PotBreakdown } from '@/lib/game-logic/prizes'
@@ -46,14 +48,24 @@ export function GameHeader({
 }: GameHeaderProps) {
 	const hasPending = potBreakdown.pending !== '0.00'
 	const hasUnpaid = unpaid !== '0.00'
+	const [rulesOpen, setRulesOpen] = useState(false)
 
 	return (
-		<div className="mb-6 bg-card border border-border rounded-xl overflow-hidden">
-			<div className="p-5 flex items-start justify-between gap-3 md:gap-4">
+		<div className="mb-4 md:mb-6 bg-card border border-border rounded-xl overflow-hidden">
+			<div className="p-4 md:p-5 flex items-start justify-between gap-3 md:gap-4">
 				<div className="min-w-0">
 					<h1 className="font-display text-2xl md:text-3xl font-semibold leading-tight">{name}</h1>
-					<p className="text-sm text-muted-foreground mt-1">
-						<span className="capitalize font-medium text-foreground">{mode}</span> · {competition}
+					<p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+						<span className="capitalize font-medium text-foreground">{mode}</span>
+						<button
+							type="button"
+							onClick={() => setRulesOpen(true)}
+							aria-label={`How ${mode} mode works`}
+							className="text-muted-foreground hover:text-foreground rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						>
+							<Info className="h-3.5 w-3.5" />
+						</button>
+						<span className="truncate">· {competition}</span>
 					</p>
 					<div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
 						<Users className="h-3.5 w-3.5" />
@@ -84,7 +96,7 @@ export function GameHeader({
 			</div>
 
 			{currentRound && status !== 'completed' && (
-				<div className="border-t border-border bg-muted/20 px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+				<div className="border-t border-border bg-muted/20 px-4 md:px-5 py-2.5 md:py-3 flex items-center justify-between gap-3 flex-wrap">
 					<div className="flex items-center gap-3 min-w-0">
 						<RoundStatusPill
 							deadlinePassed={currentRound.deadlinePassed}
@@ -119,7 +131,7 @@ export function GameHeader({
 				</div>
 			)}
 
-			<div className="border-t border-border bg-muted/30 px-5 py-2 flex items-center justify-between gap-3 flex-wrap">
+			<div className="border-t border-border bg-muted/30 px-4 md:px-5 py-2 flex items-center justify-between gap-3 flex-wrap">
 				<div className="text-xs text-muted-foreground">
 					Invite code: <span className="font-mono font-semibold text-foreground">{inviteCode}</span>
 				</div>
@@ -128,6 +140,8 @@ export function GameHeader({
 					Share
 				</Button>
 			</div>
+
+			<GameRulesDialog mode={mode} open={rulesOpen} onOpenChange={setRulesOpen} />
 		</div>
 	)
 }
