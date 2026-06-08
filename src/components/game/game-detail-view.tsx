@@ -6,7 +6,6 @@ import { AdminPanel } from '@/components/game/admin-panel'
 import { AutoPickBanner } from '@/components/game/auto-pick-banner'
 import { GameHeader, type GameHeaderRoundInfo } from '@/components/game/game-header'
 import { MyPaymentStrip } from '@/components/game/my-payment-strip'
-import { OtherPlayersPayments } from '@/components/game/other-players-payments'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import { type AdminPayment, PaymentsPanel } from '@/components/game/payments-panel'
 import { ShareDialog } from '@/components/game/share-dialog'
@@ -37,7 +36,6 @@ interface GameDetailViewProps {
 		creatorName: string
 		isAdmin: boolean
 		myPayment: { id: string; status: PaymentStatus; amount: string } | null
-		otherPayments: Array<{ userName: string; status: PaymentStatus; isRebuy: boolean }>
 		adminPayments: AdminPayment[] | undefined
 		myCurrentRoundPick: {
 			id: string
@@ -117,24 +115,20 @@ export function GameDetailView({
 					onShare={() => setShareOpen(true)}
 				/>
 
-				{game.myPayment && (
-					<div className="mb-4">
-						<MyPaymentStrip
-							gameId={game.id}
-							paymentId={game.myPayment.id}
-							status={game.myPayment.status}
-							amount={game.myPayment.amount}
-							creatorName={game.creatorName}
-							onClaimed={refresh}
-						/>
-					</div>
-				)}
-
-				{game.otherPayments.length > 0 && (
-					<div className="mb-6">
-						<OtherPlayersPayments payments={game.otherPayments} />
-					</div>
-				)}
+				{game.myPayment &&
+					game.myPayment.status !== 'paid' &&
+					game.myPayment.status !== 'refunded' && (
+						<div className="mb-4">
+							<MyPaymentStrip
+								gameId={game.id}
+								paymentId={game.myPayment.id}
+								status={game.myPayment.status}
+								amount={game.myPayment.amount}
+								creatorName={game.creatorName}
+								onClaimed={refresh}
+							/>
+						</div>
+					)}
 
 				<div className="mb-6">{pickSection}</div>
 

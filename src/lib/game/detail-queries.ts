@@ -149,7 +149,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		: null
 
 	// Full list of payments (one row per payment record) with user name + isRebuy
-	// flag. Viewer's own payments are excluded from otherPayments.
+	// flag. Feeds the admin payments panel (finalAdminPayments) below.
 	const allPayments = Array.from(paymentsByUser.entries()).flatMap(([uid, rows]) => {
 		const sorted = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
 		return sorted.map((row, idx) => ({
@@ -195,9 +195,6 @@ export async function getGameDetail(gameId: string, userId: string) {
 		paidAt: Date | null
 	}> = [...allPayments, ...syntheticUnpaidRows]
 
-	const otherPayments = allPayments
-		.filter((p) => p.userId !== userId)
-		.map((p) => ({ userName: p.userName, status: p.status, isRebuy: p.isRebuy }))
 	const adminPayments = isAdmin ? finalAdminPayments : undefined
 
 	// Rebuy banner: rounds 1 and 2 were already fetched above for eligibility checks.
@@ -290,7 +287,6 @@ export async function getGameDetail(gameId: string, userId: string) {
 		isMember,
 		creatorName,
 		myPayment,
-		otherPayments,
 		adminPayments,
 		myCurrentRoundPick,
 		rebuyBanner,
