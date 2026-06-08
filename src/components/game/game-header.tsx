@@ -49,7 +49,7 @@ export function GameHeader({
 
 	return (
 		<div className="mb-6 bg-card border border-border rounded-xl overflow-hidden">
-			<div className="p-5 flex flex-wrap items-start justify-between gap-4">
+			<div className="p-5 flex items-start justify-between gap-3 md:gap-4">
 				<div className="min-w-0">
 					<h1 className="font-display text-2xl md:text-3xl font-semibold leading-tight">{name}</h1>
 					<p className="text-sm text-muted-foreground mt-1">
@@ -68,10 +68,10 @@ export function GameHeader({
 						<div className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold">
 							Pot (confirmed)
 						</div>
-						<div className="font-display text-3xl md:text-4xl font-bold leading-none">
+						<div className="font-display text-2xl md:text-4xl font-bold leading-none">
 							£{potBreakdown.confirmed}
 						</div>
-						<div className="text-[0.7rem] text-muted-foreground mt-1 max-w-[200px] leading-relaxed">
+						<div className="text-[0.7rem] text-muted-foreground mt-1 max-w-[150px] md:max-w-[200px] leading-relaxed">
 							{hasPending && <span>£{potBreakdown.pending} pending · </span>}
 							{hasUnpaid && <span>£{unpaid} unpaid · </span>}
 							<span>£{target} target</span>
