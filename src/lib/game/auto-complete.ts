@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	classicTiebreaker,
@@ -16,6 +16,7 @@ export type CompletionReason =
 	| 'mass-extinction'
 	| 'rounds-exhausted'
 	| 'turbo-single-round'
+	| 'cup-wipeout-refund'
 
 export interface CompletionCheckResult {
 	completed: boolean
@@ -137,12 +138,16 @@ export async function checkCupCompletion(
 	}
 
 	if (alive.length === 0) {
+		// Cup: a broken streak (a loss with no lives left) means elimination — a
+		// player who lost can NEVER win. When everyone is out there is no rightful
+		// winner; the game ends with no payout and the pot is refunded (see
+		// applyNoWinnerRefund). This is deliberately NOT the classic "best
+		// eliminated player" mass-extinction tiebreaker.
 		const cohort = allPlayers.filter(
 			(p) => p.status === 'eliminated' && p.eliminatedRoundId === completedRoundId,
 		)
 		if (cohort.length === 0) return { completed: false, winnerPlayerIds: [] }
-		const winners = await tiebreakCup(gameId, cohort)
-		return { completed: true, winnerPlayerIds: winners, reason: 'mass-extinction' }
+		return { completed: true, winnerPlayerIds: [], reason: 'cup-wipeout-refund' }
 	}
 
 	const hasNext = await nextRoundExists(competitionId, completedRoundNumber)
@@ -186,6 +191,24 @@ export async function applyAutoCompletion(
 			})),
 		)
 	}
+
+	await db
+		.update(game)
+		.set({ status: 'completed', currentRoundId: null })
+		.where(eq(game.id, gameId))
+}
+
+/**
+ * Cup wipeout completion: every remaining player's streak broke, so there is no
+ * rightful winner. End the game with NO payout and refund every entrant's
+ * collected (paid/claimed) payment. Pending/unpaid rows are left as-is — there
+ * was no money in them to return.
+ */
+export async function applyNoWinnerRefund(gameId: string): Promise<void> {
+	await db
+		.update(payment)
+		.set({ status: 'refunded', refundedAt: new Date() })
+		.where(and(eq(payment.gameId, gameId), inArray(payment.status, ['paid', 'claimed'])))
 
 	await db
 		.update(game)

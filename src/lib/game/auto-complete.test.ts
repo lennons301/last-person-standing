@@ -156,29 +156,42 @@ describe('checkCupCompletion', () => {
 		expect(result.winnerPlayerIds).toEqual(['p1'])
 	})
 
-	it('mass extinction tiebreaks streak then lives then goals', async () => {
+	it('cup wipeout: when everyone is eliminated, NO winner — game ends for a pot refund (a losing pick must never win)', async () => {
 		dbMock.query.gamePlayer.findMany.mockResolvedValue([
 			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 		] as never)
-		// p1: 5 successful picks, 7 goals; p2: 5 successful picks, 12 goals
-		dbMock.query.pick.findMany.mockResolvedValue([
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 3 },
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 2 },
-			{ gamePlayerId: 'p1', result: 'draw', goalsScored: 1 },
-			{ gamePlayerId: 'p1', result: 'saved_by_life', goalsScored: 1 },
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 0 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 4 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 4 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 4 },
-			{ gamePlayerId: 'p2', result: 'draw', goalsScored: 0 },
-			{ gamePlayerId: 'p2', result: 'saved_by_life', goalsScored: 0 },
+
+		const result = await checkCupCompletion('g1', 'c1', 'r1', 3)
+		expect(result.completed).toBe(true)
+		expect(result.winnerPlayerIds).toEqual([])
+		expect(result.reason).toBe('cup-wipeout-refund')
+	})
+
+	it('cup wipeout across rounds: last survivors both lose a LATER round → no winner (no goals-decided crowning)', async () => {
+		// Mirrors the real incident: others went out in R1, the final two both
+		// lost in R2, and a winner was wrongly decided on goals via mass-extinction.
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'a', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'b', status: 'eliminated', eliminatedRoundId: 'r2', livesRemaining: 0 },
+			{ id: 'c', status: 'eliminated', eliminatedRoundId: 'r2', livesRemaining: 0 },
+		] as never)
+
+		// pick.findMany is intentionally NOT mocked: the fixed code must not run a
+		// goals tiebreak here. If it tried, this test would throw.
+		const result = await checkCupCompletion('g1', 'c1', 'r2', 2)
+		expect(result.completed).toBe(true)
+		expect(result.winnerPlayerIds).toEqual([])
+		expect(result.reason).toBe('cup-wipeout-refund')
+	})
+
+	it('cup: degenerate 0-alive with no eliminated cohort this round does not complete', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r-old', livesRemaining: 0 },
 		] as never)
 
 		const result = await checkCupCompletion('g1', 'c1', 'r1', 3)
-		// streak ties (5=5), lives ties (0=0), goals: p2 wins 12 > 7
-		expect(result.reason).toBe('mass-extinction')
-		expect(result.winnerPlayerIds).toEqual(['p2'])
+		expect(result.completed).toBe(false)
 	})
 
 	it('rounds-exhausted with multiple alive uses cup tiebreaker', async () => {

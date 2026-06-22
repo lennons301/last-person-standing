@@ -2,6 +2,7 @@ import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	applyAutoCompletion,
+	applyNoWinnerRefund,
 	checkClassicCompletion,
 	checkCupCompletion,
 	checkTurboCompletion,
@@ -420,7 +421,12 @@ async function checkAndMaybeCompleteOrAdvance(
 	} else if (g.gameMode === 'cup') {
 		const completion = await checkCupCompletion(gameId, g.competitionId, roundId, roundNumber)
 		if (completion.completed) {
-			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+			if (completion.reason === 'cup-wipeout-refund') {
+				// Everyone's streak broke — no winner, refund the pot.
+				await applyNoWinnerRefund(gameId)
+			} else {
+				await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+			}
 			result.gamesCompleted.push(gameId)
 			return
 		}

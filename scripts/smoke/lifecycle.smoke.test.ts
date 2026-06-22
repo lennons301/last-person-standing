@@ -29,6 +29,7 @@ import {
 import { settleFixture } from '@/lib/game/settle'
 import { round as roundTable } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
+import { payment, payout } from '@/lib/schema/payment'
 import {
 	finishFixture,
 	liveFixture,
@@ -443,6 +444,66 @@ describe('lifecycle: cup-WC', () => {
 
 		// Same pick results, same lives, same statuses.
 		expect(afterSecond.map((p) => p.result).sort()).toEqual(afterFirst.map((p) => p.result).sort())
+	})
+
+	it('cup wipeout: everyone busts → NO winner, pot refunded, no payout, game completed', async () => {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const fav = await makeTeam({ name: 'Favourite', shortName: 'FAV', fifaPot: 1 })
+		const dog = await makeTeam({ name: 'Underdog', shortName: 'DOG', fifaPot: 4 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fx = await makeFixture({ roundId: r1, homeTeamId: fav, awayTeamId: dog })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1, startingLives: 0 },
+		})
+		const gpA = await makePlayer({ gameId, userId: 'u-a', livesRemaining: 0 })
+		const gpB = await makePlayer({ gameId, userId: 'u-b', livesRemaining: 0 })
+		// Both back the underdog (away) — a legal cup pick — and the underdog
+		// LOSES, so both players' streaks break with no lives left → everyone out.
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r1,
+			teamId: dog,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r1,
+			teamId: dog,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+		// Two collected entry payments form the pot.
+		await db.insert(payment).values([
+			{ gameId, userId: 'u-a', amount: '10.00', status: 'paid', paidAt: new Date() },
+			{ gameId, userId: 'u-b', amount: '10.00', status: 'claimed' },
+		])
+
+		// Favourite (home, pot 1) wins 2-0 → both underdog picks lose → both bust.
+		await finishFixture(fx, 2, 0)
+		await settleFixture(fx)
+
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.every((p) => p.status === 'eliminated')).toBe(true)
+		expect(players.some((p) => p.status === 'winner')).toBe(false)
+
+		// Pot refunded, no payout written.
+		const pays = await db.query.payment.findMany({ where: eq(payment.gameId, gameId) })
+		expect(pays.every((p) => p.status === 'refunded')).toBe(true)
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts.length).toBe(0)
+
+		// Game completed (not stuck active).
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
 	})
 })
 
