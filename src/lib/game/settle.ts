@@ -295,7 +295,13 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 			const fx = g.currentRound.fixtures.find((f) => f.id === p.fixtureId)
 			if (!fx) continue
 			if (fx.status === 'cancelled') continue
-			if (fx.homeScore == null || fx.awayScore == null) continue
+			// Confirmed-elimination boundary: STOP at the first pending pick in
+			// rank order. The streak — and therefore elimination — past this
+			// point can't be confirmed until this higher-confidence pick is
+			// scored, so a lower-ranked loss must NOT eliminate the player yet.
+			// (Voided/cancelled picks above are skipped — the streak walks past
+			// them — but a genuinely unplayed pick halts confirmation here.)
+			if (fx.homeScore == null || fx.awayScore == null) break
 			settleable.push({ pickRow: p, fixture: fx })
 		}
 		if (settleable.length === 0) continue

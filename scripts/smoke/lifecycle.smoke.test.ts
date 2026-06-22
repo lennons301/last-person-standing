@@ -582,6 +582,56 @@ describe('lifecycle: cup-WC', () => {
 		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
 		expect(payouts.length).toBe(0)
 	})
+
+	it('cup confirmed elimination: a settled lower-rank loss does NOT eliminate while rank-1 is pending', async () => {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const t1 = await makeTeam({ name: 'T1', shortName: 'T1', fifaPot: 2 })
+		const t2 = await makeTeam({ name: 'T2', shortName: 'T2', fifaPot: 2 })
+		const t3 = await makeTeam({ name: 'T3', shortName: 'T3', fifaPot: 2 })
+		const t4 = await makeTeam({ name: 'T4', shortName: 'T4', fifaPot: 2 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fxRank1 = await makeFixture({ roundId: r1, homeTeamId: t1, awayTeamId: t2 })
+		const fxRank2 = await makeFixture({ roundId: r1, homeTeamId: t3, awayTeamId: t4 })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2, startingLives: 0 },
+		})
+		const gp = await makePlayer({ gameId, userId: 'u-a', livesRemaining: 0 })
+		// rank-1 on t1 (fxRank1 — will stay pending); rank-2 on t3 (fxRank2).
+		await makePick({
+			gameId,
+			gamePlayerId: gp,
+			roundId: r1,
+			teamId: t1,
+			fixtureId: fxRank1,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gp,
+			roundId: r1,
+			teamId: t3,
+			fixtureId: fxRank2,
+			confidenceRank: 2,
+			predictedResult: 'home_win',
+		})
+
+		// Only the rank-2 fixture finishes — t3 (home) loses. rank-1 still pending.
+		await finishFixture(fxRank2, 0, 1)
+		await settleFixture(fxRank2)
+
+		// Elimination is NOT confirmed: the rank-1 pick hasn't been scored.
+		const player = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gp) })
+		expect(player?.status).toBe('alive')
+		// And the rank-2 result stays pending (can't be confirmed before rank-1).
+		const playerPicks = await db.query.pick.findMany({ where: eq(pick.gamePlayerId, gp) })
+		const rank2 = playerPicks.find((p) => p.fixtureId === fxRank2)
+		expect(rank2?.result).toBe('pending')
+	})
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
