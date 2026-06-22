@@ -142,26 +142,15 @@ describe('checkTurboCompletion', () => {
 	})
 })
 
-describe('checkCupCompletion', () => {
+describe('checkCupCompletion (single gameweek — longest streak)', () => {
 	beforeEach(() => vi.clearAllMocks())
 
-	it('completes with last-alive when 1 alive', async () => {
-		dbMock.query.gamePlayer.findMany.mockResolvedValue([
-			{ id: 'p1', status: 'alive', eliminatedRoundId: null, livesRemaining: 2 },
-			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
-		] as never)
-
-		const result = await checkCupCompletion('g1', 'c1', 'r1', 3)
-		expect(result.reason).toBe('last-alive')
-		expect(result.winnerPlayerIds).toEqual(['p1'])
-	})
-
-	it('mass extinction tiebreaks streak then lives then goals', async () => {
+	it('crowns the longest streak across all players (tiebreak streak→lives→goals)', async () => {
 		dbMock.query.gamePlayer.findMany.mockResolvedValue([
 			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 		] as never)
-		// p1: 5 successful picks, 7 goals; p2: 5 successful picks, 12 goals
+		// both streak 5; p1 = 7 goals, p2 = 12 goals → p2 on the goals tiebreak
 		dbMock.query.pick.findMany.mockResolvedValue([
 			{ gamePlayerId: 'p1', result: 'win', goalsScored: 3 },
 			{ gamePlayerId: 'p1', result: 'win', goalsScored: 2 },
@@ -175,19 +164,40 @@ describe('checkCupCompletion', () => {
 			{ gamePlayerId: 'p2', result: 'saved_by_life', goalsScored: 0 },
 		] as never)
 
-		const result = await checkCupCompletion('g1', 'c1', 'r1', 3)
-		// streak ties (5=5), lives ties (0=0), goals: p2 wins 12 > 7
-		expect(result.reason).toBe('mass-extinction')
+		const result = await checkCupCompletion('g1')
+		expect(result.completed).toBe(true)
+		expect(result.reason).toBe('cup-longest-streak')
 		expect(result.winnerPlayerIds).toEqual(['p2'])
 	})
 
-	it('rounds-exhausted with multiple alive uses cup tiebreaker', async () => {
+	it('a long BROKEN streak beats a short unbroken (alive) one — status is irrelevant, streak length wins', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p-alive', status: 'alive', eliminatedRoundId: null, livesRemaining: 0 },
+			{ id: 'p-broke', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		// p-alive: 3 correct, never broke. p-broke: 5 correct then a loss (streak 5).
+		dbMock.query.pick.findMany.mockResolvedValue([
+			{ gamePlayerId: 'p-alive', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-alive', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-alive', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-broke', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-broke', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-broke', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-broke', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-broke', result: 'win', goalsScored: 1 },
+			{ gamePlayerId: 'p-broke', result: 'loss', goalsScored: 0 },
+		] as never)
+
+		const result = await checkCupCompletion('g1')
+		expect(result.winnerPlayerIds).toEqual(['p-broke'])
+	})
+
+	it('tiebreaks equal streaks by lives', async () => {
 		dbMock.query.gamePlayer.findMany.mockResolvedValue([
 			{ id: 'p1', status: 'alive', eliminatedRoundId: null, livesRemaining: 1 },
 			{ id: 'p2', status: 'alive', eliminatedRoundId: null, livesRemaining: 3 },
 		] as never)
-		dbMock.query.round.findFirst.mockResolvedValue(null as never)
-		// equal streak: p1=3, p2=3; p2 has more lives
+		// equal streak 3; p2 has more lives → p2
 		dbMock.query.pick.findMany.mockResolvedValue([
 			{ gamePlayerId: 'p1', result: 'win', goalsScored: 5 },
 			{ gamePlayerId: 'p1', result: 'win', goalsScored: 5 },
@@ -197,8 +207,8 @@ describe('checkCupCompletion', () => {
 			{ gamePlayerId: 'p2', result: 'win', goalsScored: 1 },
 		] as never)
 
-		const result = await checkCupCompletion('g1', 'c1', 'r1', 7)
-		expect(result.reason).toBe('rounds-exhausted')
+		const result = await checkCupCompletion('g1')
+		expect(result.reason).toBe('cup-longest-streak')
 		expect(result.winnerPlayerIds).toEqual(['p2'])
 	})
 })

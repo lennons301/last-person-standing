@@ -16,6 +16,7 @@ export type CompletionReason =
 	| 'mass-extinction'
 	| 'rounds-exhausted'
 	| 'turbo-single-round'
+	| 'cup-longest-streak'
 
 export interface CompletionCheckResult {
 	completed: boolean
@@ -121,37 +122,25 @@ export function checkTurboCompletion(playerScores: TurboTiebreakerInput[]): Comp
 	}
 }
 
-export async function checkCupCompletion(
-	gameId: string,
-	competitionId: string,
-	completedRoundId: string,
-	completedRoundNumber: number,
-): Promise<CompletionCheckResult> {
+/**
+ * Cup is a SINGLE gameweek decided by the longest streak (with the tier
+ * handicap + lives folded into the streak). The caller only invokes this once
+ * the whole gameweek is fully settled, so we simply crown the longest streak
+ * across ALL players — `tiebreakCup` ranks by cumulative streak → lives →
+ * goals. The winner can be a player whose streak *broke*: a long broken streak
+ * still beats a short unbroken one. There is no per-round elimination winner
+ * and no advancement — cup never spans gameweeks.
+ */
+export async function checkCupCompletion(gameId: string): Promise<CompletionCheckResult> {
 	const allPlayers = await db.query.gamePlayer.findMany({
 		where: eq(gamePlayer.gameId, gameId),
 	})
-	const alive = allPlayers.filter((p) => p.status === 'alive')
-
-	if (alive.length === 1) {
-		return { completed: true, winnerPlayerIds: [alive[0].id], reason: 'last-alive' }
-	}
-
-	if (alive.length === 0) {
-		const cohort = allPlayers.filter(
-			(p) => p.status === 'eliminated' && p.eliminatedRoundId === completedRoundId,
-		)
-		if (cohort.length === 0) return { completed: false, winnerPlayerIds: [] }
-		const winners = await tiebreakCup(gameId, cohort)
-		return { completed: true, winnerPlayerIds: winners, reason: 'mass-extinction' }
-	}
-
-	const hasNext = await nextRoundExists(competitionId, completedRoundNumber)
-	if (!hasNext) {
-		const winners = await tiebreakCup(gameId, alive)
-		return { completed: true, winnerPlayerIds: winners, reason: 'rounds-exhausted' }
-	}
-
-	return { completed: false, winnerPlayerIds: [] }
+	if (allPlayers.length === 0) return { completed: false, winnerPlayerIds: [] }
+	const winners = await tiebreakCup(
+		gameId,
+		allPlayers.map((p) => ({ id: p.id, livesRemaining: p.livesRemaining })),
+	)
+	return { completed: true, winnerPlayerIds: winners, reason: 'cup-longest-streak' }
 }
 
 export async function applyAutoCompletion(

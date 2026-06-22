@@ -294,7 +294,12 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 			const fx = g.currentRound.fixtures.find((f) => f.id === p.fixtureId)
 			if (!fx) continue
 			if (fx.status === 'cancelled') continue
-			if (fx.homeScore == null || fx.awayScore == null) continue
+			// Confirmed-streak boundary: STOP at the first pending pick in rank
+			// order. A player's streak — and any elimination from it — can't be
+			// confirmed while a higher-confidence pick is still unplayed. The live
+			// UI projects later-settled results; the streak is only FINALISED on
+			// the contiguous settled prefix from rank 1.
+			if (fx.homeScore == null || fx.awayScore == null) break
 			settleable.push({ pickRow: p, fixture: fx })
 		}
 		if (settleable.length === 0) continue
@@ -418,12 +423,18 @@ async function checkAndMaybeCompleteOrAdvance(
 			return
 		}
 	} else if (g.gameMode === 'cup') {
-		const completion = await checkCupCompletion(gameId, g.competitionId, roundId, roundNumber)
-		if (completion.completed) {
-			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
-			result.gamesCompleted.push(gameId)
-			return
-		}
+		// Cup is a SINGLE gameweek decided by the longest streak — exactly like
+		// turbo, just with the tier handicap + lives baked into the streak.
+		// Wait until the whole gameweek is settled, then crown the longest
+		// streak. Cup never eliminates-to-complete mid-gameweek and never
+		// advances across matchdays.
+		if (!allFinished) return
+		const completion = await checkCupCompletion(gameId)
+		await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+		result.gamesCompleted.push(gameId)
+		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
+		result.roundsCompleted.push(roundId)
+		return
 	} else if (g.gameMode === 'turbo') {
 		if (!allFinished) return
 		const turboPlayerResults = await collectTurboPlayerResults(gameId, roundId)

@@ -381,6 +381,11 @@ describe('lifecycle: cup-WC', () => {
 			predictedResult: 'away_win',
 		})
 
+		// A second, unplayed fixture keeps the gameweek incomplete, so this test
+		// asserts MID-gameweek life/streak state — a single-gameweek cup game only
+		// completes + crowns once every fixture in the gameweek is settled.
+		await makeFixture({ roundId: r1, homeTeamId: spain, awayTeamId: cv })
+
 		// Cape Verde (away, pot 4) wins 1-0 over Spain (home, pot 1) — 3-tier upset.
 		await finishFixture(fx, 0, 1)
 		await settleFixture(fx)
