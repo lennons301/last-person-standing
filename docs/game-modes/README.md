@@ -4,9 +4,15 @@ This directory documents the runtime behaviour of every supported game mode. It 
 
 Read this README first for the cross-cutting state machines. The per-mode docs below cover anything mode-specific.
 
-- [classic.md](./classic.md) — one pick per round, last person standing
-- [turbo.md](./turbo.md) — ten ranked predictions, highest streak wins
-- [cup.md](./cup.md) — single-round, like turbo, with a tier handicap + lives
+## Modes at a glance
+
+| Mode | Rounds/game | Picks | Wins by | Eliminations? |
+|---|---|---|---|---|
+| [**classic**](./classic.md) | **many** (advances round→round) | 1 team/round | last player still alive | yes — a non-win knocks you out |
+| [**turbo**](./turbo.md) | **1** | N, confidence-ranked | longest streak of correct picks | no |
+| [**cup**](./cup.md) | **1** | up to N (partial ok) | longest streak of correct picks | no — lives extend the streak |
+
+`classic` is the only multi-round mode. `turbo` and `cup` play a single round (one gameweek) and crown the longest streak of correct picks; `cup` adds a tier handicap (pick underdogs or level ties, never a big favourite) and lives (underdog wins earn them; a life saves one wrong call to keep your streak alive).
 
 ---
 
@@ -14,7 +20,7 @@ Read this README first for the cross-cutting state machines. The per-mode docs b
 
 **The settlement model is per-fixture.** When a fixture transitions to `finished`, every pick on it is settled in the same write — `pick.result` + `goals_scored` (+ `life_gained` / `life_spent` for cup) persist immediately, mode-specific elimination fires (classic), and the game's auto-completion is checked. This matches the predecessor app's `process_pick_results_on_fixture_update` DB trigger.
 
-Round completion is **emergent** — a round becomes `completed` when every fixture in it has been settled. At that point **classic** advances to the next round (it is the only multi-round mode); **turbo and cup are single-round** and instead auto-complete, crowning the longest streak. There is no game-level advancement for turbo/cup.
+Round completion is **emergent** — a round becomes `completed` when every fixture in it has been settled. At that point **classic** advances to the next round; **turbo** and **cup** auto-complete on the longest streak (they play a single round).
 
 There is no round-batched processing step. Picks on later-finishing fixtures stay `pending` until their own fixture settles.
 
@@ -27,9 +33,9 @@ flowchart LR
     D --> E[classic: eliminate if non-win<br/>past starting round]
     E --> F[cup: reevaluateCupGame — whole-game re-eval]
     F --> G{game mode?}
-    G -->|classic — multi-round| Gc[alive=1 → winner; alive=0 → mass-extinction tiebreaker;<br/>alive≥2 + round fully settled → advance to next round]
-    G -->|turbo / cup — single-round| J{round fully settled?}
-    J -->|yes| K[crown longest streak<br/>turboTiebreaker / cupTiebreaker; complete — no advance]
+    G -->|classic| Gc[alive=1 → winner; alive=0 → mass-extinction tiebreaker;<br/>alive≥2 + round fully settled → advance to next round]
+    G -->|turbo / cup| J{round fully settled?}
+    J -->|yes| K[crown longest streak<br/>turboTiebreaker / cupTiebreaker; complete]
     J -->|no| Z
 ```
 
@@ -49,13 +55,13 @@ Four entities, each with their own status. Most operations advance more than one
 ```mermaid
 stateDiagram-v2
     [*] --> active: POST /api/games (status='active', currentRoundId=first pickable round)
-    active --> completed: applyAutoCompletion (classic: last-alive / rounds-exhausted / mass-extinction;<br/>turbo + cup: longest streak once their single round fully settles)
+    active --> completed: applyAutoCompletion (classic: last-alive / rounds-exhausted / mass-extinction;<br/>turbo + cup: longest streak once the round fully settles)
     completed --> [*]
 ```
 
 ### Round state
 
-Each game's round flips `open` independently — `openRoundForGame` is called when a game first lands on a round (creation or, for classic, advance). The flip to `completed` is also per-game: when settleFixture sees the round's last fixture get settled, it marks the round complete. For **classic** that then advances the game to the next round; for **turbo and cup** (single-round) it completes the game instead. Multiple games on the same competition observe the same `round.status` value — that's why pick gating uses `round.deadline`, not `round.status`.
+Each game's round flips `open` independently — `openRoundForGame` is called when a game first lands on a round (creation or, for classic, advance). The flip to `completed` is also per-game: when settleFixture sees the round's last fixture settle, it marks the round complete — which advances classic to the next round, or completes the game for turbo/cup. Multiple games on the same competition observe the same `round.status` value — that's why pick gating uses `round.deadline`, not `round.status`.
 
 ```mermaid
 stateDiagram-v2

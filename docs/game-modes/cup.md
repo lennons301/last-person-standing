@@ -1,13 +1,13 @@
 # Cup mode
 
-**Single-round** mode — one gameweek / round of fixtures, exactly like turbo, plus a tier handicap and a lives system. Players rank cup fixtures by confidence and the **longest streak** of correct picks wins. Picking underdogs wins lives on a win, picking a >1-tier favourite is forbidden, and a life lets you survive an occasional wrong call to extend your streak. The competition may span many rounds (group stage → knockout → final), but a cup *game* is bound to ONE of them — there is no game-level carry-over or advancement to another round (that is classic-only).
+**Single-round** mode — turbo plus a tier handicap and a lives system. Players rank one round's fixtures by confidence and the **longest streak** of correct picks wins. The handicap pushes you toward underdogs: a >1-tier favourite is forbidden, and beating an underdog earns lives; a life buys back one wrong call to keep your streak going. (The competition may span many rounds — group → knockout → final — but a cup *game* is bound to one; no carry-over or advancement, that's classic-only.)
 
 > Read [README.md](./README.md) first for the cross-cutting settlement model.
 
 ## Pick mechanics
 
 - **Picks:** up to `modeConfig.numberOfPicks` (default 10–12). Cup allows **partial rankings** — 1..N picks submittable, unlike turbo.
-- **Win condition:** the **longest streak** of correct ranked picks within the single round. Once every fixture in the round is settled, all players are ranked by `cupTiebreaker` (streak → lives → goals) and the longest streak takes the pot — a player whose streak *broke* can still win if it's the longest. No eliminations-to-advance, no carry-over to another round.
+- **Win condition:** the **longest streak** of correct ranked picks. Once every fixture in the round is settled, players are ranked by `cupTiebreaker` (streak → lives → goals) and the longest streak takes the pot. A streak that *broke* can still win if it's the longest — the winner is whoever got furthest, not only survivors. (The edge case where **every** player breaks their streak is undecided — see the OPEN note under Settlement.)
 - **Tier handicap:** for `competition.type === 'group_knockout'` (WC), `computeTierDifference` returns `awayPot - homePot` — positive when home is the stronger side (FIFA pots: 1=best, 4=worst). Non-`group_knockout` cup competitions (FA Cup `knockout`) get tier diff 0 — no handicap, no per-pick lives mechanic.
 
 ## Tier ↔ outcome table
@@ -43,13 +43,13 @@ sequenceDiagram
     Complete->>Complete: round fully settled?
     alt yes
         Complete->>Complete: checkCupCompletion → crown the LONGEST streak (cupTiebreaker)
-        Complete->>Complete: applyAutoCompletion, round.status=completed (single round — no advance)
+        Complete->>Complete: applyAutoCompletion; round.status=completed; game complete
     else no
         Complete->>Complete: wait for remaining fixtures
     end
 ```
 
-Like turbo, cup is **single-round**: the winner is decided only once the round is fully settled, and the game never advances to another round.
+The winner is decided only once the round is fully settled.
 
 The re-eval is **idempotent**: re-running it with the same fixture states produces the same writes. Picks on fixtures without scores stay `'pending'`. The streak (and any elimination from it) is **confirmed only on the contiguous settled prefix from rank 1** — evaluation stops at the first pending pick, so a lower-ranked loss can't break a streak while a higher-confidence pick is still unplayed. The live UI still *projects* those later results; only confirmed state is finalised. Once the streak is confirmed broken, later settled picks persist as `'loss'`.
 

@@ -1,6 +1,6 @@
 # Turbo mode
 
-Predict N fixtures (default 10) in a single round, ranked by confidence. Highest streak wins. Single-round format — the game auto-completes when the round is fully settled.
+Predict N fixtures (default 10) in a single round, ranked by confidence. Longest streak wins. Single-round format — the game auto-completes when the round is fully settled.
 
 > Read [README.md](./README.md) first for the cross-cutting settlement model.
 
