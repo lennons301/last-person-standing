@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	classicTiebreaker,
@@ -209,6 +209,24 @@ export async function applyAutoCompletion(
 			})),
 		)
 	}
+
+	await db
+		.update(game)
+		.set({ status: 'completed', currentRoundId: null })
+		.where(eq(game.id, gameId))
+}
+
+/**
+ * No-winner completion: refund every entrant's collected (paid/claimed) payment,
+ * write no payout, and mark the game completed. Used when a cup/turbo game ends
+ * with no rightful winner — a total wipeout in the round following a round-1
+ * reprieve. Pending/unpaid rows are left as-is; no money was in them.
+ */
+export async function applyNoWinnerRefund(gameId: string): Promise<void> {
+	await db
+		.update(payment)
+		.set({ status: 'refunded', refundedAt: new Date() })
+		.where(and(eq(payment.gameId, gameId), inArray(payment.status, ['paid', 'claimed'])))
 
 	await db
 		.update(game)

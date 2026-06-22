@@ -2,6 +2,7 @@ import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	applyAutoCompletion,
+	applyNoWinnerRefund,
 	checkClassicCompletion,
 	checkCupCompletion,
 	checkTurboCompletion,
@@ -418,12 +419,31 @@ async function checkAndMaybeCompleteOrAdvance(
 			return
 		}
 	} else if (g.gameMode === 'cup') {
+		// No completion or reprieve until the round is fully settled — so every
+		// elimination is confirmed first. Mid-round, picks + confirmed
+		// eliminations are already updated by reevaluateCupGame upstream.
+		if (!allFinished) return
 		const completion = await checkCupCompletion(gameId, g.competitionId, roundId, roundNumber)
-		if (completion.completed) {
-			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+		if (completion.reason === 'cup-round1-reprieve') {
+			// Round-1 mass loss: crown nobody. Reset the whole field to a fresh
+			// alive state, then fall through to the shared round-complete + advance
+			// block, which moves everyone into round 2.
+			const startingLives = (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+			await db
+				.update(gamePlayer)
+				.set({ status: 'alive', eliminatedRoundId: null, livesRemaining: startingLives })
+				.where(eq(gamePlayer.gameId, gameId))
+		} else if (completion.completed) {
+			if (completion.reason === 'cup-wipeout-refund') {
+				await applyNoWinnerRefund(gameId)
+			} else {
+				await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+			}
 			result.gamesCompleted.push(gameId)
 			return
 		}
+		// Survivors remain (not completed, not reprieve) → fall through to the
+		// shared block below to advance them to the next round.
 	} else if (g.gameMode === 'turbo') {
 		if (!allFinished) return
 		const turboPlayerResults = await collectTurboPlayerResults(gameId, roundId)

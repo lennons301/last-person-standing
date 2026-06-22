@@ -29,6 +29,7 @@ import {
 import { settleFixture } from '@/lib/game/settle'
 import { round as roundTable } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
+import { payment, payout } from '@/lib/schema/payment'
 import {
 	finishFixture,
 	liveFixture,
@@ -443,6 +444,143 @@ describe('lifecycle: cup-WC', () => {
 
 		// Same pick results, same lives, same statuses.
 		expect(afterSecond.map((p) => p.result).sort()).toEqual(afterFirst.map((p) => p.result).sort())
+	})
+
+	it('cup round-1 wipeout → reprieve: everyone reset to alive and advanced to round 2 (no winner)', async () => {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const fav = await makeTeam({ name: 'Favourite', shortName: 'FAV', fifaPot: 1 })
+		const dog = await makeTeam({ name: 'Underdog', shortName: 'DOG', fifaPot: 4 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fx1 = await makeFixture({ roundId: r1, homeTeamId: fav, awayTeamId: dog })
+		await makeFixture({ roundId: r2, homeTeamId: fav, awayTeamId: dog }) // r2 must have a fixture to advance into
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1, startingLives: 0 },
+		})
+		const gpA = await makePlayer({ gameId, userId: 'u-a', livesRemaining: 0 })
+		const gpB = await makePlayer({ gameId, userId: 'u-b', livesRemaining: 0 })
+		// Both back the underdog (legal); favourite wins → both bust MD1.
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r1,
+			teamId: dog,
+			fixtureId: fx1,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r1,
+			teamId: dog,
+			fixtureId: fx1,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+
+		await finishFixture(fx1, 2, 0)
+		await settleFixture(fx1)
+
+		// Reprieve: nobody crowned; everyone reset to alive and advanced to round 2.
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.every((p) => p.status === 'alive')).toBe(true)
+		expect(players.every((p) => p.eliminatedRoundId === null)).toBe(true)
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active')
+		expect(g?.currentRoundId).toBe(r2)
+		const r1After = await db.query.round.findFirst({ where: eq(roundTable.id, r1) })
+		expect(r1After?.status).toBe('completed')
+	})
+
+	it('cup double wipeout: bust round 1 (reprieve) then bust round 2 → no winner + refund', async () => {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const fav = await makeTeam({ name: 'Favourite', shortName: 'FAV', fifaPot: 1 })
+		const dog = await makeTeam({ name: 'Underdog', shortName: 'DOG', fifaPot: 4 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fx1 = await makeFixture({ roundId: r1, homeTeamId: fav, awayTeamId: dog })
+		const fx2 = await makeFixture({ roundId: r2, homeTeamId: fav, awayTeamId: dog })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1, startingLives: 0 },
+		})
+		const gpA = await makePlayer({ gameId, userId: 'u-a', livesRemaining: 0 })
+		const gpB = await makePlayer({ gameId, userId: 'u-b', livesRemaining: 0 })
+		await db.insert(payment).values([
+			{ gameId, userId: 'u-a', amount: '10.00', status: 'paid', paidAt: new Date() },
+			{ gameId, userId: 'u-b', amount: '10.00', status: 'paid', paidAt: new Date() },
+		])
+
+		// Round 1: both bust → reprieve to round 2.
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r1,
+			teamId: dog,
+			fixtureId: fx1,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r1,
+			teamId: dog,
+			fixtureId: fx1,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+		await finishFixture(fx1, 2, 0)
+		await settleFixture(fx1)
+		const mid = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(mid?.currentRoundId).toBe(r2) // reprieved + advanced
+
+		// Round 2: both bust again → total wipeout (cohort == all) → refund.
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r2,
+			teamId: dog,
+			fixtureId: fx2,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r2,
+			teamId: dog,
+			fixtureId: fx2,
+			confidenceRank: 1,
+			predictedResult: 'away_win',
+		})
+		await finishFixture(fx2, 2, 0)
+		await settleFixture(fx2)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.some((p) => p.status === 'winner')).toBe(false)
+		const pays = await db.query.payment.findMany({ where: eq(payment.gameId, gameId) })
+		expect(pays.every((p) => p.status === 'refunded')).toBe(true)
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts.length).toBe(0)
 	})
 })
 
