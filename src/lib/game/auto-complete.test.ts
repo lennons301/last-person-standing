@@ -156,12 +156,15 @@ describe('checkCupCompletion', () => {
 		expect(result.winnerPlayerIds).toEqual(['p1'])
 	})
 
-	it('mass extinction tiebreaks streak then lives then goals', async () => {
+	it('round-2 mass-extinction crowns the best of the just-eliminated cohort (streak→lives→goals)', async () => {
+		// p3 went out in round 1; p1 + p2 survived to round 2 and both bust there.
+		// cohort (eliminated this round) < all players → normal crown, NOT refund.
 		dbMock.query.gamePlayer.findMany.mockResolvedValue([
-			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
-			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r2', livesRemaining: 0 },
+			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r2', livesRemaining: 0 },
+			{ id: 'p3', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 		] as never)
-		// p1: 5 successful picks, 7 goals; p2: 5 successful picks, 12 goals
+		// p1: streak 5, 7 goals; p2: streak 5, 12 goals → p2 on goals. p3 not in cohort.
 		dbMock.query.pick.findMany.mockResolvedValue([
 			{ gamePlayerId: 'p1', result: 'win', goalsScored: 3 },
 			{ gamePlayerId: 'p1', result: 'win', goalsScored: 2 },
@@ -173,10 +176,52 @@ describe('checkCupCompletion', () => {
 			{ gamePlayerId: 'p2', result: 'win', goalsScored: 4 },
 			{ gamePlayerId: 'p2', result: 'draw', goalsScored: 0 },
 			{ gamePlayerId: 'p2', result: 'saved_by_life', goalsScored: 0 },
+			{ gamePlayerId: 'p3', result: 'win', goalsScored: 99 },
 		] as never)
 
-		const result = await checkCupCompletion('g1', 'c1', 'r1', 3)
-		// streak ties (5=5), lives ties (0=0), goals: p2 wins 12 > 7
+		const result = await checkCupCompletion('g1', 'c1', 'r2', 2)
+		expect(result.reason).toBe('mass-extinction')
+		expect(result.winnerPlayerIds).toEqual(['p2'])
+	})
+
+	it('round-1 wipeout → reprieve signal (no winner; whole field advances to round 2)', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		dbMock.query.round.findFirst.mockResolvedValue({ id: 'r2', number: 2 } as never)
+
+		const result = await checkCupCompletion('g1', 'c1', 'r1', 1)
+		expect(result.completed).toBe(false)
+		expect(result.reason).toBe('cup-round1-reprieve')
+		expect(result.winnerPlayerIds).toEqual([])
+	})
+
+	it('total wipeout in round 2 after a reprieve (cohort == all players) → no winner + refund', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r2', livesRemaining: 0 },
+			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r2', livesRemaining: 0 },
+		] as never)
+		dbMock.query.round.findFirst.mockResolvedValue(null as never)
+
+		const result = await checkCupCompletion('g1', 'c1', 'r2', 2)
+		expect(result.completed).toBe(true)
+		expect(result.winnerPlayerIds).toEqual([])
+		expect(result.reason).toBe('cup-wipeout-refund')
+	})
+
+	it('round-1 wipeout with NO next round (single-round cup) crowns best — no reprieve', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		dbMock.query.round.findFirst.mockResolvedValue(null as never)
+		dbMock.query.pick.findMany.mockResolvedValue([
+			{ gamePlayerId: 'p1', result: 'win', goalsScored: 3 },
+			{ gamePlayerId: 'p2', result: 'win', goalsScored: 9 },
+		] as never)
+
+		const result = await checkCupCompletion('g1', 'c1', 'r1', 1)
 		expect(result.reason).toBe('mass-extinction')
 		expect(result.winnerPlayerIds).toEqual(['p2'])
 	})

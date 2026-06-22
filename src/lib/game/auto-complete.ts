@@ -16,6 +16,8 @@ export type CompletionReason =
 	| 'mass-extinction'
 	| 'rounds-exhausted'
 	| 'turbo-single-round'
+	| 'cup-round1-reprieve'
+	| 'cup-wipeout-refund'
 
 export interface CompletionCheckResult {
 	completed: boolean
@@ -141,6 +143,27 @@ export async function checkCupCompletion(
 			(p) => p.status === 'eliminated' && p.eliminatedRoundId === completedRoundId,
 		)
 		if (cohort.length === 0) return { completed: false, winnerPlayerIds: [] }
+
+		const hasNext = await nextRoundExists(competitionId, completedRoundNumber)
+
+		// Round-1 reprieve: a mass loss in the FIRST round crowns nobody — the
+		// whole field advances to round 2 and competes again (the caller resets
+		// everyone to alive + advances). Only when there's a next round to go to;
+		// a single-round cup falls through to a normal mass-extinction crown.
+		if (completedRoundNumber === 1 && hasNext) {
+			return { completed: false, winnerPlayerIds: [], reason: 'cup-round1-reprieve' }
+		}
+
+		// Consecutive-wipeout refund: after a round-1 reprieve the whole field
+		// carries into round 2. If THAT round is also a total wipeout there's no
+		// rightful winner → refund. cohort == all players ⟺ nobody survived an
+		// earlier round ⟺ this field only exists because round 1 was reprieved.
+		if (completedRoundNumber > 1 && cohort.length === allPlayers.length) {
+			return { completed: true, winnerPlayerIds: [], reason: 'cup-wipeout-refund' }
+		}
+
+		// Normal mass-extinction: crown the best of the just-eliminated cohort by
+		// tiebreaker. A losing pick winning here is intended.
 		const winners = await tiebreakCup(gameId, cohort)
 		return { completed: true, winnerPlayerIds: winners, reason: 'mass-extinction' }
 	}
