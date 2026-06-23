@@ -61,6 +61,8 @@ export interface GridPlayer {
 	status: 'alive' | 'eliminated' | 'winner'
 	eliminatedRoundNumber?: number
 	eliminatedRoundLabel?: string
+	/** Total goals scored by this player's winning picks (classic tiebreaker). */
+	goals: number
 	cellsByRoundId: Record<string, GridCell>
 }
 
@@ -232,6 +234,12 @@ export function ProgressGrid({
 										</div>
 									</th>
 								))}
+								<th
+									className="font-medium text-muted-foreground text-center pb-3 px-2"
+									title="Goals scored"
+								>
+									Gls
+								</th>
 								<th className="pb-3 pl-4 min-w-[80px] text-right">Status</th>
 							</tr>
 						</thead>
@@ -314,6 +322,9 @@ export function ProgressGrid({
 												</td>
 											)
 										})}
+										<td className="px-2 text-center align-middle text-xs font-semibold tabular-nums">
+											{player.goals || '—'}
+										</td>
 										<td className="pl-4 text-right">
 											{player.status === 'alive' ? (
 												<span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded bg-[var(--alive-bg)] text-[var(--alive)]">

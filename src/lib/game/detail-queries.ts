@@ -970,6 +970,13 @@ export async function getProgressGridData(
 		const eliminatedRoundNumber = p.eliminatedRoundId
 			? gameData.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number
 			: undefined
+		// Total goals scored by this player's winning picks (the classic
+		// tiebreaker). settle persists goalsScored = picked team's goals on a
+		// win, 0 otherwise — so summing across all picks is the running total.
+		// Pending/hidden current-round picks have goalsScored 0, so nothing leaks.
+		const goals = gameData.picks
+			.filter((pk) => pk.gamePlayerId === p.id)
+			.reduce((sum, pk) => sum + (pk.goalsScored ?? 0), 0)
 		return {
 			id: p.id,
 			name: userNames.get(p.userId) ?? 'Player',
@@ -979,6 +986,7 @@ export async function getProgressGridData(
 				eliminatedRoundNumber != null
 					? roundLabel(competitionType, eliminatedRoundNumber)
 					: undefined,
+			goals,
 			cellsByRoundId,
 		}
 	})
