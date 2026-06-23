@@ -147,8 +147,12 @@ export async function checkCupCompletion(gameId: string): Promise<CompletionChec
 	})
 	if (allPlayers.length === 0) return { completed: false, winnerPlayerIds: [] }
 
+	// Picks are joined to their fixture so we can read the picked team's *raw*
+	// goals (the actual score) — the counted `goalsScored` suppresses 1-tier-
+	// favourite-win goals, but the raw-goals backstop needs the unsuppressed value.
 	const allPicks = await db.query.pick.findMany({
 		where: eq(pick.gameId, gameId),
+		with: { fixture: true },
 	})
 	const players: WipeoutPlayerInput[] = allPlayers.map((p) => ({
 		gamePlayerId: p.id,
@@ -159,11 +163,16 @@ export async function checkCupCompletion(gameId: string): Promise<CompletionChec
 			// picks contribute nothing — the streak walks past a void gap and stops
 			// at any pending pick (there should be none once the gameweek is done).
 			.filter((pk) => pk.result != null && pk.result !== 'void' && pk.result !== 'pending')
-			.map((pk) => ({
-				rank: pk.confidenceRank ?? 0,
-				correct: pk.result === 'win' || pk.result === 'draw' || pk.result === 'saved_by_life',
-				goals: pk.goalsScored ?? 0,
-			})),
+			.map((pk) => {
+				const pickedHome = pk.teamId === pk.fixture?.homeTeamId
+				const rawGoals = pickedHome ? (pk.fixture?.homeScore ?? 0) : (pk.fixture?.awayScore ?? 0)
+				return {
+					rank: pk.confidenceRank ?? 0,
+					correct: pk.result === 'win' || pk.result === 'draw' || pk.result === 'saved_by_life',
+					goals: pk.goalsScored ?? 0,
+					rawGoals,
+				}
+			}),
 	}))
 
 	const outcome = resolveWipeout(players)
@@ -181,6 +190,7 @@ export async function checkCupCompletion(gameId: string): Promise<CompletionChec
 			cumulativeStreak: s.streak,
 			livesRemaining: s.livesRemaining,
 			cumulativeGoals: s.goalsInStreak,
+			rawStreakGoals: s.rawGoalsInStreak,
 		})),
 	)
 	return { completed: true, winnerPlayerIds: winners, reason: 'cup-longest-streak' }

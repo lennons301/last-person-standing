@@ -103,25 +103,89 @@ describe('cupTiebreaker', () => {
 		).toEqual(['b'])
 	})
 
-	it('splits when all three metrics tie', () => {
+	it('falls through to raw streak goals when streak, lives and counted goals all tie', () => {
+		// d8360e69: both streak 1, lives 0, counted goals 0 (favourite wins
+		// suppressed) — the raw goals of the streak pick separate them.
 		expect(
 			cupTiebreaker([
-				{ gamePlayerId: 'a', cumulativeStreak: 10, livesRemaining: 2, cumulativeGoals: 18 },
-				{ gamePlayerId: 'b', cumulativeStreak: 10, livesRemaining: 2, cumulativeGoals: 18 },
+				{
+					gamePlayerId: 'a',
+					cumulativeStreak: 1,
+					livesRemaining: 0,
+					cumulativeGoals: 0,
+					rawStreakGoals: 3,
+				},
+				{
+					gamePlayerId: 'b',
+					cumulativeStreak: 1,
+					livesRemaining: 0,
+					cumulativeGoals: 0,
+					rawStreakGoals: 1,
+				},
+			]),
+		).toEqual(['a'])
+	})
+
+	it('splits only when raw streak goals also tie', () => {
+		expect(
+			cupTiebreaker([
+				{
+					gamePlayerId: 'a',
+					cumulativeStreak: 1,
+					livesRemaining: 0,
+					cumulativeGoals: 0,
+					rawStreakGoals: 2,
+				},
+				{
+					gamePlayerId: 'b',
+					cumulativeStreak: 1,
+					livesRemaining: 0,
+					cumulativeGoals: 0,
+					rawStreakGoals: 2,
+				},
 			]),
 		).toEqual(['a', 'b'])
+	})
+
+	it('does not consult raw goals when counted goals already separate players', () => {
+		// counted goals decide first; raw goals (which would favour b) are ignored.
+		expect(
+			cupTiebreaker([
+				{
+					gamePlayerId: 'a',
+					cumulativeStreak: 1,
+					livesRemaining: 0,
+					cumulativeGoals: 2,
+					rawStreakGoals: 2,
+				},
+				{
+					gamePlayerId: 'b',
+					cumulativeStreak: 1,
+					livesRemaining: 0,
+					cumulativeGoals: 1,
+					rawStreakGoals: 9,
+				},
+			]),
+		).toEqual(['a'])
 	})
 })
 
 describe('resolveWipeout', () => {
+	// Tuple: [rank, correct, goals(counted), rawGoals]. rawGoals defaults to the
+	// counted goals (they only differ for cup favourite-win suppression).
 	const p = (
 		gamePlayerId: string,
-		picks: Array<[rank: number, correct: boolean, goals?: number]>,
+		picks: Array<[rank: number, correct: boolean, goals?: number, rawGoals?: number]>,
 		livesRemaining = 0,
 	): WipeoutPlayerInput => ({
 		gamePlayerId,
 		livesRemaining,
-		picks: picks.map(([rank, correct, goals = 0]) => ({ rank, correct, goals })),
+		picks: picks.map(([rank, correct, goals = 0, rawGoals]) => ({
+			rank,
+			correct,
+			goals,
+			rawGoals: rawGoals ?? goals,
+		})),
 	})
 
 	it('computes a consecutive streak from rank 1 when rank 1 has a winner', () => {
@@ -140,8 +204,8 @@ describe('resolveWipeout', () => {
 		expect(out.totalWipeout).toBe(false)
 		expect(out.startingRank).toBe(1)
 		expect(out.scores).toEqual([
-			{ gamePlayerId: 'a', streak: 3, goalsInStreak: 0, livesRemaining: 0 },
-			{ gamePlayerId: 'b', streak: 1, goalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'a', streak: 3, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'b', streak: 1, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
 		])
 	})
 
@@ -161,8 +225,8 @@ describe('resolveWipeout', () => {
 			]),
 		])
 		expect(out.scores).toEqual([
-			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 0, livesRemaining: 0 },
-			{ gamePlayerId: 'b', streak: 1, goalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'b', streak: 1, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
 		])
 	})
 
@@ -183,8 +247,8 @@ describe('resolveWipeout', () => {
 		expect(out.totalWipeout).toBe(false)
 		expect(out.startingRank).toBe(2)
 		expect(out.scores).toEqual([
-			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 0, livesRemaining: 0 },
-			{ gamePlayerId: 'b', streak: 0, goalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'b', streak: 0, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
 		])
 	})
 
@@ -206,8 +270,8 @@ describe('resolveWipeout', () => {
 		])
 		expect(out.startingRank).toBe(3)
 		expect(out.scores).toEqual([
-			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 0, livesRemaining: 0 },
-			{ gamePlayerId: 'b', streak: 0, goalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
+			{ gamePlayerId: 'b', streak: 0, goalsInStreak: 0, rawGoalsInStreak: 0, livesRemaining: 0 },
 		])
 	})
 
@@ -238,7 +302,23 @@ describe('resolveWipeout', () => {
 			]),
 		])
 		expect(out.scores).toEqual([
-			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 5, livesRemaining: 0 },
+			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 5, rawGoalsInStreak: 5, livesRemaining: 0 },
+		])
+	})
+
+	it('tracks raw streak goals separately from counted goals (favourite suppression)', () => {
+		// rank 1 is a favourite win: counted 0, raw 3. rank 2 underdog win: counted
+		// + raw 1. Post-break rank 3 win (raw 9) must not count for either.
+		const out = resolveWipeout([
+			p('a', [
+				[1, true, 0, 3],
+				[2, true, 1, 1],
+				[3, false, 0, 0],
+				[4, true, 0, 9],
+			]),
+		])
+		expect(out.scores).toEqual([
+			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 1, rawGoalsInStreak: 4, livesRemaining: 0 },
 		])
 	})
 
@@ -252,7 +332,7 @@ describe('resolveWipeout', () => {
 			]),
 		])
 		expect(out.scores).toEqual([
-			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 3, livesRemaining: 0 },
+			{ gamePlayerId: 'a', streak: 2, goalsInStreak: 3, rawGoalsInStreak: 3, livesRemaining: 0 },
 		])
 	})
 
