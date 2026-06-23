@@ -231,6 +231,83 @@ describe('lifecycle: classic-PL', () => {
 		expect(g?.status).toBe('active')
 	})
 
+	it('knockout ET/penalty winner: a level full-time score scores by winner, not as a draw', async () => {
+		// group_knockout, knockout round (number > 3). Fixture ends 1-1 full time;
+		// home advanced on penalties (winner: 'home'). A second fixture stays
+		// pending so the round doesn't complete (keeps the test about scoring).
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
+		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
+		const r4 = await makeRound(compId, { number: 4, status: 'open' })
+		const fx = await makeFixture({ roundId: r4, homeTeamId: home, awayTeamId: away })
+		await makeFixture({ roundId: r4, homeTeamId: home, awayTeamId: away }) // pending — keeps round open
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r4,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpHome = await makePlayer({ gameId, userId: 'u-home' })
+		const gpAway = await makePlayer({ gameId, userId: 'u-away' })
+		await makePick({ gameId, gamePlayerId: gpHome, roundId: r4, teamId: home, fixtureId: fx })
+		await makePick({ gameId, gamePlayerId: gpAway, roundId: r4, teamId: away, fixtureId: fx })
+
+		await finishFixture(fx, 1, 1, 'home')
+		await settleFixture(fx)
+
+		const picks = await db.query.pick.findMany({ where: eq(pick.gameId, gameId) })
+		// The home backer's team advanced on penalties → win, not a draw. The bug
+		// scored this level-full-time fixture as a draw and eliminated the team
+		// that actually went through.
+		expect(picks.find((p) => p.gamePlayerId === gpHome)?.result).toBe('win')
+		expect(picks.find((p) => p.gamePlayerId === gpAway)?.result).toBe('loss')
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.find((p) => p.id === gpHome)?.status).not.toBe('eliminated')
+		expect(players.find((p) => p.id === gpAway)?.status).toBe('eliminated')
+	})
+
+	it('last player alive is crowned winner without their own pick winning', async () => {
+		// The doomed player's pick loses → eliminated → one alive. The survivor's
+		// pick is on a still-pending fixture, so the crown comes purely from being
+		// the last alive (rule: a loss/no-pick elimination can hand the win).
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const r2 = await makeRound(compId, { number: 2, status: 'open' })
+		const fxPending = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+		const fxLose = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpSurvivor = await makePlayer({ gameId, userId: 'u-survivor' })
+		const gpDoomed = await makePlayer({ gameId, userId: 'u-doomed' })
+		await makePick({
+			gameId,
+			gamePlayerId: gpSurvivor,
+			roundId: r2,
+			teamId: a,
+			fixtureId: fxPending,
+		})
+		await makePick({ gameId, gamePlayerId: gpDoomed, roundId: r2, teamId: a, fixtureId: fxLose })
+
+		await finishFixture(fxLose, 0, 2) // away wins → doomed (picked A=home) loses → eliminated
+		await settleFixture(fxLose)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.find((p) => p.id === gpSurvivor)?.status).toBe('winner')
+		expect(players.find((p) => p.id === gpDoomed)?.status).toBe('eliminated')
+		// Survivor's own pick never settled to a win — the crown came from being last alive.
+		const picks = await db.query.pick.findMany({ where: eq(pick.gameId, gameId) })
+		expect(picks.find((p) => p.gamePlayerId === gpSurvivor)?.result).toBe('pending')
+	})
+
 	it('progress grid exposes each player total goals scored (sum of winning picks)', async () => {
 		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
 		const a = await makeTeam({ name: 'A', shortName: 'A' })

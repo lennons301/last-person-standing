@@ -213,10 +213,11 @@ export async function finishFixture(
 	fixtureId: string,
 	homeScore: number,
 	awayScore: number,
+	winner?: 'home' | 'away' | null,
 ): Promise<void> {
 	await db
 		.update(fixture)
-		.set({ status: 'finished', homeScore, awayScore })
+		.set({ status: 'finished', homeScore, awayScore, winner: winner ?? null })
 		.where(sql`${fixture.id} = ${fixtureId}`)
 }
 

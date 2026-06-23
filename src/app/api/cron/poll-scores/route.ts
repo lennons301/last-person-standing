@@ -102,6 +102,7 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 						homeScore: score.homeScore,
 						awayScore: score.awayScore,
 						status: score.status,
+						winner: score.winner ?? null,
 					})
 					.where(eq(fixture.id, existing.id))
 

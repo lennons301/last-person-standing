@@ -72,4 +72,44 @@ describe('determinePickResult', () => {
 			}),
 		).toBe('draw')
 	})
+
+	// Knockout fixtures decided in ET/penalties arrive level on full-time but
+	// carry an authoritative `winner` (football-data score.winner). When present
+	// it overrides the score — there is no draw.
+	it('uses winner over a level score: picked winner (home) = win', () => {
+		expect(
+			determinePickResult({
+				pickedTeamId: 'a',
+				homeTeamId: 'a',
+				awayTeamId: 'b',
+				homeScore: 1,
+				awayScore: 1,
+				winner: 'home',
+			}),
+		).toBe('win')
+	})
+	it('uses winner over a level score: picked loser (away) = loss', () => {
+		expect(
+			determinePickResult({
+				pickedTeamId: 'b',
+				homeTeamId: 'a',
+				awayTeamId: 'b',
+				homeScore: 1,
+				awayScore: 1,
+				winner: 'home',
+			}),
+		).toBe('loss')
+	})
+	it('ignores a null winner — group-stage draw stays a draw', () => {
+		expect(
+			determinePickResult({
+				pickedTeamId: 'a',
+				homeTeamId: 'a',
+				awayTeamId: 'b',
+				homeScore: 1,
+				awayScore: 1,
+				winner: null,
+			}),
+		).toBe('draw')
+	})
 })

@@ -4,6 +4,12 @@ export interface CupPickInput {
 	homeScore: number
 	awayScore: number
 	tierDifference: number // from HOME team perspective: positive = home higher tier
+	/**
+	 * Authoritative winner for a knockout fixture decided on ET/penalties (level
+	 * full-time score). When set it overrides the score: the match is a win for
+	 * that side, never a draw. Null/undefined → use the score.
+	 */
+	winner?: 'home' | 'away' | null
 }
 
 export interface CupPickResult {
@@ -43,8 +49,11 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
 
 		const pickedTeamGoals = pick.pickedTeam === 'home' ? pick.homeScore : pick.awayScore
 		const opponentGoals = pick.pickedTeam === 'home' ? pick.awayScore : pick.homeScore
-		const pickedTeamWon = pickedTeamGoals > opponentGoals
-		const isDraw = pickedTeamGoals === opponentGoals
+		// A recorded winner (ET/penalties) is authoritative — the match is a win
+		// for that side and never a draw, regardless of the level full-time score.
+		const pickedTeamWon =
+			pick.winner != null ? pick.winner === pick.pickedTeam : pickedTeamGoals > opponentGoals
+		const isDraw = pick.winner != null ? false : pickedTeamGoals === opponentGoals
 
 		let result: CupPickResult['result'] = 'loss'
 		let livesGained = 0

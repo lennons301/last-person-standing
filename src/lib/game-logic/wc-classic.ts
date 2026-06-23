@@ -11,6 +11,8 @@ export interface WcFixture {
 	awayScore: number | null
 	status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 	stage: 'group' | 'knockout'
+	/** Authoritative winner for ET/penalty results (level full-time score). */
+	winner: 'home' | 'away' | null
 }
 
 export interface AlivePlayer {
@@ -40,9 +42,15 @@ export function isTeamTournamentEliminated(
 	for (const f of finishedKnockoutFixtures) {
 		if (f.stage !== 'knockout') continue
 		if (f.status !== 'finished') continue
-		if (f.homeScore == null || f.awayScore == null) continue
-		if (f.homeScore === f.awayScore) continue // draws treated as not-eliminated
-		const loserId = f.homeScore > f.awayScore ? f.awayTeamId : f.homeTeamId
+		// Prefer the authoritative winner (covers ET/penalty results that are
+		// level on score). Otherwise fall back to a decisive score. A level score
+		// with no recorded winner is undecided → nobody eliminated.
+		let loserId: string | null = null
+		if (f.winner != null) {
+			loserId = f.winner === 'home' ? f.awayTeamId : f.homeTeamId
+		} else if (f.homeScore != null && f.awayScore != null && f.homeScore !== f.awayScore) {
+			loserId = f.homeScore > f.awayScore ? f.awayTeamId : f.homeTeamId
+		}
 		if (loserId === teamId) return true
 	}
 	return false

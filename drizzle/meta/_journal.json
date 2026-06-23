@@ -50,6 +50,13 @@
       "when": 1779462870708,
       "tag": "0006_add_cron_run",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782250018684,
+      "tag": "0007_fast_gunslinger",
+      "breakpoints": true
     }
   ]
 }

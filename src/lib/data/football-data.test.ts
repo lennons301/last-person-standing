@@ -129,7 +129,44 @@ describe('FootballDataAdapter', () => {
 	it('fetches live scores', async () => {
 		const scores = await adapter.fetchLiveScores(1)
 		expect(scores).toHaveLength(2)
-		expect(scores[0]).toEqual({ externalId: '501', homeScore: 2, awayScore: 0, status: 'finished' })
+		expect(scores[0]).toEqual({
+			externalId: '501',
+			homeScore: 2,
+			awayScore: 0,
+			status: 'finished',
+			winner: null,
+		})
+	})
+
+	it('captures the authoritative winner for ET/penalty knockout results', async () => {
+		// 1-1 full time, home advanced on penalties → score.winner = 'HOME_TEAM'.
+		const penaltyMatch = {
+			matches: [
+				{
+					id: 777,
+					matchday: 5,
+					homeTeam: { id: 57, name: 'Arsenal', tla: 'ARS', crest: '' },
+					awayTeam: { id: 61, name: 'Chelsea', tla: 'CHE', crest: '' },
+					utcDate: '2026-07-10T19:00:00Z',
+					status: 'FINISHED',
+					score: { winner: 'HOME_TEAM', fullTime: { home: 1, away: 1 } },
+				},
+			],
+		}
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+			Promise.resolve(new Response(JSON.stringify(penaltyMatch))),
+		)
+		const rounds = await adapter.fetchRounds()
+		expect(rounds[0].fixtures[0].winner).toBe('home')
+		const scores = await adapter.fetchLiveScores(5)
+		expect(scores[0].winner).toBe('home')
+	})
+
+	it('records no winner for a genuine draw (no score.winner)', async () => {
+		// mockMatches #502 is a 1-1 with no winner field → null.
+		const rounds = await adapter.fetchRounds()
+		const drawn = rounds[0].fixtures.find((x) => x.externalId === '502')
+		expect(drawn?.winner).toBeNull()
 	})
 
 	it('sends API key in headers', async () => {
