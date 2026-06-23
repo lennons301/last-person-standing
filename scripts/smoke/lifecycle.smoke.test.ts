@@ -655,6 +655,88 @@ describe('lifecycle: cup wipeout rule', () => {
 		const payments = await db.query.payment.findMany({ where: eq(payment.gameId, gameId) })
 		expect(payments.every((p) => p.status === 'refunded')).toBe(true)
 	})
+
+	it('breaks a streak+lives+counted-goals tie on raw streak goals — no split (d8360e69)', async () => {
+		// WC handicap competition so 1-tier-favourite wins suppress counted goals.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		// pot1 favourites vs pot2 opponents (tierDiffFromPicked = +1 → goals suppressed).
+		const fra = await makeTeam({ name: 'France', shortName: 'FRA', fifaPot: 1 })
+		const sen = await makeTeam({ name: 'Senegal', shortName: 'SEN', fifaPot: 2 })
+		const sco = await makeTeam({ name: 'Scotland', shortName: 'SCO', fifaPot: 1 })
+		const hai = await makeTeam({ name: 'Haiti', shortName: 'HAI', fifaPot: 2 })
+		// rank-2 underdogs (pot2 home vs pot1 away) that LOSE → break each streak at 1.
+		const uda = await makeTeam({ name: 'UdogA', shortName: 'UDA', fifaPot: 2 })
+		const fava = await makeTeam({ name: 'FavA', shortName: 'FVA', fifaPot: 1 })
+		const udb = await makeTeam({ name: 'UdogB', shortName: 'UDB', fifaPot: 2 })
+		const favb = await makeTeam({ name: 'FavB', shortName: 'FVB', fifaPot: 1 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fxA1 = await makeFixture({ roundId: r1, homeTeamId: fra, awayTeamId: sen })
+		const fxA2 = await makeFixture({ roundId: r1, homeTeamId: uda, awayTeamId: fava })
+		const fxB1 = await makeFixture({ roundId: r1, homeTeamId: sco, awayTeamId: hai })
+		const fxB2 = await makeFixture({ roundId: r1, homeTeamId: udb, awayTeamId: favb })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2, startingLives: 0 },
+		})
+		const gpSean = await makePlayer({ gameId, userId: 'u-sean', livesRemaining: 0 })
+		const gpMark = await makePlayer({ gameId, userId: 'u-mark', livesRemaining: 0 })
+		await makePayment({ gameId, userId: 'u-sean' })
+		await makePayment({ gameId, userId: 'u-mark' })
+		// Sean: rank1 France (pot1 favourite) wins, rank2 underdog loses.
+		await makePick({
+			gameId,
+			gamePlayerId: gpSean,
+			roundId: r1,
+			teamId: fra,
+			fixtureId: fxA1,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpSean,
+			roundId: r1,
+			teamId: uda,
+			fixtureId: fxA2,
+			confidenceRank: 2,
+		})
+		// Mark: rank1 Scotland (pot1 favourite) wins, rank2 underdog loses.
+		await makePick({
+			gameId,
+			gamePlayerId: gpMark,
+			roundId: r1,
+			teamId: sco,
+			fixtureId: fxB1,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpMark,
+			roundId: r1,
+			teamId: udb,
+			fixtureId: fxB2,
+			confidenceRank: 2,
+		})
+
+		await finishFixture(fxA1, 3, 0) // France win 3-0 → counted 0 (favourite), raw 3
+		await finishFixture(fxB1, 1, 0) // Scotland win 1-0 → counted 0 (favourite), raw 1
+		await finishFixture(fxA2, 0, 2) // Sean's rank-2 underdog loses → streak breaks at 1
+		await finishFixture(fxB2, 0, 2) // Mark's rank-2 underdog loses → streak breaks at 1
+		for (const fx of [fxA1, fxB1, fxA2, fxB2]) await settleFixture(fx)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+
+		// Both tie on streak (1), lives (0) and counted goals (0). Raw streak goals
+		// separate them: France 3 > Scotland 1 → Sean wins SOLO, not a split.
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.find((p) => p.id === gpSean)?.status).toBe('winner')
+		expect(players.find((p) => p.id === gpMark)?.status).not.toBe('winner')
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts.map((p) => p.userId)).toEqual(['u-sean'])
+		expect(payouts[0]?.isSplit).toBe(false)
+	})
 })
 
 /* ────────────────────────────────────────────────────────────────────── */

@@ -135,6 +135,20 @@ describe('evaluateCupPicks', () => {
 			expect(result.pickResults[1].result).toBe('loss')
 		})
 
+		it('does NOT earn lives from a win after the streak has already broken', () => {
+			// rank 1 loses (no lives) → eliminated. rank 2 is an underdog win that
+			// would normally grant 3 lives — but the streak is already broken, so
+			// lives are frozen at the eliminating pick. Goals still count (it IS a
+			// win), only the life accrual is suppressed.
+			const picks = [makePick(1, 'home', 0, 2, 0), makePick(2, 'away', 0, 2, 3)]
+			const result = evaluateCupPicks(picks, 0)
+			expect(result.pickResults[0].result).toBe('loss')
+			expect(result.pickResults[1].result).toBe('win')
+			expect(result.pickResults[1].goalsCounted).toBe(2)
+			expect(result.pickResults[1].livesGained).toBe(0)
+			expect(result.finalLives).toBe(0)
+		})
+
 		it('can spend multiple lives before streak breaks', () => {
 			const picks = [
 				makePick(1, 'away', 0, 2, 3),

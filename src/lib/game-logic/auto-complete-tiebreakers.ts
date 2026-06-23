@@ -17,6 +17,13 @@ export interface CupTiebreakerInput {
 	cumulativeStreak: number
 	livesRemaining: number
 	cumulativeGoals: number
+	/**
+	 * Raw goals scored by the streak picks, ignoring the favourite-win goal
+	 * suppression. Last-resort tiebreak when streak, lives and counted goals all
+	 * tie — separates two players whose streaks were all 1-tier-favourite wins
+	 * (counted 0) rather than splitting the pot. Optional; treated as 0 when absent.
+	 */
+	rawStreakGoals?: number
 }
 
 function maxBy<T>(items: T[], key: (t: T) => number): T[] {
@@ -43,7 +50,11 @@ export function cupTiebreaker(players: CupTiebreakerInput[]): string[] {
 	const topLives = maxBy(topStreak, (p) => p.livesRemaining)
 	if (topLives.length <= 1) return topLives.map((p) => p.gamePlayerId)
 	const topGoals = maxBy(topLives, (p) => p.cumulativeGoals)
-	return topGoals.map((p) => p.gamePlayerId)
+	if (topGoals.length <= 1) return topGoals.map((p) => p.gamePlayerId)
+	// Last-resort separator: raw goals of the streak picks (favourite suppression
+	// ignored). Prefers a clear winner over a split whenever any goals separate them.
+	const topRaw = maxBy(topGoals, (p) => p.rawStreakGoals ?? 0)
+	return topRaw.map((p) => p.gamePlayerId)
 }
 
 // -- Wipeout rule (single-round modes: turbo + cup) --
@@ -65,8 +76,14 @@ export interface WipeoutPickOutcome {
 	rank: number
 	/** did this pick keep the streak alive (turbo: predicted right; cup: win / draw_success / saved_by_life). */
 	correct: boolean
-	/** goals to add to the goals tiebreak if this pick is inside the streak (0 otherwise). */
+	/** counted (tier-adjusted) goals — feeds the primary goals tiebreak if this pick is inside the streak. */
 	goals: number
+	/**
+	 * Raw goals the picked team actually scored, ignoring cup favourite-win
+	 * suppression — feeds the raw-goals backstop. Optional; defaults to `goals`
+	 * (turbo has no suppression, so raw === counted there).
+	 */
+	rawGoals?: number
 }
 
 export interface WipeoutPlayerInput {
@@ -81,6 +98,8 @@ export interface WipeoutScore {
 	gamePlayerId: string
 	streak: number
 	goalsInStreak: number
+	/** raw goals over the streak picks (favourite suppression ignored) — for the cup raw-goals backstop. */
+	rawGoalsInStreak: number
 	livesRemaining: number
 }
 
@@ -114,15 +133,18 @@ export function resolveWipeout(players: WipeoutPlayerInput[]): WipeoutOutcome {
 		const ordered = player.picks.filter((pk) => pk.rank >= start).sort((a, b) => a.rank - b.rank)
 		let streak = 0
 		let goalsInStreak = 0
+		let rawGoalsInStreak = 0
 		for (const pk of ordered) {
 			if (!pk.correct) break
 			streak++
 			goalsInStreak += pk.goals
+			rawGoalsInStreak += pk.rawGoals ?? pk.goals
 		}
 		return {
 			gamePlayerId: player.gamePlayerId,
 			streak,
 			goalsInStreak,
+			rawGoalsInStreak,
 			livesRemaining: player.livesRemaining,
 		}
 	})
