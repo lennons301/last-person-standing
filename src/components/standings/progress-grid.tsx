@@ -7,8 +7,16 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { GridFilter } from './grid-filter'
-import { type GridSortKey, sortGridPlayers } from './grid-sort'
-import { GridSortControl } from './grid-sort-control'
+import { type GridSort, type GridSortDir, type GridSortKey, sortGridPlayers } from './grid-sort'
+
+// Each column's natural first-click direction; clicking an already-active column
+// flips it.
+const NATURAL_DIR: Record<GridSortKey, GridSortDir> = {
+	name: 'asc',
+	goals: 'desc',
+	status: 'asc',
+	round: 'asc',
+}
 
 const LIVE_RECENT_MS = 1500
 
@@ -76,7 +84,9 @@ interface ProgressGridProps {
 	pot: string
 	defaultFilter?: 'all' | 'last5' | 'last3'
 	gameId?: string
-	onShare?: () => void
+	/** Called with the grid's current sort + filter encoded as a query string,
+	 *  so the Share-grid image can reproduce the on-screen order. */
+	onShare?: (standingsQuery: string) => void
 	showAdminActions?: boolean
 }
 
@@ -91,10 +101,30 @@ export function ProgressGrid({
 	showAdminActions,
 }: ProgressGridProps) {
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
-	const [sort, setSort] = useState<GridSortKey>('status')
+	const [sort, setSort] = useState<GridSort>({ key: 'status', dir: 'asc' })
 	const [showOpponents, setShowOpponents] = useState(false)
 	const [hideEliminated, setHideEliminated] = useState(false)
 	const liveCtx = useLiveGame()
+
+	// Click a column header to sort by it; click the active one again to flip
+	// direction. Round columns sort by the team picked that gameweek.
+	const isActiveSort = (key: GridSortKey, roundId?: string) =>
+		sort.key === key && (key !== 'round' || sort.roundId === roundId)
+	const toggleSort = (key: GridSortKey, roundId?: string) =>
+		setSort((prev) =>
+			prev.key === key && (key !== 'round' || prev.roundId === roundId)
+				? { ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+				: { key, roundId, dir: NATURAL_DIR[key] },
+		)
+	const sortArrow = (key: GridSortKey, roundId?: string) =>
+		isActiveSort(key, roundId) ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+
+	const buildShareQuery = () => {
+		const q = new URLSearchParams({ sort: sort.key, dir: sort.dir })
+		if (sort.roundId) q.set('round', sort.roundId)
+		if (hideEliminated) q.set('aliveOnly', '1')
+		return q.toString()
+	}
 
 	const liveMeta: ProgressLiveMeta = (() => {
 		const now = Date.now()
@@ -195,12 +225,16 @@ export function ProgressGrid({
 						{hideEliminated ? 'Show eliminated' : 'Hide eliminated'}
 					</Button>
 					{onShare && (
-						<Button variant="outline" size="sm" onClick={onShare} className="gap-1.5">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => onShare(buildShareQuery())}
+							className="gap-1.5"
+						>
 							<Share2 className="h-3.5 w-3.5" />
 							Share grid
 						</Button>
 					)}
-					<GridSortControl value={sort} onChange={setSort} />
 					<GridFilter value={filter} onChange={setFilter} />
 				</div>
 			</div>
@@ -210,34 +244,74 @@ export function ProgressGrid({
 					<table className="w-full border-collapse text-sm">
 						<thead>
 							<tr>
-								<th className="text-left pb-3 pr-4 font-medium text-muted-foreground sticky left-0 bg-card z-10 min-w-[100px]">
-									Player
+								<th className="text-left pb-3 pr-4 sticky left-0 bg-card z-10 min-w-[100px]">
+									<button
+										type="button"
+										onClick={() => toggleSort('name')}
+										title="Sort by player name"
+										className={cn(
+											'font-medium hover:text-foreground transition-colors',
+											isActiveSort('name') ? 'text-foreground' : 'text-muted-foreground',
+										)}
+									>
+										Player{sortArrow('name')}
+									</button>
 								</th>
 								{visibleRounds.map((r) => (
 									<th
 										key={r.id}
 										className={cn(
-											'font-medium text-muted-foreground text-center pb-3 px-1',
+											'text-center pb-3 px-1',
 											r.voidedAt && 'bg-sky-100/60 dark:bg-sky-900/30 border-x border-sky-300/40',
 										)}
 									>
-										<div className="flex flex-col items-center leading-tight">
+										<button
+											type="button"
+											onClick={() => toggleSort('round', r.id)}
+											title={`Sort by ${r.label} picks`}
+											className={cn(
+												'mx-auto flex flex-col items-center leading-tight font-medium hover:text-foreground transition-colors',
+												isActiveSort('round', r.id) ? 'text-foreground' : 'text-muted-foreground',
+											)}
+										>
 											{r.voidedAt && (
 												<span className="text-[0.55rem] font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-300">
 													Voided
 												</span>
 											)}
-											<span>{r.label}</span>
-										</div>
+											<span>
+												{r.label}
+												{sortArrow('round', r.id)}
+											</span>
+										</button>
 									</th>
 								))}
-								<th
-									className="font-medium text-muted-foreground text-center pb-3 px-2"
-									title="Goals scored"
-								>
-									Gls
+								<th className="text-center pb-3 px-2">
+									<button
+										type="button"
+										onClick={() => toggleSort('goals')}
+										title="Sort by goals scored"
+										className={cn(
+											'mx-auto inline-flex items-center font-medium hover:text-foreground transition-colors',
+											isActiveSort('goals') ? 'text-foreground' : 'text-muted-foreground',
+										)}
+									>
+										Gls{sortArrow('goals')}
+									</button>
 								</th>
-								<th className="pb-3 pl-4 min-w-[80px] text-right">Status</th>
+								<th className="pb-3 pl-4 min-w-[80px] text-right">
+									<button
+										type="button"
+										onClick={() => toggleSort('status')}
+										title="Sort by status"
+										className={cn(
+											'ml-auto inline-flex items-center font-medium hover:text-foreground transition-colors',
+											isActiveSort('status') ? 'text-foreground' : 'text-muted-foreground',
+										)}
+									>
+										Status{sortArrow('status')}
+									</button>
+								</th>
 							</tr>
 						</thead>
 						<tbody>

@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og'
+import type { GridSort, GridSortKey } from '@/components/standings/grid-sort'
 import { requireSession } from '@/lib/auth-helpers'
 import { getGameDetail } from '@/lib/game/detail-queries'
 import { getShareStandingsData } from '@/lib/share/data'
@@ -12,7 +13,20 @@ const CACHE_HEADERS = {
 	'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ gameId: string }> }) {
+const SORT_KEYS = new Set<GridSortKey>(['name', 'goals', 'status', 'round'])
+
+/** Parse the grid's sort/filter state off the share URL (mirrors ProgressGrid). */
+function parseSort(sp: URLSearchParams): GridSort | undefined {
+	const key = sp.get('sort')
+	if (!key || !SORT_KEYS.has(key as GridSortKey)) return undefined
+	const dir = sp.get('dir') === 'desc' ? 'desc' : 'asc'
+	const roundId = sp.get('round') ?? undefined
+	// A round sort without a target round is meaningless — fall back to default.
+	if (key === 'round' && !roundId) return undefined
+	return { key: key as GridSortKey, roundId, dir }
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ gameId: string }> }) {
 	const session = await requireSession()
 	const { gameId } = await params
 
@@ -20,7 +34,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ gam
 	if (!game) return new Response('Not found', { status: 404 })
 	if (!game.isMember) return new Response('Forbidden', { status: 403 })
 
-	const data = await getShareStandingsData(gameId, session.user.id)
+	const sp = new URL(request.url).searchParams
+	const data = await getShareStandingsData(gameId, session.user.id, {
+		sort: parseSort(sp),
+		aliveOnly: sp.get('aliveOnly') === '1',
+	})
 	if (!data) return new Response('No data', { status: 404 })
 
 	const layout =

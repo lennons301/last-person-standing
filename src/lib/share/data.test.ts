@@ -50,6 +50,66 @@ describe('getShareStandingsData', () => {
 		getProgressGridDataMock.mockResolvedValue({ players: [], rounds: [] })
 		const result = await getShareStandingsData('g1', 'u1')
 		expect(result?.mode).toBe('classic')
+		expect(result?.mode === 'classic' && result.flat).toBe(false)
+	})
+
+	it('classic: a gameweek-pick sort orders players by team and flags flat', async () => {
+		makeHeaderMock('classic')
+		getProgressGridDataMock.mockResolvedValue({
+			rounds: [{ id: 'r1', number: 1, name: 'GW1', label: 'GW1' }],
+			players: [
+				{
+					id: 'c',
+					name: 'Carol',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r1: { result: 'win', teamShortName: 'CHE' } },
+				},
+				{
+					id: 'a',
+					name: 'Alice',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r1: { result: 'win', teamShortName: 'ARS' } },
+				},
+				{
+					id: 'b',
+					name: 'Bob',
+					status: 'eliminated',
+					eliminatedRoundNumber: 1,
+					goals: 0,
+					cellsByRoundId: { r1: { result: 'loss', teamShortName: 'ARS' } },
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1', {
+			sort: { key: 'round', roundId: 'r1', dir: 'asc' },
+		})
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.flat).toBe(true)
+		// ARS pickers grouped (incl. the eliminated one), then CHE — name tiebreak.
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice', 'Bob', 'Carol'])
+	})
+
+	it('classic: aliveOnly filters out eliminated players', async () => {
+		makeHeaderMock('classic')
+		getProgressGridDataMock.mockResolvedValue({
+			rounds: [],
+			players: [
+				{ id: 'a', name: 'Alice', status: 'alive', goals: 0, cellsByRoundId: {} },
+				{
+					id: 'b',
+					name: 'Bob',
+					status: 'eliminated',
+					eliminatedRoundNumber: 1,
+					goals: 0,
+					cellsByRoundId: {},
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1', { aliveOnly: true })
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice'])
 	})
 
 	it('returns cup shape when mode is cup', async () => {

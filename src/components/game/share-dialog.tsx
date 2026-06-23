@@ -32,6 +32,9 @@ interface ShareDialogProps {
 	defaultVariant: Variant
 	liveAvailable: boolean
 	winnerAvailable: boolean
+	/** Extra query string (sort + filter) appended to the standings image URL so
+	 *  the shared image reproduces the on-screen grid order. */
+	standingsQuery?: string
 }
 
 const VARIANT_LABEL: Record<Variant, string> = {
@@ -67,6 +70,7 @@ export function ShareDialog({
 	defaultVariant,
 	liveAvailable,
 	winnerAvailable,
+	standingsQuery,
 }: ShareDialogProps) {
 	const [copied, setCopied] = useState(false)
 	const [variant, setVariant] = useState<Variant>(defaultVariant)
@@ -78,10 +82,13 @@ export function ShareDialog({
 	const whatsappHref = `https://wa.me/?text=${encodeURIComponent(inviteMessage)}`
 
 	const cacheBust = open ? Math.floor(Date.now() / 60000) : 0
+	// The standings image honours the grid's current sort/filter (passed as a
+	// query string); other variants ignore it.
+	const standingsExtra = variant === 'standings' && standingsQuery ? `&${standingsQuery}` : ''
 	const imageUrl =
 		variant === 'winner'
 			? `/api/share/${variant}/${gameId}`
-			: `/api/share/${variant}/${gameId}?t=${cacheBust}`
+			: `/api/share/${variant}/${gameId}?t=${cacheBust}${standingsExtra}`
 
 	// Feature-detect Web Share API with file support. iOS Safari + Chrome
 	// Android present a native share sheet (WhatsApp, Messages, Mail, …)
