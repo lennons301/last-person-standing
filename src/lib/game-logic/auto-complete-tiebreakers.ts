@@ -45,3 +45,86 @@ export function cupTiebreaker(players: CupTiebreakerInput[]): string[] {
 	const topGoals = maxBy(topLives, (p) => p.cumulativeGoals)
 	return topGoals.map((p) => p.gamePlayerId)
 }
+
+// -- Wipeout rule (single-round modes: turbo + cup) --
+//
+// The winner is the longest *consecutive* streak of correct picks counted from
+// rank 1 — but leading ranks that were a UNIVERSAL loss (every player got that
+// rank wrong) are skipped, so the game effectively "restarts" from the first
+// rank anyone got right. This is a cross-player, winner-determination-layer
+// concern: the per-player evaluator can't see whether a rank was universally
+// lost. It also fixes the inflated-streak bug where scattered post-break wins
+// used to count toward the streak — here the streak stops at the first miss.
+//
+// Distinct from the "confirmed prefix / stop at first pending" rule in the
+// per-player evaluator: that bounds *which* picks are settled; this rebases
+// *where* the streak count begins, across all players.
+
+export interface WipeoutPickOutcome {
+	/** confidence rank (1 = most confident). */
+	rank: number
+	/** did this pick keep the streak alive (turbo: predicted right; cup: win / draw_success / saved_by_life). */
+	correct: boolean
+	/** goals to add to the goals tiebreak if this pick is inside the streak (0 otherwise). */
+	goals: number
+}
+
+export interface WipeoutPlayerInput {
+	gamePlayerId: string
+	/** settled, non-void picks in any order (sorted internally by rank). */
+	picks: WipeoutPickOutcome[]
+	/** final lives — cup tiebreak only; pass 0 for turbo. */
+	livesRemaining: number
+}
+
+export interface WipeoutScore {
+	gamePlayerId: string
+	streak: number
+	goalsInStreak: number
+	livesRemaining: number
+}
+
+export interface WipeoutOutcome {
+	/** true when no rank had a single correct pick anywhere → full refund, no winner. */
+	totalWipeout: boolean
+	/** lowest rank any player got right; null on a total wipeout. */
+	startingRank: number | null
+	/** per-player streak rebased to startingRank; empty on a total wipeout. */
+	scores: WipeoutScore[]
+}
+
+export function resolveWipeout(players: WipeoutPlayerInput[]): WipeoutOutcome {
+	// Starting rank = the lowest rank at which any player has a correct pick.
+	// This subsumes the "skip leading universal-loss ranks" recursion: a rank
+	// every player got wrong has no correct pick, so it's never the minimum.
+	let startingRank: number | null = null
+	for (const player of players) {
+		for (const pk of player.picks) {
+			if (pk.correct && (startingRank === null || pk.rank < startingRank)) {
+				startingRank = pk.rank
+			}
+		}
+	}
+	if (startingRank === null) {
+		return { totalWipeout: true, startingRank: null, scores: [] }
+	}
+
+	const start = startingRank
+	const scores = players.map((player) => {
+		const ordered = player.picks.filter((pk) => pk.rank >= start).sort((a, b) => a.rank - b.rank)
+		let streak = 0
+		let goalsInStreak = 0
+		for (const pk of ordered) {
+			if (!pk.correct) break
+			streak++
+			goalsInStreak += pk.goals
+		}
+		return {
+			gamePlayerId: player.gamePlayerId,
+			streak,
+			goalsInStreak,
+			livesRemaining: player.livesRemaining,
+		}
+	})
+	return { totalWipeout: false, startingRank, scores }
+}

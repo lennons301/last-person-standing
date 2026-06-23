@@ -60,7 +60,7 @@ drizzle/                  # Generated migrations
 - **Route protection**: `proxy.ts` (Next.js 16 replacement for middleware) redirects unauthenticated requests. Public paths: `/login`, `/signup`, `/api/auth`.
 - **Database**: No RLS — authorization enforced in TypeScript. All IDs are UUIDs. `numeric` columns (entry_fee, amounts) are strings in TypeScript for arbitrary precision.
 - **Types**: Inferred from Drizzle schema via `$inferSelect` / `$inferInsert`. See `src/lib/types.ts`.
-- **Game modes**: `classic` (one pick per round), `turbo` (10 predictions ranked by confidence), `cup` (like turbo with lives/handicap system).
+- **Game modes**: `classic` is the only **multi-round** mode — one pick per round, survive round to round, last person standing. `turbo` and `cup` are **single-round**: N confidence-ranked predictions in one gameweek/round, longest streak of correct picks wins (no eliminations-to-advance, no carry-over). `cup` is turbo plus a tier handicap + lives. See `docs/game-modes/` for the authoritative per-mode spec.
 - **Secrets**: Doppler is the production secrets source. Local dev uses `.env.local` (gitignored).
 - **Testing**: Vitest for unit tests. Game logic lives in pure functions for easy testing. Tests run against local Postgres in CI.
 - **Linting**: Biome for linting + formatting. Pre-commit hook via husky + lint-staged.

@@ -344,6 +344,11 @@ describe('cancellation: cup auto-skip', () => {
 			predictedResult: 'home_win',
 		})
 
+		// A third, unplayed fixture keeps the gameweek incomplete so we assert the
+		// mid-gameweek void/lives handling — a single-gameweek cup game only
+		// completes + crowns once every fixture is settled.
+		await makeFixture({ roundId: r1, homeTeamId: spain, awayTeamId: aus })
+
 		// Cancel rank 1's fixture. Rank 2 plays and home wins.
 		await cancelFixture(fx1)
 		await settleFixture(fx1)

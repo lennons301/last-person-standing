@@ -116,89 +116,243 @@ describe('checkClassicCompletion', () => {
 })
 
 describe('checkTurboCompletion', () => {
-	it('always completes', () => {
+	// Build a turbo player from [rank, correct, goals] tuples.
+	const tp = (
+		gamePlayerId: string,
+		picks: Array<[rank: number, correct: boolean, goals?: number]>,
+	) => ({
+		gamePlayerId,
+		livesRemaining: 0,
+		picks: picks.map(([rank, correct, goals = 0]) => ({ rank, correct, goals })),
+	})
+
+	it('crowns the longest streak and always completes', () => {
 		const result = checkTurboCompletion([
-			{ gamePlayerId: 'p1', streak: 7, goalsInStreak: 12 },
-			{ gamePlayerId: 'p2', streak: 5, goalsInStreak: 99 },
+			tp('p1', [
+				[1, true, 4],
+				[2, true, 4],
+				[3, true, 4],
+			]),
+			tp('p2', [
+				[1, true, 9],
+				[2, false],
+			]),
 		])
 		expect(result.completed).toBe(true)
 		expect(result.reason).toBe('turbo-single-round')
 		expect(result.winnerPlayerIds).toEqual(['p1'])
 	})
 
+	it('tiebreaks equal streaks by goals (no lives in turbo)', () => {
+		const result = checkTurboCompletion([
+			tp('p1', [
+				[1, true, 1],
+				[2, true, 1],
+			]),
+			tp('p2', [
+				[1, true, 5],
+				[2, true, 5],
+			]),
+		])
+		expect(result.winnerPlayerIds).toEqual(['p2'])
+	})
+
 	it('splits on full tie', () => {
 		const result = checkTurboCompletion([
-			{ gamePlayerId: 'p1', streak: 5, goalsInStreak: 8 },
-			{ gamePlayerId: 'p2', streak: 5, goalsInStreak: 8 },
+			tp('p1', [
+				[1, true, 4],
+				[2, true, 4],
+			]),
+			tp('p2', [
+				[1, true, 4],
+				[2, true, 4],
+			]),
 		])
 		expect(result.completed).toBe(true)
 		expect(result.winnerPlayerIds.sort()).toEqual(['p1', 'p2'])
 	})
 
-	it('completes with empty winners when no players', () => {
-		const result = checkTurboCompletion([])
-		expect(result.completed).toBe(true)
-		expect(result.winnerPlayerIds).toEqual([])
-	})
-})
-
-describe('checkCupCompletion', () => {
-	beforeEach(() => vi.clearAllMocks())
-
-	it('completes with last-alive when 1 alive', async () => {
-		dbMock.query.gamePlayer.findMany.mockResolvedValue([
-			{ id: 'p1', status: 'alive', eliminatedRoundId: null, livesRemaining: 2 },
-			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
-		] as never)
-
-		const result = await checkCupCompletion('g1', 'c1', 'r1', 3)
-		expect(result.reason).toBe('last-alive')
+	it('skips a leading universal-loss rank, then crowns the rebased streak', () => {
+		const result = checkTurboCompletion([
+			tp('p1', [
+				[1, false],
+				[2, true, 2],
+				[3, true, 3],
+			]),
+			tp('p2', [
+				[1, false],
+				[2, false],
+			]),
+		])
+		expect(result.reason).toBe('turbo-single-round')
 		expect(result.winnerPlayerIds).toEqual(['p1'])
 	})
 
-	it('mass extinction tiebreaks streak then lives then goals', async () => {
+	it('refunds (no winner) on a total wipeout — everyone got every pick wrong', () => {
+		const result = checkTurboCompletion([
+			tp('p1', [
+				[1, false],
+				[2, false],
+			]),
+			tp('p2', [
+				[1, false],
+				[2, false],
+			]),
+		])
+		expect(result.completed).toBe(true)
+		expect(result.reason).toBe('turbo-total-wipeout')
+		expect(result.refund).toBe(true)
+		expect(result.winnerPlayerIds).toEqual([])
+	})
+
+	it('completes with empty winners (no refund) when no players', () => {
+		const result = checkTurboCompletion([])
+		expect(result.completed).toBe(true)
+		expect(result.winnerPlayerIds).toEqual([])
+		expect(result.refund).toBeFalsy()
+	})
+})
+
+describe('checkCupCompletion (single gameweek — longest streak)', () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	// Cup pick rows carry a confidenceRank; the streak is now rank-ordered.
+	const cupPick = (
+		gamePlayerId: string,
+		confidenceRank: number,
+		result: string,
+		goalsScored = 0,
+	) => ({ gamePlayerId, confidenceRank, result, goalsScored })
+
+	it('crowns the longest streak across all players (tiebreak streak→lives→goals)', async () => {
 		dbMock.query.gamePlayer.findMany.mockResolvedValue([
 			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 		] as never)
-		// p1: 5 successful picks, 7 goals; p2: 5 successful picks, 12 goals
+		// both streak 5; p1 = 7 goals, p2 = 12 goals → p2 on the goals tiebreak
 		dbMock.query.pick.findMany.mockResolvedValue([
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 3 },
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 2 },
-			{ gamePlayerId: 'p1', result: 'draw', goalsScored: 1 },
-			{ gamePlayerId: 'p1', result: 'saved_by_life', goalsScored: 1 },
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 0 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 4 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 4 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 4 },
-			{ gamePlayerId: 'p2', result: 'draw', goalsScored: 0 },
-			{ gamePlayerId: 'p2', result: 'saved_by_life', goalsScored: 0 },
+			cupPick('p1', 1, 'win', 3),
+			cupPick('p1', 2, 'win', 2),
+			cupPick('p1', 3, 'draw', 1),
+			cupPick('p1', 4, 'saved_by_life', 1),
+			cupPick('p1', 5, 'win', 0),
+			cupPick('p2', 1, 'win', 4),
+			cupPick('p2', 2, 'win', 4),
+			cupPick('p2', 3, 'win', 4),
+			cupPick('p2', 4, 'draw', 0),
+			cupPick('p2', 5, 'saved_by_life', 0),
 		] as never)
 
-		const result = await checkCupCompletion('g1', 'c1', 'r1', 3)
-		// streak ties (5=5), lives ties (0=0), goals: p2 wins 12 > 7
-		expect(result.reason).toBe('mass-extinction')
+		const result = await checkCupCompletion('g1')
+		expect(result.completed).toBe(true)
+		expect(result.reason).toBe('cup-longest-streak')
 		expect(result.winnerPlayerIds).toEqual(['p2'])
 	})
 
-	it('rounds-exhausted with multiple alive uses cup tiebreaker', async () => {
+	it('a long BROKEN streak beats a short unbroken (alive) one — status is irrelevant, streak length wins', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p-alive', status: 'alive', eliminatedRoundId: null, livesRemaining: 0 },
+			{ id: 'p-broke', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		// p-alive: 3 correct, never broke. p-broke: 5 correct then a loss (streak 5).
+		dbMock.query.pick.findMany.mockResolvedValue([
+			cupPick('p-alive', 1, 'win', 1),
+			cupPick('p-alive', 2, 'win', 1),
+			cupPick('p-alive', 3, 'win', 1),
+			cupPick('p-broke', 1, 'win', 1),
+			cupPick('p-broke', 2, 'win', 1),
+			cupPick('p-broke', 3, 'win', 1),
+			cupPick('p-broke', 4, 'win', 1),
+			cupPick('p-broke', 5, 'win', 1),
+			cupPick('p-broke', 6, 'loss', 0),
+		] as never)
+
+		const result = await checkCupCompletion('g1')
+		expect(result.winnerPlayerIds).toEqual(['p-broke'])
+	})
+
+	it('does NOT count wins that come after the streak broke (the d8360e69 mis-crowning)', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p-steady', status: 'alive', eliminatedRoundId: null, livesRemaining: 0 },
+			{ id: 'p-scattered', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		// p-scattered won 4 picks total but BROKE at rank 2 → real streak is 1.
+		// p-steady won ranks 1 & 2 cleanly → streak 2. p-steady must win.
+		dbMock.query.pick.findMany.mockResolvedValue([
+			cupPick('p-steady', 1, 'win', 1),
+			cupPick('p-steady', 2, 'win', 1),
+			cupPick('p-scattered', 1, 'win', 9),
+			cupPick('p-scattered', 2, 'loss', 0),
+			cupPick('p-scattered', 3, 'win', 9),
+			cupPick('p-scattered', 4, 'win', 9),
+			cupPick('p-scattered', 5, 'win', 9),
+		] as never)
+
+		const result = await checkCupCompletion('g1')
+		expect(result.winnerPlayerIds).toEqual(['p-steady'])
+	})
+
+	it('skips a leading universal-loss rank — the game restarts from rank 2', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'pA', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'pB', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		// rank 1 lost for everyone. From rank 2: A wins 2 & 3, B loses 2.
+		dbMock.query.pick.findMany.mockResolvedValue([
+			cupPick('pA', 1, 'loss', 0),
+			cupPick('pA', 2, 'win', 1),
+			cupPick('pA', 3, 'win', 1),
+			cupPick('pB', 1, 'loss', 0),
+			cupPick('pB', 2, 'loss', 0),
+		] as never)
+
+		const result = await checkCupCompletion('g1')
+		expect(result.reason).toBe('cup-longest-streak')
+		expect(result.winnerPlayerIds).toEqual(['pA'])
+	})
+
+	it('refunds (no winner) on a total wipeout — every player got every pick wrong', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'pA', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'pB', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		dbMock.query.pick.findMany.mockResolvedValue([
+			cupPick('pA', 1, 'loss', 0),
+			cupPick('pA', 2, 'loss', 0),
+			cupPick('pB', 1, 'loss', 0),
+			cupPick('pB', 2, 'loss', 0),
+		] as never)
+
+		const result = await checkCupCompletion('g1')
+		expect(result.completed).toBe(true)
+		expect(result.reason).toBe('cup-total-wipeout')
+		expect(result.refund).toBe(true)
+		expect(result.winnerPlayerIds).toEqual([])
+	})
+
+	it('tiebreaks equal streaks by lives', async () => {
 		dbMock.query.gamePlayer.findMany.mockResolvedValue([
 			{ id: 'p1', status: 'alive', eliminatedRoundId: null, livesRemaining: 1 },
 			{ id: 'p2', status: 'alive', eliminatedRoundId: null, livesRemaining: 3 },
 		] as never)
-		dbMock.query.round.findFirst.mockResolvedValue(null as never)
-		// equal streak: p1=3, p2=3; p2 has more lives
+		// equal streak 3; p2 has more lives → p2
 		dbMock.query.pick.findMany.mockResolvedValue([
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 5 },
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 5 },
-			{ gamePlayerId: 'p1', result: 'win', goalsScored: 5 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 1 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 1 },
-			{ gamePlayerId: 'p2', result: 'win', goalsScored: 1 },
+			cupPick('p1', 1, 'win', 5),
+			cupPick('p1', 2, 'win', 5),
+			cupPick('p1', 3, 'win', 5),
+			cupPick('p2', 1, 'win', 1),
+			cupPick('p2', 2, 'win', 1),
+			cupPick('p2', 3, 'win', 1),
 		] as never)
 
-		const result = await checkCupCompletion('g1', 'c1', 'r1', 7)
-		expect(result.reason).toBe('rounds-exhausted')
+		const result = await checkCupCompletion('g1')
+		expect(result.reason).toBe('cup-longest-streak')
 		expect(result.winnerPlayerIds).toEqual(['p2'])
+	})
+
+	it('ignores void picks and does not complete when there are no players', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([] as never)
+		const result = await checkCupCompletion('g1')
+		expect(result.completed).toBe(false)
 	})
 })
