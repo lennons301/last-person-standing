@@ -169,6 +169,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 					awayScore: f.awayScore,
 					status: f.status,
 					stage: wcRoundStage(r.number),
+					winner: f.winner,
 				})),
 			)
 			const wcResult = validateWcClassicPick({
@@ -182,6 +183,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 					awayScore: f.awayScore,
 					status: f.status,
 					stage: wcRoundStage(roundData.number),
+					winner: f.winner,
 				})),
 				finishedKnockoutFixtures,
 			})

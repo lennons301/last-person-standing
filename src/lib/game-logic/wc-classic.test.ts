@@ -14,6 +14,7 @@ interface F {
 	awayScore: number | null
 	status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 	stage: 'group' | 'knockout'
+	winner: 'home' | 'away' | null
 }
 
 const r1 = 'round-group-1'
@@ -25,6 +26,7 @@ function f(partial: Partial<F> & Pick<F, 'id' | 'homeTeamId' | 'awayTeamId' | 's
 		homeScore: null,
 		awayScore: null,
 		status: 'scheduled',
+		winner: null,
 		...partial,
 	}
 }
@@ -48,10 +50,9 @@ describe('isTeamTournamentEliminated', () => {
 		expect(isTeamTournamentEliminated('t1', [knockout])).toBe(true)
 	})
 
-	it('returns false when a knockout fixture finished in a draw (penalties go on)', () => {
-		// For the purposes of the LPS rule, a draw doesn't eliminate;
-		// only a decisive loss does. Our fixture status does not carry penalties,
-		// so we conservatively treat draw as not-eliminated.
+	it('returns false when a level knockout score has no recorded winner (undecided)', () => {
+		// A level score with no `winner` recorded is treated as undecided →
+		// nobody eliminated (the winner field, when present, is authoritative).
 		const knockout = f({
 			id: 'k1',
 			homeTeamId: 't1',
@@ -62,6 +63,23 @@ describe('isTeamTournamentEliminated', () => {
 			stage: 'knockout',
 			roundId: r2,
 		})
+		expect(isTeamTournamentEliminated('t1', [knockout])).toBe(false)
+	})
+
+	it('eliminates the ET/penalty loser via winner on a level full-time score', () => {
+		// 1-1 full time, home advanced on penalties (winner: 'home').
+		const knockout = f({
+			id: 'k1',
+			homeTeamId: 't1',
+			awayTeamId: 't2',
+			homeScore: 1,
+			awayScore: 1,
+			status: 'finished',
+			stage: 'knockout',
+			roundId: r2,
+			winner: 'home',
+		})
+		expect(isTeamTournamentEliminated('t2', [knockout])).toBe(true)
 		expect(isTeamTournamentEliminated('t1', [knockout])).toBe(false)
 	})
 })

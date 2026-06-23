@@ -13,6 +13,43 @@ function makePick(
 }
 
 describe('evaluateCupPicks', () => {
+	describe('penalty/extra-time winner (knockout)', () => {
+		it('treats a level score with winner = picked team as a win, not a draw', () => {
+			const res = evaluateCupPicks(
+				[
+					{
+						confidenceRank: 1,
+						pickedTeam: 'home',
+						homeScore: 1,
+						awayScore: 1,
+						tierDifference: 0,
+						winner: 'home',
+					},
+				],
+				0,
+			)
+			expect(res.pickResults[0].result).toBe('win')
+			expect(res.eliminated).toBe(false)
+		})
+		it('treats a level score with winner = opponent as a loss (streak breaks)', () => {
+			const res = evaluateCupPicks(
+				[
+					{
+						confidenceRank: 1,
+						pickedTeam: 'away',
+						homeScore: 1,
+						awayScore: 1,
+						tierDifference: 0,
+						winner: 'home',
+					},
+				],
+				0,
+			)
+			expect(res.pickResults[0].result).toBe('loss')
+			expect(res.eliminated).toBe(true)
+		})
+	})
+
 	describe('pick restrictions', () => {
 		it('rejects picks where picked team is >1 tier above opponent', () => {
 			const result = evaluateCupPicks([makePick(1, 'home', 3, 0, 2)], 0)
