@@ -3,6 +3,7 @@ import { classicStandingsLayout } from './classic-standings'
 
 const fixture = {
 	mode: 'classic' as const,
+	flat: false,
 	header: {
 		gameName: 'Test',
 		gameMode: 'classic' as const,
@@ -62,6 +63,7 @@ describe('classicStandingsLayout', () => {
 		}))
 		const big: Extract<import('../data').StandingsShareData, { mode: 'classic' }> = {
 			mode: 'classic',
+			flat: false,
 			header: fixture.header,
 			classicGrid: {
 				aliveCount: 25,

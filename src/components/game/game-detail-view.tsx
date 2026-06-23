@@ -76,6 +76,13 @@ export function GameDetailView({
 	cupStandings,
 }: GameDetailViewProps) {
 	const [shareOpen, setShareOpen] = useState(false)
+	// Query string (sort + filter) for the standings share image — set when the
+	// user shares from the progress grid so the image mirrors the on-screen order.
+	const [shareStandingsQuery, setShareStandingsQuery] = useState<string | undefined>(undefined)
+	const openShare = (standingsQuery?: string) => {
+		setShareStandingsQuery(standingsQuery)
+		setShareOpen(true)
+	}
 	const router = useRouter()
 	const refresh = () => router.refresh()
 	const inviteUrl =
@@ -112,7 +119,7 @@ export function GameDetailView({
 					status={game.status}
 					inviteCode={game.inviteCode}
 					currentRound={game.currentRound}
-					onShare={() => setShareOpen(true)}
+					onShare={() => openShare()}
 				/>
 
 				{game.myPayment &&
@@ -144,7 +151,7 @@ export function GameDetailView({
 						eliminatedCount={classicGrid.eliminatedCount}
 						pot={classicGrid.pot}
 						gameId={game.id}
-						onShare={() => setShareOpen(true)}
+						onShare={openShare}
 						showAdminActions={game.isAdmin}
 					/>
 				)}
@@ -153,7 +160,7 @@ export function GameDetailView({
 					<TurboStandings
 						rounds={turboStandings.rounds}
 						numberOfPicks={turboStandings.numberOfPicks}
-						onShare={() => setShareOpen(true)}
+						onShare={() => openShare()}
 						showAdminActions={game.isAdmin}
 						gameId={game.id}
 					/>
@@ -162,7 +169,7 @@ export function GameDetailView({
 				{cupStandings && (
 					<CupStandings
 						data={cupStandings}
-						onShare={() => setShareOpen(true)}
+						onShare={() => openShare()}
 						showAdminActions={game.isAdmin}
 						gameId={game.id}
 					/>
@@ -203,6 +210,7 @@ export function GameDetailView({
 					defaultVariant={game.defaultShareVariant}
 					liveAvailable={game.liveShareAvailable}
 					winnerAvailable={game.winnerShareAvailable}
+					standingsQuery={shareStandingsQuery}
 				/>
 			</div>
 		</LiveProvider>

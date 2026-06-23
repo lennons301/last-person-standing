@@ -1,4 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
+import { type GridSort, sortGridPlayers } from '@/components/standings/grid-sort'
 import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
@@ -59,6 +60,12 @@ export type StandingsShareData =
 			classicGrid: NonNullable<
 				Awaited<ReturnType<typeof import('@/lib/game/detail-queries').getProgressGridData>>
 			>
+			/**
+			 * True when ordered by a gameweek's picks (`sort.key === 'round'`): the
+			 * image renders one flat list grouped by team rather than the
+			 * Alive/Eliminated split, so identical picks stay together.
+			 */
+			flat: boolean
 	  }
 	| {
 			mode: 'cup'
@@ -197,6 +204,7 @@ async function buildHeader(gameId: string): Promise<ShareHeader | null> {
 export async function getShareStandingsData(
 	gameId: string,
 	viewerUserId: string,
+	options?: { sort?: GridSort; aliveOnly?: boolean },
 ): Promise<StandingsShareData | null> {
 	const header = await buildHeader(gameId)
 	if (!header) return null
@@ -204,7 +212,19 @@ export async function getShareStandingsData(
 	if (header.gameMode === 'classic') {
 		const grid = await getProgressGridData(gameId, viewerUserId, { hideAllCurrentPicks: true })
 		if (!grid) return null
-		return { mode: 'classic', header, classicGrid: grid }
+		// Order + filter the players in the data layer so the layout is a dumb
+		// renderer. Default ordering matches the on-screen grid's default ('status').
+		const sort: GridSort = options?.sort ?? { key: 'status', dir: 'asc' }
+		const filtered = options?.aliveOnly
+			? grid.players.filter((p) => p.status === 'alive')
+			: grid.players
+		const players = sortGridPlayers(filtered, sort)
+		return {
+			mode: 'classic',
+			header,
+			classicGrid: { ...grid, players },
+			flat: sort.key === 'round',
+		}
 	}
 	if (header.gameMode === 'cup') {
 		const cupData = await getCupStandingsData(gameId, viewerUserId)

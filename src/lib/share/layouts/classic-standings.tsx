@@ -14,6 +14,7 @@ const RESULT_COLOUR: Record<string, string> = {
 
 const STANDINGS_ALIVE_CAP = 20
 const STANDINGS_ELIMINATED_CAP = 10
+const FLAT_CAP = 30
 
 export interface ClassicStandingsRender {
 	jsx: ReactElement
@@ -25,18 +26,16 @@ export function classicStandingsLayout(
 	data: Extract<StandingsShareData, { mode: 'classic' }>,
 ): ClassicStandingsRender {
 	const grid = data.classicGrid
-	const players = [...grid.players].sort((a, b) => {
-		if (a.status === 'alive' && b.status !== 'alive') return -1
-		if (a.status !== 'alive' && b.status === 'alive') return 1
-		if (a.status === 'eliminated' && b.status === 'eliminated') {
-			return (b.eliminatedRoundNumber ?? 0) - (a.eliminatedRoundNumber ?? 0)
-		}
-		return a.name.localeCompare(b.name)
-	})
-
-	const alive = players.filter((p) => p.status === 'alive').slice(0, STANDINGS_ALIVE_CAP)
-	const eliminated = players.filter((p) => p.status !== 'alive').slice(0, STANDINGS_ELIMINATED_CAP)
-	const visible = [...alive, ...eliminated]
+	// Players arrive already ordered + filtered by getShareStandingsData.
+	const players = grid.players
+	// A gameweek-pick sort renders one flat list (no Alive/Eliminated split) so
+	// identical picks stay grouped; everything else keeps the split.
+	const visible = data.flat
+		? players.slice(0, FLAT_CAP)
+		: [
+				...players.filter((p) => p.status === 'alive').slice(0, STANDINGS_ALIVE_CAP),
+				...players.filter((p) => p.status !== 'alive').slice(0, STANDINGS_ELIMINATED_CAP),
+			]
 	const overflow = players.length - visible.length
 
 	const visibleRounds = grid.rounds.slice(-6)
