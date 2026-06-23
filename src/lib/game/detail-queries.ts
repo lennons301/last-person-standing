@@ -6,8 +6,8 @@ import { db } from '@/lib/db'
 import {
 	buildChainSlots,
 	buildPlannerRounds,
+	type ChainLockedPickRow,
 	type ChainPastPickRow,
-	type ChainPlannedPickRow,
 	type ChainRoundRow,
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
@@ -18,7 +18,7 @@ import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { calculatePot } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
-import { game, type gamePlayer, pick, plannedPick } from '@/lib/schema/game'
+import { game, type gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
 export async function getGameDetail(gameId: string, userId: string) {
@@ -1390,17 +1390,13 @@ export async function getClassicPlannerData(
 	})
 	if (!gameData) return null
 
-	// Pull the player's picks (all rounds) and plans in parallel.
-	const [playerPicks, playerPlans] = await Promise.all([
-		db.query.pick.findMany({
-			where: and(eq(pick.gameId, gameId), eq(pick.gamePlayerId, gamePlayerId)),
-			with: { round: true, team: true },
-		}),
-		db.query.plannedPick.findMany({
-			where: eq(plannedPick.gamePlayerId, gamePlayerId),
-			with: { round: true, team: true },
-		}),
-	])
+	// Pull the player's picks across all rounds. With lockable advance picks,
+	// a pick can exist for a future (not-yet-current) round, so we classify
+	// each pick as past / current / locked-future below.
+	const playerPicks = await db.query.pick.findMany({
+		where: and(eq(pick.gameId, gameId), eq(pick.gamePlayerId, gamePlayerId)),
+		with: { round: true, team: true },
+	})
 
 	const now = new Date()
 	const currentRoundNumber = currentRoundId
@@ -1419,11 +1415,17 @@ export async function getClassicPlannerData(
 		}),
 	}))
 
-	// Past picks are every pick for a round that isn't the current round (i.e.
-	// something already in the past — draws/losses/wins/saves). We include the
-	// current-round pick separately so the ribbon can render it as 'current'.
+	// A pick is a locked ADVANCE pick when it's for a round later than the
+	// game's current round (the C1 feature). Anything for an earlier round is
+	// in the past; the current-round pick is handled separately for the ribbon.
+	const isFuturePick = (p: (typeof playerPicks)[number]) =>
+		p.roundId !== currentRoundId &&
+		currentRoundNumber != null &&
+		p.round != null &&
+		p.round.number > currentRoundNumber
+
 	const pastPicks: ChainPastPickRow[] = playerPicks
-		.filter((p) => p.roundId !== currentRoundId)
+		.filter((p) => p.roundId !== currentRoundId && !isFuturePick(p))
 		.map((p) => ({
 			roundId: p.roundId,
 			teamId: p.teamId,
@@ -1431,6 +1433,8 @@ export async function getClassicPlannerData(
 			teamShortName: p.team.shortName,
 			teamColour: p.team.primaryColor,
 		}))
+
+	const lockedFuturePicks = playerPicks.filter(isFuturePick)
 
 	const currentPickRow = currentRoundId
 		? playerPicks.find((p) => p.roundId === currentRoundId)
@@ -1443,10 +1447,9 @@ export async function getClassicPlannerData(
 			}
 		: null
 
-	const plannedPicksChain: ChainPlannedPickRow[] = playerPlans.map((p) => ({
+	const lockedPicksChain: ChainLockedPickRow[] = lockedFuturePicks.map((p) => ({
 		roundId: p.roundId,
 		teamId: p.teamId,
-		autoSubmit: p.autoSubmit,
 		teamShortName: p.team.shortName,
 		teamColour: p.team.primaryColor,
 	}))
@@ -1473,7 +1476,7 @@ export async function getClassicPlannerData(
 		rounds,
 		pastPicks,
 		currentPick,
-		plannedPicks: plannedPicksChain,
+		lockedPicks: lockedPicksChain,
 		currentRoundId,
 		upcomingRoundsFixturesTbc,
 		totalTeams,
@@ -1509,28 +1512,20 @@ export async function getClassicPlannerData(
 			})),
 		}))
 
-	// Past picks & plans keyed by round number (for the "USED GW3" labels).
+	// Past + current picks count as "used" in the planner (for the "USED GW3"
+	// labels). Locked future picks are passed separately so each future round
+	// shows its own lock and greys out teams locked into other future rounds.
 	const pastPicksForPlanner = playerPicks
-		.filter((p) => p.roundId !== currentRoundId && p.round)
+		.filter((p) => !isFuturePick(p) && p.round)
 		.map((p) => ({ roundNumber: p.round.number, teamId: p.teamId }))
-	// Treat the current-round pick as "used" in future planner views too.
-	if (currentPickRow?.round) {
-		pastPicksForPlanner.push({
-			roundNumber: currentPickRow.round.number,
-			teamId: currentPickRow.teamId,
-		})
-	}
-	const plannedPicksForPlanner = playerPlans.map((p) => ({
-		roundId: p.roundId,
-		roundNumber: p.round.number,
-		teamId: p.teamId,
-		autoSubmit: p.autoSubmit,
-	}))
+	const lockedPicksForPlanner = lockedFuturePicks
+		.filter((p) => p.round)
+		.map((p) => ({ roundId: p.roundId, roundNumber: p.round.number, teamId: p.teamId }))
 
 	const futureRounds = buildPlannerRounds({
 		futureRounds: futureRoundRows,
 		pastPicks: pastPicksForPlanner,
-		plannedPicks: plannedPicksForPlanner,
+		lockedPicks: lockedPicksForPlanner,
 	})
 
 	return { chain, futureRounds }

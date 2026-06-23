@@ -25,8 +25,8 @@ export interface PlannerRoundInput {
 	fixturesTbc: boolean
 	fixtures: PlannerFixture[]
 	usedTeams: UsedInfo[]
-	plannedTeamId: string | null
-	plannedAutoSubmit: boolean
+	/** The team the player has locked in (committed a real pick for) this round, if any. */
+	lockedTeamId: string | null
 }
 
 export interface ChainRoundRow {
@@ -45,10 +45,9 @@ export interface ChainPastPickRow {
 	teamColour: string | null
 }
 
-export interface ChainPlannedPickRow {
+export interface ChainLockedPickRow {
 	roundId: string
 	teamId: string
-	autoSubmit: boolean
 	teamShortName: string
 	teamColour: string | null
 }
@@ -63,7 +62,8 @@ export interface BuildChainSlotsInput {
 	rounds: ChainRoundRow[]
 	pastPicks: ChainPastPickRow[] // completed rounds only (result != pending)
 	currentPick: ChainCurrentPickInfo | null
-	plannedPicks: ChainPlannedPickRow[]
+	/** Real picks the player has locked in for future (not-yet-current) rounds. */
+	lockedPicks: ChainLockedPickRow[]
 	currentRoundId: string | null
 	upcomingRoundsFixturesTbc: Set<string>
 	totalTeams: number
@@ -74,29 +74,10 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 	summary: ChainSummary
 } {
 	const pastById = new Map(input.pastPicks.map((p) => [p.roundId, p]))
-	const planById = new Map(input.plannedPicks.map((p) => [p.roundId, p]))
+	const lockedById = new Map(input.lockedPicks.map((p) => [p.roundId, p]))
 
 	const slots: ChainSlot[] = input.rounds.map((r) => {
 		if (r.id === input.currentRoundId) {
-			const plan = planById.get(r.id)
-			if (plan) {
-				return {
-					roundId: r.id,
-					roundNumber: r.number,
-					roundLabel: r.label,
-					state: plan.autoSubmit
-						? {
-								kind: 'planned-locked',
-								teamShort: plan.teamShortName,
-								teamColour: plan.teamColour,
-							}
-						: {
-								kind: 'planned',
-								teamShort: plan.teamShortName,
-								teamColour: plan.teamColour,
-							},
-				}
-			}
 			return {
 				roundId: r.id,
 				roundNumber: r.number,
@@ -138,24 +119,18 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 			}
 		}
 
-		// Upcoming round — planned or empty or tbc
-		const plan = planById.get(r.id)
-		if (plan) {
+		// Upcoming round — locked (real advance pick) or empty or tbc
+		const locked = lockedById.get(r.id)
+		if (locked) {
 			return {
 				roundId: r.id,
 				roundNumber: r.number,
 				roundLabel: r.label,
-				state: plan.autoSubmit
-					? {
-							kind: 'planned-locked',
-							teamShort: plan.teamShortName,
-							teamColour: plan.teamColour,
-						}
-					: {
-							kind: 'planned',
-							teamShort: plan.teamShortName,
-							teamColour: plan.teamColour,
-						},
+				state: {
+					kind: 'planned-locked',
+					teamShort: locked.teamShortName,
+					teamColour: locked.teamColour,
+				},
 			}
 		}
 
@@ -177,10 +152,10 @@ export function buildChainSlots(input: BuildChainSlotsInput): {
 	})
 
 	const played = input.pastPicks.length
-	const planned = input.plannedPicks.length
+	const planned = input.lockedPicks.length
 	const usedCount = new Set<string>([
 		...input.pastPicks.map((p) => p.teamId),
-		...input.plannedPicks.map((p) => p.teamId),
+		...input.lockedPicks.map((p) => p.teamId),
 	]).size
 	const availableTeams = Math.max(0, input.totalTeams - usedCount)
 
@@ -219,26 +194,27 @@ export interface FutureRoundRow {
 export interface BuildPlannerRoundsInput {
 	futureRounds: FutureRoundRow[]
 	pastPicks: Array<{ roundNumber: number; teamId: string }>
-	plannedPicks: Array<{ roundNumber: number; teamId: string; autoSubmit: boolean; roundId: string }>
+	/** Real picks the player has locked in for future rounds. */
+	lockedPicks: Array<{ roundNumber: number; teamId: string; roundId: string }>
 }
 
 /**
  * Build the PlannerRound inputs for every upcoming round.
- * Applies cascading "used" labels — a pick in an earlier planned gameweek
- * locks that team out of later gameweeks automatically.
+ * Applies cascading "used" labels — a team locked into an earlier gameweek
+ * is locked out of later gameweeks automatically.
  */
 export function buildPlannerRounds(input: BuildPlannerRoundsInput): PlannerRoundInput[] {
 	const sortedFutures = [...input.futureRounds].sort((a, b) => a.number - b.number)
 
 	return sortedFutures.map((r) => {
 		const fixturesTbc = r.fixtures.length === 0
-		const plan = input.plannedPicks.find((p) => p.roundId === r.id)
-		const plannedTeamId = plan?.teamId ?? null
-		const plannedAutoSubmit = plan?.autoSubmit ?? false
+		const locked = input.lockedPicks.find((p) => p.roundId === r.id)
+		const lockedTeamId = locked?.teamId ?? null
 
 		// A team is "used" for this round if:
 		//   - it was picked in a past (completed) round, OR
-		//   - it is planned for any OTHER round (planned in this round is handled by plannedTeamId).
+		//   - it is locked into any OTHER future round (the lock for this round is
+		//     handled by lockedTeamId).
 		const usedTeams: UsedInfo[] = []
 		for (const pp of input.pastPicks) {
 			usedTeams.push({
@@ -247,12 +223,12 @@ export function buildPlannerRounds(input: BuildPlannerRoundsInput): PlannerRound
 				kind: 'used',
 			})
 		}
-		for (const plp of input.plannedPicks) {
-			if (plp.roundId === r.id) continue
+		for (const lp of input.lockedPicks) {
+			if (lp.roundId === r.id) continue
 			usedTeams.push({
-				teamId: plp.teamId,
-				label: `PLANNED GW${plp.roundNumber}`,
-				kind: 'planned-elsewhere',
+				teamId: lp.teamId,
+				label: `PICKED GW${lp.roundNumber}`,
+				kind: 'used',
 			})
 		}
 
@@ -284,8 +260,7 @@ export function buildPlannerRounds(input: BuildPlannerRoundsInput): PlannerRound
 			fixturesTbc,
 			fixtures,
 			usedTeams,
-			plannedTeamId,
-			plannedAutoSubmit,
+			lockedTeamId,
 		}
 	})
 }

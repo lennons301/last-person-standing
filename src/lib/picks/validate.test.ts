@@ -4,7 +4,7 @@ import { validateClassicPick, validateCupPicks, validateTurboPicks } from './val
 describe('validateClassicPick', () => {
 	const base = {
 		playerStatus: 'alive' as const,
-		isCurrentRound: true,
+		isPastRound: false,
 		deadline: new Date(Date.now() + 3600000),
 		now: new Date(),
 		usedTeamIds: ['used-1', 'used-2'],
@@ -20,10 +20,21 @@ describe('validateClassicPick', () => {
 			reason: 'Player is not alive',
 		})
 	})
-	it('rejects when not the game current round', () => {
-		expect(validateClassicPick({ ...base, teamId: 'team-a', isCurrentRound: false })).toEqual({
+	it('accepts an advance pick for a future round whose deadline has not passed', () => {
+		// Classic players can lock in a real pick for a future round, not just the
+		// game's current round, as long as the target round's own deadline is open.
+		expect(
+			validateClassicPick({
+				...base,
+				teamId: 'team-a',
+				deadline: new Date(Date.now() + 7 * 24 * 3600000),
+			}),
+		).toEqual({ valid: true })
+	})
+	it('rejects a round that has already been played', () => {
+		expect(validateClassicPick({ ...base, teamId: 'team-a', isPastRound: true })).toEqual({
 			valid: false,
-			reason: 'Round is not open for picks',
+			reason: 'Round has already been played',
 		})
 	})
 	it('rejects past deadline', () => {

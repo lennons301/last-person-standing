@@ -77,6 +77,13 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	if (!roundData) {
 		return NextResponse.json({ error: 'Round not found' }, { status: 404 })
 	}
+	// The round must belong to this game's competition. Previously the classic
+	// path's `currentRoundId === roundId` check implied this; now that advance
+	// picks are allowed for non-current rounds, guard it explicitly so a player
+	// can't submit picks against a round in some other competition.
+	if (roundData.competitionId !== gameData.competitionId) {
+		return NextResponse.json({ error: 'Round not in this game' }, { status: 400 })
+	}
 
 	const now = new Date()
 
@@ -132,7 +139,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			{
 				teamId,
 				playerStatus: targetGamePlayer.status,
-				isCurrentRound: gameData.currentRoundId === roundId,
+				// A round is "past" once it's been settled/completed for this game.
+				// Completed rounds always have a passed deadline, so this never
+				// blocks a still-pickable round — it just gives a clearer reason
+				// for already-played rounds. Current + future-open rounds pass.
+				isPastRound: roundData.status === 'completed',
 				deadline: roundData.deadline,
 				now,
 				usedTeamIds,
