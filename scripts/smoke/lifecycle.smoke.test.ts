@@ -1133,6 +1133,51 @@ describe('post-deadline + post-completion visibility', () => {
 		expect(otherRow?.cellsByRoundId[r2]?.result).toBe('locked')
 	})
 
+	it('classic: progress grid hides other players ADVANCE picks for a FUTURE round before its deadline', async () => {
+		// Advance picks (PR #81) let a player commit a real pick for a future round
+		// while it's still 'upcoming'. Those must stay 'locked' to other viewers
+		// until THAT round's deadline — not leak the team the moment they're made.
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const c = await makeTeam({ name: 'C', shortName: 'C' })
+		const d = await makeTeam({ name: 'D', shortName: 'D' })
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		// Future round, still 'upcoming' for this game (currentRound is r2), deadline ahead.
+		const r3 = await makeRound(compId, {
+			number: 3,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 172_800_000),
+		})
+		const fx2 = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+		const fx3 = await makeFixture({ roundId: r3, homeTeamId: c, awayTeamId: d })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		// Both pick the current round AND lock an advance pick for the future round.
+		await makePick({ gameId, gamePlayerId: gpMe, roundId: r2, teamId: a, fixtureId: fx2 })
+		await makePick({ gameId, gamePlayerId: gpOther, roundId: r2, teamId: b, fixtureId: fx2 })
+		await makePick({ gameId, gamePlayerId: gpMe, roundId: r3, teamId: c, fixtureId: fx3 })
+		await makePick({ gameId, gamePlayerId: gpOther, roundId: r3, teamId: d, fixtureId: fx3 })
+
+		const grid = await getProgressGridData(gameId, 'u-me')
+		const myRow = grid?.players.find((p) => p.id === gpMe)
+		const otherRow = grid?.players.find((p) => p.id === gpOther)
+		// My own advance pick is visible to me; the other player's advance pick must
+		// be locked (deadline for r3 hasn't passed).
+		expect(myRow?.cellsByRoundId[r3]?.result).not.toBe('locked')
+		expect(otherRow?.cellsByRoundId[r3]?.result).toBe('locked')
+	})
+
 	it('turbo: standings hide other players picks BEFORE the deadline', async () => {
 		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
 		const teams: string[] = []
