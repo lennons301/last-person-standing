@@ -16,6 +16,19 @@ const STANDINGS_ALIVE_CAP = 20
 const STANDINGS_ELIMINATED_CAP = 10
 const FLAT_CAP = 30
 
+// @vercel/og renders to a FIXED-height canvas and CLIPS overflow — it does not
+// grow to fit. So the height must be computed to match the real rendered
+// content, and each row is given a FIXED height so a row can never grow past
+// the per-row budget (e.g. when many gameweeks make cells narrow). Previously a
+// hand-tuned `260 + n*52` under-counted both the chrome and the true row height,
+// clipping ~half the players once a few gameweeks were populated.
+const ROW_HEIGHT = 70
+const OVERFLOW_ROW_HEIGHT = 44
+// Everything above the first player row (outer 48px padding ×2, header block,
+// alive/eliminated legend, card padding, column-header row) plus the card +
+// outer bottom padding.
+const CHROME_HEIGHT = 340
+
 export interface ClassicStandingsRender {
 	jsx: ReactElement
 	width: number
@@ -39,7 +52,10 @@ export function classicStandingsLayout(
 	const overflow = players.length - visible.length
 
 	const visibleRounds = grid.rounds.slice(-6)
-	const height = Math.max(600, 260 + visible.length * 52 + (overflow > 0 ? 40 : 0))
+	const height = Math.max(
+		600,
+		CHROME_HEIGHT + visible.length * ROW_HEIGHT + (overflow > 0 ? OVERFLOW_ROW_HEIGHT : 0),
+	)
 
 	const jsx = (
 		<div
@@ -121,7 +137,7 @@ export function classicStandingsLayout(
 						style={{
 							display: 'flex',
 							alignItems: 'center',
-							padding: '10px 0',
+							height: `${ROW_HEIGHT}px`,
 							borderBottom: '1px solid #f0eee9',
 							opacity: player.status === 'eliminated' ? 0.5 : 1,
 						}}
