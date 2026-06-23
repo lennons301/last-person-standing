@@ -225,24 +225,28 @@ export default async function GameDetailPage({
 		: null
 
 	const pickSection =
-		game.currentRound && isAlive && !roundDeadlinePassed ? (
-			game.gameMode === 'classic' && classicPickData ? (
-				<ClassicPick
-					gameId={game.id}
-					roundId={game.currentRound.id}
-					roundName={classicPickData.roundName}
-					roundNumber={classicPickData.roundNumber}
-					competitionId={classicPickData.competitionId}
-					deadline={classicPickData.deadline}
-					fixtures={classicPickData.fixtures}
-					usedTeamsByRound={classicPickData.usedTeamsByRound}
-					existingPickTeamId={classicPickData.existingPickTeamId}
-					existingPickFixtureId={classicPickData.existingPickFixtureId}
-					chain={classicPlannerData?.chain}
-					futureRounds={classicPlannerData?.futureRounds}
-					actingAs={actingAsForPickUI}
-				/>
-			) : game.gameMode === 'turbo' && turboPickData ? (
+		game.currentRound && isAlive && game.gameMode === 'classic' && classicPickData ? (
+			// Classic stays interactive even after the current deadline passes: the
+			// current round locks (read-only) but the player can still lock in real
+			// picks for upcoming rounds.
+			<ClassicPick
+				gameId={game.id}
+				roundId={game.currentRound.id}
+				roundName={classicPickData.roundName}
+				roundNumber={classicPickData.roundNumber}
+				competitionId={classicPickData.competitionId}
+				deadline={classicPickData.deadline}
+				fixtures={classicPickData.fixtures}
+				usedTeamsByRound={classicPickData.usedTeamsByRound}
+				existingPickTeamId={classicPickData.existingPickTeamId}
+				existingPickFixtureId={classicPickData.existingPickFixtureId}
+				chain={classicPlannerData?.chain}
+				futureRounds={classicPlannerData?.futureRounds}
+				currentRoundClosed={roundDeadlinePassed}
+				actingAs={actingAsForPickUI}
+			/>
+		) : game.currentRound && isAlive && !roundDeadlinePassed ? (
+			game.gameMode === 'turbo' && turboPickData ? (
 				<TurboPick
 					gameId={game.id}
 					roundId={game.currentRound.id}

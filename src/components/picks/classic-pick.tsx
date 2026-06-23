@@ -19,9 +19,8 @@ export interface ClassicPickFixture {
 }
 
 export interface ClassicPickPlanHandlers {
-	onPlan: (roundId: string, teamId: string, autoSubmit: boolean) => Promise<void>
-	onRemove: (roundId: string) => Promise<void>
-	onToggleAuto: (roundId: string, autoSubmit: boolean) => Promise<void>
+	/** Commit/replace a locked real pick for a future round. */
+	onLock: (roundId: string, teamId: string) => Promise<void>
 }
 
 interface ClassicPickProps {
@@ -38,6 +37,12 @@ interface ClassicPickProps {
 	chain?: { slots: ChainSlot[]; summary: ChainSummary }
 	futureRounds?: PlannerRoundInput[]
 	planHandlers?: ClassicPickPlanHandlers
+	/**
+	 * True when the current round's deadline has passed (and the game hasn't yet
+	 * advanced). The current-round fixtures lock, but the player can still lock
+	 * in real picks for upcoming rounds via the planner below.
+	 */
+	currentRoundClosed?: boolean
 	/** When set, the admin is picking on behalf of this player. */
 	actingAs?: { gamePlayerId: string; userName: string }
 }
@@ -61,6 +66,7 @@ export function ClassicPick({
 	chain,
 	futureRounds,
 	planHandlers,
+	currentRoundClosed = false,
 	actingAs,
 }: ClassicPickProps) {
 	const router = useRouter()
@@ -265,57 +271,66 @@ export function ClassicPick({
 			</div>
 		)
 
-	// Default handlers perform the standard REST calls against the planned-picks
-	// endpoints. Callers can override via `planHandlers` for tests/storybook.
+	// Locking an upcoming pick commits a REAL pick against that round (editable
+	// by re-picking until that round's own deadline) — the same endpoint the
+	// current round uses. Callers can override via `planHandlers` for tests.
 	const resolvedHandlers: ClassicPickPlanHandlers = planHandlers ?? {
-		onPlan: async (rid, tid, auto) => {
-			const res = await fetch(`/api/games/${gameId}/planned-picks`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ roundId: rid, teamId: tid, autoSubmit: auto }),
-			})
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({ error: 'Failed to save plan' }))
-				throw new Error(body.error ?? 'Failed to save plan')
-			}
-			router.refresh()
-		},
-		onRemove: async (rid) => {
-			const res = await fetch(`/api/games/${gameId}/planned-picks/${rid}`, { method: 'DELETE' })
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({ error: 'Failed to clear plan' }))
-				throw new Error(body.error ?? 'Failed to clear plan')
-			}
-			router.refresh()
-		},
-		onToggleAuto: async (rid, auto) => {
-			// To toggle auto-submit we re-post the existing plan (upsert) with the new flag.
-			// The server-side POST handler does a delete+insert so this is idempotent.
-			const existing = futureRounds?.find((r) => r.roundId === rid)
-			if (!existing?.plannedTeamId) return
-			const res = await fetch(`/api/games/${gameId}/planned-picks`, {
+		onLock: async (rid, tid) => {
+			const res = await fetch(`/api/picks/${gameId}/${rid}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					roundId: rid,
-					teamId: existing.plannedTeamId,
-					autoSubmit: auto,
+					teamId: tid,
+					...(actingAs ? { actingAs: actingAs.gamePlayerId } : {}),
 				}),
 			})
 			if (!res.ok) {
-				const body = await res.json().catch(() => ({ error: 'Failed to toggle auto-submit' }))
-				throw new Error(body.error ?? 'Failed to toggle auto-submit')
+				const body = await res.json().catch(() => ({ error: 'Failed to lock in pick' }))
+				throw new Error(body.error ?? 'Failed to lock in pick')
 			}
 			router.refresh()
 		},
 	}
 
+	// When the current round's deadline has passed (game not yet advanced) the
+	// current-round fixtures lock — show a read-only summary, not the editable
+	// picker. Upcoming-round locking below stays available.
+	const closedRoundCard = (
+		<div className="rounded-lg border border-border bg-card p-4">
+			{existingPickTeamId && lockedTeam && lockedOpponent ? (
+				<div className="flex items-center gap-3">
+					<TeamBadge shortName={lockedTeam.shortName} size="lg" />
+					<div>
+						<div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">
+							{roundName} · picks locked
+						</div>
+						<div className="font-display text-lg font-semibold">
+							{lockedTeam.name}{' '}
+							<span className="text-sm text-muted-foreground font-normal">
+								vs {lockedOpponent.name} ({lockedSide})
+							</span>
+						</div>
+					</div>
+				</div>
+			) : (
+				<div className="text-sm text-muted-foreground text-center">
+					{roundName} closed — picks locked. Live scores and standings update below.
+				</div>
+			)}
+		</div>
+	)
+
 	return (
 		<div className="space-y-4">
 			{chain && <ChainRibbon slots={chain.slots} summary={chain.summary} />}
-			<div>{currentRoundCard}</div>
+			<div>{currentRoundClosed ? closedRoundCard : currentRoundCard}</div>
 			{futureRounds && futureRounds.length > 0 && (
-				<PlannerSection gameId={gameId} rounds={futureRounds} handlers={resolvedHandlers} />
+				<PlannerSection
+					gameId={gameId}
+					rounds={futureRounds}
+					handlers={resolvedHandlers}
+					defaultOpen={currentRoundClosed}
+				/>
 			)}
 		</div>
 	)
@@ -330,22 +345,25 @@ function PlannerSection({
 	gameId,
 	rounds,
 	handlers,
+	defaultOpen = false,
 }: {
 	gameId: string
 	rounds: PlannerRoundInput[]
 	handlers: ClassicPickPlanHandlers
+	defaultOpen?: boolean
 }) {
 	const storageKey = `lps.planner-open.${gameId}`
-	// Default closed — the planner is an optional power-user feature.
-	const [open, setOpen] = useState(false)
+	const [open, setOpen] = useState(defaultOpen)
 	const [error, setError] = useState<string | null>(null)
 
 	// Hydrate the open/closed preference from localStorage after mount to avoid
-	// SSR/client markup mismatches.
+	// SSR/client markup mismatches. An explicit saved preference wins over the
+	// default in both directions.
 	useEffect(() => {
 		try {
 			const saved = window.localStorage.getItem(storageKey)
 			if (saved === 'open') setOpen(true)
+			else if (saved === 'closed') setOpen(false)
 		} catch {
 			// ignore — localStorage access can throw in some browsers
 		}
@@ -370,7 +388,7 @@ function PlannerSection({
 		}
 	}
 
-	const plannedCount = rounds.filter((r) => r.plannedTeamId).length
+	const lockedCount = rounds.filter((r) => r.lockedTeamId).length
 
 	return (
 		<div className="rounded-xl border border-border bg-card">
@@ -381,10 +399,10 @@ function PlannerSection({
 				className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 			>
 				<div>
-					<div className="font-semibold text-sm">Plan ahead</div>
+					<div className="font-semibold text-sm">Lock in upcoming picks</div>
 					<div className="text-xs text-muted-foreground">
 						{rounds.length} upcoming {rounds.length === 1 ? 'gameweek' : 'gameweeks'} ·{' '}
-						{plannedCount} planned
+						{lockedCount} locked
 					</div>
 				</div>
 				{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -407,11 +425,8 @@ function PlannerSection({
 							fixturesTbc={r.fixturesTbc}
 							fixtures={r.fixtures}
 							usedTeams={r.usedTeams}
-							plannedTeamId={r.plannedTeamId}
-							plannedAutoSubmit={r.plannedAutoSubmit}
-							onPlan={(rid, tid, auto) => guard(() => handlers.onPlan(rid, tid, auto))}
-							onRemove={(rid) => guard(() => handlers.onRemove(rid))}
-							onToggleAuto={(rid, auto) => guard(() => handlers.onToggleAuto(rid, auto))}
+							lockedTeamId={r.lockedTeamId}
+							onLock={(rid, tid) => guard(() => handlers.onLock(rid, tid))}
 						/>
 					))}
 				</div>
