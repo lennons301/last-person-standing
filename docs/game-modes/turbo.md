@@ -1,6 +1,6 @@
 # Turbo mode
 
-Predict N fixtures (default 10) in a single round, ranked by confidence. Highest streak wins. Single-round format — the game auto-completes when the round is fully settled.
+Predict N fixtures (default 10) in a single round, ranked by confidence. Longest streak wins. Single-round format — the game auto-completes when the round is fully settled.
 
 > Read [README.md](./README.md) first for the cross-cutting settlement model.
 
@@ -9,8 +9,8 @@ Predict N fixtures (default 10) in a single round, ranked by confidence. Highest
 - **Picks:** exactly `modeConfig.numberOfPicks` (default 10) — submitted in one request, no partial rankings.
   - `predictedResult`: `home_win` / `draw` / `away_win`
   - `confidenceRank`: 1..N, no duplicates, no gaps
-- **Win condition:** longest streak of correct predictions sorted by rank ascending — first wrong prediction ends the streak; later corrects don't count.
-- **Tiebreaker:** longest streak first, then total goals in streak.
+- **Win condition:** longest streak of correct predictions sorted by rank ascending — first wrong prediction ends the streak; later corrects don't count. Leading ranks that **everyone** got wrong are skipped first (the wipeout rule, under Settlement), so the streak count restarts from the first rank anyone got right.
+- **Tiebreaker:** longest streak first, then total goals in streak. Turbo has no lives — goals are the only tiebreak.
 
 ## Settlement (per fixture)
 
@@ -30,8 +30,9 @@ sequenceDiagram
     Settle->>Complete: per game touched
     Complete->>Complete: all round fixtures finished?
     alt yes
-        Complete->>Complete: collectTurboPlayerResults → evaluateTurboPicks per player
-        Complete->>Complete: applyAutoCompletion (turboTiebreaker)
+        Complete->>Complete: collectTurboPlayerResults (rank-ordered settled picks per player)
+        Complete->>Complete: checkTurboCompletion → resolveWipeout → turboTiebreaker
+        Complete->>Complete: applyAutoCompletion (winner) OR refund all (total wipeout)
         Complete->>Complete: round.status = completed
     else no
         Complete->>Complete: wait for remaining fixtures
@@ -40,15 +41,26 @@ sequenceDiagram
 
 **Per-fixture settle, round-batched completion.** A turbo pick is settled (`win` or `loss`) the moment its fixture finishes. The round completion + winner determination wait for every fixture in the round to be settled — turbo's streak is rank-ordered across all picks.
 
+### Wipeout rule (winner determination)
+
+`checkTurboCompletion` applies the same wipeout rule as cup (`resolveWipeout`), minus lives:
+
+- **Skip leading universal-loss ranks.** If rank 1 was wrong for *every* player it's discarded and the streak count restarts from rank 2 (and so on — the rebased start is the lowest rank any player got right). Each player's streak is the consecutive run of correct picks from that start.
+- **Total wipeout → full refund.** If *no* rank has a single correct pick anywhere, there's no winner: the game completes with `reason: 'turbo-total-wipeout'`, every stake is refunded (`payment.status = 'refunded'`), and no payout is written.
+- **Tiebreak is goals only** (no lives mechanic in turbo): rebased streak → goals-in-streak.
+
 ## Player state machine
 
 ```mermaid
 stateDiagram-v2
     [*] --> alive
     alive --> winner: applyAutoCompletion (turbo-single-round; turboTiebreaker selects winners)
+    alive --> alive: total wipeout — no winner, every stake refunded
     note right of winner
         Turbo never eliminates mid-round.
         Multiple winners possible on perfect tie (split pot).
+        On a total wipeout there is no winner: players stay alive,
+        the game completes, and all payments are refunded.
     end note
 ```
 
@@ -90,8 +102,9 @@ See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`
 `scripts/smoke/lifecycle.smoke.test.ts`, `lifecycle: turbo-PL`:
 
 - Per-fixture settle: pick 1 settles after fx1; pick 2 stays pending; game stays active. Then pick 2 settles after fx2 → game auto-completes.
+- Total wipeout: every player's only pick is wrong → game completes, no winner, no payout, every `payment` refunded.
 
 Not yet covered:
 - Multi-player turbo with split pot on tied streaks.
 - All-correct streak (longest possible).
-- Streak-break-at-rank-1 (zero streak).
+- Leading universal-loss rank skipped (turbo rebase — covered by unit tests + the cup smoke scenario, which share `resolveWipeout`).

@@ -1,6 +1,6 @@
 # Classic mode
 
-Last person standing. One pick per round; if your team doesn't win, you're out.
+Last person standing, played over **many rounds** — the only multi-round mode. One pick per round; if your team doesn't win, you're out; survive and you advance to the next round.
 
 > Read [README.md](./README.md) first for the cross-cutting settlement model and state machines.
 
