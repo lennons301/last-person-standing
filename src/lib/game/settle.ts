@@ -181,6 +181,7 @@ async function settleClassicPickRow(
 		awayTeamId: fx.awayTeam.id,
 		homeScore,
 		awayScore,
+		winner: fx.winner,
 	})
 	const pickedHome = p.teamId === fx.homeTeam.id
 	const goalsScored = result === 'win' ? (pickedHome ? homeScore : awayScore) : 0
@@ -325,6 +326,7 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 				homeScore: fx.homeScore ?? 0,
 				awayScore: fx.awayScore ?? 0,
 				tierDifference: tierDiff,
+				winner: fx.winner,
 			}
 		})
 
@@ -513,6 +515,7 @@ async function runWcClassicAutoElims(gameId: string, currentRoundId: string): Pr
 			awayScore: f.awayScore,
 			status: f.status,
 			stage: wcRoundStage(r.number),
+			winner: f.winner,
 		})),
 	)
 	const remainingRounds = allRounds
@@ -528,6 +531,7 @@ async function runWcClassicAutoElims(gameId: string, currentRoundId: string): Pr
 				awayScore: f.awayScore,
 				status: f.status,
 				stage: wcRoundStage(r.number),
+				winner: f.winner,
 			})),
 		}))
 	const alivePlayers = await db.query.gamePlayer.findMany({

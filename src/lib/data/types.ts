@@ -39,6 +39,8 @@ export interface AdapterFixture {
 	status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 	homeScore: number | null
 	awayScore: number | null
+	/** Authoritative winner for ET/penalty results (level full-time score); null otherwise. */
+	winner?: 'home' | 'away' | null
 }
 
 export interface AdapterFixtureScore {
@@ -46,4 +48,6 @@ export interface AdapterFixtureScore {
 	homeScore: number
 	awayScore: number
 	status: 'live' | 'finished' | 'cancelled'
+	/** Authoritative winner for ET/penalty results (level full-time score); null otherwise. */
+	winner?: 'home' | 'away' | null
 }

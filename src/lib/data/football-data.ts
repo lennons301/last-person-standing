@@ -40,7 +40,17 @@ interface FdMatch {
 	awayTeam: FdTeam
 	utcDate: string
 	status: string
-	score: { fullTime: { home: number | null; away: number | null } }
+	// `winner` is the authoritative outcome ('HOME_TEAM' | 'AWAY_TEAM' | 'DRAW' |
+	// null). For knockout ties decided in ET/penalties, fullTime stays level but
+	// winner names the side that advanced.
+	score: { winner?: string | null; fullTime: { home: number | null; away: number | null } }
+}
+
+/** Map football-data `score.winner` to our home/away marker (DRAW/null → null). */
+function mapWinner(winner: string | null | undefined): 'home' | 'away' | null {
+	if (winner === 'HOME_TEAM') return 'home'
+	if (winner === 'AWAY_TEAM') return 'away'
+	return null
 }
 
 interface FdStandingEntry {
@@ -137,6 +147,7 @@ export class FootballDataAdapter implements CompetitionAdapter {
 							status: this.mapStatus(m.status),
 							homeScore: m.score.fullTime.home,
 							awayScore: m.score.fullTime.away,
+							winner: mapWinner(m.score.winner),
 						}),
 					),
 				}
@@ -154,6 +165,7 @@ export class FootballDataAdapter implements CompetitionAdapter {
 				homeScore: m.score.fullTime.home as number,
 				awayScore: m.score.fullTime.away as number,
 				status: m.status === 'FINISHED' ? ('finished' as const) : ('live' as const),
+				winner: mapWinner(m.score.winner),
 			}))
 	}
 

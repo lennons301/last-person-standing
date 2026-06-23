@@ -94,6 +94,9 @@ export const fixture = pgTable('fixture', {
 	kickoff: timestamp('kickoff'),
 	homeScore: integer('home_score'),
 	awayScore: integer('away_score'),
+	// Authoritative winner for knockout ties decided in ET/penalties (full-time
+	// score stays level). Null for draws / regulation results / non-knockout.
+	winner: text('winner').$type<'home' | 'away'>(),
 	status: fixtureStatusEnum('status').notNull().default('scheduled'),
 	// Source-specific id from the adapter that originally inserted the fixture.
 	// Kept for backwards-compatibility; new code should prefer external_ids.
