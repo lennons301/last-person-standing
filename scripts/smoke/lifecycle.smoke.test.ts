@@ -229,6 +229,36 @@ describe('lifecycle: classic-PL', () => {
 		expect(g?.currentRoundId).toBe(r3)
 		expect(g?.status).toBe('active')
 	})
+
+	it('progress grid exposes each player total goals scored (sum of winning picks)', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const r2 = await makeRound(compId, { number: 2, status: 'open' })
+		const fxWin = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+		const fxLose = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpWin = await makePlayer({ gameId, userId: 'u-win' })
+		const gpLose = await makePlayer({ gameId, userId: 'u-lose' })
+		await makePick({ gameId, gamePlayerId: gpWin, roundId: r2, teamId: a, fixtureId: fxWin })
+		await makePick({ gameId, gamePlayerId: gpLose, roundId: r2, teamId: b, fixtureId: fxLose })
+
+		// A wins 3-0: gpWin (picked A) scores 3 goals; gpLose (picked B) loses, 0 goals.
+		await finishFixture(fxWin, 3, 0)
+		await settleFixture(fxWin)
+		await finishFixture(fxLose, 3, 0)
+		await settleFixture(fxLose)
+
+		const grid = await getProgressGridData(gameId, 'u-win')
+		expect(grid?.players.find((p) => p.id === gpWin)?.goals).toBe(3)
+		expect(grid?.players.find((p) => p.id === gpLose)?.goals).toBe(0)
+	})
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
