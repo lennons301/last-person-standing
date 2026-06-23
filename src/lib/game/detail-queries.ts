@@ -1047,20 +1047,44 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		players: gameData.players,
 	})
 
+	// Hide opponents' pick identity until the round's deadline passes. The
+	// projection above is computed server-side from the full pick set, so live
+	// play is unaffected — we only strip the identifying fields (team, prediction,
+	// fixture, rank, projected outcome) from the payload sent to the browser. The
+	// viewer's own picks are always returned in full.
+	const now = new Date()
+	const deadlinePassed =
+		gameData.currentRound?.deadline != null && now >= gameData.currentRound.deadline
+	const viewerGamePlayerId = gameData.players.find((p) => p.userId === viewerUserId)?.id ?? null
+
 	return {
 		gameId: gameData.id,
 		gameMode: gameData.gameMode,
 		roundId: gameData.currentRoundId,
 		fixtures,
-		picks: picksInRound.map((p) => ({
-			gamePlayerId: p.gamePlayerId,
-			fixtureId: p.fixtureId,
-			teamId: p.teamId,
-			confidenceRank: p.confidenceRank,
-			predictedResult: p.predictedResult,
-			result: p.result,
-			projectedOutcome: proj.pickProjections.get(p.id) ?? null,
-		})),
+		picks: picksInRound.map((p) => {
+			const reveal = deadlinePassed || p.gamePlayerId === viewerGamePlayerId
+			if (!reveal) {
+				return {
+					gamePlayerId: p.gamePlayerId,
+					fixtureId: null,
+					teamId: null,
+					confidenceRank: null,
+					predictedResult: null,
+					result: 'hidden' as const,
+					projectedOutcome: null,
+				}
+			}
+			return {
+				gamePlayerId: p.gamePlayerId,
+				fixtureId: p.fixtureId,
+				teamId: p.teamId,
+				confidenceRank: p.confidenceRank,
+				predictedResult: p.predictedResult,
+				result: p.result,
+				projectedOutcome: proj.pickProjections.get(p.id) ?? null,
+			}
+		}),
 		players: gameData.players.map((p) => {
 			const projection = proj.playerProjections.get(p.id)
 			return {

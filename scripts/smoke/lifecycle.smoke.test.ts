@@ -30,6 +30,7 @@ import { settleFixture } from '@/lib/game/settle'
 import { round as roundTable } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment, payout } from '@/lib/schema/payment'
+import { getShareLiveData } from '@/lib/share/data'
 import {
 	finishFixture,
 	liveFixture,
@@ -810,6 +811,71 @@ describe('live projection', () => {
 		const loserPick = payload?.picks.find((p) => p.gamePlayerId === gpLose)
 		expect(winnerPick?.projectedOutcome).toBe('winning')
 		expect(loserPick?.projectedOutcome).toBe('losing')
+	})
+
+	it('classic: live payload hides other players current-round picks BEFORE the deadline', async () => {
+		// The /live payload feeds the 30s browser poll. Before the round deadline
+		// it must NOT carry opponents' team choices — the grid hiding them in the UI
+		// isn't enough if the raw teamId is sitting in the JSON response.
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000), // deadline still ahead
+		})
+		const fx = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		await makePick({ gameId, gamePlayerId: gpMe, roundId: r2, teamId: a, fixtureId: fx })
+		await makePick({ gameId, gamePlayerId: gpOther, roundId: r2, teamId: b, fixtureId: fx })
+
+		const payload = await getLivePayload(gameId, 'u-me')
+		const mine = payload?.picks.find((p) => p.gamePlayerId === gpMe)
+		const theirs = payload?.picks.find((p) => p.gamePlayerId === gpOther)
+		// Own pick visible; opponent's identity stripped to 'hidden'.
+		expect(mine?.teamId).toBe(a)
+		expect(theirs?.teamId).toBeNull()
+		expect(theirs?.predictedResult).toBeNull()
+		expect(theirs?.fixtureId).toBeNull()
+		expect(theirs?.result).toBe('hidden')
+	})
+
+	it('classic: live SHARE image hides every pick BEFORE the deadline', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000), // deadline still ahead
+		})
+		const fx = await makeFixture({ roundId: r2, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpMe = await makePlayer({ gameId, userId: 'u-me' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		await makePick({ gameId, gamePlayerId: gpMe, roundId: r2, teamId: a, fixtureId: fx })
+		await makePick({ gameId, gamePlayerId: gpOther, roundId: r2, teamId: b, fixtureId: fx })
+
+		const data = await getShareLiveData(gameId, 'u-me')
+		expect(data?.mode).toBe('classic')
+		// Shared image is posted to the group — before the deadline NO one's team
+		// is revealed (mirrors the standings share hiding all current picks).
+		const rows = data?.mode === 'classic' ? data.rows : []
+		expect(rows.length).toBe(2)
+		for (const row of rows) expect(row.pickedTeamShort).toBeNull()
 	})
 
 	it('turbo: projected streak counts in-progress correct picks', async () => {
