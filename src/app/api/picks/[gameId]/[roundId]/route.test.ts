@@ -32,7 +32,14 @@ vi.mock('@/lib/db', () => ({
 
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import * as pickRoute from './route'
 import { POST } from './route'
+
+describe('GET /api/picks/[gameId]/[roundId]', () => {
+	it('is not exposed — a GET handler would leak opponents picks before the deadline', () => {
+		expect((pickRoute as Record<string, unknown>).GET).toBeUndefined()
+	})
+})
 
 function makeReq(body: unknown) {
 	return new Request('http://localhost/api/picks/g1/r1', {

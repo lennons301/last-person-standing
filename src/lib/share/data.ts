@@ -256,6 +256,11 @@ export async function getShareLiveData(
 	const currentRoundLabel = roundLabel(liveCompetitionType, currentRound.number)
 
 	if (header.gameMode === 'classic') {
+		// Don't reveal anyone's pick in the shareable image until the round's
+		// deadline has passed — the same gate the standings/grid use. A live share
+		// is normally generated mid-round (post-deadline), but nothing stops one
+		// being requested while picks are still open.
+		const liveDeadlinePassed = currentRound.deadline != null && new Date() >= currentRound.deadline
 		const allPicks = await db.query.pick.findMany({
 			where: and(eq(pick.gameId, gameId), eq(pick.roundId, currentRound.id)),
 			with: { team: true, fixture: { with: { homeTeam: true, awayTeam: true } } },
@@ -272,6 +277,21 @@ export async function getShareLiveData(
 		const rows: ClassicLiveRow[] = gameRow.players
 			.filter((p) => p.status === 'alive')
 			.map((p) => {
+				// Before the deadline, surface the player but hide their pick + fixture.
+				if (!liveDeadlinePassed) {
+					return {
+						id: p.id,
+						userId: p.userId,
+						name: userNames.get(p.userId) ?? 'Unknown',
+						pickedTeamShort: null,
+						homeShort: null,
+						awayShort: null,
+						homeScore: null,
+						awayScore: null,
+						fixtureStatus: 'scheduled' as ClassicLiveRow['fixtureStatus'],
+						liveState: 'pending' as ClassicLiveRow['liveState'],
+					}
+				}
 				const pk = allPicks.find((pp) => pp.gamePlayerId === p.id)
 				const fx = pk?.fixture
 				const homeScore = fx?.homeScore ?? null

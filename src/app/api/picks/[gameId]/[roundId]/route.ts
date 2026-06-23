@@ -10,17 +10,10 @@ import { game, gamePlayer, pick } from '@/lib/schema/game'
 
 type Params = Promise<{ gameId: string; roundId: string }>
 
-export async function GET(_request: Request, { params }: { params: Params }) {
-	await requireSession()
-	const { gameId, roundId } = await params
-
-	const picks = await db.query.pick.findMany({
-		where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
-		with: { team: true, gamePlayer: true },
-	})
-
-	return NextResponse.json(picks)
-}
+// NOTE: deliberately no GET handler. A GET that returned every player's picks
+// for a round leaked opponents' team choices before the deadline (and to any
+// authenticated user, members or not). Pick visibility is served only through
+// the deadline-gated read paths (progress grid / standings / live payload).
 
 export async function POST(request: Request, { params }: { params: Params }) {
 	const session = await requireSession()
