@@ -8,7 +8,10 @@
 
 - **Picks:** up to `modeConfig.numberOfPicks` (default 10–12). Cup allows **partial rankings** — 1..N picks submittable, unlike turbo.
 - **Win condition:** the **longest streak** of correct ranked picks. Once every fixture in the round is settled, players are ranked by `cupTiebreaker` (streak → lives → goals) and the longest streak takes the pot. A streak that *broke* can still win if it's the longest — the winner is whoever got furthest, not only survivors. (The edge case where **every** player breaks their streak is undecided — see the OPEN note under Settlement.)
-- **Tier handicap:** for `competition.type === 'group_knockout'` (WC), `computeTierDifference` returns `awayPot - homePot` — positive when home is the stronger side (FIFA pots: 1=best, 4=worst). Non-`group_knockout` cup competitions (FA Cup `knockout`) get tier diff 0 — no handicap, no per-pick lives mechanic.
+- **Tier handicap:** every cup competition has a tier system that pushes picks toward underdogs — **where a team's tier comes from is per-competition**. `computeTierDifference` returns the difference from the home team's perspective (positive = home is the stronger side).
+  - **WC (`competition.type === 'group_knockout'`):** FIFA pots (1=best, 4=worst); returns `awayPot - homePot`. Implemented.
+  - **FA Cup (`competition.type === 'knockout'`):** difference in league tier (a higher-division side outranks a lower one). **Intended for the FA Cup extension (Jan 2027); not yet implemented** — `computeTierDifference` currently returns 0 for `knockout`, so a cup game on a knockout competition carries no handicap until then.
+  - **`league`:** no handicap (cup mode is not offered on league competitions).
 
 ## Tier ↔ outcome table
 
