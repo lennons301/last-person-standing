@@ -46,6 +46,14 @@ export async function getGameDetail(gameId: string, userId: string) {
 
 	if (!gameData) return null
 
+	// Admin-removed players are fully excluded from the game view — they drop out
+	// of standings, counts, the pot target and the payments panel. Their payments
+	// were refunded on removal, so the pot total is unaffected.
+	const removedUserIds = new Set(
+		gameData.players.filter((p) => p.eliminatedReason === 'admin_removed').map((p) => p.userId),
+	)
+	gameData.players = gameData.players.filter((p) => p.eliminatedReason !== 'admin_removed')
+
 	const myMembership = gameData.players.find((p) => p.userId === userId)
 	const isAdmin = gameData.createdBy === userId
 	const isMember = !!myMembership
@@ -72,9 +80,11 @@ export async function getGameDetail(gameId: string, userId: string) {
 		}
 	}
 
-	const payments = await db.query.payment.findMany({
-		where: eq(payment.gameId, gameId),
-	})
+	const payments = (
+		await db.query.payment.findMany({
+			where: eq(payment.gameId, gameId),
+		})
+	).filter((p) => !removedUserIds.has(p.userId))
 	const pot = calculatePot(payments)
 
 	// Resolve user names for every player + the admin so payment UI can show names.
@@ -810,6 +820,9 @@ export async function getProgressGridData(
 
 	if (!gameData) return null
 
+	// Admin-removed players don't appear in the standings grid.
+	gameData.players = gameData.players.filter((p) => p.eliminatedReason !== 'admin_removed')
+
 	// Identify the viewer's gamePlayer so we can still show them their own current pick,
 	// while hiding other players' picks for in-progress (not completed) rounds.
 	const viewerGamePlayerId = viewerUserId
@@ -979,6 +992,7 @@ export async function getProgressGridData(
 			.reduce((sum, pk) => sum + (pk.goalsScored ?? 0), 0)
 		return {
 			id: p.id,
+			userId: p.userId,
 			name: userNames.get(p.userId) ?? 'Player',
 			status: p.status,
 			eliminatedRoundNumber,

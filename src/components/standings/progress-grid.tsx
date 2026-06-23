@@ -1,7 +1,9 @@
 'use client'
 
 import { Eye, EyeOff, Share2, UsersRound } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { useLiveGame } from '@/components/live/use-live-game'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -67,6 +69,8 @@ export interface GridCell {
 
 export interface GridPlayer {
 	id: string
+	/** Present in the live grid (used by admin remove); omitted in the share image. */
+	userId?: string
 	name: string
 	status: 'alive' | 'eliminated' | 'winner'
 	eliminatedRoundNumber?: number
@@ -105,6 +109,31 @@ export function ProgressGrid({
 	const [showOpponents, setShowOpponents] = useState(false)
 	const [hideEliminated, setHideEliminated] = useState(false)
 	const liveCtx = useLiveGame()
+	const router = useRouter()
+
+	async function removePlayer(userId: string, name: string) {
+		if (!gameId) return
+		if (
+			!window.confirm(
+				`Remove ${name} from the game? They haven't picked, so they'll be taken out of the standings and the pot.`,
+			)
+		)
+			return
+		const res = await fetch(`/api/games/${gameId}/admin/remove-player/${userId}`, {
+			method: 'POST',
+		})
+		if (res.ok) {
+			toast.success(`Removed ${name}`)
+			router.refresh()
+		} else {
+			const body = (await res.json().catch(() => ({}))) as { error?: string }
+			toast.error(
+				body.error === 'player-has-picks'
+					? `Can't remove ${name} — they've already made a pick`
+					: 'Failed to remove player',
+			)
+		}
+	}
 
 	// Click a column header to sort by it; click the active one again to flip
 	// direction. Round columns sort by the team picked that gameweek.
@@ -363,13 +392,25 @@ export function ProgressGrid({
 												currentRoundId &&
 												player.status === 'alive' &&
 												player.cellsByRoundId[currentRoundId]?.result === 'no_pick' && (
-													<a
-														href={`/game/${gameId}?actingAs=${player.id}`}
-														title={`Pick for ${player.name}`}
-														className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
-													>
-														✎
-													</a>
+													<>
+														<a
+															href={`/game/${gameId}?actingAs=${player.id}`}
+															title={`Pick for ${player.name}`}
+															className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
+														>
+															✎
+														</a>
+														{player.userId && (
+															<button
+																type="button"
+																onClick={() => removePlayer(player.userId as string, player.name)}
+																title={`Remove ${player.name}`}
+																className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-[var(--eliminated)] hover:text-[var(--eliminated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+															>
+																✕
+															</button>
+														)}
+													</>
 												)}
 										</td>
 										{visibleRounds.map((r) => {

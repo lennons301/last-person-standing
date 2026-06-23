@@ -19,12 +19,12 @@ export interface ClassicPickValidation {
 
 export function validateClassicPick(
 	input: ClassicPickValidation,
-	opts: { allowEliminatedRebuy?: boolean } = {},
+	opts: { allowEliminatedRebuy?: boolean; allowAdminLateSubmission?: boolean } = {},
 ): ValidationResult {
 	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
 		return { valid: false, reason: 'Player is not alive' }
 	if (input.isPastRound) return { valid: false, reason: 'Round has already been played' }
-	if (input.deadline && input.now > input.deadline)
+	if (!opts.allowAdminLateSubmission && input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
 	if (input.usedTeamIds.includes(input.teamId))
 		return { valid: false, reason: 'Team already used in a previous round' }
@@ -73,12 +73,12 @@ export interface CupPicksValidation {
 
 export function validateCupPicks(
 	input: CupPicksValidation,
-	opts: { allowEliminatedRebuy?: boolean } = {},
+	opts: { allowEliminatedRebuy?: boolean; allowAdminLateSubmission?: boolean } = {},
 ): ValidationResult {
 	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
 		return { valid: false, reason: 'Player is not alive' }
 	if (!input.isCurrentRound) return { valid: false, reason: 'Round is not open for picks' }
-	if (input.deadline && input.now > input.deadline)
+	if (!opts.allowAdminLateSubmission && input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
 	// Cup mode allows partial rankings — players can submit 1..numberOfPicks
 	// picks. Matches predecessor app behaviour. Turbo still requires the full
@@ -121,12 +121,12 @@ export function validateCupPicks(
 
 export function validateTurboPicks(
 	input: TurboPicksValidation,
-	opts: { allowEliminatedRebuy?: boolean } = {},
+	opts: { allowEliminatedRebuy?: boolean; allowAdminLateSubmission?: boolean } = {},
 ): ValidationResult {
 	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
 		return { valid: false, reason: 'Player is not alive' }
 	if (!input.isCurrentRound) return { valid: false, reason: 'Round is not open for picks' }
-	if (input.deadline && input.now > input.deadline)
+	if (!opts.allowAdminLateSubmission && input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
 	if (input.picks.length !== input.numberOfPicks)
 		return {

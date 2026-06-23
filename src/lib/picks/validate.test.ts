@@ -42,6 +42,22 @@ describe('validateClassicPick', () => {
 			validateClassicPick({ ...base, teamId: 'team-a', deadline: new Date(Date.now() - 1000) }),
 		).toEqual({ valid: false, reason: 'Deadline has passed' })
 	})
+	it('allows an admin late submission past the deadline', () => {
+		expect(
+			validateClassicPick(
+				{ ...base, teamId: 'team-a', deadline: new Date(Date.now() - 1000) },
+				{ allowAdminLateSubmission: true },
+			),
+		).toEqual({ valid: true })
+	})
+	it('still rejects an admin late submission for an already-played round', () => {
+		expect(
+			validateClassicPick(
+				{ ...base, teamId: 'team-a', isPastRound: true, deadline: new Date(Date.now() - 1000) },
+				{ allowAdminLateSubmission: true },
+			),
+		).toEqual({ valid: false, reason: 'Round has already been played' })
+	})
 	it('rejects used team', () => {
 		expect(validateClassicPick({ ...base, teamId: 'used-1' })).toEqual({
 			valid: false,
