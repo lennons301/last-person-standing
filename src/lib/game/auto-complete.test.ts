@@ -217,12 +217,24 @@ describe('checkCupCompletion (single gameweek — longest streak)', () => {
 	beforeEach(() => vi.clearAllMocks())
 
 	// Cup pick rows carry a confidenceRank; the streak is now rank-ordered.
+	// `rawGoals` (the picked team's actual goals, pre-suppression) defaults to the
+	// counted goalsScored; it only differs for 1-tier-favourite wins. The pick is
+	// modelled as the home side so checkCupCompletion can read raw goals off the
+	// joined fixture.
 	const cupPick = (
 		gamePlayerId: string,
 		confidenceRank: number,
 		result: string,
 		goalsScored = 0,
-	) => ({ gamePlayerId, confidenceRank, result, goalsScored })
+		rawGoals = goalsScored,
+	) => ({
+		gamePlayerId,
+		confidenceRank,
+		result,
+		goalsScored,
+		teamId: 'home-team',
+		fixture: { homeTeamId: 'home-team', homeScore: rawGoals, awayScore: 0 },
+	})
 
 	it('crowns the longest streak across all players (tiebreak streak→lives→goals)', async () => {
 		dbMock.query.gamePlayer.findMany.mockResolvedValue([
@@ -328,6 +340,26 @@ describe('checkCupCompletion (single gameweek — longest streak)', () => {
 		expect(result.reason).toBe('cup-total-wipeout')
 		expect(result.refund).toBe(true)
 		expect(result.winnerPlayerIds).toEqual([])
+	})
+
+	it('breaks a streak+lives+counted-goals tie on raw streak goals (no split) — the d8360e69 case', async () => {
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'sean', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'mark', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		// Both: rank-1 favourite WIN (counted goals suppressed to 0), then a rank-2
+		// loss → streak 1, lives 0, counted goals 0. Raw goals separate them:
+		// Sean's France scored 3, Mark's Scotland scored 1 → Sean wins, no split.
+		dbMock.query.pick.findMany.mockResolvedValue([
+			cupPick('sean', 1, 'win', 0, 3),
+			cupPick('sean', 2, 'loss', 0, 0),
+			cupPick('mark', 1, 'win', 0, 1),
+			cupPick('mark', 2, 'loss', 0, 0),
+		] as never)
+
+		const result = await checkCupCompletion('g1')
+		expect(result.reason).toBe('cup-longest-streak')
+		expect(result.winnerPlayerIds).toEqual(['sean'])
 	})
 
 	it('tiebreaks equal streaks by lives', async () => {

@@ -55,7 +55,12 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
 			if (tierDiffFromPicked !== 1) {
 				goalsCounted = pickedTeamGoals
 			}
-			if (tierDiffFromPicked < 0) {
+			// Lives are earned only while the streak is alive. A win after the
+			// streak has broken (the player is already eliminated) earns nothing
+			// usable — counting it would inflate the lives tiebreaker with lives
+			// the player can never spend. Goals still count; only life accrual is
+			// frozen at the eliminating pick.
+			if (tierDiffFromPicked < 0 && !streakBroken) {
 				livesGained = Math.abs(tierDiffFromPicked)
 				currentLives += livesGained
 			}
@@ -63,7 +68,7 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
 			if (tierDiffFromPicked <= -1) {
 				result = 'draw_success'
 				// Goals NOT counted on draw_success (matches old app stored procedure)
-				if (tierDiffFromPicked <= -2) {
+				if (tierDiffFromPicked <= -2 && !streakBroken) {
 					livesGained = 1
 					currentLives += 1
 				}
