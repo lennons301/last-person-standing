@@ -18,6 +18,7 @@ import {
 	team as teamTable,
 } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
+import { payment } from '@/lib/schema/payment'
 
 type CompetitionType = 'league' | 'knockout' | 'group_knockout'
 type DataSource = 'fpl' | 'football_data' | 'manual'
@@ -157,6 +158,24 @@ export async function makePlayer(opts: {
 		})
 		.returning()
 	return gp.id
+}
+
+export async function makePayment(opts: {
+	gameId: string
+	userId: string
+	amount?: string
+	status?: 'pending' | 'claimed' | 'paid' | 'refunded'
+}): Promise<string> {
+	const [p] = await db
+		.insert(payment)
+		.values({
+			gameId: opts.gameId,
+			userId: opts.userId,
+			amount: opts.amount ?? '10.00',
+			status: opts.status ?? 'paid',
+		})
+		.returning()
+	return p.id
 }
 
 export async function makePick(opts: {

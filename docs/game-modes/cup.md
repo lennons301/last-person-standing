@@ -7,7 +7,7 @@
 ## Pick mechanics
 
 - **Picks:** up to `modeConfig.numberOfPicks` (default 10–12). Cup allows **partial rankings** — 1..N picks submittable, unlike turbo.
-- **Win condition:** the **longest streak** of correct ranked picks. Once every fixture in the round is settled, players are ranked by `cupTiebreaker` (streak → lives → goals) and the longest streak takes the pot. A streak that *broke* can still win if it's the longest — the winner is whoever got furthest, not only survivors. (The edge case where **every** player breaks their streak is undecided — see the OPEN note under Settlement.)
+- **Win condition:** the **longest streak** of correct ranked picks — a *consecutive* run of surviving picks (win / draw_success / saved_by_life) counted in confidence-rank order. Once every fixture in the round is settled, players are ranked by `cupTiebreaker` (streak → lives → goals) and the longest streak takes the pot. A streak that *broke* can still win if it's the longest — the winner is whoever got furthest, not only survivors. Leading ranks that **everyone** got wrong are skipped first (the wipeout rule, under Settlement).
 - **Tier handicap:** every cup competition has a tier system that pushes picks toward underdogs — **where a team's tier comes from is per-competition**. `computeTierDifference` returns the difference from the home team's perspective (positive = home is the stronger side).
   - **WC (`competition.type === 'group_knockout'`):** FIFA pots (1=best, 4=worst); returns `awayPot - homePot`. Implemented.
   - **FA Cup (`competition.type === 'knockout'`):** difference in league tier (a higher-division side outranks a lower one). **Intended for the FA Cup extension (Jan 2027); not yet implemented** — `computeTierDifference` currently returns 0 for `knockout`, so a cup game on a knockout competition carries no handicap until then.
@@ -54,9 +54,17 @@ sequenceDiagram
 
 The winner is decided only once the round is fully settled.
 
-The re-eval is **idempotent**: re-running it with the same fixture states produces the same writes. Picks on fixtures without scores stay `'pending'`. The streak (and any elimination from it) is **confirmed only on the contiguous settled prefix from rank 1** — evaluation stops at the first pending pick, so a lower-ranked loss can't break a streak while a higher-confidence pick is still unplayed. The live UI still *projects* those later results; only confirmed state is finalised. Once the streak is confirmed broken, later settled picks persist as `'loss'`.
+The re-eval is **idempotent**: re-running it with the same fixture states produces the same writes. Picks on fixtures without scores stay `'pending'`. The streak (and any elimination from it) is **confirmed only on the contiguous settled prefix from rank 1** — evaluation stops at the first pending pick, so a lower-ranked loss can't break a streak while a higher-confidence pick is still unplayed. The live UI still *projects* those later results; only confirmed state is finalised. Once the streak is confirmed broken the player is eliminated, but **every** player's picks still settle to their true result — a genuine win after the break persists as `'win'` (only draws/losses after the break persist as `'loss'`, since no life can save them). Those later results feed the wipeout rule below, so settlement evaluates eliminated players too, not just survivors.
 
-> **OPEN (code session owns this):** what happens when **every** player breaks their streak in the round (no survivor) — e.g. everyone's most-confident pick loses — is an undecided design question: **no winner + full refund** vs **best-tiebreaker-takes-the-pot** (the longest, possibly zero, streak wins on lives/goals). This was the `d8360e69` incident. Do NOT encode a resolution here until it's settled in the engine.
+### Wipeout rule (winner determination)
+
+`checkCupCompletion` crowns the longest streak, but first applies the **wipeout rule** to decide *where* the streak count begins (`resolveWipeout`):
+
+- **Skip leading universal-loss ranks.** If rank 1 was a loss for *every* player it's discarded and the streak count restarts from rank 2; if rank 2 was also universally lost, from rank 3; and so on — the rebased start is the lowest rank any player got right. Each player's streak is then the consecutive run of surviving picks from that start, so a player who lost rank 1 alongside everyone else can still win on ranks 2+.
+- **Total wipeout → full refund.** If *no* rank has a single correct pick anywhere (every player got every pick wrong), there is no winner: the game completes with `reason: 'cup-total-wipeout'`, every stake is refunded (`payment.status = 'refunded'`), and no payout is written.
+- **No lives carry into the rebased start.** Discarded leading ranks are all losses, and lives are *earned* only by winning underdogs — so a player enters the rebased start with only their `startingLives`. The rebase changes where the streak is counted, not the lives tally; `cupTiebreaker` still breaks ties on final lives → goals.
+
+This is a cross-player, winner-determination concern, **distinct** from the per-player confirmed-prefix rule above: the confirmed-prefix rule bounds *which* picks are settled (stop at the first pending pick); the wipeout rule rebases *where* the streak begins (skip leading ranks everyone lost). It resolves the `d8360e69` incident, where the old tiebreaker counted every scattered win — including wins logged after a streak had already broken — and mis-crowned an eliminated player.
 
 Persisted bookkeeping (new columns introduced with this design):
 
@@ -86,7 +94,7 @@ stateDiagram-v2
     }
 ```
 
-Once `streakBroken=true`, every subsequent pick in rank order is a `'loss'` regardless of result. Lives spent earlier remain spent.
+Once `streakBroken=true`, no later pick can be saved by a life — subsequent draws and losses persist as `'loss'`. A subsequent genuine **win** still persists as `'win'` (and still earns underdog lives); it just can't extend the already-broken streak. Lives spent earlier remain spent. Those later win rows are what let the wipeout rule rebase a streak onto ranks after a universal loss.
 
 ## Player state machine
 
@@ -146,9 +154,12 @@ See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`
 - 3-tier underdog wins → +3 lives persisted on the pick, `gamePlayer.livesRemaining` updated.
 - Re-eval idempotency: settling the same fixture twice produces the same state.
 
+`scripts/smoke/lifecycle.smoke.test.ts`, `lifecycle: cup wipeout rule` (on a `knockout` competition — also exercises the tier-diff=0 path):
+
+- Leading universal-loss rank skipped: everyone loses rank 1, fixtures settle in rank order, and the player who wins rank 2 is crowned (not refunded) — proving eliminated players' later picks settle.
+- Total wipeout: every player gets every pick wrong → game completes, no winner, no payout, every `payment` refunded.
+
 Not yet covered:
 - 1-tier and 2-tier underdog wins.
 - Draw success / saved-by-life paths end-to-end.
-- Streak-broken state propagating across remaining picks.
-- Cup mode on `knockout` competition (FA Cup) — confirms tier-diff=0 path.
 - Cup pick on a fixture that finishes out of confidence-rank order (re-eval correctness).

@@ -1,10 +1,11 @@
-import { and, asc, eq, gt } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	classicTiebreaker,
 	cupTiebreaker,
-	type TurboTiebreakerInput,
+	resolveWipeout,
 	turboTiebreaker,
+	type WipeoutPlayerInput,
 } from '@/lib/game-logic/auto-complete-tiebreakers'
 import { calculatePayouts, calculatePot } from '@/lib/game-logic/prizes'
 import { round } from '@/lib/schema/competition'
@@ -16,12 +17,16 @@ export type CompletionReason =
 	| 'mass-extinction'
 	| 'rounds-exhausted'
 	| 'turbo-single-round'
+	| 'turbo-total-wipeout'
 	| 'cup-longest-streak'
+	| 'cup-total-wipeout'
 
 export interface CompletionCheckResult {
 	completed: boolean
 	winnerPlayerIds: string[]
 	reason?: CompletionReason
+	/** total wipeout — every player got every pick wrong → refund everyone, no payout. */
+	refund?: boolean
 }
 
 async function nextRoundExists(
@@ -49,29 +54,6 @@ async function tiebreakClassicByGoals(
 			.reduce((sum, p) => sum + (p.goalsScored ?? 0), 0),
 	}))
 	return classicTiebreaker(inputs)
-}
-
-async function tiebreakCup(
-	gameId: string,
-	candidates: { id: string; livesRemaining: number }[],
-): Promise<string[]> {
-	const allPicks = await db.query.pick.findMany({
-		where: eq(pick.gameId, gameId),
-	})
-	const inputs = candidates.map((c) => {
-		const myPicks = allPicks.filter((p) => p.gamePlayerId === c.id)
-		const cumulativeStreak = myPicks.filter(
-			(p) => p.result === 'win' || p.result === 'draw' || p.result === 'saved_by_life',
-		).length
-		const cumulativeGoals = myPicks.reduce((sum, p) => sum + (p.goalsScored ?? 0), 0)
-		return {
-			gamePlayerId: c.id,
-			cumulativeStreak,
-			livesRemaining: c.livesRemaining,
-			cumulativeGoals,
-		}
-	})
-	return cupTiebreaker(inputs)
 }
 
 export async function checkClassicCompletion(
@@ -113,32 +95,93 @@ export async function checkClassicCompletion(
 	return { completed: false, winnerPlayerIds: [] }
 }
 
-export function checkTurboCompletion(playerScores: TurboTiebreakerInput[]): CompletionCheckResult {
-	const winners = turboTiebreaker(playerScores)
-	return {
-		completed: true,
-		winnerPlayerIds: winners,
-		reason: 'turbo-single-round',
+/**
+ * Turbo is a SINGLE round decided by the longest streak of correct predictions.
+ * The wipeout rule (see `resolveWipeout`) skips any leading ranks that were a
+ * universal loss, then crowns the longest rebased streak (tiebreak: goals — no
+ * lives in turbo). A total wipeout (no player got a single pick right anywhere)
+ * refunds everyone with no winner. The caller only invokes this once the round
+ * is fully settled.
+ */
+export function checkTurboCompletion(players: WipeoutPlayerInput[]): CompletionCheckResult {
+	if (players.length === 0) {
+		return { completed: true, winnerPlayerIds: [], reason: 'turbo-single-round' }
 	}
+	const outcome = resolveWipeout(players)
+	if (outcome.totalWipeout) {
+		return {
+			completed: true,
+			winnerPlayerIds: [],
+			reason: 'turbo-total-wipeout',
+			refund: true,
+		}
+	}
+	const winners = turboTiebreaker(
+		outcome.scores.map((s) => ({
+			gamePlayerId: s.gamePlayerId,
+			streak: s.streak,
+			goalsInStreak: s.goalsInStreak,
+		})),
+	)
+	return { completed: true, winnerPlayerIds: winners, reason: 'turbo-single-round' }
 }
 
 /**
  * Cup is a SINGLE gameweek decided by the longest streak (with the tier
  * handicap + lives folded into the streak). The caller only invokes this once
- * the whole gameweek is fully settled, so we simply crown the longest streak
- * across ALL players — `tiebreakCup` ranks by cumulative streak → lives →
- * goals. The winner can be a player whose streak *broke*: a long broken streak
- * still beats a short unbroken one. There is no per-round elimination winner
- * and no advancement — cup never spans gameweeks.
+ * the whole gameweek is fully settled.
+ *
+ * The streak is a *consecutive* run of surviving picks (win / draw_success /
+ * saved_by_life) counted in confidence-rank order — the wipeout rule
+ * (`resolveWipeout`) skips any leading ranks that were a universal loss, so the
+ * game restarts from the first rank anyone got right, then crowns the longest
+ * rebased streak (tiebreak: lives → goals). The winner can be a player whose
+ * streak later *broke*: a long broken streak still beats a short unbroken one.
+ * A total wipeout (no rank has a single correct pick anywhere) refunds everyone
+ * with no winner. No per-round elimination winner and no advancement — cup
+ * never spans gameweeks.
  */
 export async function checkCupCompletion(gameId: string): Promise<CompletionCheckResult> {
 	const allPlayers = await db.query.gamePlayer.findMany({
 		where: eq(gamePlayer.gameId, gameId),
 	})
 	if (allPlayers.length === 0) return { completed: false, winnerPlayerIds: [] }
-	const winners = await tiebreakCup(
-		gameId,
-		allPlayers.map((p) => ({ id: p.id, livesRemaining: p.livesRemaining })),
+
+	const allPicks = await db.query.pick.findMany({
+		where: eq(pick.gameId, gameId),
+	})
+	const players: WipeoutPlayerInput[] = allPlayers.map((p) => ({
+		gamePlayerId: p.id,
+		livesRemaining: p.livesRemaining,
+		picks: allPicks
+			.filter((pk) => pk.gamePlayerId === p.id)
+			// Settled, non-void picks only. Void (cancelled fixture) and pending
+			// picks contribute nothing — the streak walks past a void gap and stops
+			// at any pending pick (there should be none once the gameweek is done).
+			.filter((pk) => pk.result != null && pk.result !== 'void' && pk.result !== 'pending')
+			.map((pk) => ({
+				rank: pk.confidenceRank ?? 0,
+				correct: pk.result === 'win' || pk.result === 'draw' || pk.result === 'saved_by_life',
+				goals: pk.goalsScored ?? 0,
+			})),
+	}))
+
+	const outcome = resolveWipeout(players)
+	if (outcome.totalWipeout) {
+		return {
+			completed: true,
+			winnerPlayerIds: [],
+			reason: 'cup-total-wipeout',
+			refund: true,
+		}
+	}
+	const winners = cupTiebreaker(
+		outcome.scores.map((s) => ({
+			gamePlayerId: s.gamePlayerId,
+			cumulativeStreak: s.streak,
+			livesRemaining: s.livesRemaining,
+			cumulativeGoals: s.goalsInStreak,
+		})),
 	)
 	return { completed: true, winnerPlayerIds: winners, reason: 'cup-longest-streak' }
 }
@@ -146,7 +189,22 @@ export async function checkCupCompletion(gameId: string): Promise<CompletionChec
 export async function applyAutoCompletion(
 	gameId: string,
 	winnerPlayerIds: string[],
+	options?: { refund?: boolean },
 ): Promise<void> {
+	// Total wipeout: no winner. Refund every contributing stake and complete the
+	// game. No payout rows are written.
+	if (options?.refund) {
+		await db
+			.update(payment)
+			.set({ status: 'refunded', refundedAt: new Date() })
+			.where(and(eq(payment.gameId, gameId), inArray(payment.status, ['paid', 'claimed'])))
+		await db
+			.update(game)
+			.set({ status: 'completed', currentRoundId: null })
+			.where(eq(game.id, gameId))
+		return
+	}
+
 	if (winnerPlayerIds.length === 0) return
 
 	for (const playerId of winnerPlayerIds) {

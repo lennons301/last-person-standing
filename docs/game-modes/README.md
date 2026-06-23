@@ -20,7 +20,7 @@ Read this README first for the cross-cutting state machines. The per-mode docs b
 
 **The settlement model is per-fixture.** When a fixture transitions to `finished`, every pick on it is settled in the same write — `pick.result` + `goals_scored` (+ `life_gained` / `life_spent` for cup) persist immediately, mode-specific elimination fires (classic), and the game's auto-completion is checked. This matches the predecessor app's `process_pick_results_on_fixture_update` DB trigger.
 
-Round completion is **emergent** — a round becomes `completed` when every fixture in it has been settled. At that point **classic** advances to the next round; **turbo** and **cup** auto-complete on the longest streak (they play a single round).
+Round completion is **emergent** — a round becomes `completed` when every fixture in it has been settled. At that point **classic** advances to the next round; **turbo** and **cup** auto-complete on the longest streak (they play a single round) — or refund everyone with no winner if every player got every pick wrong (a total wipeout).
 
 There is no round-batched processing step. Picks on later-finishing fixtures stay `pending` until their own fixture settles.
 
@@ -35,7 +35,7 @@ flowchart LR
     F --> G{game mode?}
     G -->|classic| Gc[alive=1 → winner; alive=0 → mass-extinction tiebreaker;<br/>alive≥2 + round fully settled → advance to next round]
     G -->|turbo / cup| J{round fully settled?}
-    J -->|yes| K[crown longest streak<br/>turboTiebreaker / cupTiebreaker; complete]
+    J -->|yes| K[skip ranks everyone lost, then crown longest streak<br/>turboTiebreaker / cupTiebreaker;<br/>total wipeout → refund all, no winner; complete]
     J -->|no| Z
 ```
 

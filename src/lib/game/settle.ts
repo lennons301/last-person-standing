@@ -7,10 +7,10 @@ import {
 	checkTurboCompletion,
 } from '@/lib/game/auto-complete'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
+import type { WipeoutPlayerInput } from '@/lib/game-logic/auto-complete-tiebreakers'
 import { determinePickResult } from '@/lib/game-logic/common'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
-import { evaluateTurboPicks } from '@/lib/game-logic/turbo'
 import {
 	computeWcClassicAutoElims,
 	type WcFixture,
@@ -274,7 +274,15 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 	let anyChanged = false
 
 	for (const player of g.players) {
-		if (player.status !== 'alive') continue
+		// Evaluate EVERY player's picks, not just the currently-alive ones. The
+		// wipeout rule (checkCupCompletion) needs the full rank-ordered result
+		// sequence for everyone, including players whose streak already broke —
+		// when a leading rank is a universal loss, an "eliminated" player can win
+		// the rebased streak from a later rank, so their later picks must settle
+		// rather than stay `pending`. evaluateCupPicks is idempotent and only ever
+		// sets `eliminated` (never revives), so re-running on a broken player is
+		// safe. Players with no picks (e.g. no-pick eliminations) fall through the
+		// `settleable.length === 0` guard below untouched.
 
 		const playerPicks = existingPicks
 			.filter((p) => p.gamePlayerId === player.id)
@@ -430,7 +438,7 @@ async function checkAndMaybeCompleteOrAdvance(
 		// advances across matchdays.
 		if (!allFinished) return
 		const completion = await checkCupCompletion(gameId)
-		await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+		await applyAutoCompletion(gameId, completion.winnerPlayerIds, { refund: completion.refund })
 		result.gamesCompleted.push(gameId)
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
 		result.roundsCompleted.push(roundId)
@@ -439,7 +447,7 @@ async function checkAndMaybeCompleteOrAdvance(
 		if (!allFinished) return
 		const turboPlayerResults = await collectTurboPlayerResults(gameId, roundId)
 		const completion = checkTurboCompletion(turboPlayerResults)
-		await applyAutoCompletion(gameId, completion.winnerPlayerIds)
+		await applyAutoCompletion(gameId, completion.winnerPlayerIds, { refund: completion.refund })
 		result.gamesCompleted.push(gameId)
 		// Mark the round complete; turbo doesn't advance (single-round mode).
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
@@ -457,34 +465,32 @@ async function checkAndMaybeCompleteOrAdvance(
 	}
 }
 
-async function collectTurboPlayerResults(gameId: string, roundId: string) {
+async function collectTurboPlayerResults(
+	gameId: string,
+	roundId: string,
+): Promise<WipeoutPlayerInput[]> {
 	const players = await db.query.gamePlayer.findMany({
 		where: and(eq(gamePlayer.gameId, gameId), eq(gamePlayer.status, 'alive')),
 	})
 	const picks = await db.query.pick.findMany({
 		where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
-		with: { fixture: true },
 	})
-	return players.map((p) => {
-		// Skip void picks — the streak evaluator walks past as if they
-		// weren't in the input. Equivalent to a 9-pick game when one
-		// fixture was cancelled.
-		const playerPicks = picks
+	return players.map((p) => ({
+		gamePlayerId: p.id,
+		// Turbo has no lives mechanic — the goals tiebreak settles ties.
+		livesRemaining: 0,
+		// Picks are already settled by settleTurboPickRow (result + goalsScored).
+		// Skip void picks — the streak walks past them as if they weren't in the
+		// input (equivalent to a 9-pick game when one fixture was cancelled).
+		picks: picks
 			.filter((pk) => pk.gamePlayerId === p.id)
-			.filter((pk) => pk.result !== 'void')
+			.filter((pk) => pk.result != null && pk.result !== 'void' && pk.result !== 'pending')
 			.map((pk) => ({
-				confidenceRank: pk.confidenceRank ?? 0,
-				predictedResult: (pk.predictedResult ?? 'draw') as 'home_win' | 'draw' | 'away_win',
-				homeScore: pk.fixture?.homeScore ?? 0,
-				awayScore: pk.fixture?.awayScore ?? 0,
-			}))
-		const turbo = evaluateTurboPicks(playerPicks)
-		return {
-			gamePlayerId: p.id,
-			streak: turbo.streak,
-			goalsInStreak: turbo.goalsInStreak,
-		}
-	})
+				rank: pk.confidenceRank ?? 0,
+				correct: pk.result === 'win',
+				goals: pk.goalsScored ?? 0,
+			})),
+	}))
 }
 
 async function runWcClassicAutoElims(gameId: string, currentRoundId: string): Promise<void> {

@@ -29,12 +29,14 @@ import {
 import { settleFixture } from '@/lib/game/settle'
 import { round as roundTable } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
+import { payment, payout } from '@/lib/schema/payment'
 import {
 	finishFixture,
 	liveFixture,
 	makeCompetition,
 	makeFixture,
 	makeGame,
+	makePayment,
 	makePick,
 	makePlayer,
 	makeRound,
@@ -334,6 +336,55 @@ describe('lifecycle: turbo-PL', () => {
 		g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
 		expect(g?.status).toBe('completed')
 	})
+
+	it('total wipeout refunds everyone and crowns no one', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fx = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'turbo',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 1 },
+		})
+		const gp1 = await makePlayer({ gameId, userId: 'u1' })
+		const gp2 = await makePlayer({ gameId, userId: 'u2' })
+		await makePayment({ gameId, userId: 'u1' })
+		await makePayment({ gameId, userId: 'u2' })
+		// Both predict home_win; away wins → every pick wrong.
+		await makePick({
+			gameId,
+			gamePlayerId: gp1,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gp2,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fx,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+
+		await finishFixture(fx, 0, 2)
+		await settleFixture(fx)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.some((p) => p.status === 'winner')).toBe(false)
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts.length).toBe(0)
+		const payments = await db.query.payment.findMany({ where: eq(payment.gameId, gameId) })
+		expect(payments.every((p) => p.status === 'refunded')).toBe(true)
+	})
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -448,6 +499,161 @@ describe('lifecycle: cup-WC', () => {
 
 		// Same pick results, same lives, same statuses.
 		expect(afterSecond.map((p) => p.result).sort()).toEqual(afterFirst.map((p) => p.result).sort())
+	})
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* cup wipeout rule (single-gameweek winner determination)                 */
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe('lifecycle: cup wipeout rule', () => {
+	it('skips a leading universal-loss rank and crowns the rebased longest streak', async () => {
+		// FA-Cup-style knockout (tier diff 0, no lives mechanic), 2 fixtures.
+		const compId = await makeCompetition({ type: 'knockout', dataSource: 'football_data' })
+		const a1 = await makeTeam({ name: 'A1', shortName: 'A1' })
+		const b1 = await makeTeam({ name: 'B1', shortName: 'B1' })
+		const a2 = await makeTeam({ name: 'A2', shortName: 'A2' })
+		const b2 = await makeTeam({ name: 'B2', shortName: 'B2' })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fx1 = await makeFixture({ roundId: r1, homeTeamId: a1, awayTeamId: b1 })
+		const fx2 = await makeFixture({ roundId: r1, homeTeamId: a2, awayTeamId: b2 })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2, startingLives: 0 },
+		})
+		const gpA = await makePlayer({ gameId, userId: 'u-a', livesRemaining: 0 })
+		const gpB = await makePlayer({ gameId, userId: 'u-b', livesRemaining: 0 })
+		await makePayment({ gameId, userId: 'u-a' })
+		await makePayment({ gameId, userId: 'u-b' })
+		// Rank 1 (fx1): BOTH pick the home side, which loses → universal loss.
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r1,
+			teamId: a1,
+			fixtureId: fx1,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r1,
+			teamId: a1,
+			fixtureId: fx1,
+			confidenceRank: 1,
+		})
+		// Rank 2 (fx2): A picks the home side (wins), B picks the away side (loses).
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r1,
+			teamId: a2,
+			fixtureId: fx2,
+			confidenceRank: 2,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r1,
+			teamId: b2,
+			fixtureId: fx2,
+			confidenceRank: 2,
+		})
+
+		// Settle in confidence-rank order — the order that used to strand the
+		// eliminated players' rank-2 picks as `pending`.
+		await finishFixture(fx1, 0, 2) // home (a1) loses → both lose rank 1
+		await settleFixture(fx1)
+		await finishFixture(fx2, 2, 0) // home (a2) wins → A wins rank 2, B loses rank 2
+		await settleFixture(fx2)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+
+		// A restarts the streak from rank 2 and wins; B does not.
+		const playerA = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpA) })
+		const playerB = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpB) })
+		expect(playerA?.status).toBe('winner')
+		expect(playerB?.status).not.toBe('winner')
+
+		// It's a real win, not a refund: a payout exists, no payment is refunded.
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts.map((p) => p.userId)).toEqual(['u-a'])
+		const payments = await db.query.payment.findMany({ where: eq(payment.gameId, gameId) })
+		expect(payments.every((p) => p.status === 'paid')).toBe(true)
+	})
+
+	it('refunds everyone and crowns no one on a total wipeout', async () => {
+		const compId = await makeCompetition({ type: 'knockout', dataSource: 'football_data' })
+		const a1 = await makeTeam({ name: 'A1', shortName: 'A1' })
+		const b1 = await makeTeam({ name: 'B1', shortName: 'B1' })
+		const a2 = await makeTeam({ name: 'A2', shortName: 'A2' })
+		const b2 = await makeTeam({ name: 'B2', shortName: 'B2' })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fx1 = await makeFixture({ roundId: r1, homeTeamId: a1, awayTeamId: b1 })
+		const fx2 = await makeFixture({ roundId: r1, homeTeamId: a2, awayTeamId: b2 })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2, startingLives: 0 },
+		})
+		const gpA = await makePlayer({ gameId, userId: 'u-a', livesRemaining: 0 })
+		const gpB = await makePlayer({ gameId, userId: 'u-b', livesRemaining: 0 })
+		await makePayment({ gameId, userId: 'u-a', amount: '10.00' })
+		await makePayment({ gameId, userId: 'u-b', amount: '10.00' })
+		// Every player gets every pick wrong (always pick the home side; home loses both).
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r1,
+			teamId: a1,
+			fixtureId: fx1,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r1,
+			teamId: a1,
+			fixtureId: fx1,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpA,
+			roundId: r1,
+			teamId: a2,
+			fixtureId: fx2,
+			confidenceRank: 2,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpB,
+			roundId: r1,
+			teamId: a2,
+			fixtureId: fx2,
+			confidenceRank: 2,
+		})
+
+		await finishFixture(fx1, 0, 2)
+		await settleFixture(fx1)
+		await finishFixture(fx2, 0, 2)
+		await settleFixture(fx2)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		expect(g?.currentRoundId).toBeNull()
+
+		// No winner, no payout, every stake refunded.
+		const winners = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(winners.some((p) => p.status === 'winner')).toBe(false)
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts.length).toBe(0)
+		const payments = await db.query.payment.findMany({ where: eq(payment.gameId, gameId) })
+		expect(payments.every((p) => p.status === 'refunded')).toBe(true)
 	})
 })
 
