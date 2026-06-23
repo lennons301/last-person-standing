@@ -49,6 +49,7 @@ const OPEN_ROUND_FAR_FUTURE = {
 	id: 'r1',
 	number: 5,
 	status: 'open' as const,
+	competitionId: 'c1',
 	deadline: new Date('2099-01-01T00:00:00Z'),
 	fixtures: [
 		{
@@ -72,9 +73,11 @@ const CLASSIC_GAME_ADMIN = {
 	modeConfig: {},
 	competitionId: 'c1',
 	competition: { id: 'c1', type: 'league' },
-	// Pick validation now gates on `game.currentRoundId === roundId` (see
-	// src/lib/picks/validate.ts). The test posts picks for round id 'r1', so
-	// the game's currentRoundId must point at 'r1' for the pick to be accepted.
+	// Classic pick validation gates on the TARGET round being non-past + deadline
+	// open (see src/lib/picks/validate.ts) — NOT on currentRoundId equality, so a
+	// player can lock an advance pick for a future round. currentRoundId is left
+	// pointing at 'r1' here only for realism; the open/far-future round status is
+	// what makes the pick valid.
 	currentRoundId: 'r1',
 }
 
@@ -199,5 +202,84 @@ describe('POST /api/picks/[gameId]/[roundId] — actingAs + un-elimination', () 
 		expect(body.id).toBe('p-new')
 		// No un-elimination update should have been invoked
 		expect(db.update).not.toHaveBeenCalled()
+	})
+})
+
+describe('POST /api/picks/[gameId]/[roundId] — classic advance picks (C1)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		vi.mocked(requireSession).mockResolvedValue({ user: { id: 'u-self' } } as never)
+	})
+
+	it('accepts a locked advance pick for a future round that is not the game current round', async () => {
+		// Game's current round is some other round; the player posts to 'r1', a
+		// future round whose own deadline is still open. This is the C1 fix:
+		// previously rejected with "Round is not open for picks".
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+			currentRoundId: 'r-current',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue(OPEN_ROUND_FAR_FUTURE as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+		mockDeleteChain()
+		mockInsertReturning([{ id: 'p-new', teamId: 't-home', roundId: 'r1' }])
+
+		const res = await POST(makeReq({ teamId: 't-home', fixtureId: 'fx1' }), params)
+		expect(res.status).toBe(201)
+		const body = await res.json()
+		expect(body.id).toBe('p-new')
+	})
+
+	it('rejects a pick for a round in a different competition', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		// Round belongs to competition 'c2', game is in 'c1'.
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			...OPEN_ROUND_FAR_FUTURE,
+			competitionId: 'c2',
+		} as never)
+
+		const res = await POST(makeReq({ teamId: 't-home', fixtureId: 'fx1' }), params)
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.error).toBe('Round not in this game')
+	})
+
+	it('rejects a pick for a round that has already been played', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			...OPEN_ROUND_FAR_FUTURE,
+			status: 'completed',
+		} as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+
+		const res = await POST(makeReq({ teamId: 't-home', fixtureId: 'fx1' }), params)
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.error).toBe('Round has already been played')
 	})
 })

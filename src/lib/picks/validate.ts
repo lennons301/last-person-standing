@@ -4,11 +4,13 @@ export interface ClassicPickValidation {
 	teamId: string
 	playerStatus: 'alive' | 'eliminated' | 'winner'
 	/**
-	 * True iff this round is the game's currently-active round (`game.currentRoundId === roundId`).
-	 * Picks are only allowed on the game's current round; past rounds are completed and
-	 * future rounds aren't visible to the player yet for this game.
+	 * True iff this round has already been played for this game (its fixtures are
+	 * settled / the round is completed). Classic players may lock in a real pick
+	 * for the current round AND any future round whose own deadline is still open
+	 * — but never for a round that's already happened. The deadline check below
+	 * independently blocks picking a round whose deadline has passed.
 	 */
-	isCurrentRound: boolean
+	isPastRound: boolean
 	deadline: Date | null
 	now: Date
 	usedTeamIds: string[]
@@ -21,7 +23,7 @@ export function validateClassicPick(
 ): ValidationResult {
 	if (!opts.allowEliminatedRebuy && input.playerStatus !== 'alive')
 		return { valid: false, reason: 'Player is not alive' }
-	if (!input.isCurrentRound) return { valid: false, reason: 'Round is not open for picks' }
+	if (input.isPastRound) return { valid: false, reason: 'Round has already been played' }
 	if (input.deadline && input.now > input.deadline)
 		return { valid: false, reason: 'Deadline has passed' }
 	if (input.usedTeamIds.includes(input.teamId))
