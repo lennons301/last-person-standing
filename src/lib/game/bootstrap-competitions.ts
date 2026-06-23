@@ -3,7 +3,7 @@ import { FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter, type FplPreFetched } from '@/lib/data/fpl'
 import { enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { CompetitionAdapter } from '@/lib/data/types'
-import { WC_2026_POTS } from '@/lib/data/wc-pots'
+import { type FifaPot, potForTeamName, WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
 import { settleFixture } from '@/lib/game/settle'
 import { competition, fixture, round, team } from '@/lib/schema/competition'
@@ -463,30 +463,40 @@ export async function applyPotAssignments(
 	const unmatched: string[] = []
 	for (const t of teams) {
 		const fdId = (t.externalIds as Record<string, string | number> | null)?.football_data
-		// Match by football-data ID first (when WC_2026_POTS has been backfilled
-		// from /competitions/WC/teams), fall back to team name. Name matching
-		// covers the common case today: pots are seeded with names only and
-		// football-data uses canonical country names that align with the list.
-		const entry =
+		// Resolve a pot in three tiers, preferring the most precise:
+		//   1. football-data ID — exact, used once WC_2026_POTS[].footballDataId
+		//      is backfilled from /competitions/WC/teams (the #65 spike).
+		//   2. name alias map — bridges the cases where football-data's canonical
+		//      name differs from our reference list (see FD_NAME_TO_WC_POT_NAME).
+		//   3. direct name match — the common case where the names already align.
+		// potForTeamName() folds tiers 2 and 3 together (alias-then-name).
+		const pot: FifaPot | null =
 			(fdId
-				? WC_2026_POTS.find((p) => p.footballDataId && p.footballDataId === String(fdId))
-				: undefined) ?? WC_2026_POTS.find((p) => p.name.toLowerCase() === t.name.toLowerCase())
-		if (!entry) {
+				? (WC_2026_POTS.find((p) => p.footballDataId && p.footballDataId === String(fdId))?.pot ??
+					null)
+				: null) ?? potForTeamName(t.name)
+		if (pot == null) {
 			unmatched.push(t.name)
 			continue
 		}
 		await db
 			.update(team)
 			.set({
-				externalIds: { ...(t.externalIds ?? {}), fifa_pot: entry.pot },
+				externalIds: { ...(t.externalIds ?? {}), fifa_pot: pot },
 			})
 			.where(eq(team.id, t.id))
 		matched++
 	}
+	// Fail loudly. A WC team with no pot makes cup-tier maths silently return 0
+	// (so underdog picks go unrewarded) AND blocks cup game creation entirely
+	// (api/games refuses when any team lacks fifa_pot). Both are silent-until-
+	// someone-tries-to-play failures, so we surface the gap at sync time instead.
+	// Mirrors mergeFootballDataIds, which throws on missing football-data IDs.
+	// The likely cause is a football-data name that isn't in WC_2026_POTS or its
+	// FD_NAME_TO_WC_POT_NAME alias map — the error names the unmatched team(s).
 	if (unmatched.length > 0) {
-		console.warn(
-			`[bootstrap] ${unmatched.length} WC team(s) not in WC_2026_POTS — cup tier-difference will be 0:`,
-			unmatched.join(', '),
+		throw new Error(
+			`applyPotAssignments: ${unmatched.length}/${teams.length} WC team(s) have no FIFA pot — cup mode would be uncreatable and tier-diff would silently be 0: ${unmatched.join(', ')}. Add the team(s) to WC_2026_POTS, or add a football-data name alias to FD_NAME_TO_WC_POT_NAME in src/lib/data/wc-pots.ts.`,
 		)
 	}
 	return { matched, unmatched }
