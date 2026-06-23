@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { GridFilter } from './grid-filter'
+import { type GridSortKey, sortGridPlayers } from './grid-sort'
+import { GridSortControl } from './grid-sort-control'
 
 const LIVE_RECENT_MS = 1500
 
@@ -89,6 +91,7 @@ export function ProgressGrid({
 	showAdminActions,
 }: ProgressGridProps) {
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
+	const [sort, setSort] = useState<GridSortKey>('status')
 	const [showOpponents, setShowOpponents] = useState(false)
 	const [hideEliminated, setHideEliminated] = useState(false)
 	const liveCtx = useLiveGame()
@@ -150,14 +153,7 @@ export function ProgressGrid({
 
 	const currentRoundId = rounds.at(-1)?.id
 
-	const sortedPlayers = [...players].sort((a, b) => {
-		if (a.status === 'alive' && b.status !== 'alive') return -1
-		if (a.status !== 'alive' && b.status === 'alive') return 1
-		if (a.status === 'eliminated' && b.status === 'eliminated') {
-			return (b.eliminatedRoundNumber ?? 0) - (a.eliminatedRoundNumber ?? 0)
-		}
-		return a.name.localeCompare(b.name)
-	})
+	const sortedPlayers = sortGridPlayers(players, sort)
 
 	const visiblePlayers = hideEliminated
 		? sortedPlayers.filter((p) => p.status !== 'eliminated')
@@ -204,6 +200,7 @@ export function ProgressGrid({
 							Share grid
 						</Button>
 					)}
+					<GridSortControl value={sort} onChange={setSort} />
 					<GridFilter value={filter} onChange={setFilter} />
 				</div>
 			</div>
