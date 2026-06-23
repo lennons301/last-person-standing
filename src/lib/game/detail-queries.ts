@@ -848,15 +848,22 @@ export async function getProgressGridData(
 	const currentRoundNumber =
 		gameData.competition.rounds.find((r) => r.id === gameData.currentRoundId)?.number ?? null
 	const derivedRoundStatus = new Map<string, 'upcoming' | 'open' | 'active' | 'completed'>()
+	// Whether a round's picks are locked-and-revealable to everyone. Picks stay
+	// hidden from other viewers until the round's OWN deadline passes (or it's
+	// processed) — this must hold for FUTURE rounds too, since advance picks
+	// (PR #81) commit real picks for a round that's still 'upcoming'. Keying the
+	// reveal on `=== 'open'` only covered the current round and leaked advance
+	// picks the moment they were made.
+	const picksLockedByRoundId = new Map<string, boolean>()
 	for (const r of gameData.competition.rounds) {
-		derivedRoundStatus.set(
-			r.id,
-			deriveGameRoundStatus({
-				round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
-				game: { currentRoundId: gameData.currentRoundId, currentRoundNumber },
-				now,
-			}),
-		)
+		const status = deriveGameRoundStatus({
+			round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
+			game: { currentRoundId: gameData.currentRoundId, currentRoundNumber },
+			now,
+		})
+		derivedRoundStatus.set(r.id, status)
+		const deadlinePassed = r.deadline != null && now >= r.deadline
+		picksLockedByRoundId.set(r.id, status === 'completed' || deadlinePassed)
 	}
 
 	// Get user names for players
@@ -891,12 +898,13 @@ export async function getProgressGridData(
 					continue
 				}
 			}
-			const isRoundOpen = derivedRoundStatus.get(r.id) === 'open'
+			const picksLocked = picksLockedByRoundId.get(r.id) ?? false
 			const isOwnPick = viewerGamePlayerId && thePick?.gamePlayerId === viewerGamePlayerId
-			// If the round is open (deadline hasn't passed yet) and either the viewer
-			// isn't the picker or the caller has requested a shared-view (hide
-			// everything current) — hide the team info.
-			const hideTeam = isRoundOpen && (options?.hideAllCurrentPicks || !isOwnPick)
+			// Hide the team while this round's picks aren't locked yet (its deadline
+			// hasn't passed) and either the viewer isn't the picker or the caller
+			// requested a shared-view (hide everything not-yet-locked). Covers the
+			// current open round AND future advance-pick rounds.
+			const hideTeam = !picksLocked && (options?.hideAllCurrentPicks || !isOwnPick)
 
 			if (!thePick) {
 				// Always show "?" for players who haven't picked yet — acts as a nudge.
