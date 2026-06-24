@@ -242,10 +242,12 @@ export default async function GameDetailPage({
 				existingPickFixtureId={classicPickData.existingPickFixtureId}
 				chain={classicPlannerData?.chain}
 				futureRounds={classicPlannerData?.futureRounds}
-				currentRoundClosed={roundDeadlinePassed}
+				// An admin acting-as a player can fix a pick after the deadline, so the
+				// current round stays interactive for them; for everyone else it locks.
+				currentRoundClosed={roundDeadlinePassed && !actingAsTarget}
 				actingAs={actingAsForPickUI}
 			/>
-		) : game.currentRound && isAlive && !roundDeadlinePassed ? (
+		) : game.currentRound && isAlive && (!roundDeadlinePassed || !!actingAsTarget) ? (
 			game.gameMode === 'turbo' && turboPickData ? (
 				<TurboPick
 					gameId={game.id}

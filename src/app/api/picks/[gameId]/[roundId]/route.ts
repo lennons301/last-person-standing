@@ -142,7 +142,9 @@ export async function POST(request: Request, { params }: { params: Params }) {
 				usedTeamIds,
 				fixtureTeamIds,
 			},
-			{ allowEliminatedRebuy },
+			// Admin acting-as (verified above) may submit a pick after the round's
+			// deadline — fixing a missed/wrong pick. isPastRound stays enforced.
+			{ allowEliminatedRebuy, allowAdminLateSubmission: !!body.actingAs },
 		)
 
 		if (!validation.valid) {
@@ -268,7 +270,10 @@ export async function POST(request: Request, { params }: { params: Params }) {
 					pickedTeam: p.predictedResult === 'away_win' ? 'away' : 'home',
 				})),
 			},
-			{ allowEliminatedRebuy: allowEliminatedRebuyMulti },
+			{
+				allowEliminatedRebuy: allowEliminatedRebuyMulti,
+				allowAdminLateSubmission: !!body.actingAs,
+			},
 		)
 		if (!cupValidation.valid) {
 			return NextResponse.json({ error: cupValidation.reason }, { status: 400 })
@@ -284,7 +289,10 @@ export async function POST(request: Request, { params }: { params: Params }) {
 				fixtureIds: roundData.fixtures.map((f) => f.id),
 				picks: pickEntries,
 			},
-			{ allowEliminatedRebuy: allowEliminatedRebuyMulti },
+			{
+				allowEliminatedRebuy: allowEliminatedRebuyMulti,
+				allowAdminLateSubmission: !!body.actingAs,
+			},
 		)
 		if (!validation.valid) {
 			return NextResponse.json({ error: validation.reason }, { status: 400 })

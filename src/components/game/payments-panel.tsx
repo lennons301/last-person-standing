@@ -29,7 +29,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 	const all = props.payments
 	const unpaidCount = all.filter((p) => p.status === 'pending' || p.status === 'unpaid').length
 
-	async function callAction(p: AdminPayment, action: 'dispute' | 'admin-rebuy') {
+	async function callAction(p: AdminPayment, action: 'dispute' | 'admin-rebuy' | 'mark-paid') {
 		if (action === 'admin-rebuy') {
 			const res = await fetch(`/api/games/${props.gameId}/admin/rebuy/${p.userId}`, {
 				method: 'POST',
@@ -39,6 +39,23 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 				props.onChange?.()
 			} else {
 				toast.error('Rebuy failed')
+			}
+			return
+		}
+		if (action === 'mark-paid') {
+			// Admin confirms the entry fee was paid (e.g. cash). Uses the existing
+			// payment override endpoint, which sets status=paid + paidAt.
+			if (!p.id) return
+			const res = await fetch(`/api/games/${props.gameId}/payments/${p.id}/override`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ status: 'paid' }),
+			})
+			if (res.ok) {
+				toast.success(`Marked ${p.userName} as paid`)
+				props.onChange?.()
+			} else {
+				toast.error('Failed to mark paid')
 			}
 			return
 		}
@@ -100,13 +117,24 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 									>
 										Dispute
 									</button>
-								) : p.id !== null && p.status === 'pending' ? (
-									<PaymentReminderButton
-										gameName={props.gameName}
-										amount={p.amount}
-										creatorName="you"
-										inviteCode={props.inviteCode}
-									/>
+								) : p.id !== null && (p.status === 'pending' || p.status === 'claimed') ? (
+									<>
+										<button
+											type="button"
+											onClick={() => callAction(p, 'mark-paid')}
+											className="rounded border border-[var(--alive)] px-3 py-1.5 text-xs font-semibold text-[var(--alive)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+										>
+											Mark paid
+										</button>
+										{p.status === 'pending' && (
+											<PaymentReminderButton
+												gameName={props.gameName}
+												amount={p.amount}
+												creatorName="you"
+												inviteCode={props.inviteCode}
+											/>
+										)}
+									</>
 								) : null}
 							</div>
 						}
