@@ -156,11 +156,13 @@ export default async function GameDetailPage({
 	// players so admins can rebuy-via-pick (see maybeUnEliminate in the POST route).
 	const aliveCount = game.players.filter((p) => p.status === 'alive').length
 
-	// Target = entryFee × playerCount (what the pot would be if everyone paid).
-	// Unpaid = headline sum of outstanding (not yet claimed) entries, computed
-	// directly from target − pot.total since pot includes both paid and claimed.
+	// Target = entryFee × expected entries (what the pot would be if everyone
+	// paid). expectedEntries counts each player's rebuys as additional owed
+	// entries, so a rebuy isn't missed (was players.length, which under-counted).
+	// Unpaid = headline sum of outstanding entries, computed directly from
+	// target − pot.total.
 	const entryFeeNum = game.entryFee ? Number.parseFloat(game.entryFee) : 0
-	const targetNum = entryFeeNum * game.players.length
+	const targetNum = entryFeeNum * game.expectedEntries
 	const unpaidNum = Math.max(0, targetNum - Number.parseFloat(game.pot.total))
 	const target = targetNum.toFixed(2)
 	const unpaid = unpaidNum.toFixed(2)
