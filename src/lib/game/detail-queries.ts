@@ -16,7 +16,7 @@ import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
-import { calculatePot } from '@/lib/game-logic/prizes'
+import { calculatePot, expectedEntryCount } from '@/lib/game-logic/prizes'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, type gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
@@ -86,6 +86,12 @@ export async function getGameDetail(gameId: string, userId: string) {
 		})
 	).filter((p) => !removedUserIds.has(p.userId))
 	const pot = calculatePot(payments)
+	// Target multiplier: counts each player's rebuys as extra owed entries, so the
+	// "if everyone paid" target isn't undercounted when players have rebought.
+	const expectedEntries = expectedEntryCount(
+		gameData.players.map((p) => p.userId),
+		payments,
+	)
 
 	// Resolve user names for every player + the admin so payment UI can show names.
 	const { user } = await import('@/lib/schema/auth')
@@ -290,6 +296,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		entryFee: gameData.entryFee,
 		inviteCode: gameData.inviteCode,
 		pot,
+		expectedEntries,
 		players: gameData.players,
 		picks: gameData.picks,
 		myMembership,

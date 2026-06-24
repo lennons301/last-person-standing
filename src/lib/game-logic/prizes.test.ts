@@ -1,5 +1,43 @@
 import { describe, expect, it } from 'vitest'
-import { calculatePayouts, calculatePot } from './prizes'
+import { calculatePayouts, calculatePot, expectedEntryCount } from './prizes'
+
+describe('expectedEntryCount', () => {
+	it('counts one entry per player when there are no rebuys', () => {
+		// c has no payment row yet but still owes the original entry.
+		expect(
+			expectedEntryCount(
+				['a', 'b', 'c'],
+				[
+					{ userId: 'a', status: 'paid' },
+					{ userId: 'b', status: 'pending' },
+				],
+			),
+		).toBe(3)
+	})
+	it('counts a rebuy as a second entry for that player', () => {
+		expect(
+			expectedEntryCount(
+				['a', 'b'],
+				[
+					{ userId: 'a', status: 'paid' },
+					{ userId: 'a', status: 'pending' }, // rebuy
+					{ userId: 'b', status: 'paid' },
+				],
+			),
+		).toBe(3)
+	})
+	it('excludes refunded rows', () => {
+		expect(
+			expectedEntryCount(
+				['a'],
+				[
+					{ userId: 'a', status: 'paid' },
+					{ userId: 'a', status: 'refunded' },
+				],
+			),
+		).toBe(1)
+	})
+})
 
 describe('calculatePot', () => {
 	it('returns all zeros on empty input', () => {
