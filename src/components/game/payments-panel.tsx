@@ -29,7 +29,30 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 	const all = props.payments
 	const unpaidCount = all.filter((p) => p.status === 'pending' || p.status === 'unpaid').length
 
-	async function callAction(p: AdminPayment, action: 'dispute' | 'admin-rebuy' | 'mark-paid') {
+	async function callAction(
+		p: AdminPayment,
+		action: 'dispute' | 'admin-rebuy' | 'mark-paid' | 'add-rebuy',
+	) {
+		if (action === 'add-rebuy') {
+			// Record a rebuy (extra entry) at any stage — even after the rebuy
+			// window. Creates a pending entry; mark it paid (here or by the player)
+			// to grow the pot.
+			const res = await fetch(`/api/games/${props.gameId}/admin/add-rebuy/${p.userId}`, {
+				method: 'POST',
+			})
+			if (res.ok) {
+				toast.success(`Rebuy added for ${p.userName} — mark it paid to grow the pot`)
+				props.onChange?.()
+			} else {
+				const body = await res.json().catch(() => ({ error: 'failed' }))
+				toast.error(
+					body.error === 'pending-entry-exists'
+						? `${p.userName} already has an unpaid entry`
+						: 'Failed to add rebuy',
+				)
+			}
+			return
+		}
 		if (action === 'admin-rebuy') {
 			const res = await fetch(`/api/games/${props.gameId}/admin/rebuy/${p.userId}`, {
 				method: 'POST',
@@ -110,13 +133,24 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 									</button>
 								)}
 								{p.id !== null && p.status === 'paid' ? (
-									<button
-										type="button"
-										onClick={() => callAction(p, 'dispute')}
-										className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
-									>
-										Dispute
-									</button>
+									<>
+										{!p.isRebuy && (
+											<button
+												type="button"
+												onClick={() => callAction(p, 'add-rebuy')}
+												className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+											>
+												Add rebuy
+											</button>
+										)}
+										<button
+											type="button"
+											onClick={() => callAction(p, 'dispute')}
+											className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
+										>
+											Dispute
+										</button>
+									</>
 								) : p.id !== null && (p.status === 'pending' || p.status === 'claimed') ? (
 									<>
 										<button
