@@ -376,6 +376,113 @@ describe('lifecycle: classic-WC', () => {
 		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
 		expect(g?.currentRoundId).toBe(r2)
 	})
+
+	it('does NOT complete mid-round when the terminal seeded round is only partially finished — the dc857c5f MD3 mis-crowning', async () => {
+		// MD3 is the LAST seeded round (knockout rounds not yet created). Settling
+		// just ONE of its fixtures must not end the game: "rounds exhausted" cannot
+		// be concluded while the round is still in progress. This is the exact
+		// shape that wrongly crowned a winner mid-MD3.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const ger = await makeTeam({ name: 'Germany', shortName: 'GER', fifaPot: 1 })
+		const kor = await makeTeam({ name: 'South Korea', shortName: 'KOR', fifaPot: 3 })
+		const mar = await makeTeam({ name: 'Morocco', shortName: 'MAR', fifaPot: 2 })
+		const civ = await makeTeam({ name: 'Ivory Coast', shortName: 'CIV', fifaPot: 3 })
+		const md3 = await makeRound(compId, { number: 3, status: 'open' })
+		const fxFinished = await makeFixture({ roundId: md3, homeTeamId: ger, awayTeamId: kor })
+		const fxPending = await makeFixture({ roundId: md3, homeTeamId: mar, awayTeamId: civ })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: md3,
+			modeConfig: { allowRebuys: false },
+		})
+		const winner = await makePlayer({ gameId, userId: 'u-win' })
+		const loser = await makePlayer({ gameId, userId: 'u-lose' })
+		const waiting = await makePlayer({ gameId, userId: 'u-wait' })
+		await makePick({
+			gameId,
+			gamePlayerId: winner,
+			roundId: md3,
+			teamId: ger,
+			fixtureId: fxFinished,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: loser,
+			roundId: md3,
+			teamId: kor,
+			fixtureId: fxFinished,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: waiting,
+			roundId: md3,
+			teamId: mar,
+			fixtureId: fxPending,
+		})
+
+		// Germany beat South Korea; Morocco's fixture is still to play.
+		await finishFixture(fxFinished, 2, 0)
+		await settleFixture(fxFinished)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active') // NOT completed mid-round
+		expect(g?.currentRoundId).toBe(md3) // still on MD3
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts).toHaveLength(0) // nobody crowned
+
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		const byId = Object.fromEntries(players.map((p) => [p.id, p]))
+		expect(byId[loser].status).toBe('eliminated') // the loss still eliminates
+		expect(byId[winner].status).toBe('alive')
+		expect(byId[waiting].status).toBe('alive')
+	})
+
+	it('waits at the group→knockout boundary: MD3 fully settles with a TBD knockout round seeded → no completion, no auto-elim', async () => {
+		// With the knockout round seeded (a round row exists, fixtures TBD), the
+		// fully-finished group stage must NOT auto-complete (nextRoundExists is
+		// true) and must NOT auto-eliminate everyone (the bracket is unpublished).
+		// The game waits, pointed at the just-completed MD3, until the draw lands.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const ger = await makeTeam({ name: 'Germany', shortName: 'GER', fifaPot: 1 })
+		const kor = await makeTeam({ name: 'South Korea', shortName: 'KOR', fifaPot: 3 })
+		const mar = await makeTeam({ name: 'Morocco', shortName: 'MAR', fifaPot: 2 })
+		const civ = await makeTeam({ name: 'Ivory Coast', shortName: 'CIV', fifaPot: 3 })
+		const md3 = await makeRound(compId, { number: 3, status: 'open' })
+		// Round of 32 seeded but TBD — exists as a round row, no fixtures yet.
+		await makeRound(compId, { number: 4, status: 'upcoming' })
+		const fxA = await makeFixture({ roundId: md3, homeTeamId: ger, awayTeamId: kor })
+		const fxB = await makeFixture({ roundId: md3, homeTeamId: mar, awayTeamId: civ })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: md3,
+			modeConfig: { allowRebuys: false },
+		})
+		const p1 = await makePlayer({ gameId, userId: 'u-1' })
+		const p2 = await makePlayer({ gameId, userId: 'u-2' })
+		await makePick({ gameId, gamePlayerId: p1, roundId: md3, teamId: ger, fixtureId: fxA })
+		await makePick({ gameId, gamePlayerId: p2, roundId: md3, teamId: mar, fixtureId: fxB })
+
+		await finishFixture(fxA, 2, 0)
+		await finishFixture(fxB, 1, 0)
+		await settleFixture(fxA)
+		await settleFixture(fxB) // MD3 now fully finished
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active') // did NOT wrongly complete via rounds-exhausted
+		expect(g?.currentRoundId).toBe(md3) // stays put awaiting the bracket
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts).toHaveLength(0)
+
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.every((p) => p.status === 'alive')).toBe(true) // no wrongful auto-elim
+
+		const md3row = await db.query.round.findFirst({ where: eq(roundTable.id, md3) })
+		expect(md3row?.status).toBe('completed') // round itself is done
+	})
 })
 
 /* ────────────────────────────────────────────────────────────────────── */

@@ -29,7 +29,9 @@ describe('checkClassicCompletion', () => {
 			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
 		] as never)
 
-		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5)
+		// last-alive fires mid-round too (roundFullySettled=false): no one is left
+		// to play the remaining fixtures, so the lone survivor wins immediately.
+		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5, false)
 		expect(result).toEqual({
 			completed: true,
 			winnerPlayerIds: ['p1'],
@@ -51,7 +53,9 @@ describe('checkClassicCompletion', () => {
 			{ gamePlayerId: 'p3', result: 'win', goalsScored: 99 },
 		] as never)
 
-		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5)
+		// mass-extinction also fires mid-round (roundFullySettled=false): with zero
+		// alive there is no one left to play on.
+		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5, false)
 		expect(result).toEqual({
 			completed: true,
 			winnerPlayerIds: ['p1'],
@@ -69,7 +73,7 @@ describe('checkClassicCompletion', () => {
 			{ gamePlayerId: 'p2', result: 'win', goalsScored: 5 },
 		] as never)
 
-		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5)
+		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5, false)
 		expect(result.completed).toBe(true)
 		expect(result.reason).toBe('mass-extinction')
 		expect(result.winnerPlayerIds.sort()).toEqual(['p1', 'p2'])
@@ -86,12 +90,27 @@ describe('checkClassicCompletion', () => {
 			{ gamePlayerId: 'p2', result: 'win', goalsScored: 7 },
 		] as never)
 
-		const result = await checkClassicCompletion('g1', 'c1', 'r1', 38)
+		const result = await checkClassicCompletion('g1', 'c1', 'r1', 38, true)
 		expect(result).toEqual({
 			completed: true,
 			winnerPlayerIds: ['p1'],
 			reason: 'rounds-exhausted',
 		})
+	})
+
+	it('does NOT complete with rounds-exhausted MID-ROUND even when no next round exists — the dc857c5f MD3 mis-crowning', async () => {
+		// >1 alive, no next-round row (WC knockout rounds not seeded), but the
+		// current round is NOT fully settled (mid-matchday). "We've run out of
+		// rounds" can only be true once the current round finishes — never
+		// mid-round. This is the exact state that wrongly crowned Sto in MD3.
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p1', status: 'alive', eliminatedRoundId: null, livesRemaining: 0 },
+			{ id: 'p2', status: 'alive', eliminatedRoundId: null, livesRemaining: 0 },
+		] as never)
+		dbMock.query.round.findFirst.mockResolvedValue(null as never)
+
+		const result = await checkClassicCompletion('g1', 'c1', 'r1', 3, false)
+		expect(result.completed).toBe(false)
 	})
 
 	it('does not complete when >1 alive and a next round exists', async () => {
@@ -101,7 +120,7 @@ describe('checkClassicCompletion', () => {
 		] as never)
 		dbMock.query.round.findFirst.mockResolvedValue({ id: 'r2', number: 6 } as never)
 
-		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5)
+		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5, true)
 		expect(result.completed).toBe(false)
 	})
 
@@ -110,7 +129,7 @@ describe('checkClassicCompletion', () => {
 			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r-old', livesRemaining: 0 },
 		] as never)
 
-		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5)
+		const result = await checkClassicCompletion('g1', 'c1', 'r1', 5, true)
 		expect(result.completed).toBe(false)
 	})
 })

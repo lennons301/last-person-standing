@@ -202,13 +202,14 @@ describe('FootballDataAdapter', () => {
 		expect(teams.find((t) => t.externalId === 'null')).toBeUndefined()
 	})
 
-	it('skips matches with null matchday in fetchRounds', async () => {
+	it('skips null-matchday matches with no recognised stage (no "Matchday null" round)', async () => {
 		const withKnockouts = {
 			matches: [
 				...mockMatches.matches,
 				{
 					id: 998,
 					matchday: null,
+					stage: null,
 					homeTeam: { id: 64, name: 'Liverpool', tla: 'LIV', crest: '' },
 					awayTeam: { id: 66, name: 'Man United', tla: 'MUN', crest: '' },
 					utcDate: '2026-07-15T15:00:00Z',
@@ -225,6 +226,150 @@ describe('FootballDataAdapter', () => {
 		expect(rounds.find((r) => r.name === 'Matchday null')).toBeUndefined()
 		const allFixtures = rounds.flatMap((r) => r.fixtures)
 		expect(allFixtures.find((f) => f.externalId === '998')).toBeUndefined()
+	})
+
+	describe('World Cup knockout stages (matchday=null, keyed by stage)', () => {
+		// A realistic WC-shaped payload: 3 group matchdays, then knockout matches
+		// with matchday=null distinguished only by `stage`, teams still TBD.
+		const wcPayload = {
+			matches: [
+				{
+					id: 1,
+					matchday: 3,
+					stage: 'GROUP_STAGE',
+					homeTeam: { id: 760, name: 'Germany', tla: 'GER', crest: '' },
+					awayTeam: { id: 759, name: 'South Korea', tla: 'KOR', crest: '' },
+					utcDate: '2026-06-24T19:00:00Z',
+					status: 'FINISHED',
+					score: { fullTime: { home: 2, away: 0 } },
+				},
+				{
+					id: 100,
+					matchday: null,
+					stage: 'LAST_32',
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-06-28T19:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+				{
+					id: 200,
+					matchday: null,
+					stage: 'LAST_16',
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-07-04T19:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+				{
+					id: 300,
+					matchday: null,
+					stage: 'QUARTER_FINALS',
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-07-10T19:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+				{
+					id: 400,
+					matchday: null,
+					stage: 'SEMI_FINALS',
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-07-15T19:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+				{
+					id: 500,
+					matchday: null,
+					stage: 'THIRD_PLACE',
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-07-18T19:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+				{
+					id: 600,
+					matchday: null,
+					stage: 'FINAL',
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-07-19T19:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+			],
+		}
+
+		beforeEach(() => {
+			vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+				Promise.resolve(new Response(JSON.stringify(wcPayload))),
+			)
+		})
+
+		it('seeds knockout rounds (numbered after the last group matchday) even with TBD fixtures', async () => {
+			const rounds = await adapter.fetchRounds()
+			const byNumber = Object.fromEntries(rounds.map((r) => [r.number, r]))
+			// group matchday 3 stays round 3; knockout stages become 4..8.
+			expect(byNumber[3]?.name).toBe('Matchday 3')
+			expect(byNumber[4]?.name).toBe('Round of 32')
+			expect(byNumber[5]?.name).toBe('Round of 16')
+			expect(byNumber[6]?.name).toBe('Quarter-finals')
+			expect(byNumber[7]?.name).toBe('Semi-finals')
+			expect(byNumber[8]?.name).toBe('Final')
+			// TBD bracket → round rows exist but carry no fixtures / deadline yet.
+			expect(byNumber[4]?.fixtures).toHaveLength(0)
+			expect(byNumber[4]?.deadline).toBeNull()
+			expect(byNumber[8]?.fixtures).toHaveLength(0)
+		})
+
+		it('excludes the third-place playoff (not a survivor round)', async () => {
+			const rounds = await adapter.fetchRounds()
+			// Stages map to 4(R32),5(R16),6(QF),7(SF),8(Final) — no extra round for
+			// THIRD_PLACE; the highest knockout round is the Final at 8.
+			expect(Math.max(...rounds.map((r) => r.number))).toBe(8)
+			expect(rounds.some((r) => r.name === 'Final')).toBe(true)
+			expect(rounds.some((r) => /third|3rd|place/i.test(r.name))).toBe(false)
+			// 1 group matchday (#3) + 5 retained knockout rounds (R32..Final).
+			expect(rounds).toHaveLength(6)
+		})
+
+		it('live scores resolve a knockout round by stage, not matchday', async () => {
+			// A resolved + finished Round of 32 tie.
+			const resolved = {
+				matches: [
+					...wcPayload.matches.filter((m) => m.stage !== 'LAST_32'),
+					{
+						id: 100,
+						matchday: null,
+						stage: 'LAST_32',
+						homeTeam: { id: 760, name: 'Germany', tla: 'GER', crest: '' },
+						awayTeam: { id: 770, name: 'Brazil', tla: 'BRA', crest: '' },
+						utcDate: '2026-06-28T19:00:00Z',
+						status: 'FINISHED',
+						score: { winner: 'AWAY_TEAM', fullTime: { home: 1, away: 2 } },
+					},
+				],
+			}
+			vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+				Promise.resolve(new Response(JSON.stringify(resolved))),
+			)
+			// Round of 32 is round number 4 (max group matchday 3 + 1).
+			const scores = await adapter.fetchLiveScores(4)
+			expect(scores).toHaveLength(1)
+			expect(scores[0]).toEqual({
+				externalId: '100',
+				homeScore: 1,
+				awayScore: 2,
+				status: 'finished',
+				winner: 'away',
+			})
+		})
 	})
 
 	it('skips fixtures with placeholder teams in fetchRounds', async () => {

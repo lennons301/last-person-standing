@@ -79,6 +79,21 @@ export interface AutoElimResult {
 }
 
 export function computeWcClassicAutoElims(input: AutoElimInput): AutoElimResult[] {
+	// Defer auto-elimination while the remaining bracket is incomplete. A
+	// remaining round with no fixtures is TBD — e.g. the World Cup knockout
+	// rounds before the draw is known. Such a round may yet offer a valid team,
+	// so no player can be said to have "run out of teams" while any remaining
+	// round is unpublished. With no known remaining rounds at all (the true end
+	// of the tournament), completion — not auto-elim — crowns the winner.
+	//
+	// Without this guard, the group→knockout boundary auto-eliminates EVERY
+	// alive player ("ran-out-of-teams" against an empty fixture set) → a
+	// mass-extinction mis-completion. Players who genuinely have no valid pick
+	// are still caught by the normal no-pick elimination once the round opens.
+	const bracketFullyPublished =
+		input.remainingRounds.length > 0 && input.remainingRounds.every((r) => r.fixtures.length > 0)
+	if (!bracketFullyPublished) return []
+
 	const eliminations: AutoElimResult[] = []
 	for (const player of input.alivePlayers) {
 		const used = new Set(player.usedTeamIds)
