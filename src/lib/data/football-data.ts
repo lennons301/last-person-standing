@@ -36,6 +36,12 @@ interface FdTeam {
 interface FdMatch {
 	id: number
 	matchday: number | null
+	/**
+	 * Tournament stage. Group/league matches carry a `matchday`; knockout matches
+	 * have `matchday: null` and are distinguished only by `stage`
+	 * (LAST_32 / LAST_16 / QUARTER_FINALS / SEMI_FINALS / THIRD_PLACE / FINAL).
+	 */
+	stage?: string | null
 	homeTeam: FdTeam
 	awayTeam: FdTeam
 	utcDate: string
@@ -51,6 +57,54 @@ function mapWinner(winner: string | null | undefined): 'home' | 'away' | null {
 	if (winner === 'HOME_TEAM') return 'home'
 	if (winner === 'AWAY_TEAM') return 'away'
 	return null
+}
+
+/**
+ * Knockout stages in bracket order. The round NUMBER for a knockout stage is
+ * `maxGroupMatchday + (index in this list) + 1`, so for a competition whose
+ * group stage runs to matchday 3 (the World Cup) the knockout rounds become
+ * 4 (Round of 32) … 8 (Final). THIRD_PLACE is intentionally absent — the
+ * third-place playoff is a consolation match between two already-eliminated
+ * teams, not a survivor round, so it is excluded from the round structure.
+ */
+const KO_STAGE_ORDER = ['LAST_32', 'LAST_16', 'QUARTER_FINALS', 'SEMI_FINALS', 'FINAL'] as const
+
+const KO_STAGE_NAMES: Record<string, string> = {
+	LAST_32: 'Round of 32',
+	LAST_16: 'Round of 16',
+	QUARTER_FINALS: 'Quarter-finals',
+	SEMI_FINALS: 'Semi-finals',
+	FINAL: 'Final',
+}
+
+/** Highest matchday across the match set (0 if none carry a matchday). */
+function maxGroupMatchday(matches: FdMatch[]): number {
+	let max = 0
+	for (const m of matches) {
+		if (m.matchday != null && m.matchday > max) max = m.matchday
+	}
+	return max
+}
+
+/**
+ * Resolve a match to its round NUMBER. Group/league matches map to their
+ * `matchday`; knockout matches (matchday=null) map by `stage` to a number after
+ * the last group matchday. Returns null for matches we don't model as a survivor
+ * round (unknown stage, or THIRD_PLACE) — the caller skips them.
+ */
+function roundNumberForMatch(m: FdMatch, maxMatchday: number): number | null {
+	if (m.matchday != null) return m.matchday
+	const idx = KO_STAGE_ORDER.indexOf((m.stage ?? '') as (typeof KO_STAGE_ORDER)[number])
+	if (idx === -1) return null
+	return maxMatchday + idx + 1
+}
+
+/** Round display name from the matches grouped under it. */
+function roundNameForMatches(number: number, matches: FdMatch[]): string {
+	const first = matches[0]
+	if (first?.matchday != null) return `Matchday ${number}`
+	const stageName = first?.stage ? KO_STAGE_NAMES[first.stage] : undefined
+	return stageName ?? `Round ${number}`
 }
 
 interface FdStandingEntry {
@@ -110,32 +164,46 @@ export class FootballDataAdapter implements CompetitionAdapter {
 		const data = await this.request<{ matches: FdMatch[] }>(
 			`/competitions/${this.competitionCode}/matches`,
 		)
+		// Map every match to a round NUMBER — group/league matches by matchday,
+		// knockout matches (matchday=null) by stage (see roundNumberForMatch).
+		// Knockout rounds are seeded as round rows even before the bracket is
+		// drawn: their matches exist (with TBD teams) so the round number + name
+		// are known. This is essential for survivor-game progression — without
+		// the knockout round rows, `nextRoundExists` is false at the end of the
+		// group stage and a classic game wrongly auto-completes (the dc857c5f
+		// MD3 incident).
+		const maxMatchday = maxGroupMatchday(data.matches)
 		const roundMap = new Map<number, FdMatch[]>()
 		for (const match of data.matches) {
-			if (match.matchday == null) continue
-			const list = roundMap.get(match.matchday) ?? []
+			const number = roundNumberForMatch(match, maxMatchday)
+			if (number == null) continue
+			const list = roundMap.get(number) ?? []
 			list.push(match)
-			roundMap.set(match.matchday, list)
+			roundMap.set(number, list)
 		}
 		return Array.from(roundMap.entries())
 			.sort(([a], [b]) => a - b)
-			.map(([matchday, matches]) => {
+			.map(([number, matches]) => {
+				// Only matches with both teams resolved become fixtures. Knockout
+				// rounds with a TBD bracket yield zero fixtures (and a null deadline)
+				// until the draw is known — the round row still exists so the game
+				// can advance to it / wait at it.
 				const playable = matches.filter((m) => m.homeTeam.id != null && m.awayTeam.id != null)
 				// Round deadline = earliest kickoff − 90 minutes. Matches the FPL
 				// convention (FPL's event.deadline_time is 90 min before the first
 				// match) and aligns with public team-news release. football-data
 				// doesn't supply a separate deadline concept, so we derive from
-				// kickoffs. Knockout rounds with TBD fixtures have no kickoffs yet
-				// — deadline stays null until the bracket is published.
+				// kickoffs. Knockout rounds with TBD fixtures have no playable
+				// kickoffs yet — deadline stays null until the bracket is published.
 				const earliestKickoff = playable
 					.map((m) => new Date(m.utcDate).getTime())
 					.filter((t) => Number.isFinite(t))
 					.reduce((min, t) => (min === null || t < min ? t : min), null as number | null)
 				const deadline = earliestKickoff != null ? new Date(earliestKickoff - 90 * 60 * 1000) : null
 				return {
-					externalId: String(matchday),
-					number: matchday,
-					name: `Matchday ${matchday}`,
+					externalId: String(number),
+					number,
+					name: roundNameForMatches(number, matches),
 					deadline,
 					finished: matches.every((m) => m.status === 'FINISHED'),
 					fixtures: playable.map(
@@ -155,10 +223,19 @@ export class FootballDataAdapter implements CompetitionAdapter {
 	}
 
 	async fetchLiveScores(roundNumber: number): Promise<AdapterFixtureScore[]> {
+		// Fetch all matches and resolve each to its round number via the shared
+		// mapping, then filter to the requested round. The `?matchday=` filter
+		// can't be used because knockout matches have matchday=null and are keyed
+		// by stage — querying `?matchday=4` would return nothing for the Round of
+		// 32. (Trade-off: one all-matches request per active competition per poll
+		// rather than a single-matchday request; acceptable for the tournament
+		// sizes here.)
 		const data = await this.request<{ matches: FdMatch[] }>(
-			`/competitions/${this.competitionCode}/matches?matchday=${roundNumber}`,
+			`/competitions/${this.competitionCode}/matches`,
 		)
+		const maxMatchday = maxGroupMatchday(data.matches)
 		return data.matches
+			.filter((m) => roundNumberForMatch(m, maxMatchday) === roundNumber)
 			.filter((m) => m.score.fullTime.home != null && m.score.fullTime.away != null)
 			.map((m) => ({
 				externalId: String(m.id),

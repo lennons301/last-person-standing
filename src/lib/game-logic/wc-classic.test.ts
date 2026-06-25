@@ -180,4 +180,52 @@ describe('computeWcClassicAutoElims', () => {
 		})
 		expect(elims).toEqual([])
 	})
+
+	it('eliminates NO ONE when the remaining bracket is unpublished (TBD rounds, no fixtures) — the dc857c5f MD3 boundary', () => {
+		// At the group→knockout boundary the WC knockout rounds exist as round
+		// rows but have no fixtures yet (teams TBD). A player who has used every
+		// team so far must NOT be auto-eliminated — the bracket may still offer a
+		// valid team. Without the guard, every alive player is wrongly culled.
+		const elims = computeWcClassicAutoElims({
+			alivePlayers: [
+				{ gamePlayerId: 'p1', usedTeamIds: ['t1', 't2', 't3'] },
+				{ gamePlayerId: 'p2', usedTeamIds: ['t4', 't5', 't6'] },
+			],
+			remainingRounds: [
+				{ id: 'r-last32', fixtures: [] },
+				{ id: 'r-last16', fixtures: [] },
+			],
+			finishedKnockoutFixtures: [],
+		})
+		expect(elims).toEqual([])
+	})
+
+	it('eliminates NO ONE when there are no remaining rounds at all (true end — completion handles it)', () => {
+		const elims = computeWcClassicAutoElims({
+			alivePlayers: [{ gamePlayerId: 'p1', usedTeamIds: ['t1', 't2', 't3'] }],
+			remainingRounds: [],
+			finishedKnockoutFixtures: [],
+		})
+		expect(elims).toEqual([])
+	})
+
+	it('still prunes once EVERY remaining round is published, even alongside earlier rounds', () => {
+		// Two remaining rounds, both with fixtures; the player has used both teams
+		// in the only fixtures available → genuinely out → eliminated.
+		const elims = computeWcClassicAutoElims({
+			alivePlayers: [{ gamePlayerId: 'p1', usedTeamIds: ['t1', 't2', 't3', 't4'] }],
+			remainingRounds: [
+				{
+					id: 'r-a',
+					fixtures: [f({ id: 'a1', homeTeamId: 't1', awayTeamId: 't2', stage: 'knockout' })],
+				},
+				{
+					id: 'r-b',
+					fixtures: [f({ id: 'b1', homeTeamId: 't3', awayTeamId: 't4', stage: 'knockout' })],
+				},
+			],
+			finishedKnockoutFixtures: [],
+		})
+		expect(elims).toEqual([{ gamePlayerId: 'p1', reason: 'ran-out-of-teams' }])
+	})
 })
