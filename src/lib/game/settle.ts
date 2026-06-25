@@ -426,7 +426,13 @@ async function checkAndMaybeCompleteOrAdvance(
 		if (allFinished && g.competition.type === 'group_knockout') {
 			await runWcClassicAutoElims(gameId, roundId)
 		}
-		const completion = await checkClassicCompletion(gameId, g.competitionId, roundId, roundNumber)
+		const completion = await checkClassicCompletion(
+			gameId,
+			g.competitionId,
+			roundId,
+			roundNumber,
+			allFinished,
+		)
 		if (completion.completed) {
 			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
 			result.gamesCompleted.push(gameId)

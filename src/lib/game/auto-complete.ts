@@ -61,6 +61,19 @@ export async function checkClassicCompletion(
 	competitionId: string,
 	completedRoundId: string,
 	completedRoundNumber: number,
+	/**
+	 * Is the current round FULLY settled (every fixture finished or cancelled)?
+	 * `rounds-exhausted` may only be evaluated once this is true — "we've run out
+	 * of rounds" cannot be concluded while the current round is still in progress.
+	 * `last-alive` / `mass-extinction` are valid mid-round (no one left to play
+	 * the remaining fixtures changes nothing) and are unaffected by this flag.
+	 *
+	 * Without this guard, the very first fixture to settle in the final seeded
+	 * round triggers a premature `rounds-exhausted` completion — the dc857c5f
+	 * MD3 mis-crowning, where the WC knockout rounds weren't seeded so
+	 * `nextRoundExists` was false from the first MD3 result onward.
+	 */
+	roundFullySettled: boolean,
 ): Promise<CompletionCheckResult> {
 	const allPlayers = await db.query.gamePlayer.findMany({
 		where: eq(gamePlayer.gameId, gameId),
@@ -82,6 +95,10 @@ export async function checkClassicCompletion(
 		)
 		return { completed: true, winnerPlayerIds: winners, reason: 'mass-extinction' }
 	}
+
+	// >1 alive: the game only ends if the tournament is genuinely out of rounds —
+	// and only once the current round has fully finished.
+	if (!roundFullySettled) return { completed: false, winnerPlayerIds: [] }
 
 	const hasNext = await nextRoundExists(competitionId, completedRoundNumber)
 	if (!hasNext) {
