@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { Disclosure } from '@/components/ui/disclosure'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
 import { cn } from '@/lib/utils'
+import { AdminPlayerActions } from './admin-player-actions'
 import { CupGrid } from './cup-grid'
 import { CupLadder } from './cup-ladder'
 import { CupTimeline } from './cup-timeline'
@@ -19,7 +20,11 @@ interface CupStandingsProps {
 }
 
 export function CupStandings({ data, onShare, showAdminActions, gameId }: CupStandingsProps) {
-	const [view, setView] = useState<ViewMode>('ladder')
+	// Admins default to the grid — it's the only view with per-player rows, so
+	// the make-picks / remove controls live there (the ladder is fixture-centric).
+	const [view, setView] = useState<ViewMode>(showAdminActions ? 'grid' : 'ladder')
+	// `roundStatus === 'open'` is the correct pre-deadline signal: the derived
+	// status flips to 'active' the moment the deadline passes (round-status.ts).
 	const isPreDeadline = data.roundStatus === 'open'
 	const submittedCount = data.players.filter((p) => p.hasSubmitted).length
 	const totalCount = data.players.length
@@ -49,7 +54,7 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 			}
 		>
 			{isPreDeadline ? (
-				<PreDeadlinePicksStatus data={data} />
+				<PreDeadlinePicksStatus data={data} showAdminActions={showAdminActions} gameId={gameId} />
 			) : (
 				<>
 					<div className="px-4 md:px-5 pt-3 flex flex-wrap items-center gap-2">
@@ -100,7 +105,15 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
  * picks are hidden anyway. Viewer can peek at the full ladder via the
  * inner "Show full standings" disclosure.
  */
-function PreDeadlinePicksStatus({ data }: { data: CupLadderData }) {
+function PreDeadlinePicksStatus({
+	data,
+	showAdminActions,
+	gameId,
+}: {
+	data: CupLadderData
+	showAdminActions?: boolean
+	gameId?: string
+}) {
 	const submitted = data.players.filter((p) => p.hasSubmitted)
 	const pending = data.players.filter((p) => !p.hasSubmitted)
 	const ordered = [...submitted, ...pending]
@@ -134,6 +147,14 @@ function PreDeadlinePicksStatus({ data }: { data: CupLadderData }) {
 							<span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
 								No picks
 							</span>
+						)}
+						{showAdminActions && gameId && !p.hasSubmitted && (
+							<AdminPlayerActions
+								gameId={gameId}
+								playerId={p.id}
+								userId={p.userId}
+								playerName={p.name}
+							/>
 						)}
 					</div>
 				))}
