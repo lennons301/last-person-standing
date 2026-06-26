@@ -83,7 +83,13 @@ export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<voi
  * DB state.
  */
 const PRE_SCHEDULE_LEAD_MS = 10 * 60 * 1000
-const PRE_SCHEDULE_LOOKAHEAD_MS = 7 * 24 * 60 * 60 * 1000
+// Only pre-schedule polls for fixtures kicking off in the next 2 days. daily-sync
+// runs daily, so each fixture still gets a kickoff trigger queued ~1-2 days out —
+// but a 7-day window meant every daily run re-published a week of fixtures, which
+// (with the QStash free tier's 1000 msgs/day cap) helped exhaust the quota and
+// stall the live-score chain. Keep the window just wide enough that the daily
+// cadence always covers the next day's fixtures.
+const PRE_SCHEDULE_LOOKAHEAD_MS = 2 * 24 * 60 * 60 * 1000
 
 export async function scheduleUpcomingFixturePolls(): Promise<void> {
 	const now = new Date()

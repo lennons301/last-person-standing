@@ -9,6 +9,10 @@ import { settleFixture } from '@/lib/game/settle'
 import { fixture, round } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
 
+// Live-poll chain interval. 90s keeps a full day of live coverage under the
+// QStash free-tier 1000 msgs/day cap (a 60s chain is ~1440/day on its own).
+const POLL_CHAIN_INTERVAL_SECONDS = 90
+
 export async function POST(request: Request) {
 	const secret = process.env.CRON_SECRET
 	if (!secret) {
@@ -129,12 +133,16 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 
 	// Self-perpetuating chain: GitHub Actions free-tier crons run every ~60-90
 	// minutes in practice (despite the `* * * * *` schedule), which is far too
-	// slow for live football scoring. To get true per-minute polling during
-	// match windows, this route enqueues the next call to itself via QStash
-	// with a 60s delay. The chain self-terminates when hasActiveFixture()
-	// returns false at the top of a future call. The hourly heartbeat from
-	// GitHub Actions restarts the chain after any breakage.
-	await enqueuePollScores(60)
+	// slow for live football scoring. To get near-real-time polling during match
+	// windows, this route enqueues the next call to itself via QStash. The chain
+	// self-terminates when hasActiveFixture() returns false at the top of a future
+	// call, and the GitHub Actions heartbeat restarts it after any breakage.
+	//
+	// Interval is 90s (not 60s) to respect the QStash free-tier cap of 1000
+	// msgs/day: a continuous 60s chain is ~1440/day and on its own blows the quota
+	// (which stalls the chain entirely). 90s keeps a full day of live coverage
+	// comfortably under the cap while staying near-real-time.
+	await enqueuePollScores(POLL_CHAIN_INTERVAL_SECONDS)
 
 	return NextResponse.json({ updated: totalUpdated, chained: true })
 }
