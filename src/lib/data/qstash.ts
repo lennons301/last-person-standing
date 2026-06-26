@@ -76,22 +76,41 @@ export async function enqueueAutoSubmit(
 }
 
 /**
- * Enqueue another call to /api/cron/poll-scores with the given delay (seconds).
- * Used to build a self-perpetuating chain during live match windows where
- * GitHub Actions free-tier scheduling can't deliver per-minute reliability.
- *
- * The route's CRON_SECRET bearer auth is satisfied via a forwarded
- * Authorization header (QStash sends the literal value verbatim — same
- * security envelope as a GH Actions secret).
+ * Default poll-chain interval (seconds). 90s (not 60s) so a full day of live
+ * coverage stays under the QStash free-tier 1000-msgs/day cap.
  */
-export async function enqueuePollScores(delaySeconds = 60): Promise<void> {
+export const POLL_CHAIN_INTERVAL_SECONDS = 90
+
+/**
+ * Enqueue the next /api/cron/poll-scores call to continue the live-score chain.
+ *
+ * SINGLE-CHAIN GUARANTEE: the next trigger is aligned to a fixed time grid and
+ * deduplicated on that grid slot. Every poll-scores invocation in the same slot
+ * — whether from one chain, several parallel chains, or a burst of fixture-kickoff
+ * triggers — enqueues the SAME (notBefore, deduplicationId), so QStash accepts
+ * exactly one. This collapses concurrent chains into a single chain.
+ *
+ * Without it, each invocation blindly enqueued a fresh link, so N starts → N
+ * self-perpetuating chains → N× the QStash quota. In production ~8 parallel
+ * chains burned ~480 msgs/hour and exhausted the daily cap in ~2h, which then
+ * 500s the chain entirely. The grid+dedup makes the chain converge back to one.
+ *
+ * The route's CRON_SECRET bearer auth is satisfied via a forwarded Authorization
+ * header (QStash sends the literal value verbatim — same envelope as a GH secret).
+ */
+export async function enqueuePollScores(delaySeconds = POLL_CHAIN_INTERVAL_SECONDS): Promise<void> {
 	const cronSecret = process.env.CRON_SECRET
 	if (!cronSecret) throw new Error('CRON_SECRET must be set to enqueue poll-scores')
+	// Next slot on the `delaySeconds` grid, at least one full interval out.
+	// Integer math (slotIndex * delaySeconds) keeps notBefore exactly grid-aligned.
+	const slotIndex = Math.ceil(Date.now() / (delaySeconds * 1000)) + 1
+	const nextSlotSec = slotIndex * delaySeconds
 	await client().publishJSON({
 		url: `${callbackBase()}/api/cron/poll-scores`,
 		body: { source: 'qstash-loop' },
 		headers: { Authorization: `Bearer ${cronSecret}` },
-		delay: delaySeconds,
+		notBefore: nextSlotSec,
+		deduplicationId: `poll-loop-${nextSlotSec}`,
 	})
 }
 

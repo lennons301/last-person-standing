@@ -78,23 +78,41 @@ describe('qstash helpers', () => {
 		expect(call.notBefore).toBe(Math.floor(notBefore.getTime() / 1000))
 	})
 
-	it('enqueuePollScores posts to /api/cron/poll-scores with bearer auth and default 60s delay', async () => {
+	it('enqueuePollScores posts to poll-scores grid-aligned with a slot dedup id', async () => {
 		process.env.CRON_SECRET = 'shh'
-		await enqueuePollScores()
-		expect(publishJSONMock).toHaveBeenCalledWith(
-			expect.objectContaining({
-				url: 'https://example.com/api/cron/poll-scores',
-				body: { source: 'qstash-loop' },
-				headers: { Authorization: 'Bearer shh' },
-				delay: 60,
-			}),
-		)
+		const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000_000_000) // fixed clock
+		try {
+			await enqueuePollScores() // default 90s interval
+			const call = publishJSONMock.mock.calls[0][0]
+			expect(call.url).toBe('https://example.com/api/cron/poll-scores')
+			expect(call.body).toEqual({ source: 'qstash-loop' })
+			expect(call.headers).toEqual({ Authorization: 'Bearer shh' })
+			expect(call.delay).toBeUndefined() // grid-aligned via notBefore, not delay
+			// notBefore is on the 90s grid and at least one interval in the future.
+			expect(call.notBefore % 90).toBe(0)
+			expect(call.notBefore * 1000).toBeGreaterThan(1_000_000_000_000)
+			// dedup id is tied to the slot → concurrent enqueues collapse to one.
+			expect(call.deduplicationId).toBe(`poll-loop-${call.notBefore}`)
+		} finally {
+			nowSpy.mockRestore()
+		}
 	})
 
-	it('enqueuePollScores honours a custom delay', async () => {
+	it('enqueuePollScores collapses concurrent chains: same slot → same dedup id', async () => {
 		process.env.CRON_SECRET = 'shh'
-		await enqueuePollScores(5)
-		expect(publishJSONMock.mock.calls[0][0].delay).toBe(5)
+		// Two calls at slightly different times within the same 90s slot must
+		// produce the identical deduplicationId so QStash accepts only one.
+		const spy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000_000_000)
+		try {
+			await enqueuePollScores()
+			spy.mockReturnValue(1_000_000_010_000) // +10s, same 90s slot
+			await enqueuePollScores()
+			const a = publishJSONMock.mock.calls[0][0].deduplicationId
+			const b = publishJSONMock.mock.calls[1][0].deduplicationId
+			expect(a).toBe(b)
+		} finally {
+			spy.mockRestore()
+		}
 	})
 
 	it('enqueuePollScores throws when CRON_SECRET is missing', async () => {
