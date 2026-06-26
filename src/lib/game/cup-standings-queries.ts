@@ -151,71 +151,73 @@ export async function getCupStandingsData(
 	const hideOpenPicks =
 		displayRound.status !== 'completed' && (!displayRound.deadline || now < displayRound.deadline)
 
-	const players: CupStandingsPlayer[] = g.players.map((p) => {
-		const isViewer = p.userId === viewerUserId
-		const myPicks = allPicks.filter((pk) => pk.gamePlayerId === p.id)
-		const picks: CupStandingsPick[] = myPicks.map((pk) => {
-			const fx = displayRound.fixtures.find((f) => f.id === pk.fixtureId)
-			if (!fx) {
-				// Shouldn't happen — pick referencing a fixture not in the round — but
-				// be defensive rather than throwing at the query layer.
+	const players: CupStandingsPlayer[] = g.players
+		.filter((p) => p.eliminatedReason !== 'admin_removed')
+		.map((p) => {
+			const isViewer = p.userId === viewerUserId
+			const myPicks = allPicks.filter((pk) => pk.gamePlayerId === p.id)
+			const picks: CupStandingsPick[] = myPicks.map((pk) => {
+				const fx = displayRound.fixtures.find((f) => f.id === pk.fixtureId)
+				if (!fx) {
+					// Shouldn't happen — pick referencing a fixture not in the round — but
+					// be defensive rather than throwing at the query layer.
+					return {
+						gamePlayerId: p.id,
+						confidenceRank: pk.confidenceRank ?? 0,
+						fixtureId: pk.fixtureId ?? '',
+						homeShort: '?',
+						awayShort: '?',
+						pickedTeamId: pk.teamId,
+						pickedSide: 'home' as const,
+						tierDifference: 0,
+						result: 'pending' as const,
+						livesGained: 0,
+						livesSpent: 0,
+						goalsCounted: pk.goalsScored ?? 0,
+					}
+				}
+				const pickedSide: 'home' | 'away' = pk.teamId === fx.homeTeamId ? 'home' : 'away'
+				const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
+				const tierFromPicked = pickedSide === 'home' ? tierFromHome : -tierFromHome
+				const hidden = hideOpenPicks && !isViewer
+				// Pending picks on in-progress fixtures project as winning / losing
+				// based on current score — same visual as a settled pick. Cup-
+				// specific outcomes (draw_success, saved_by_life) only appear post-
+				// settlement when the streak/lives state is known.
+				const mapped =
+					pk.result === 'pending'
+						? projectCupCellFromFixture(pickedSide, fx)
+						: mapPickResult(pk.result)
 				return {
 					gamePlayerId: p.id,
 					confidenceRank: pk.confidenceRank ?? 0,
-					fixtureId: pk.fixtureId ?? '',
-					homeShort: '?',
-					awayShort: '?',
+					fixtureId: fx.id,
+					homeShort: fx.homeTeam.shortName,
+					awayShort: fx.awayTeam.shortName,
 					pickedTeamId: pk.teamId,
-					pickedSide: 'home' as const,
-					tierDifference: 0,
-					result: 'pending' as const,
-					livesGained: 0,
-					livesSpent: 0,
+					pickedSide,
+					tierDifference: tierFromPicked,
+					result: hidden ? 'hidden' : mapped,
+					livesGained: hidden ? 0 : computeLivesGained(pk),
+					livesSpent: hidden ? 0 : computeLivesSpent(pk),
 					goalsCounted: pk.goalsScored ?? 0,
 				}
-			}
-			const pickedSide: 'home' | 'away' = pk.teamId === fx.homeTeamId ? 'home' : 'away'
-			const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
-			const tierFromPicked = pickedSide === 'home' ? tierFromHome : -tierFromHome
-			const hidden = hideOpenPicks && !isViewer
-			// Pending picks on in-progress fixtures project as winning / losing
-			// based on current score — same visual as a settled pick. Cup-
-			// specific outcomes (draw_success, saved_by_life) only appear post-
-			// settlement when the streak/lives state is known.
-			const mapped =
-				pk.result === 'pending'
-					? projectCupCellFromFixture(pickedSide, fx)
-					: mapPickResult(pk.result)
+			})
+			const streak = computeStreak(picks)
 			return {
-				gamePlayerId: p.id,
-				confidenceRank: pk.confidenceRank ?? 0,
-				fixtureId: fx.id,
-				homeShort: fx.homeTeam.shortName,
-				awayShort: fx.awayTeam.shortName,
-				pickedTeamId: pk.teamId,
-				pickedSide,
-				tierDifference: tierFromPicked,
-				result: hidden ? 'hidden' : mapped,
-				livesGained: hidden ? 0 : computeLivesGained(pk),
-				livesSpent: hidden ? 0 : computeLivesSpent(pk),
-				goalsCounted: pk.goalsScored ?? 0,
+				id: p.id,
+				userId: p.userId,
+				name: userNames.get(p.userId) ?? 'Player',
+				status: p.status,
+				livesRemaining: p.livesRemaining,
+				streak,
+				goals: picks.reduce((sum, pk) => sum + pk.goalsCounted, 0),
+				hasSubmitted: myPicks.length > 0,
+				eliminatedRoundNumber: null,
+				eliminatedRoundLabel: null,
+				picks,
 			}
 		})
-		const streak = computeStreak(picks)
-		return {
-			id: p.id,
-			userId: p.userId,
-			name: userNames.get(p.userId) ?? 'Player',
-			status: p.status,
-			livesRemaining: p.livesRemaining,
-			streak,
-			goals: picks.reduce((sum, pk) => sum + pk.goalsCounted, 0),
-			hasSubmitted: myPicks.length > 0,
-			eliminatedRoundNumber: null,
-			eliminatedRoundLabel: null,
-			picks,
-		}
-	})
 
 	const competitionType = g.competition.type as 'league' | 'knockout' | 'group_knockout'
 

@@ -688,6 +688,7 @@ export async function getTurboStandingsData(
 
 				return {
 					id: p.id,
+					userId: p.userId,
 					name: userNames.get(p.userId) ?? 'Player',
 					picks: cells,
 					streak,

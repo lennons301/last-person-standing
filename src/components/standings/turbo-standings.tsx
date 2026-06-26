@@ -6,6 +6,7 @@ import { useLiveGame } from '@/components/live/use-live-game'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { AdminPlayerActions } from './admin-player-actions'
 import { type LadderFixture, TurboLadder } from './turbo-ladder'
 import { TurboTimeline } from './turbo-timeline'
 
@@ -32,6 +33,12 @@ export interface TurboPickCell {
 
 export interface TurboPlayerRow {
 	id: string
+	/**
+	 * auth user id — needed by the admin remove-player control. Optional because
+	 * the share-image render path builds these rows without it (no admin UI
+	 * there); the live standings query (getTurboStandingsData) always sets it.
+	 */
+	userId?: string
 	name: string
 	picks: TurboPickCell[] // exactly numberOfPicks entries (or fewer if player hasn't submitted)
 	streak: number
@@ -70,7 +77,9 @@ export function TurboStandings({
 }: TurboStandingsProps) {
 	const initial = rounds[rounds.length - 1]?.id
 	const [roundId, setRoundId] = useState<string>(initial ?? '')
-	const [view, setView] = useState<ViewMode>('ladder')
+	// Admins default to the grid — the per-player make-picks / remove controls
+	// live in that view (the ladder is fixture-centric).
+	const [view, setView] = useState<ViewMode>(showAdminActions ? 'grid' : 'ladder')
 	const liveCtx = useLiveGame()
 	const round = rounds.find((r) => r.id === roundId) ?? rounds[rounds.length - 1]
 
@@ -347,17 +356,18 @@ function GridView({
 												no picks
 											</span>
 										)}
+										{/* Admin make-picks / remove controls — persist past the deadline
+										    (gating on 'open' hid them the moment the round went 'active'). */}
 										{showAdminActions &&
 											gameId &&
 											!player.hasSubmitted &&
-											roundStatus === 'open' && (
-												<a
-													href={`/game/${gameId}?actingAs=${player.id}`}
-													title={`Pick for ${player.name}`}
-													className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
-												>
-													✎
-												</a>
+											roundStatus !== 'completed' && (
+												<AdminPlayerActions
+													gameId={gameId}
+													playerId={player.id}
+													userId={player.userId}
+													playerName={player.name}
+												/>
 											)}
 									</td>
 									<td className="text-center px-2 py-2 font-display font-semibold text-lg">

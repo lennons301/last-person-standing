@@ -31,8 +31,28 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 
 	async function callAction(
 		p: AdminPayment,
-		action: 'dispute' | 'admin-rebuy' | 'mark-paid' | 'add-rebuy',
+		action: 'dispute' | 'admin-rebuy' | 'mark-paid' | 'add-rebuy' | 'mark-entry-paid',
 	) {
+		if (action === 'mark-entry-paid') {
+			// A late-added player has no payment row at all (synthetic "unpaid"
+			// row, id === null) so the id-based override can't reach them. Create a
+			// paid entry directly — same effect on the pot as confirming any entry.
+			const res = await fetch(`/api/games/${props.gameId}/admin/mark-entry-paid/${p.userId}`, {
+				method: 'POST',
+			})
+			if (res.ok) {
+				toast.success(`Marked ${p.userName} as paid`)
+				props.onChange?.()
+			} else {
+				const body = await res.json().catch(() => ({ error: 'failed' }))
+				toast.error(
+					body.error === 'entry-exists'
+						? `${p.userName} already has an entry`
+						: 'Failed to mark paid',
+				)
+			}
+			return
+		}
 		if (action === 'add-rebuy') {
 			// Record a rebuy (extra entry) at any stage — even after the rebuy
 			// window. Creates a pending entry; mark it paid (here or by the player)
@@ -169,6 +189,16 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 											/>
 										)}
 									</>
+								) : p.id === null && p.status === 'unpaid' ? (
+									// Late-added player with no payment row — let the admin record
+									// the entry fee as paid (mirrors pre-deadline entrants' Mark paid).
+									<button
+										type="button"
+										onClick={() => callAction(p, 'mark-entry-paid')}
+										className="rounded border border-[var(--alive)] px-3 py-1.5 text-xs font-semibold text-[var(--alive)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+									>
+										Mark paid
+									</button>
 								) : null}
 							</div>
 						}

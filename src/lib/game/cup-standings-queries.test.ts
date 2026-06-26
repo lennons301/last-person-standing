@@ -49,6 +49,47 @@ describe('getCupStandingsData', () => {
 		expect(await getCupStandingsData('g1', 'u1')).toBeNull()
 	})
 
+	it('excludes admin_removed players from the standings', async () => {
+		// An admin who removes a late/no-pick player must not see them linger in
+		// the cup ladder/grid — mirrors the classic + turbo standings filters.
+		const round = {
+			id: 'r1',
+			number: 1,
+			status: 'open' as const,
+			deadline: new Date('2026-05-01T12:00:00Z'),
+			fixtures: [],
+		}
+		findFirstMock.mockResolvedValue({
+			id: 'g',
+			currentRoundId: 'r1',
+			currentRound: round,
+			players: [
+				{ id: 'gp1', userId: 'u1', status: 'alive', livesRemaining: 3, eliminatedReason: null },
+				{
+					id: 'gp2',
+					userId: 'u2',
+					status: 'eliminated',
+					livesRemaining: 0,
+					eliminatedReason: 'admin_removed',
+				},
+			],
+			competition: { type: 'group_knockout', rounds: [round] },
+			modeConfig: { startingLives: 3, numberOfPicks: 6 },
+		})
+		findManyMock.mockResolvedValue([])
+		selectMock.mockReturnValue({
+			from: () => ({
+				where: () =>
+					Promise.resolve([
+						{ id: 'u1', name: 'Alice' },
+						{ id: 'u2', name: 'Bob' },
+					]),
+			}),
+		})
+		const result = await getCupStandingsData('g', 'u1')
+		expect(result?.players.map((p) => p.id)).toEqual(['gp1'])
+	})
+
 	it('falls back to the latest round with picks when game has completed (currentRound is null)', async () => {
 		// Game completed: applyAutoCompletion has set currentRoundId=null. The ladder
 		// should still render, showing the round where the trophy was decided.

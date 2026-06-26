@@ -3,6 +3,7 @@
 import { useLiveGame } from '@/components/live/use-live-game'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { cn } from '@/lib/utils'
+import { AdminPlayerActions } from './admin-player-actions'
 
 interface CupGridProps {
 	data: CupStandingsData
@@ -215,15 +216,22 @@ function PlayerRow({
 					</Badge>
 				)}
 				{!isOut && liveEliminated && <Badge tone="danger">OUT {roundLabel}</Badge>}
-				{showAdminActions && gameId && !isOut && !player.hasSubmitted && roundStatus === 'open' && (
-					<a
-						href={`/game/${gameId}?actingAs=${player.id}`}
-						title={`Pick for ${player.name}`}
-						className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted"
-					>
-						✎
-					</a>
-				)}
+				{/* Admin make-picks / remove controls. Gated on the round still being
+				    in play (NOT 'open' — the grid only renders post-deadline, when the
+				    derived status is 'active'; gating on 'open' made the ✎ unreachable)
+				    and the player having no picks yet. */}
+				{showAdminActions &&
+					gameId &&
+					!isOut &&
+					!player.hasSubmitted &&
+					roundStatus !== 'completed' && (
+						<AdminPlayerActions
+							gameId={gameId}
+							playerId={player.id}
+							userId={player.userId}
+							playerName={player.name}
+						/>
+					)}
 			</div>
 			<LivesCell remaining={player.livesRemaining} max={maxLives} />
 			<div className="text-center font-bold">{player.streak || '—'}</div>
