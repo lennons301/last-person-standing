@@ -17,7 +17,7 @@
  * Adding a new competition? Add a scenario for each supported mode here.
  * See `docs/superpowers/specs/2026-05-12-per-fixture-settlement-and-live-projection-design.md`.
  */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '@/lib/db'
 import { getCupLadderData, getCupStandingsData } from '@/lib/game/cup-standings-queries'
@@ -664,6 +664,75 @@ describe('lifecycle: cup-WC', () => {
 		const hero = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpHero) })
 		expect(hero?.livesRemaining).toBe(3)
 		expect(hero?.status).toBe('alive')
+	})
+
+	it('does NOT crown while a higher-confidence pick is unplayed — the 1f0d292d mis-crowning', async () => {
+		// Mirrors the incident: rank-1 pick on an UNPLAYED fixture, rank-2 on a
+		// played one. The gameweek is incomplete → no winner, no payout, game stays
+		// active. Guards against premature cup completion (e.g. stale code).
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const a = await makeTeam({ name: 'Aaa', shortName: 'AAA', fifaPot: 2 })
+		const b = await makeTeam({ name: 'Bbb', shortName: 'BBB', fifaPot: 2 })
+		const c = await makeTeam({ name: 'Ccc', shortName: 'CCC', fifaPot: 2 })
+		const d = await makeTeam({ name: 'Ddd', shortName: 'DDD', fifaPot: 2 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fxPlayed = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const fxUnplayed = await makeFixture({ roundId: r1, homeTeamId: c, awayTeamId: d })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2, startingLives: 0 },
+		})
+		const gp1 = await makePlayer({ gameId, userId: 'u-1', livesRemaining: 0 })
+		const gp2 = await makePlayer({ gameId, userId: 'u-2', livesRemaining: 0 })
+		// rank-1 on the UNPLAYED fixture for both; rank-2 on the played one.
+		await makePick({
+			gameId,
+			gamePlayerId: gp1,
+			roundId: r1,
+			teamId: c,
+			fixtureId: fxUnplayed,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gp1,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fxPlayed,
+			confidenceRank: 2,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gp2,
+			roundId: r1,
+			teamId: d,
+			fixtureId: fxUnplayed,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gp2,
+			roundId: r1,
+			teamId: b,
+			fixtureId: fxPlayed,
+			confidenceRank: 2,
+		})
+
+		await finishFixture(fxPlayed, 1, 0)
+		await settleFixture(fxPlayed)
+
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active') // gameweek incomplete → not crowned
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts).toHaveLength(0)
+		// the rank-2 (played) pick stays pending behind the unplayed rank-1.
+		const r2 = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gp1), eq(pick.confidenceRank, 2)),
+		})
+		expect(r2?.result).toBe('pending')
 	})
 
 	it('cup re-eval is idempotent — re-settling the same fixture changes nothing', async () => {

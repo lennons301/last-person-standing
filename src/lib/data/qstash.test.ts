@@ -20,7 +20,25 @@ describe('qstash helpers', () => {
 	beforeEach(() => {
 		publishJSONMock.mockClear()
 		process.env.QSTASH_TOKEN = 'qs-token'
+		// Existing cases exercise the VERCEL_URL fallback (stable origin unset).
+		process.env.NEXT_PUBLIC_APP_URL = ''
 		process.env.VERCEL_URL = 'https://example.com'
+	})
+
+	it('prefers the stable NEXT_PUBLIC_APP_URL over the per-deployment VERCEL_URL', async () => {
+		// The fix: jobs must target the stable production origin so a job queued
+		// by an old deployment still runs CURRENT code (not the old deployment's).
+		process.env.NEXT_PUBLIC_APP_URL = 'https://last-person-standing.app'
+		process.env.VERCEL_URL = 'https://last-person-standing-oldhash.vercel.app'
+		process.env.CRON_SECRET = 'shh'
+		await enqueuePollScoresAt(new Date('2026-06-26T18:50:00Z'), 'dedup-1')
+		await enqueueProcessRound('g', 'r')
+		expect(publishJSONMock.mock.calls[0][0].url).toBe(
+			'https://last-person-standing.app/api/cron/poll-scores',
+		)
+		expect(publishJSONMock.mock.calls[1][0].url).toBe(
+			'https://last-person-standing.app/api/cron/qstash-handler',
+		)
 	})
 
 	it('enqueues a process-round message with a 2-minute delay', async () => {

@@ -171,6 +171,21 @@ export async function checkCupCompletion(gameId: string): Promise<CompletionChec
 		where: eq(pick.gameId, gameId),
 		with: { fixture: true },
 	})
+
+	// Authoritative invariant guard, independent of the caller's fixture-derived
+	// `allFinished` gate: a cup game is a single gameweek and may only be crowned
+	// once EVERY pick has a final result. If any pick is still `pending`, a fixture
+	// hasn't been played/settled — crowning now would decide the game on an
+	// incomplete gameweek (the 1f0d292d incident, where stale code crowned a
+	// winner whose rank-1 pick hadn't kicked off). This holds even if `allFinished`
+	// is satisfied wrongly (e.g. stale code / transient fixture state).
+	const pendingCount = allPicks.filter((p) => p.result === 'pending').length
+	if (pendingCount > 0) {
+		console.warn(
+			`[checkCupCompletion] refusing to complete game ${gameId}: ${pendingCount} pending pick(s) — gameweek incomplete`,
+		)
+		return { completed: false, winnerPlayerIds: [] }
+	}
 	const players: WipeoutPlayerInput[] = allPlayers.map((p) => ({
 		gamePlayerId: p.id,
 		livesRemaining: p.livesRemaining,
