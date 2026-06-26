@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { PaymentReminderButton } from './payment-reminder'
 import { type AdminPaymentStatus, PaymentStatusChip } from './payment-status-chip'
@@ -20,6 +21,9 @@ interface PaymentsPanelProps {
 	gameId: string
 	gameName: string
 	inviteCode: string
+	entryFee: string | null
+	/** Game lifecycle status — the entry fee can't be edited once 'completed'. */
+	gameStatus: string
 	totals: { confirmed: string; pending: string; total: string }
 	payments: AdminPayment[]
 	onChange?: () => void
@@ -133,6 +137,13 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 				</div>
 			</div>
 
+			<EntryFeeEditor
+				gameId={props.gameId}
+				entryFee={props.entryFee}
+				editable={props.gameStatus !== 'completed'}
+				onChange={props.onChange}
+			/>
+
 			<div className="overflow-x-auto">
 				<div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
 					All payments
@@ -206,6 +217,107 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 				))}
 			</div>
 		</section>
+	)
+}
+
+/**
+ * Edit the per-player entry fee mid-game. Saving updates `game.entryFee` AND
+ * bumps every existing non-refunded payment to the new fee, so the pot resizes
+ * to match (the pot is derived from paid amounts). Hidden as read-only once the
+ * game is completed.
+ */
+function EntryFeeEditor({
+	gameId,
+	entryFee,
+	editable,
+	onChange,
+}: {
+	gameId: string
+	entryFee: string | null
+	editable: boolean
+	onChange?: () => void
+}) {
+	const current = entryFee ?? '0.00'
+	const [editing, setEditing] = useState(false)
+	const [value, setValue] = useState(current)
+	const [saving, setSaving] = useState(false)
+
+	async function save() {
+		const num = Number.parseFloat(value)
+		if (!Number.isFinite(num) || num < 0) {
+			toast.error('Enter a valid amount')
+			return
+		}
+		setSaving(true)
+		const res = await fetch(`/api/games/${gameId}/admin/entry-fee`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ entryFee: value }),
+		})
+		setSaving(false)
+		if (res.ok) {
+			toast.success(`Entry fee set to £${num.toFixed(2)} — existing entries updated`)
+			setEditing(false)
+			onChange?.()
+		} else {
+			const body = await res.json().catch(() => ({ error: 'failed' }))
+			toast.error(
+				body.error === 'game-completed'
+					? "Can't change the fee on a finished game"
+					: 'Failed to update entry fee',
+			)
+		}
+	}
+
+	return (
+		<div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
+			<div className="text-xs text-muted-foreground">
+				Entry fee <span className="font-semibold text-foreground">£{current}</span>
+				<span className="ml-1">per player</span>
+			</div>
+			{editable &&
+				(editing ? (
+					<div className="flex items-center gap-1">
+						<span className="text-xs text-muted-foreground">£</span>
+						<input
+							type="number"
+							min="0"
+							step="0.01"
+							inputMode="decimal"
+							value={value}
+							onChange={(e) => setValue(e.target.value)}
+							aria-label="New entry fee"
+							className="w-20 rounded border border-border px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						/>
+						<button
+							type="button"
+							onClick={save}
+							disabled={saving}
+							className="rounded border border-[var(--alive)] px-3 py-1.5 text-xs font-semibold text-[var(--alive)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						>
+							Save
+						</button>
+						<button
+							type="button"
+							onClick={() => {
+								setEditing(false)
+								setValue(current)
+							}}
+							className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						>
+							Cancel
+						</button>
+					</div>
+				) : (
+					<button
+						type="button"
+						onClick={() => setEditing(true)}
+						className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+					>
+						Edit
+					</button>
+				))}
+		</div>
 	)
 }
 

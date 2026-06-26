@@ -12,6 +12,8 @@ const baseProps = {
 	gameId: 'g1',
 	gameName: 'Cup Tuesday',
 	inviteCode: 'ABC123',
+	entryFee: '10.00',
+	gameStatus: 'active',
 	totals: { confirmed: '30.00', pending: '0.00', total: '30.00' },
 }
 
@@ -70,5 +72,44 @@ describe('PaymentsPanel synthetic (no-payment) rows', () => {
 		render(<PaymentsPanel {...baseProps} payments={[row({ id: 'p1', status: 'paid' })]} />)
 		expect(screen.queryByRole('button', { name: 'Mark paid' })).toBeNull()
 		expect(screen.getByRole('button', { name: 'Dispute' })).toBeTruthy()
+	})
+})
+
+describe('PaymentsPanel entry-fee editor', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks()
+	})
+	afterEach(() => {
+		vi.restoreAllMocks()
+	})
+
+	it('shows the current entry fee', () => {
+		render(<PaymentsPanel {...baseProps} entryFee="10.00" payments={[]} />)
+		expect(screen.getByText('£10.00')).toBeTruthy()
+	})
+
+	it('posts the new fee to the entry-fee endpoint on save', async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, 'fetch')
+			.mockResolvedValue(
+				new Response(JSON.stringify({ ok: true, entryFee: '15.00' }), { status: 200 }),
+			)
+		render(<PaymentsPanel {...baseProps} entryFee="10.00" payments={[]} />)
+		fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+		fireEvent.change(screen.getByLabelText('New entry fee'), { target: { value: '15' } })
+		fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+		await waitFor(() =>
+			expect(fetchMock).toHaveBeenCalledWith('/api/games/g1/admin/entry-fee', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ entryFee: '15' }),
+			}),
+		)
+	})
+
+	it('hides the Edit control once the game is completed', () => {
+		render(<PaymentsPanel {...baseProps} gameStatus="completed" entryFee="10.00" payments={[]} />)
+		expect(screen.getByText('£10.00')).toBeTruthy()
+		expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
 	})
 })
