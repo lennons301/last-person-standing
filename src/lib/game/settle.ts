@@ -453,6 +453,20 @@ async function checkAndMaybeCompleteOrAdvance(
 		return
 	} else if (g.gameMode === 'turbo') {
 		if (!allFinished) return
+		// Authoritative invariant guard (independent of the fixture-derived
+		// `allFinished`): never crown while any pick in the round is still
+		// `pending`. Mirrors the cup guard — protects against stale code or a
+		// transient fixture state satisfying `allFinished` wrongly.
+		const roundPicks = await db.query.pick.findMany({
+			where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
+		})
+		const pendingTurbo = roundPicks.filter((p) => p.result === 'pending').length
+		if (pendingTurbo > 0) {
+			console.warn(
+				`[checkAndMaybeCompleteOrAdvance] refusing to complete turbo game ${gameId}: ${pendingTurbo} pending pick(s)`,
+			)
+			return
+		}
 		const turboPlayerResults = await collectTurboPlayerResults(gameId, roundId)
 		const completion = checkTurboCompletion(turboPlayerResults)
 		await applyAutoCompletion(gameId, completion.winnerPlayerIds, { refund: completion.refund })

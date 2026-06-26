@@ -5,11 +5,34 @@ export type QStashJob =
 	| { type: 'deadline_reminder'; gameId: string; roundId: string; window: '24h' | '2h' }
 	| { type: 'auto_submit'; gamePlayerId: string; roundId: string; teamId: string }
 
+/**
+ * Stable callback origin for QStash jobs.
+ *
+ * MUST prefer the stable production domain (`NEXT_PUBLIC_APP_URL`) over
+ * `VERCEL_URL`. `VERCEL_URL` is the *per-deployment* immutable URL
+ * (`…-<hash>.vercel.app`); pinning callbacks to it means a job scheduled by an
+ * old deployment fires against THAT deployment's code when it runs. Because
+ * fixture-kickoff polls are pre-scheduled up to 7 days ahead (see
+ * `scheduleUpcomingFixturePolls`) and the poll chain self-perpetuates, a fix
+ * deployed today can be silently undone for up to a week by stale jobs still
+ * hitting the old deployment. This caused a cup game to be crowned mid-gameweek
+ * by week-old buggy code even though current production was correct.
+ *
+ * `NEXT_PUBLIC_APP_URL` is the custom production domain (last-person-standing.app)
+ * and always resolves to the current production deployment, so every job — no
+ * matter which deployment queued it — runs current code. Falls back to
+ * `VERCEL_URL` only when the stable origin isn't configured (local/dev).
+ */
+function callbackBase(): string {
+	const base = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL || ''
+	if (!base) {
+		throw new Error('NEXT_PUBLIC_APP_URL (or VERCEL_URL) must be set to enqueue QStash messages')
+	}
+	return base.startsWith('http') ? base : `https://${base}`
+}
+
 function handlerUrl(): string {
-	const base = process.env.VERCEL_URL ?? ''
-	if (!base) throw new Error('VERCEL_URL must be set to enqueue QStash messages')
-	const withScheme = base.startsWith('http') ? base : `https://${base}`
-	return `${withScheme}/api/cron/qstash-handler`
+	return `${callbackBase()}/api/cron/qstash-handler`
 }
 
 function client(): Client {
@@ -62,13 +85,10 @@ export async function enqueueAutoSubmit(
  * security envelope as a GH Actions secret).
  */
 export async function enqueuePollScores(delaySeconds = 60): Promise<void> {
-	const base = process.env.VERCEL_URL ?? ''
-	if (!base) throw new Error('VERCEL_URL must be set to enqueue poll-scores')
 	const cronSecret = process.env.CRON_SECRET
 	if (!cronSecret) throw new Error('CRON_SECRET must be set to enqueue poll-scores')
-	const withScheme = base.startsWith('http') ? base : `https://${base}`
 	await client().publishJSON({
-		url: `${withScheme}/api/cron/poll-scores`,
+		url: `${callbackBase()}/api/cron/poll-scores`,
 		body: { source: 'qstash-loop' },
 		headers: { Authorization: `Bearer ${cronSecret}` },
 		delay: delaySeconds,
@@ -88,13 +108,10 @@ export async function enqueuePollScores(delaySeconds = 60): Promise<void> {
  * default, so two bootstrap runs within that window won't double up.
  */
 export async function enqueuePollScoresAt(notBefore: Date, dedupId?: string): Promise<void> {
-	const base = process.env.VERCEL_URL ?? ''
-	if (!base) throw new Error('VERCEL_URL must be set to enqueue poll-scores')
 	const cronSecret = process.env.CRON_SECRET
 	if (!cronSecret) throw new Error('CRON_SECRET must be set to enqueue poll-scores')
-	const withScheme = base.startsWith('http') ? base : `https://${base}`
 	await client().publishJSON({
-		url: `${withScheme}/api/cron/poll-scores`,
+		url: `${callbackBase()}/api/cron/poll-scores`,
 		body: { source: 'fixture-kickoff' },
 		headers: { Authorization: `Bearer ${cronSecret}` },
 		notBefore: Math.floor(notBefore.getTime() / 1000),
