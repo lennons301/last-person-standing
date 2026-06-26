@@ -128,13 +128,13 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 	}
 
 	// Self-perpetuating chain: GitHub Actions free-tier crons run every ~60-90
-	// minutes in practice (despite the `* * * * *` schedule), which is far too
-	// slow for live football scoring. To get true per-minute polling during
-	// match windows, this route enqueues the next call to itself via QStash
-	// with a 60s delay. The chain self-terminates when hasActiveFixture()
-	// returns false at the top of a future call. The hourly heartbeat from
-	// GitHub Actions restarts the chain after any breakage.
-	await enqueuePollScores(60)
+	// minutes in practice (despite the `* * * * *` schedule), too slow for live
+	// football scoring. This route enqueues the next call to itself via QStash to
+	// poll at the chain interval during match windows; it self-terminates when
+	// hasActiveFixture() returns false on a future call, and the GitHub Actions
+	// heartbeat restarts it after any breakage. enqueuePollScores grid-aligns +
+	// dedups the next link, so concurrent chains collapse into one (quota-safe).
+	await enqueuePollScores()
 
 	return NextResponse.json({ updated: totalUpdated, chained: true })
 }
