@@ -406,4 +406,23 @@ describe('checkCupCompletion (single gameweek — longest streak)', () => {
 		const result = await checkCupCompletion('g1')
 		expect(result.completed).toBe(false)
 	})
+
+	it('refuses to complete while ANY pick is still pending — the 1f0d292d invariant guard', async () => {
+		// Even with settled picks present, a single pending pick means the
+		// gameweek is incomplete → no crown. Independent of the caller's
+		// allFinished gate (which stale code defeated in prod).
+		dbMock.query.gamePlayer.findMany.mockResolvedValue([
+			{ id: 'p1', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+			{ id: 'p2', status: 'eliminated', eliminatedRoundId: 'r1', livesRemaining: 0 },
+		] as never)
+		dbMock.query.pick.findMany.mockResolvedValue([
+			cupPick('p1', 1, 'win', 3),
+			cupPick('p2', 1, 'pending'), // a fixture hasn't been played yet
+			cupPick('p2', 2, 'win', 5),
+		] as never)
+
+		const result = await checkCupCompletion('g1')
+		expect(result.completed).toBe(false)
+		expect(result.winnerPlayerIds).toEqual([])
+	})
 })
