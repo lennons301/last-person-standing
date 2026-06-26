@@ -192,6 +192,8 @@ export function GameDetailView({
 							gameId={game.id}
 							gameName={game.name}
 							inviteCode={game.inviteCode}
+							entryFee={game.entryFee}
+							gameStatus={game.status}
 							totals={game.pot}
 							payments={game.adminPayments}
 							onChange={refresh}
