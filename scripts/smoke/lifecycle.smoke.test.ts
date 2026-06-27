@@ -735,6 +735,123 @@ describe('lifecycle: cup-WC', () => {
 		expect(r2?.result).toBe('pending')
 	})
 
+	it('does NOT eliminate a player whose streak breaks — a frozen streak still competes', async () => {
+		// The 1f0d292d "Feargal" incident: a played losing pick broke his streak,
+		// so he was marked eliminated mid-gameweek. But cup is won by the LONGEST
+		// streak (checkCupCompletion counts every player, broken or not), and other
+		// still-unplayed results may leave his frozen streak the winner. Cup must
+		// never eliminate on a streak break — it ranks by streak, like turbo.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const a = await makeTeam({ name: 'Aaa', shortName: 'AAA', fifaPot: 2 })
+		const b = await makeTeam({ name: 'Bbb', shortName: 'BBB', fifaPot: 2 })
+		const c = await makeTeam({ name: 'Ccc', shortName: 'CCC', fifaPot: 2 })
+		const d = await makeTeam({ name: 'Ddd', shortName: 'DDD', fifaPot: 2 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fxPlayed = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const fxUnplayed = await makeFixture({ roundId: r1, homeTeamId: c, awayTeamId: d })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2, startingLives: 0 },
+		})
+		const gpHero = await makePlayer({ gameId, userId: 'u-hero', livesRemaining: 0 })
+		const gpFiller = await makePlayer({ gameId, userId: 'u-filler', livesRemaining: 0 })
+		// hero rank-1 on the PLAYED fixture (will LOSE → streak breaks at rank 1);
+		// rank-2 on the unplayed fixture keeps the gameweek incomplete.
+		await makePick({
+			gameId,
+			gamePlayerId: gpHero,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fxPlayed,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpHero,
+			roundId: r1,
+			teamId: c,
+			fixtureId: fxUnplayed,
+			confidenceRank: 2,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpFiller,
+			roundId: r1,
+			teamId: d,
+			fixtureId: fxUnplayed,
+			confidenceRank: 1,
+		})
+
+		// AAA (hero's rank-1) LOSES 0-2 → streak broken at rank 1.
+		await finishFixture(fxPlayed, 0, 2)
+		await settleFixture(fxPlayed)
+
+		const heroPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpHero), eq(pick.confidenceRank, 1)),
+		})
+		expect(heroPick?.result).toBe('loss') // the streak did break...
+		const hero = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpHero) })
+		expect(hero?.status).toBe('alive') // ...but the player is NOT eliminated
+	})
+
+	it('self-heals: re-settle revives a cup player wrongly eliminated by a streak break, but keeps admin removals', async () => {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const a = await makeTeam({ name: 'Aaa', shortName: 'AAA', fifaPot: 2 })
+		const b = await makeTeam({ name: 'Bbb', shortName: 'BBB', fifaPot: 2 })
+		const r1 = await makeRound(compId, { number: 1, status: 'open' })
+		const fxPlayed = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const fxUnplayed = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2, startingLives: 0 },
+		})
+		const gpStreak = await makePlayer({ gameId, userId: 'u-streak', livesRemaining: 0 })
+		const gpAdmin = await makePlayer({ gameId, userId: 'u-admin-rm', livesRemaining: 0 })
+		// Simulate the old buggy state: both pre-marked eliminated. Only the
+		// admin-removed one should stay eliminated after re-settle.
+		await db
+			.update(gamePlayer)
+			.set({ status: 'eliminated', eliminatedRoundId: r1, eliminatedReason: null })
+			.where(eq(gamePlayer.id, gpStreak))
+		await db
+			.update(gamePlayer)
+			.set({ status: 'eliminated', eliminatedRoundId: r1, eliminatedReason: 'admin_removed' })
+			.where(eq(gamePlayer.id, gpAdmin))
+		await makePick({
+			gameId,
+			gamePlayerId: gpStreak,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fxPlayed,
+			confidenceRank: 1,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpStreak,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fxUnplayed,
+			confidenceRank: 2,
+		})
+
+		await finishFixture(fxPlayed, 2, 0)
+		await settleFixture(fxPlayed)
+
+		const streak = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpStreak) })
+		expect(streak?.status).toBe('alive') // streak-break elimination undone
+		expect(streak?.eliminatedRoundId).toBeNull()
+		const admin = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpAdmin) })
+		expect(admin?.status).toBe('eliminated') // admin removal preserved
+	})
+
 	it('cup re-eval is idempotent — re-settling the same fixture changes nothing', async () => {
 		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
 		const t1 = await makeTeam({ name: 'X', shortName: 'X', fifaPot: 2 })

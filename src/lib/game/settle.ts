@@ -367,18 +367,31 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 				.where(eq(pick.id, target.pickRow.id))
 		}
 
-		// Persist lives + eliminated state.
-		const updates: { livesRemaining: number; status?: 'eliminated'; eliminatedRoundId?: string } = {
-			livesRemaining: evalResult.finalLives,
+		// Persist lives. A broken streak does NOT eliminate a cup player: cup is
+		// won by the LONGEST streak (checkCupCompletion ranks every player, broken
+		// or not — exactly like turbo), so a frozen streak can still be the winning
+		// one. Marking it 'eliminated' wrongly drops the player from the
+		// in-contention standings/podium (the 1f0d292d "Feargal" incident, where
+		// the current leader's frozen streak of 4 was shown as OUT). The winner is
+		// crowned only at gameweek completion (applyAutoCompletion → 'winner');
+		// every other cup player stays 'alive'. `evalResult.eliminated` still drives
+		// the lives/goals freeze inside evaluateCupPicks — it just no longer touches
+		// player status here.
+		const updates: {
+			livesRemaining: number
+			status?: 'alive'
+			eliminatedRoundId?: string | null
+		} = { livesRemaining: evalResult.finalLives }
+		// Self-heal: revive any cup player a previous (buggy) settle wrongly marked
+		// eliminated on a streak break. Admin removals (eliminatedReason
+		// 'admin_removed') are a deliberate action and must persist.
+		const wronglyEliminated =
+			player.status === 'eliminated' && player.eliminatedReason !== 'admin_removed'
+		if (wronglyEliminated) {
+			updates.status = 'alive'
+			updates.eliminatedRoundId = null
 		}
-		if (evalResult.eliminated) {
-			updates.status = 'eliminated'
-			updates.eliminatedRoundId = roundId
-		}
-		if (
-			player.livesRemaining !== evalResult.finalLives ||
-			(evalResult.eliminated && player.status === 'alive')
-		) {
+		if (player.livesRemaining !== evalResult.finalLives || wronglyEliminated) {
 			anyChanged = true
 			await db.update(gamePlayer).set(updates).where(eq(gamePlayer.id, player.id))
 		}
