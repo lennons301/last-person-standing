@@ -13,11 +13,12 @@ describe('roundLabel', () => {
 		expect(roundLabel('group_knockout', 3)).toBe('MD3')
 	})
 
-	it('formats group_knockout knockout rounds with stage names', () => {
-		expect(roundLabel('group_knockout', 4)).toBe('R16')
-		expect(roundLabel('group_knockout', 5)).toBe('QF')
-		expect(roundLabel('group_knockout', 6)).toBe('SF')
-		expect(roundLabel('group_knockout', 7)).toBe('F')
+	it('formats the WC-2026 48-team knockout rounds (Round of 32 first)', () => {
+		expect(roundLabel('group_knockout', 4)).toBe('R32')
+		expect(roundLabel('group_knockout', 5)).toBe('R16')
+		expect(roundLabel('group_knockout', 6)).toBe('QF')
+		expect(roundLabel('group_knockout', 7)).toBe('SF')
+		expect(roundLabel('group_knockout', 8)).toBe('F')
 	})
 
 	it('formats single-elim knockout rounds as R{n}', () => {
@@ -25,8 +26,8 @@ describe('roundLabel', () => {
 		expect(roundLabel('knockout', 2)).toBe('R2')
 	})
 
-	it('falls back to R{n} for out-of-range group_knockout rounds', () => {
-		expect(roundLabel('group_knockout', 8)).toBe('R8')
+	it('falls back to R{n} beyond the Final (round 9+)', () => {
+		expect(roundLabel('group_knockout', 9)).toBe('R9')
 	})
 })
 
@@ -39,10 +40,11 @@ describe('roundLabelLong', () => {
 		expect(roundLabelLong('group_knockout', 1)).toBe('Matchday 1')
 	})
 
-	it('formats group_knockout knockout rounds with full stage names', () => {
-		expect(roundLabelLong('group_knockout', 4)).toBe('Round of 16')
-		expect(roundLabelLong('group_knockout', 5)).toBe('Quarter-final')
-		expect(roundLabelLong('group_knockout', 6)).toBe('Semi-final')
-		expect(roundLabelLong('group_knockout', 7)).toBe('Final')
+	it('formats the WC-2026 knockout rounds with full names (Round of 32 first)', () => {
+		expect(roundLabelLong('group_knockout', 4)).toBe('Round of 32')
+		expect(roundLabelLong('group_knockout', 5)).toBe('Round of 16')
+		expect(roundLabelLong('group_knockout', 6)).toBe('Quarter-finals')
+		expect(roundLabelLong('group_knockout', 7)).toBe('Semi-finals')
+		expect(roundLabelLong('group_knockout', 8)).toBe('Final')
 	})
 })
