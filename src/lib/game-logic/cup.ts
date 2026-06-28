@@ -1,15 +1,16 @@
 export interface CupPickInput {
 	confidenceRank: number
 	pickedTeam: 'home' | 'away'
+	// The 90-MINUTE (regulation) score. Cup is scored on the 90-minute result —
+	// NOT the qualification outcome — so a handicapped underdog that is level at
+	// 90 minutes survives the round even if the tie is then lost in ET/penalties
+	// (the same "draw and survive" behaviour the group stage had). The caller is
+	// responsible for passing the regulation score; the ET/penalty `winner` is
+	// intentionally not an input here (that signal belongs to classic's
+	// "to qualify" logic).
 	homeScore: number
 	awayScore: number
 	tierDifference: number // from HOME team perspective: positive = home higher tier
-	/**
-	 * Authoritative winner for a knockout fixture decided on ET/penalties (level
-	 * full-time score). When set it overrides the score: the match is a win for
-	 * that side, never a draw. Null/undefined → use the score.
-	 */
-	winner?: 'home' | 'away' | null
 }
 
 export interface CupPickResult {
@@ -49,11 +50,11 @@ export function evaluateCupPicks(picks: CupPickInput[], startingLives: number): 
 
 		const pickedTeamGoals = pick.pickedTeam === 'home' ? pick.homeScore : pick.awayScore
 		const opponentGoals = pick.pickedTeam === 'home' ? pick.awayScore : pick.homeScore
-		// A recorded winner (ET/penalties) is authoritative — the match is a win
-		// for that side and never a draw, regardless of the level full-time score.
-		const pickedTeamWon =
-			pick.winner != null ? pick.winner === pick.pickedTeam : pickedTeamGoals > opponentGoals
-		const isDraw = pick.winner != null ? false : pickedTeamGoals === opponentGoals
+		// Scored on the 90-minute result only. A level 90-minute score is a draw
+		// (→ underdog survives via draw_success) regardless of any ET/penalty
+		// outcome — the qualification result is intentionally not considered here.
+		const pickedTeamWon = pickedTeamGoals > opponentGoals
+		const isDraw = pickedTeamGoals === opponentGoals
 
 		let result: CupPickResult['result'] = 'loss'
 		let livesGained = 0

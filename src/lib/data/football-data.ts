@@ -49,7 +49,13 @@ interface FdMatch {
 	// `winner` is the authoritative outcome ('HOME_TEAM' | 'AWAY_TEAM' | 'DRAW' |
 	// null). For knockout ties decided in ET/penalties, fullTime stays level but
 	// winner names the side that advanced.
-	score: { winner?: string | null; fullTime: { home: number | null; away: number | null } }
+	score: {
+		winner?: string | null
+		// `fullTime` includes extra time (and, for shootouts, penalties).
+		// `regularTime` is the 90-minute score (present for ET/penalty matches).
+		fullTime: { home: number | null; away: number | null }
+		regularTime?: { home: number | null; away: number | null }
+	}
 }
 
 /** Map football-data `score.winner` to our home/away marker (DRAW/null → null). */
@@ -215,6 +221,8 @@ export class FootballDataAdapter implements CompetitionAdapter {
 							status: this.mapStatus(m.status),
 							homeScore: m.score.fullTime.home,
 							awayScore: m.score.fullTime.away,
+							regularHomeScore: m.score.regularTime?.home ?? null,
+							regularAwayScore: m.score.regularTime?.away ?? null,
 							winner: mapWinner(m.score.winner),
 						}),
 					),
@@ -241,6 +249,8 @@ export class FootballDataAdapter implements CompetitionAdapter {
 				externalId: String(m.id),
 				homeScore: m.score.fullTime.home as number,
 				awayScore: m.score.fullTime.away as number,
+				regularHomeScore: m.score.regularTime?.home ?? null,
+				regularAwayScore: m.score.regularTime?.away ?? null,
 				status: m.status === 'FINISHED' ? ('finished' as const) : ('live' as const),
 				winner: mapWinner(m.score.winner),
 			}))

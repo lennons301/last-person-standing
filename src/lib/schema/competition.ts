@@ -92,10 +92,24 @@ export const fixture = pgTable('fixture', {
 		.notNull()
 		.references(() => team.id),
 	kickoff: timestamp('kickoff'),
+	// Final score as reported by the source. NOTE: for knockout matches this is
+	// football-data's `fullTime`, which INCLUDES extra time (and, for shootouts,
+	// the penalty score). Classic "to qualify" scoring relies on `winner` (below),
+	// not this value, so that's fine for classic. Cup scoring uses the 90-minute
+	// score below instead.
 	homeScore: integer('home_score'),
 	awayScore: integer('away_score'),
+	// 90-minute (regulation) score — football-data's `regularTime`. Null for
+	// sources/matches that don't report it (regulation-only matches have it equal
+	// to the full-time score). Cup mode scores on THIS so an underdog level at 90
+	// minutes survives even if the tie is then lost in ET/penalties; the group
+	// stage already scored on the 90-minute result, and this keeps knockouts
+	// consistent. Classic is unaffected — it keeps using `winner`.
+	regularHomeScore: integer('regular_home_score'),
+	regularAwayScore: integer('regular_away_score'),
 	// Authoritative winner for knockout ties decided in ET/penalties (full-time
 	// score stays level). Null for draws / regulation results / non-knockout.
+	// Classic "to qualify" scoring is driven by this.
 	winner: text('winner').$type<'home' | 'away'>(),
 	status: fixtureStatusEnum('status').notNull().default('scheduled'),
 	// Source-specific id from the adapter that originally inserted the fixture.
