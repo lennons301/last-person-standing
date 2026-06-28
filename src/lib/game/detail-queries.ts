@@ -17,6 +17,12 @@ import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { evaluateCupPicks } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { calculatePot, expectedEntryCount } from '@/lib/game-logic/prizes'
+import {
+	type FixtureOutcomes,
+	type Outcome,
+	type WinScenarios,
+	winScenarios,
+} from '@/lib/game-logic/win-scenarios'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, type gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
@@ -789,6 +795,41 @@ export async function getTurboStandingsData(
 			}))
 			fixtures.sort((a, b) => a.avgRank - b.avgRank)
 
+			// Win scenarios — only once the deadline has passed. Pre-deadline picks
+			// are hidden, and "who needs what to win" would leak them, so the engine
+			// is skipped while the round is open.
+			let scenarios: WinScenarios | null = null
+			if (!isRoundOpen) {
+				const roundPicks = gameData.picks.filter((pk) => pk.roundId === r.id && pk.fixtureId)
+				const fixtureOutcomes: FixtureOutcomes = {}
+				for (const pk of roundPicks) {
+					const fx = pk.fixture
+					if (!fx || !pk.fixtureId || pk.fixtureId in fixtureOutcomes) continue
+					// Only a FINISHED fixture is a known outcome; in-progress fixtures are
+					// still undecided (treated as unplayed for scenario purposes).
+					fixtureOutcomes[pk.fixtureId] =
+						fx.status === 'finished' && fx.homeScore != null && fx.awayScore != null
+							? fx.homeScore > fx.awayScore
+								? 'home_win'
+								: fx.awayScore > fx.homeScore
+									? 'away_win'
+									: 'draw'
+							: null
+				}
+				const scenarioPlayers = gameData.players.map((p) => ({
+					gamePlayerId: p.id,
+					livesRemaining: 0,
+					picks: roundPicks
+						.filter((pk) => pk.gamePlayerId === p.id)
+						.map((pk) => ({
+							rank: pk.confidenceRank ?? 0,
+							fixtureId: pk.fixtureId as string,
+							predictedResult: (pk.predictedResult ?? 'draw') as Outcome,
+						})),
+				}))
+				scenarios = winScenarios(scenarioPlayers, fixtureOutcomes, { mode: 'turbo' })
+			}
+
 			return {
 				id: r.id,
 				number: r.number,
@@ -797,6 +838,7 @@ export async function getTurboStandingsData(
 				status: derivedStatus as 'open' | 'active' | 'completed',
 				players,
 				fixtures,
+				scenarios,
 			}
 		}),
 	}

@@ -1,12 +1,14 @@
 'use client'
 
-import { Clock, Flame, LayoutGrid, ListTree, Target } from 'lucide-react'
+import { Clock, Flame, LayoutGrid, ListTree, Target, Trophy } from 'lucide-react'
 import { useState } from 'react'
 import { useLiveGame } from '@/components/live/use-live-game'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import type { WinScenarios } from '@/lib/game-logic/win-scenarios'
 import { cn } from '@/lib/utils'
 import { AdminPlayerActions } from './admin-player-actions'
+import { ScenariosView } from './scenarios-view'
 import { type LadderFixture, TurboLadder } from './turbo-ladder'
 import { TurboTimeline } from './turbo-timeline'
 
@@ -54,6 +56,8 @@ export interface TurboRoundSummary {
 	status: 'open' | 'active' | 'completed'
 	players: TurboPlayerRow[]
 	fixtures: LadderFixture[]
+	/** win-scenario analysis; null pre-deadline (picks hidden) or when not computed. */
+	scenarios?: WinScenarios | null
 }
 
 interface TurboStandingsProps {
@@ -66,7 +70,7 @@ interface TurboStandingsProps {
 
 const _PRED_ABBREV = { home_win: 'H', draw: 'D', away_win: 'A' } as const
 
-type ViewMode = 'ladder' | 'grid' | 'timeline'
+type ViewMode = 'ladder' | 'grid' | 'timeline' | 'scenarios'
 
 export function TurboStandings({
 	rounds,
@@ -151,6 +155,20 @@ export function TurboStandings({
 						>
 							<LayoutGrid className="h-3 w-3" /> Grid
 						</button>
+						{round.scenarios && (
+							<button
+								type="button"
+								onClick={() => setView('scenarios')}
+								className={cn(
+									'text-xs font-semibold px-2.5 py-1 rounded flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+									view === 'scenarios'
+										? 'bg-foreground text-background'
+										: 'text-muted-foreground hover:text-foreground',
+								)}
+							>
+								<Trophy className="h-3 w-3" /> Scenarios
+							</button>
+						)}
 					</div>
 					{rounds.length > 1 && (
 						<div className="flex gap-1 border border-border rounded-md p-0.5">
@@ -204,6 +222,26 @@ export function TurboStandings({
 					gameId={gameId}
 					roundStatus={round.status}
 				/>
+			)}
+
+			{view === 'scenarios' && round.scenarios && (
+				<div className="p-4 md:p-5">
+					<ScenariosView
+						scenarios={round.scenarios}
+						playerName={(id) => round.players.find((p) => p.id === id)?.name ?? 'Player'}
+						fixtureLabel={(id) => {
+							const f = round.fixtures.find((x) => x.id === id)
+							return f ? `${f.home.shortName} v ${f.away.shortName}` : '?'
+						}}
+						describeOutcome={(id, outcome) => {
+							const f = round.fixtures.find((x) => x.id === id)
+							if (!f) return outcome
+							if (outcome === 'home_win') return `${f.home.shortName} win`
+							if (outcome === 'away_win') return `${f.away.shortName} win`
+							return `${f.home.shortName} v ${f.away.shortName} draw`
+						}}
+					/>
+				</div>
 			)}
 		</div>
 	)
