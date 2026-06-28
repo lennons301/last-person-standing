@@ -1,6 +1,6 @@
 'use client'
 
-import { Clock, LayoutGrid, ListTree, Lock, UserCircle2 } from 'lucide-react'
+import { Clock, LayoutGrid, ListTree, Lock, Trophy, UserCircle2 } from 'lucide-react'
 import { useState } from 'react'
 import { Disclosure } from '@/components/ui/disclosure'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
@@ -9,8 +9,9 @@ import { AdminPlayerActions } from './admin-player-actions'
 import { CupGrid } from './cup-grid'
 import { CupLadder } from './cup-ladder'
 import { CupTimeline } from './cup-timeline'
+import { ScenariosView } from './scenarios-view'
 
-type ViewMode = 'ladder' | 'grid' | 'timeline'
+type ViewMode = 'ladder' | 'grid' | 'timeline' | 'scenarios'
 
 interface CupStandingsProps {
 	data: CupLadderData
@@ -59,7 +60,14 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 				<>
 					<div className="px-4 md:px-5 pt-3 flex flex-wrap items-center gap-2">
 						<div className="flex gap-1 border border-border rounded-md p-0.5">
-							{(['ladder', 'timeline', 'grid'] as const).map((m) => (
+							{(
+								[
+									'ladder',
+									'timeline',
+									'grid',
+									...(data.scenarios ? (['scenarios'] as const) : []),
+								] as ViewMode[]
+							).map((m) => (
 								<button
 									key={m}
 									type="button"
@@ -74,6 +82,7 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 									{m === 'ladder' && <ListTree className="h-3 w-3" />}
 									{m === 'timeline' && <Clock className="h-3 w-3" />}
 									{m === 'grid' && <LayoutGrid className="h-3 w-3" />}
+									{m === 'scenarios' && <Trophy className="h-3 w-3" />}
 									{m[0].toUpperCase() + m.slice(1)}
 								</button>
 							))}
@@ -90,6 +99,23 @@ export function CupStandings({ data, onShare, showAdminActions, gameId }: CupSta
 							<div className="overflow-x-auto">
 								<CupTimeline data={data} />
 							</div>
+						)}
+						{view === 'scenarios' && data.scenarios && (
+							<ScenariosView
+								scenarios={data.scenarios}
+								playerName={(id) => data.players.find((p) => p.id === id)?.name ?? 'Player'}
+								fixtureLabel={(id) => {
+									const f = data.fixtures.find((x) => x.id === id)
+									return f ? `${f.homeTeam.shortName} v ${f.awayTeam.shortName}` : '?'
+								}}
+								describeOutcome={(id, outcome) => {
+									const f = data.fixtures.find((x) => x.id === id)
+									if (!f) return outcome
+									if (outcome === 'home_win') return `${f.homeTeam.shortName} win`
+									if (outcome === 'away_win') return `${f.awayTeam.shortName} win`
+									return `${f.homeTeam.shortName} v ${f.awayTeam.shortName} draw`
+								}}
+							/>
 						)}
 					</div>
 				</>
