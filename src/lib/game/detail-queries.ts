@@ -1218,6 +1218,8 @@ function computeLiveProjection(input: {
 		awayTeamId: string
 		homeScore: number | null
 		awayScore: number | null
+		regularHomeScore: number | null
+		regularAwayScore: number | null
 		status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 		homeTeam: { id: string; externalIds: Record<string, string | number> | null }
 		awayTeam: { id: string; externalIds: Record<string, string | number> | null }
@@ -1404,6 +1406,8 @@ function projectCupPlayer(
 			status: string
 			homeTeam: { externalIds: Record<string, string | number> | null }
 			awayTeam: { externalIds: Record<string, string | number> | null }
+			regularHomeScore: number | null
+			regularAwayScore: number | null
 		}
 	>,
 	input: { competitionType: string; modeConfig: { startingLives?: number } | null },
@@ -1436,8 +1440,11 @@ function projectCupPlayer(
 		inputs.push({
 			confidenceRank: p.confidenceRank ?? 0,
 			pickedTeam,
-			homeScore: fx.homeScore,
-			awayScore: fx.awayScore,
+			// Prefer the 90-minute (regulation) score so the projection matches the
+			// eventual settled result for knockout ties; falls back to the live /
+			// full-time score while a match is in progress (regulation not yet set).
+			homeScore: fx.regularHomeScore ?? fx.homeScore,
+			awayScore: fx.regularAwayScore ?? fx.awayScore,
 			tierDifference: tierDiff,
 		})
 	}

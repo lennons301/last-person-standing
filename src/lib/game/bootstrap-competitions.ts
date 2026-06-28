@@ -396,6 +396,8 @@ export async function syncCompetition(
 						status: af.status,
 						homeScore: af.homeScore,
 						awayScore: af.awayScore,
+						regularHomeScore: af.regularHomeScore ?? null,
+						regularAwayScore: af.regularAwayScore ?? null,
 						winner: af.winner ?? null,
 						externalIds: {
 							...((existingFixture.externalIds as Record<string, string | number>) ?? {}),
@@ -423,6 +425,8 @@ export async function syncCompetition(
 					status: af.status,
 					homeScore: af.homeScore,
 					awayScore: af.awayScore,
+					regularHomeScore: af.regularHomeScore ?? null,
+					regularAwayScore: af.regularAwayScore ?? null,
 					winner: af.winner ?? null,
 					externalId: af.externalId,
 					externalIds: { [key]: af.externalId },

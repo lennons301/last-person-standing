@@ -57,6 +57,13 @@
       "when": 1782250018684,
       "tag": "0007_fast_gunslinger",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782635794192,
+      "tag": "0008_outgoing_misty_knight",
+      "breakpoints": true
     }
   ]
 }
