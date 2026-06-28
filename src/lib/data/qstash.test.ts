@@ -10,6 +10,7 @@ vi.mock('@upstash/qstash', () => ({
 
 import {
 	enqueueAutoSubmit,
+	enqueueCompetitionSync,
 	enqueueDeadlineReminder,
 	enqueuePollScores,
 	enqueuePollScoresAt,
@@ -63,6 +64,15 @@ describe('qstash helpers', () => {
 			window: '24h',
 		})
 		expect(call.notBefore).toBe(Math.floor(notBefore.getTime() / 1000))
+	})
+
+	it('enqueues a competition sync (delayed, deduped per competition) to the handler', async () => {
+		await enqueueCompetitionSync('comp-wc')
+		const call = publishJSONMock.mock.calls[0][0]
+		expect(call.url).toBe('https://example.com/api/cron/qstash-handler')
+		expect(call.body).toEqual({ type: 'sync_competition', competitionId: 'comp-wc' })
+		expect(call.delay).toBe(600)
+		expect(call.deduplicationId).toMatch(/^sync-comp-comp-wc-\d+$/)
 	})
 
 	it('enqueues an auto-submit at the given timestamp', async () => {

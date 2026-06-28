@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { serializeError } from '@/lib/cron/serialize-error'
 import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
 import { hasActiveFixture } from '@/lib/data/match-window'
-import { enqueuePollScores } from '@/lib/data/qstash'
+import { enqueueCompetitionSync, enqueuePollScores } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
 import { settleFixture } from '@/lib/game/settle'
 import { fixture, round } from '@/lib/schema/competition'
@@ -71,8 +71,18 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 		if (!list.includes(currentRoundId)) list.push(currentRoundId)
 		competitionsByExternalCode.set(code, list)
 	}
+	// Resolve each external code back to its competition (id + type) so we can
+	// trigger a bracket re-sync after a knockout fixture finishes.
+	const compByCode = new Map<string, { id: string; type: string }>()
+	for (const g of activeGames) {
+		const code = resolveFootballDataCode(g.competition)
+		if (code) compByCode.set(code, { id: g.competition.id, type: g.competition.type })
+	}
 
 	let totalUpdated = 0
+	// Competitions whose bracket should be re-synced because a knockout-stage
+	// fixture just finished (its result may confirm the next round's matchups).
+	const syncCompetitionIds = new Set<string>()
 
 	for (const [code, roundIds] of competitionsByExternalCode) {
 		const adapter = new FootballDataAdapter(code, apiKey)
@@ -124,6 +134,29 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 			for (const fid of transitionedFixtureIds) {
 				await settleFixture(fid)
 			}
+
+			// A finished group_knockout fixture from matchday 3 onward (the
+			// group→knockout boundary and every knockout round) may confirm the
+			// next round's matchups — flag the competition for a re-sync.
+			const comp = compByCode.get(code)
+			if (
+				transitionedFixtureIds.length > 0 &&
+				comp?.type === 'group_knockout' &&
+				roundData.number >= 3
+			) {
+				syncCompetitionIds.add(comp.id)
+			}
+		}
+	}
+
+	// Populate the next round's fixtures (and advance/open rounds) shortly after a
+	// knockout match settles — keeps the bracket current as the tournament plays
+	// out, independent of the daily cron. Deduped + delayed inside the helper.
+	for (const compId of syncCompetitionIds) {
+		try {
+			await enqueueCompetitionSync(compId)
+		} catch (e) {
+			console.warn('[poll-scores] enqueueCompetitionSync failed', e)
 		}
 	}
 
