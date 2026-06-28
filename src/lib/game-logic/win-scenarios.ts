@@ -1,11 +1,11 @@
-// Win-scenario engine for the single-round modes (turbo now; cup to follow).
+// Win-scenario engine for the single-round modes (turbo + cup).
 //
 // Given each player's confidence-ranked picks and the current fixture results,
 // it answers: who can still win, and which unplayed picks decide it. The heart
-// is reuse of the canonical winner-determination logic (`resolveWipeout` + the
-// mode tiebreaker) over HYPOTHETICAL completions — so a "scenario" is just the
-// real settlement run on a what-if result set, and stays consistent with how
-// the game actually crowns a winner.
+// is reuse of the canonical winner-determination logic (`resolveWipeout`, plus
+// the streak→(lives)→goals tiebreak) over HYPOTHETICAL completions — so a
+// "scenario" is just real settlement run on a what-if result set, and stays
+// consistent with how the game actually crowns a winner.
 //
 // Approach:
 //   1. Per player, find the unplayed picks inside their reachable streak window
@@ -18,8 +18,15 @@
 //      (wins-in-all = leading, wins-in-none = out, else in-contention) plus a
 //      decision table. Above the cap, fall back to an approximate per-player
 //      streak range (early game; labelled).
+//
+// Cup vs turbo: the only mode-specific bit is how a pick survives. Turbo: the
+// predicted result must match. Cup: lives + the tier handicap, evaluated by the
+// canonical `evaluateCupPicks`, and the winner tiebreak adds a lives level
+// before goals. Anything goal-dependent (the final separator) is reported as a
+// tie rather than guessed, since scenarios fix outcomes, not scorelines.
 
-import { resolveWipeout, turboTiebreaker } from './auto-complete-tiebreakers'
+import { resolveWipeout } from './auto-complete-tiebreakers'
+import { type CupPickResult, evaluateCupPicks } from './cup'
 
 export type Outcome = 'home_win' | 'draw' | 'away_win'
 const OUTCOMES: Outcome[] = ['home_win', 'draw', 'away_win']
@@ -29,12 +36,18 @@ export interface ScenarioPick {
 	fixtureId: string
 	/** turbo: the player's predicted result for the fixture. */
 	predictedResult: Outcome
+	/** cup: which side the player backed. */
+	pickedSide?: 'home' | 'away'
+	/** cup: tier difference from the HOME team's perspective (+ = home higher tier). */
+	tierDifference?: number
 }
 
 export interface ScenarioPlayerInput {
 	gamePlayerId: string
-	/** final lives — cup tiebreak only; pass 0 for turbo. */
+	/** kept for back-compat; cup uses `startingLives`, turbo ignores both. */
 	livesRemaining: number
+	/** cup: the game's configured starting lives (evaluateCupPicks recomputes from scratch). */
+	startingLives?: number
 	picks: ScenarioPick[]
 }
 
@@ -55,7 +68,7 @@ export interface PlayerOutlook {
 export interface ScenarioBranch {
 	/** the unplayed-fixture outcomes that produce this result. */
 	conditions: { fixtureId: string; outcome: Outcome }[]
-	/** winning gamePlayerIds; >1 = a streak tie the goals tiebreak (unknown here) would settle. */
+	/** winning gamePlayerIds; >1 = a tie the goals tiebreak (unknown here) would settle. */
 	winners: string[]
 	tieOnGoals: boolean
 }
@@ -69,49 +82,126 @@ export interface WinScenarios {
 	tooManyToEnumerate: boolean
 }
 
+type Mode = 'turbo' | 'cup'
+
 const DEFAULT_CAP = 5
 
-/** Did a pick keep the streak alive, given its fixture's outcome? (turbo rules) */
-function isCorrect(pick: ScenarioPick, outcome: Outcome, _mode: 'turbo' | 'cup'): boolean {
-	// turbo: the predicted result must match. (cup adds tier/lives — handled in a follow-up.)
+/* ── per-pick survival ─────────────────────────────────────────────────── */
+
+/**
+ * Representative scoreline for an outcome — enough to drive survival/lives
+ * (which depend on the outcome + tier, not the exact score). Goals are not
+ * inferred, so goal-level ties are reported rather than resolved.
+ */
+function repScore(outcome: Outcome): { homeScore: number; awayScore: number } {
+	if (outcome === 'home_win') return { homeScore: 1, awayScore: 0 }
+	if (outcome === 'away_win') return { homeScore: 0, awayScore: 1 }
+	return { homeScore: 0, awayScore: 0 }
+}
+
+const pickedWin = (pk: ScenarioPick): Outcome =>
+	pk.pickedSide === 'away' ? 'away_win' : 'home_win'
+const pickedLose = (pk: ScenarioPick): Outcome =>
+	pk.pickedSide === 'away' ? 'home_win' : 'away_win'
+
+/**
+ * A cup pick keeps the streak alive on win / underdog-draw / life-save. Matches
+ * `checkCupCompletion` (where 'loss' and 'restricted' break the streak).
+ */
+const cupAlive = (r: CupPickResult['result']): boolean =>
+	r === 'win' || r === 'draw_success' || r === 'saved_by_life'
+
+function turboCorrect(pick: ScenarioPick, outcome: Outcome): boolean {
 	return pick.predictedResult === outcome
 }
 
 /**
- * The player's unplayed picks that their streak could still reach — i.e. the
- * leading run of picks up to (and not past) the first KNOWN losing pick.
- * Returned earliest-rank first; index 0 is the make-or-break pivot.
+ * Run the canonical cup evaluator over the picks whose outcome is known under
+ * `outcomeOf` (others omitted — they're beyond the reachable streak).
  */
+function cupResults(
+	player: ScenarioPlayerInput,
+	outcomeOf: (pk: ScenarioPick) => Outcome | null,
+): { results: CupPickResult[]; finalLives: number } {
+	const inputs = []
+	for (const pk of player.picks) {
+		const oc = outcomeOf(pk)
+		if (oc == null) continue
+		const { homeScore, awayScore } = repScore(oc)
+		inputs.push({
+			confidenceRank: pk.rank,
+			pickedTeam: pk.pickedSide ?? 'home',
+			homeScore,
+			awayScore,
+			tierDifference: pk.tierDifference ?? 0,
+			winner: null,
+		})
+	}
+	const r = evaluateCupPicks(inputs, player.startingLives ?? 0)
+	return { results: r.pickResults, finalLives: r.finalLives }
+}
+
+/** Length of the consecutive alive run from rank 1 (no wipeout rebasing). */
+function cupStreakReach(results: CupPickResult[]): number {
+	let n = 0
+	for (const r of [...results].sort((a, b) => a.confidenceRank - b.confidenceRank)) {
+		if (cupAlive(r.result)) n++
+		else break
+	}
+	return n
+}
+
+/* ── reachable window + range ──────────────────────────────────────────── */
+
 function reachablePending(
 	player: ScenarioPlayerInput,
 	fixtures: FixtureOutcomes,
-	mode: 'turbo' | 'cup',
+	mode: Mode,
 ): ScenarioPick[] {
 	const sorted = [...player.picks].sort((a, b) => a.rank - b.rank)
+	if (mode === 'turbo') {
+		const out: ScenarioPick[] = []
+		for (const pk of sorted) {
+			const oc = fixtures[pk.fixtureId] ?? null
+			if (oc === null) {
+				out.push(pk)
+				continue
+			}
+			if (!turboCorrect(pk, oc)) break // a known loss caps the window
+		}
+		return out
+	}
+	// cup: walk the BEST case (unplayed → picked side wins) so lives extend reach;
+	// the unplayed picks inside the surviving prefix are reachable.
+	const { results } = cupResults(player, (pk) => fixtures[pk.fixtureId] ?? pickedWin(pk))
+	const aliveByRank = new Map(results.map((r) => [r.confidenceRank, cupAlive(r.result)]))
 	const out: ScenarioPick[] = []
 	for (const pk of sorted) {
-		const oc = fixtures[pk.fixtureId] ?? null
-		if (oc === null) {
-			out.push(pk)
-			continue
-		}
-		if (!isCorrect(pk, oc, mode)) break // a known loss caps the reachable window
+		if (!aliveByRank.get(pk.rank)) break
+		if ((fixtures[pk.fixtureId] ?? null) === null) out.push(pk)
 	}
 	return out
 }
 
-/** Best/worst-case streak ignoring wipeout — only used for the >cap fallback. */
 function streakRange(
 	player: ScenarioPlayerInput,
 	fixtures: FixtureOutcomes,
-	mode: 'turbo' | 'cup',
+	mode: Mode,
 ): { floor: number; ceiling: number } {
+	if (mode === 'cup') {
+		const ceiling = cupStreakReach(
+			cupResults(player, (pk) => fixtures[pk.fixtureId] ?? pickedWin(pk)).results,
+		)
+		const floor = cupStreakReach(
+			cupResults(player, (pk) => fixtures[pk.fixtureId] ?? pickedLose(pk)).results,
+		)
+		return { floor, ceiling }
+	}
 	const sorted = [...player.picks].sort((a, b) => a.rank - b.rank)
 	let floor = 0
 	for (const pk of sorted) {
 		const oc = fixtures[pk.fixtureId] ?? null
-		if (oc === null) break // worst case: this unplayed pick loses
-		if (!isCorrect(pk, oc, mode)) break
+		if (oc === null || !turboCorrect(pk, oc)) break
 		floor++
 	}
 	let ceiling = 0
@@ -120,11 +210,65 @@ function streakRange(
 		if (oc === null) {
 			ceiling++
 			continue
-		} // best case: unplayed pick wins
-		if (!isCorrect(pk, oc, mode)) break
+		}
+		if (!turboCorrect(pk, oc)) break
 		ceiling++
 	}
 	return { floor, ceiling }
+}
+
+/* ── per-branch winner determination ──────────────────────────────────── */
+
+interface WipeIn {
+	gamePlayerId: string
+	livesRemaining: number
+	picks: { rank: number; correct: boolean; goals: number }[]
+}
+
+function buildWipeoutInput(
+	player: ScenarioPlayerInput,
+	merged: FixtureOutcomes,
+	mode: Mode,
+): WipeIn {
+	if (mode === 'turbo') {
+		return {
+			gamePlayerId: player.gamePlayerId,
+			livesRemaining: 0,
+			picks: player.picks
+				.filter((pk) => merged[pk.fixtureId] != null)
+				.map((pk) => ({
+					rank: pk.rank,
+					correct: turboCorrect(pk, merged[pk.fixtureId] as Outcome),
+					goals: 0,
+				})),
+		}
+	}
+	const { results, finalLives } = cupResults(player, (pk) => merged[pk.fixtureId] ?? null)
+	return {
+		gamePlayerId: player.gamePlayerId,
+		livesRemaining: finalLives,
+		picks: results.map((r) => ({ rank: r.confidenceRank, correct: cupAlive(r.result), goals: 0 })),
+	}
+}
+
+function maxBy<T>(items: T[], key: (t: T) => number): T[] {
+	if (items.length === 0) return []
+	const max = items.reduce((m, t) => Math.max(m, key(t)), Number.NEGATIVE_INFINITY)
+	return items.filter((t) => key(t) === max)
+}
+
+/**
+ * Winner(s) for one hypothetical: top streak, then (cup) top lives — both fully
+ * determined by the outcomes. The next separator is goals, which depend on
+ * scorelines we don't fix, so a remaining tie is reported, not guessed.
+ */
+function scenarioWinners(
+	scores: { gamePlayerId: string; streak: number; livesRemaining: number }[],
+	mode: Mode,
+): { winners: string[]; tieOnGoals: boolean } {
+	let top = maxBy(scores, (s) => s.streak)
+	if (mode === 'cup' && top.length > 1) top = maxBy(top, (s) => s.livesRemaining)
+	return { winners: top.map((s) => s.gamePlayerId), tieOnGoals: top.length > 1 }
 }
 
 function enumerateOutcomes(fixtureIds: string[]): Record<string, Outcome>[] {
@@ -174,7 +318,7 @@ function buildTable(branches: Branch[], pivotal: string[]): ScenarioBranch[] {
 export function winScenarios(
 	players: ScenarioPlayerInput[],
 	fixtures: FixtureOutcomes,
-	opts: { mode: 'turbo' | 'cup'; cap?: number },
+	opts: { mode: Mode; cap?: number },
 ): WinScenarios {
 	const { mode } = opts
 	const cap = opts.cap ?? DEFAULT_CAP
@@ -217,34 +361,17 @@ export function winScenarios(
 		return { outlooks, table: null, pivotalFixtureIds: [], tooManyToEnumerate: true }
 	}
 
-	// Enumerate every outcome combo over the decisive candidate fixtures and run the
-	// real winner-determination (resolveWipeout + tiebreak) on each hypothetical.
-	const tiebreak = turboTiebreaker // cup tiebreak swapped in with the cup evaluator
+	// Enumerate every outcome combo over the decisive candidate fixtures and run
+	// the real winner-determination (resolveWipeout + tiebreak) on each.
 	const branches: Branch[] = enumerateOutcomes(candidates).map((combo) => {
 		const merged: FixtureOutcomes = { ...fixtures, ...combo }
-		const wipeoutInput = players.map((p) => ({
-			gamePlayerId: p.gamePlayerId,
-			livesRemaining: p.livesRemaining,
-			picks: p.picks
-				.filter((pk) => merged[pk.fixtureId] != null)
-				.map((pk) => ({
-					rank: pk.rank,
-					correct: isCorrect(pk, merged[pk.fixtureId] as Outcome, mode),
-					goals: 0,
-				})),
-		}))
+		const wipeoutInput = players.map((p) => buildWipeoutInput(p, merged, mode))
 		const { scores } = resolveWipeout(wipeoutInput)
-		const winners = tiebreak(
-			scores.map((s) => ({
-				gamePlayerId: s.gamePlayerId,
-				streak: s.streak,
-				goalsInStreak: s.goalsInStreak,
-			})),
-		)
+		const { winners, tieOnGoals } = scenarioWinners(scores, mode)
 		return {
 			conditions: candidates.map((f) => ({ fixtureId: f, outcome: combo[f] })),
 			winners,
-			tieOnGoals: winners.length > 1,
+			tieOnGoals,
 			streaks: new Map(scores.map((s) => [s.gamePlayerId, s.streak])),
 		}
 	})

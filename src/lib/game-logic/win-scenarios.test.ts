@@ -165,3 +165,72 @@ describe('winScenarios (turbo)', () => {
 		expect(res.pivotalFixtureIds).toEqual([])
 	})
 })
+
+function cupPlayer(
+	id: string,
+	startingLives: number,
+	picks: [rank: number, fixtureId: string, side: 'home' | 'away', tierDiff: number][],
+): ScenarioPlayerInput {
+	return {
+		gamePlayerId: id,
+		livesRemaining: 0,
+		startingLives,
+		picks: picks.map(([rank, fixtureId, pickedSide, tierDifference]) => ({
+			rank,
+			fixtureId,
+			predictedResult: pickedSide === 'home' ? 'home_win' : 'away_win',
+			pickedSide,
+			tierDifference,
+		})),
+	}
+}
+
+const cup = { mode: 'cup' as const }
+
+describe('winScenarios (cup)', () => {
+	it('CUP-A: a life keeps the streak alive through a loss (turbo would break)', () => {
+		// startingLives 1. f1 home win, f2 away win, f3 pending.
+		// p1 backs home both played: r1 win, r2 loses-but-saved (life→0). p2 backs away: r1 saved, r2 win.
+		// Both bank streak 2 into the pending r3 → f3 decides.
+		const fixtures: FixtureOutcomes = { f1: 'home_win', f2: 'away_win', f3: null }
+		const res = winScenarios(
+			[
+				cupPlayer('p1', 1, [
+					[1, 'f1', 'home', 0],
+					[2, 'f2', 'home', 0],
+					[3, 'f3', 'home', 0],
+				]),
+				cupPlayer('p2', 1, [
+					[1, 'f1', 'away', 0],
+					[2, 'f2', 'away', 0],
+					[3, 'f3', 'away', 0],
+				]),
+			],
+			fixtures,
+			cup,
+		)
+		// streak 2 banked (r2 survived only via the life) → in contention, can reach 3.
+		expect(outlook(res, 'p1')).toMatchObject({ floor: 2, ceiling: 3, verdict: 'in_contention' })
+		expect(outlook(res, 'p1').pivotalPicks).toEqual([{ rank: 3, fixtureId: 'f3' }])
+		expect(branchFor(res, 'f3', 'home_win')?.winners).toEqual(['p1'])
+		expect(branchFor(res, 'f3', 'away_win')?.winners).toEqual(['p2'])
+		expect(branchFor(res, 'f3', 'draw')?.winners.sort()).toEqual(['p1', 'p2'])
+	})
+
+	it('CUP-B: lives break a streak tie — a clear winner, not a goals tie', () => {
+		// Both finish on streak 1, but p1 backed an underdog (tierDiff -1) so gained a life.
+		// Cup ranks streak then LIVES → p1 wins outright; p2 is out.
+		const fixtures: FixtureOutcomes = { f1: 'home_win' }
+		const res = winScenarios(
+			[
+				cupPlayer('p1', 0, [[1, 'f1', 'home', -1]]), // underdog home win → +1 life
+				cupPlayer('p2', 0, [[1, 'f1', 'home', 0]]), // even win → no life
+			],
+			fixtures,
+			cup,
+		)
+		expect(outlook(res, 'p1').verdict).toBe('leading')
+		expect(outlook(res, 'p2').verdict).toBe('out')
+		expect(res.table).toBeNull() // decided
+	})
+})

@@ -4,6 +4,12 @@ import { roundLabel } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { determineFixtureOutcome } from '@/lib/game-logic/common'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
+import {
+	type FixtureOutcomes,
+	type Outcome,
+	type WinScenarios,
+	winScenarios,
+} from '@/lib/game-logic/win-scenarios'
 import { pick } from '@/lib/schema/game'
 
 export interface CupStandingsPick {
@@ -44,6 +50,8 @@ export interface CupStandingsData {
 	maxLives: number
 	numberOfPicks: number
 	players: CupStandingsPlayer[]
+	/** win-scenario analysis; null pre-deadline (picks hidden) or when not computed. */
+	scenarios?: WinScenarios | null
 }
 
 export interface CupLadderBacker {
@@ -220,6 +228,49 @@ export async function getCupStandingsData(
 		})
 
 	const competitionType = g.competition.type as 'league' | 'knockout' | 'group_knockout'
+	const startingLives = (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 3
+
+	// Win scenarios — POST-DEADLINE ONLY (pre-deadline picks are hidden; revealing
+	// who-needs-what would leak them). Built from the raw picks + fixture results;
+	// the cup engine re-evaluates lives/tier via evaluateCupPicks.
+	let scenarios: WinScenarios | null = null
+	if (!hideOpenPicks) {
+		const fixtureOutcomes: FixtureOutcomes = {}
+		for (const fx of displayRound.fixtures) {
+			fixtureOutcomes[fx.id] =
+				fx.status === 'finished' && fx.homeScore != null && fx.awayScore != null
+					? fx.homeScore > fx.awayScore
+						? 'home_win'
+						: fx.awayScore > fx.homeScore
+							? 'away_win'
+							: 'draw'
+					: null
+		}
+		const scenarioPlayers = g.players
+			.filter((p) => p.eliminatedReason !== 'admin_removed')
+			.map((p) => ({
+				gamePlayerId: p.id,
+				livesRemaining: 0,
+				startingLives,
+				picks: allPicks
+					.filter((pk) => pk.gamePlayerId === p.id && pk.fixtureId)
+					.map((pk) => {
+						const fx = displayRound.fixtures.find((f) => f.id === pk.fixtureId)
+						const pickedSide: 'home' | 'away' = fx && pk.teamId === fx.homeTeamId ? 'home' : 'away'
+						return {
+							rank: pk.confidenceRank ?? 0,
+							fixtureId: pk.fixtureId as string,
+							predictedResult: (pickedSide === 'home' ? 'home_win' : 'away_win') as Outcome,
+							pickedSide,
+							// HOME-perspective tier (the engine re-derives the picked side).
+							tierDifference: fx
+								? computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
+								: 0,
+						}
+					}),
+			}))
+		scenarios = winScenarios(scenarioPlayers, fixtureOutcomes, { mode: 'cup' })
+	}
 
 	return {
 		gameId: g.id,
@@ -243,9 +294,10 @@ export async function getCupStandingsData(
 			},
 			now,
 		}) as 'open' | 'active' | 'completed',
-		maxLives: (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 3,
+		maxLives: startingLives,
 		numberOfPicks: (g.modeConfig as { numberOfPicks?: number } | null)?.numberOfPicks ?? 6,
 		players,
+		scenarios,
 	}
 }
 
