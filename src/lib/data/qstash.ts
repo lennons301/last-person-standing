@@ -4,6 +4,7 @@ export type QStashJob =
 	| { type: 'process_round'; gameId: string; roundId: string }
 	| { type: 'deadline_reminder'; gameId: string; roundId: string; window: '24h' | '2h' }
 	| { type: 'auto_submit'; gamePlayerId: string; roundId: string; teamId: string }
+	| { type: 'sync_competition'; competitionId: string }
 
 /**
  * Stable callback origin for QStash jobs.
@@ -59,6 +60,29 @@ export async function enqueueDeadlineReminder(
 		url: handlerUrl(),
 		body: { type: 'deadline_reminder', gameId, roundId, window } satisfies QStashJob,
 		notBefore: Math.floor(notBefore.getTime() / 1000),
+	})
+}
+
+/**
+ * Enqueue a delayed competition re-sync. Used to populate the next round's
+ * fixtures (and advance/open rounds) shortly after a knockout match finishes —
+ * so the bracket stays current "as we go" without waiting for the daily cron.
+ *
+ * Deduplicated to a 15-minute bucket per competition: a cluster of finishes in
+ * the same window collapses to ONE sync. The default ~10-minute delay lets the
+ * data source confirm the next-round matchup (incl. ET/penalties) before we
+ * fetch.
+ */
+export async function enqueueCompetitionSync(
+	competitionId: string,
+	delaySeconds = 600,
+): Promise<void> {
+	const bucket = Math.floor(Date.now() / (15 * 60 * 1000))
+	await client().publishJSON({
+		url: handlerUrl(),
+		body: { type: 'sync_competition', competitionId } satisfies QStashJob,
+		delay: delaySeconds,
+		deduplicationId: `sync-comp-${competitionId}-${bucket}`,
 	})
 }
 
