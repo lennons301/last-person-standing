@@ -133,6 +133,8 @@ describe('FootballDataAdapter', () => {
 			externalId: '501',
 			homeScore: 2,
 			awayScore: 0,
+			regularHomeScore: null,
+			regularAwayScore: null,
 			status: 'finished',
 			winner: null,
 		})
@@ -339,8 +341,10 @@ describe('FootballDataAdapter', () => {
 			expect(rounds).toHaveLength(6)
 		})
 
-		it('live scores resolve a knockout round by stage, not matchday', async () => {
-			// A resolved + finished Round of 32 tie.
+		it('live scores resolve a knockout round by stage + capture the 90-minute (regularTime) score', async () => {
+			// A finished Round of 32 tie: 1-1 at 90 minutes, home wins on penalties.
+			// football-data's fullTime carries the shootout-inflated score; regularTime
+			// is the 90-minute result we need for cup scoring.
 			const resolved = {
 				matches: [
 					...wcPayload.matches.filter((m) => m.stage !== 'LAST_32'),
@@ -352,7 +356,12 @@ describe('FootballDataAdapter', () => {
 						awayTeam: { id: 770, name: 'Brazil', tla: 'BRA', crest: '' },
 						utcDate: '2026-06-28T19:00:00Z',
 						status: 'FINISHED',
-						score: { winner: 'AWAY_TEAM', fullTime: { home: 1, away: 2 } },
+						score: {
+							winner: 'HOME_TEAM',
+							duration: 'PENALTY_SHOOTOUT',
+							fullTime: { home: 4, away: 3 },
+							regularTime: { home: 1, away: 1 },
+						},
 					},
 				],
 			}
@@ -364,10 +373,12 @@ describe('FootballDataAdapter', () => {
 			expect(scores).toHaveLength(1)
 			expect(scores[0]).toEqual({
 				externalId: '100',
-				homeScore: 1,
-				awayScore: 2,
+				homeScore: 4, // full-time (incl. shootout) — what we store as the score
+				awayScore: 3,
+				regularHomeScore: 1, // 90-minute score — used by cup scoring
+				regularAwayScore: 1,
 				status: 'finished',
-				winner: 'away',
+				winner: 'home',
 			})
 		})
 	})

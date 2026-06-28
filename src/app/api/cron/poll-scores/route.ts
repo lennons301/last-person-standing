@@ -111,6 +111,8 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 					.set({
 						homeScore: score.homeScore,
 						awayScore: score.awayScore,
+						regularHomeScore: score.regularHomeScore ?? null,
+						regularAwayScore: score.regularAwayScore ?? null,
 						status: score.status,
 						winner: score.winner ?? null,
 					})

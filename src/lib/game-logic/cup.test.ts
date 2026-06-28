@@ -13,40 +13,32 @@ function makePick(
 }
 
 describe('evaluateCupPicks', () => {
-	describe('penalty/extra-time winner (knockout)', () => {
-		it('treats a level score with winner = picked team as a win, not a draw', () => {
-			const res = evaluateCupPicks(
-				[
-					{
-						confidenceRank: 1,
-						pickedTeam: 'home',
-						homeScore: 1,
-						awayScore: 1,
-						tierDifference: 0,
-						winner: 'home',
-					},
-				],
-				0,
-			)
-			expect(res.pickResults[0].result).toBe('win')
+	describe('knockout draws are scored on the 90-minute result (not qualification)', () => {
+		// Inputs carry the 90-MINUTE (regulation) score; the ET/penalty outcome is
+		// deliberately not an input. So an underdog level at 90 minutes survives the
+		// round even if the tie is then lost in ET/penalties — the behaviour Sean
+		// asked for, matching how the group stage scored draws.
+		it('+1 underdog level at 90 minutes → draw_success, survives (even if it later loses on pens)', () => {
+			// picked = away; tierDifference +1 (home one tier higher) → away is a +1 underdog.
+			const res = evaluateCupPicks([makePick(1, 'away', 1, 1, 1)], 0)
+			expect(res.pickResults[0].result).toBe('draw_success')
 			expect(res.eliminated).toBe(false)
 		})
-		it('treats a level score with winner = opponent as a loss (streak breaks)', () => {
-			const res = evaluateCupPicks(
-				[
-					{
-						confidenceRank: 1,
-						pickedTeam: 'away',
-						homeScore: 1,
-						awayScore: 1,
-						tierDifference: 0,
-						winner: 'home',
-					},
-				],
-				0,
-			)
+		it('+2 underdog level at 90 minutes → draw_success AND gains a life', () => {
+			const res = evaluateCupPicks([makePick(1, 'away', 0, 0, 2)], 0)
+			expect(res.pickResults[0].result).toBe('draw_success')
+			expect(res.pickResults[0].livesGained).toBe(1)
+			expect(res.eliminated).toBe(false)
+		})
+		it('even-match draw at 90 minutes is NOT a survival — streak breaks with no lives', () => {
+			const res = evaluateCupPicks([makePick(1, 'home', 1, 1, 0)], 0)
 			expect(res.pickResults[0].result).toBe('loss')
 			expect(res.eliminated).toBe(true)
+		})
+		it('a 90-minute win is still a win', () => {
+			const res = evaluateCupPicks([makePick(1, 'home', 2, 1, 0)], 0)
+			expect(res.pickResults[0].result).toBe('win')
+			expect(res.eliminated).toBe(false)
 		})
 	})
 

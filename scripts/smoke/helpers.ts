@@ -214,10 +214,19 @@ export async function finishFixture(
 	homeScore: number,
 	awayScore: number,
 	winner?: 'home' | 'away' | null,
+	regular?: { home: number; away: number },
 ): Promise<void> {
 	await db
 		.update(fixture)
-		.set({ status: 'finished', homeScore, awayScore, winner: winner ?? null })
+		.set({
+			status: 'finished',
+			homeScore,
+			awayScore,
+			winner: winner ?? null,
+			// Optional 90-minute (regulation) score — for knockout ties decided in
+			// ET/penalties, where it differs from the full-time/winner result.
+			...(regular ? { regularHomeScore: regular.home, regularAwayScore: regular.away } : {}),
+		})
 		.where(sql`${fixture.id} = ${fixtureId}`)
 }
 

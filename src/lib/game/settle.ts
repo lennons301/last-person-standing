@@ -323,10 +323,16 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 			return {
 				confidenceRank: pickRow.confidenceRank ?? 0,
 				pickedTeam,
-				homeScore: fx.homeScore ?? 0,
-				awayScore: fx.awayScore ?? 0,
+				// Cup scores on the 90-minute (regulation) result, so an underdog
+				// level at 90 minutes survives even if the tie is then lost in
+				// ET/penalties (consistent with how the group stage scored draws).
+				// Fall back to the full-time score when regulation isn't reported
+				// separately (regulation-only matches, where the two are equal).
+				// NOTE: `winner` is deliberately NOT passed — that's the "to qualify"
+				// signal used by CLASSIC; cup is purely 90-minute-based.
+				homeScore: fx.regularHomeScore ?? fx.homeScore ?? 0,
+				awayScore: fx.regularAwayScore ?? fx.awayScore ?? 0,
 				tierDifference: tierDiff,
-				winner: fx.winner,
 			}
 		})
 
