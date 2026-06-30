@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { roundLabel } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { determineFixtureOutcome } from '@/lib/game-logic/common'
+import { resolveCupQualifier } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import {
 	type FixtureOutcomes,
@@ -194,7 +195,7 @@ export async function getCupStandingsData(
 				// settlement when the streak/lives state is known.
 				const mapped =
 					pk.result === 'pending'
-						? projectCupCellFromFixture(pickedSide, fx)
+						? projectCupCellFromFixture(pickedSide, tierFromPicked, fx)
 						: mapPickResult(pk.result)
 				return {
 					gamePlayerId: p.id,
@@ -316,24 +317,47 @@ export function mapPickResult(r: string): 'win' | 'saved_by_life' | 'loss' | 'pe
 }
 
 /**
- * Project the cell visual for a still-pending cup pick from the
- * fixture's current score. Same outcome buckets the settled mapping
- * uses (`win` / `loss` / `pending`). Cup-specific saved_by_life /
- * draw_success outcomes need streak + lives context and only appear
- * once the pick is fully settled by reevaluateCupGame.
+ * Project the cell visual for a still-pending cup pick from the fixture's
+ * state. Same outcome buckets the settled mapping uses (`win` / `loss` /
+ * `pending`, where a survived draw renders as `win`).
+ *
+ * A knockout pick is "to qualify": once the tie is finished, the side that
+ * advanced (incl. on ET/penalties) is a `win` — derived from `winner`, or from
+ * the penalty-inclusive full-time score when football-data's winner lags. A
+ * handicapped underdog that is level on the 90-minute (regulation) score is a
+ * `draw_success` survival (renders `win`) whether the tie is in progress or was
+ * lost in the shootout. The `saved_by_life` outcome still needs streak + lives
+ * context and only appears once the pick is fully settled by reevaluateCupGame.
  */
-function projectCupCellFromFixture(
+export function projectCupCellFromFixture(
 	pickedSide: 'home' | 'away',
-	fx: { homeScore: number | null; awayScore: number | null },
+	tierFromPicked: number,
+	fx: {
+		homeScore: number | null
+		awayScore: number | null
+		regularHomeScore: number | null
+		regularAwayScore: number | null
+		winner: 'home' | 'away' | null
+		status: string
+	},
 ): 'win' | 'loss' | 'pending' {
-	if (fx.homeScore == null || fx.awayScore == null) return 'pending'
-	const pickedScore = pickedSide === 'home' ? fx.homeScore : fx.awayScore
-	const otherScore = pickedSide === 'home' ? fx.awayScore : fx.homeScore
-	if (pickedScore > otherScore) return 'win'
-	if (pickedScore < otherScore) return 'loss'
-	// Draw — in cup, draws can be 'draw_success' (underdog) or 'loss'
-	// (favourite/same-tier). Without streak context, render as loss for
-	// the in-progress projection; the post-settlement value corrects it.
+	const home90 = fx.regularHomeScore ?? fx.homeScore
+	const away90 = fx.regularAwayScore ?? fx.awayScore
+	if (home90 == null || away90 == null) return 'pending'
+	const pickedScore = pickedSide === 'home' ? home90 : away90
+	const otherScore = pickedSide === 'home' ? away90 : home90
+	const qualified = resolveCupQualifier({
+		winner: fx.winner,
+		finished: fx.status === 'finished',
+		fullHomeScore: fx.homeScore,
+		fullAwayScore: fx.awayScore,
+	})
+	const pickedWon = qualified != null ? qualified === pickedSide : pickedScore > otherScore
+	const isDraw = qualified === pickedSide ? false : pickedScore === otherScore
+	if (pickedWon) return 'win'
+	// A level 90-minute score is a draw_success survival for an underdog
+	// (tierFromPicked <= -1) — render it green, the same as a settled draw.
+	if (isDraw && tierFromPicked <= -1) return 'win'
 	return 'loss'
 }
 

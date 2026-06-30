@@ -15,7 +15,12 @@ export default defineConfig({
 			'**/node_modules/**',
 			'**/dist/**',
 			'**/.next/**',
-			'**/.worktrees/**',
+			// Local git worktrees live under .claude/worktrees/ — exclude them so the
+			// primary checkout's tests are the only authoritative ones. (The old
+			// '**/.worktrees/**' pattern never matched this path, so stale worktree
+			// snapshots leaked into the run and showed phantom failures.)
+			'**/.claude/worktrees/**',
+			'**/worktrees/**',
 			'**/*.smoke.test.ts',
 		],
 	},

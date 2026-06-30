@@ -14,7 +14,7 @@ import {
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
-import { evaluateCupPicks } from '@/lib/game-logic/cup'
+import { evaluateCupPicks, resolveCupQualifier } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { calculatePot, expectedEntryCount } from '@/lib/game-logic/prizes'
 import {
@@ -1220,6 +1220,7 @@ function computeLiveProjection(input: {
 		awayScore: number | null
 		regularHomeScore: number | null
 		regularAwayScore: number | null
+		winner: 'home' | 'away' | null
 		status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
 		homeTeam: { id: string; externalIds: Record<string, string | number> | null }
 		awayTeam: { id: string; externalIds: Record<string, string | number> | null }
@@ -1403,6 +1404,7 @@ function projectCupPlayer(
 			awayTeamId: string
 			homeScore: number | null
 			awayScore: number | null
+			winner: 'home' | 'away' | null
 			status: string
 			homeTeam: { externalIds: Record<string, string | number> | null }
 			awayTeam: { externalIds: Record<string, string | number> | null }
@@ -1424,6 +1426,7 @@ function projectCupPlayer(
 		homeScore: number
 		awayScore: number
 		tierDifference: number
+		winner: 'home' | 'away' | null
 	}> = []
 	for (const p of playerPicks) {
 		if (p.result === 'void') continue
@@ -1446,6 +1449,16 @@ function projectCupPlayer(
 			homeScore: fx.regularHomeScore ?? fx.homeScore,
 			awayScore: fx.regularAwayScore ?? fx.awayScore,
 			tierDifference: tierDiff,
+			// "To qualify": a finished tie's winner (incl. ET/penalties) decides a
+			// win; derived from the penalty-inclusive full-time score when winner
+			// lags. A still-in-play match resolves to null → projects on the 90-min
+			// score, matching the cell projection.
+			winner: resolveCupQualifier({
+				winner: fx.winner,
+				finished: fx.status === 'finished',
+				fullHomeScore: fx.homeScore,
+				fullAwayScore: fx.awayScore,
+			}),
 		})
 	}
 	if (inputs.length === 0) {

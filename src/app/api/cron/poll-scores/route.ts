@@ -56,7 +56,12 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 
 	// Load every fixture in the active rounds and short-circuit if none are in their live window.
 	const fixturesInRounds = await db
-		.select({ id: fixture.id, kickoff: fixture.kickoff, roundId: fixture.roundId })
+		.select({
+			id: fixture.id,
+			kickoff: fixture.kickoff,
+			roundId: fixture.roundId,
+			status: fixture.status,
+		})
 		.from(fixture)
 		.where(inArray(fixture.roundId, activeRoundIds))
 

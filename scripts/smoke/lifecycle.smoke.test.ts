@@ -719,6 +719,105 @@ describe('lifecycle: cup-WC', () => {
 		expect(player?.status).toBe('alive')
 	})
 
+	it('knockout: a +1 underdog that QUALIFIES on penalties from a 90-min draw → win + 1 life', async () => {
+		// The "to qualify" rule (NED v MAR R32): Morocco (+1 underdog) drew 1-1 at 90
+		// and won the shootout. The pick must be a WIN earning the underdog its life —
+		// NOT merely a draw_success. The 90-minute score is level; the qualification
+		// `winner` (away) makes it a win.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const fav = await makeTeam({ name: 'Favourite', shortName: 'FAV', fifaPot: 1 })
+		const dog = await makeTeam({ name: 'Underdog', shortName: 'DOG', fifaPot: 2 }) // +1 underdog
+		const o1 = await makeTeam({ name: 'Other One', shortName: 'OON', fifaPot: 2 })
+		const o2 = await makeTeam({ name: 'Other Two', shortName: 'OTW', fifaPot: 2 })
+		const r = await makeRound(compId, { number: 4, status: 'open' }) // R32
+		const tie = await makeFixture({ roundId: r, homeTeamId: fav, awayTeamId: dog })
+		const unplayed = await makeFixture({ roundId: r, homeTeamId: o1, awayTeamId: o2 })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r,
+			modeConfig: { numberOfPicks: 1, startingLives: 0 },
+		})
+		const gpDog = await makePlayer({ gameId, userId: 'u-dog', livesRemaining: 0 })
+		const gpFiller = await makePlayer({ gameId, userId: 'u-fill', livesRemaining: 0 })
+		const dogPick = await makePick({
+			gameId,
+			gamePlayerId: gpDog,
+			roundId: r,
+			teamId: dog,
+			fixtureId: tie,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpFiller,
+			roundId: r,
+			teamId: o1,
+			fixtureId: unplayed,
+			confidenceRank: 1,
+		})
+
+		// 1-1 at 90 minutes; underdog (away) wins on penalties — full-time carries the
+		// shootout-inflated score (2-4) + winner=away, regularTime stays 1-1.
+		await finishFixture(tie, 2, 4, 'away', { home: 1, away: 1 })
+		await settleFixture(tie)
+
+		const p = await db.query.pick.findFirst({ where: eq(pick.id, dogPick) })
+		expect(p?.result).toBe('win')
+		expect(p?.lifeGained).toBe(1)
+		const player = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpDog) })
+		expect(player?.status).toBe('alive')
+		expect(player?.livesRemaining).toBe(1)
+	})
+
+	it('knockout: derives the qualify-win from full-time when football-data winner lags (winner=null)', async () => {
+		// football-data leaves `winner` null on some finished shootouts. The
+		// penalty-inclusive full-time score (2-4, away ahead) still tells us the
+		// underdog advanced → win + life, even with no `winner`.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const fav = await makeTeam({ name: 'Favourite', shortName: 'FAV', fifaPot: 1 })
+		const dog = await makeTeam({ name: 'Underdog', shortName: 'DOG', fifaPot: 2 })
+		const o1 = await makeTeam({ name: 'Other One', shortName: 'OON', fifaPot: 2 })
+		const o2 = await makeTeam({ name: 'Other Two', shortName: 'OTW', fifaPot: 2 })
+		const r = await makeRound(compId, { number: 4, status: 'open' })
+		const tie = await makeFixture({ roundId: r, homeTeamId: fav, awayTeamId: dog })
+		const unplayed = await makeFixture({ roundId: r, homeTeamId: o1, awayTeamId: o2 })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'cup',
+			currentRoundId: r,
+			modeConfig: { numberOfPicks: 1, startingLives: 0 },
+		})
+		const gpDog = await makePlayer({ gameId, userId: 'u-dog', livesRemaining: 0 })
+		const gpFiller = await makePlayer({ gameId, userId: 'u-fill', livesRemaining: 0 })
+		const dogPick = await makePick({
+			gameId,
+			gamePlayerId: gpDog,
+			roundId: r,
+			teamId: dog,
+			fixtureId: tie,
+			confidenceRank: 1,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpFiller,
+			roundId: r,
+			teamId: o1,
+			fixtureId: unplayed,
+			confidenceRank: 1,
+		})
+
+		// winner deliberately null; full-time 2-4 (away advanced), regulation 1-1.
+		await finishFixture(tie, 2, 4, null, { home: 1, away: 1 })
+		await settleFixture(tie)
+
+		const p = await db.query.pick.findFirst({ where: eq(pick.id, dogPick) })
+		expect(p?.result).toBe('win')
+		expect(p?.lifeGained).toBe(1)
+	})
+
 	it('does NOT crown while a higher-confidence pick is unplayed — the 1f0d292d mis-crowning', async () => {
 		// Mirrors the incident: rank-1 pick on an UNPLAYED fixture, rank-2 on a
 		// played one. The gameweek is incomplete → no winner, no payout, game stays
