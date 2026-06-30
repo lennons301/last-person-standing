@@ -9,7 +9,7 @@ import {
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import type { WipeoutPlayerInput } from '@/lib/game-logic/auto-complete-tiebreakers'
 import { determinePickResult } from '@/lib/game-logic/common'
-import { evaluateCupPicks } from '@/lib/game-logic/cup'
+import { evaluateCupPicks, resolveCupQualifier } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import {
 	computeWcClassicAutoElims,
@@ -323,16 +323,23 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 			return {
 				confidenceRank: pickRow.confidenceRank ?? 0,
 				pickedTeam,
-				// Cup scores on the 90-minute (regulation) result, so an underdog
-				// level at 90 minutes survives even if the tie is then lost in
-				// ET/penalties (consistent with how the group stage scored draws).
-				// Fall back to the full-time score when regulation isn't reported
-				// separately (regulation-only matches, where the two are equal).
-				// NOTE: `winner` is deliberately NOT passed — that's the "to qualify"
-				// signal used by CLASSIC; cup is purely 90-minute-based.
+				// A knockout pick is "to qualify": `winner` (incl. ET/penalty ties)
+				// decides whether the picked side advanced. The 90-minute (regulation)
+				// score is the draw floor + goals source — an underdog level at 90 that
+				// loses the shootout still survives (draw_success), and one that wins it
+				// is a win. Fall back to the full-time score when regulation isn't
+				// reported separately. resolveCupQualifier covers football-data's
+				// winner-lag by deriving the qualifier from the penalty-inclusive
+				// full-time score when `winner` is absent on a finished tie.
 				homeScore: fx.regularHomeScore ?? fx.homeScore ?? 0,
 				awayScore: fx.regularAwayScore ?? fx.awayScore ?? 0,
 				tierDifference: tierDiff,
+				winner: resolveCupQualifier({
+					winner: fx.winner,
+					finished: fx.status === 'finished',
+					fullHomeScore: fx.homeScore,
+					fullAwayScore: fx.awayScore,
+				}),
 			}
 		})
 

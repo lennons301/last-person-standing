@@ -28,7 +28,89 @@ import {
 	getCupStandingsData,
 	isCrucial,
 	mapPickResult,
+	projectCupCellFromFixture,
 } from './cup-standings-queries'
+
+describe('projectCupCellFromFixture', () => {
+	const fx = (over: Partial<Parameters<typeof projectCupCellFromFixture>[2]> = {}) => ({
+		homeScore: null,
+		awayScore: null,
+		regularHomeScore: null,
+		regularAwayScore: null,
+		winner: null,
+		status: 'scheduled',
+		...over,
+	})
+
+	it('projects a finished tie that the underdog QUALIFIED (won on pens) as a win', () => {
+		// NED v MAR: away (Morocco) +1 underdog, 1-1 at 90, won the shootout.
+		const cell = projectCupCellFromFixture('away', -1, {
+			homeScore: 3,
+			awayScore: 4,
+			regularHomeScore: 1,
+			regularAwayScore: 1,
+			winner: 'away',
+			status: 'finished',
+		})
+		expect(cell).toBe('win')
+	})
+
+	it('derives the qualifier from full-time when winner lags (finished shootout, winner null)', () => {
+		const cell = projectCupCellFromFixture('away', -1, {
+			homeScore: 3,
+			awayScore: 4,
+			regularHomeScore: 1,
+			regularAwayScore: 1,
+			winner: null,
+			status: 'finished',
+		})
+		expect(cell).toBe('win')
+	})
+
+	it('projects an underdog that is LEVEL in a live tie as surviving (not red)', () => {
+		// The reported bug: a live 1-1 underdog cell was rendered as a loss.
+		const cell = projectCupCellFromFixture(
+			'away',
+			-1,
+			fx({ homeScore: 1, awayScore: 1, status: 'live' }),
+		)
+		expect(cell).toBe('win')
+	})
+
+	it('projects a finished underdog draw that did NOT qualify as surviving', () => {
+		const cell = projectCupCellFromFixture('away', -1, {
+			homeScore: 4, // lost the shootout
+			awayScore: 3,
+			regularHomeScore: 1,
+			regularAwayScore: 1,
+			winner: 'home',
+			status: 'finished',
+		})
+		expect(cell).toBe('win') // draw_success renders as a (green) survival
+	})
+
+	it('still projects a same-tier live draw as a loss (no survival without the handicap)', () => {
+		const cell = projectCupCellFromFixture(
+			'home',
+			0,
+			fx({ homeScore: 1, awayScore: 1, status: 'live' }),
+		)
+		expect(cell).toBe('loss')
+	})
+
+	it('projects a clear lead as a win and a deficit as a loss', () => {
+		expect(
+			projectCupCellFromFixture('home', 0, fx({ homeScore: 2, awayScore: 0, status: 'live' })),
+		).toBe('win')
+		expect(
+			projectCupCellFromFixture('home', 0, fx({ homeScore: 0, awayScore: 2, status: 'live' })),
+		).toBe('loss')
+	})
+
+	it('returns pending when there is no score yet', () => {
+		expect(projectCupCellFromFixture('home', 0, fx())).toBe('pending')
+	})
+})
 
 describe('getCupStandingsData', () => {
 	it('returns null when game is missing', async () => {
