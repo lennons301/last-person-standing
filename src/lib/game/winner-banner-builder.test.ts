@@ -120,6 +120,7 @@ describe('buildWinnerBanner', () => {
 						livesRemaining: 2,
 						streak: 5,
 						goals: 7,
+						provisional: false,
 						hasSubmitted: true,
 						eliminatedRoundNumber: null,
 						eliminatedRoundLabel: null,

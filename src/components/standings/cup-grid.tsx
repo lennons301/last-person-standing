@@ -94,9 +94,7 @@ export function CupGrid({ data, showAdminActions, gameId }: CupGridProps) {
 						key={player.id}
 						player={player}
 						numberOfPicks={data.numberOfPicks}
-						maxLives={data.maxLives}
 						position={idx + 1}
-						roundNumber={data.roundNumber}
 						roundLabel={data.roundLabel}
 						liveMeta={liveMeta}
 						pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
@@ -115,9 +113,7 @@ export function CupGrid({ data, showAdminActions, gameId }: CupGridProps) {
 								key={player.id}
 								player={player}
 								numberOfPicks={data.numberOfPicks}
-								maxLives={data.maxLives}
 								position={alive.length + idx + 1}
-								roundNumber={data.roundNumber}
 								roundLabel={data.roundLabel}
 								liveMeta={liveMeta}
 								pickFixtureByRank={pickFixtureByPlayer.get(player.id)}
@@ -128,6 +124,11 @@ export function CupGrid({ data, showAdminActions, gameId }: CupGridProps) {
 							/>
 						))}
 					</div>
+				)}
+				{data.players.some((p) => p.provisional) && (
+					<p className="mt-3 px-1 text-[10px] text-muted-foreground italic">
+						* provisional — reflects in-progress results; settles as earlier picks finish
+					</p>
 				)}
 			</div>
 		</div>
@@ -161,9 +162,7 @@ function HeaderRow({ numberOfPicks }: { numberOfPicks: number }) {
 function PlayerRow({
 	player,
 	numberOfPicks,
-	maxLives,
 	position,
-	roundNumber,
 	roundLabel,
 	liveMeta,
 	pickFixtureByRank,
@@ -174,9 +173,7 @@ function PlayerRow({
 }: {
 	player: CupStandingsData['players'][number]
 	numberOfPicks: number
-	maxLives: number
 	position: number
-	roundNumber: number
 	roundLabel: string
 	liveMeta: LiveRowMeta
 	pickFixtureByRank?: Map<number, string>
@@ -233,9 +230,24 @@ function PlayerRow({
 						/>
 					)}
 			</div>
-			<LivesCell remaining={player.livesRemaining} max={maxLives} />
-			<div className="text-center font-bold">{player.streak || '—'}</div>
-			<div className="text-center">{player.goals || '—'}</div>
+			<LivesCell remaining={player.livesRemaining} provisional={player.provisional} />
+			<div
+				className={cn(
+					'text-center font-bold',
+					player.provisional && 'italic text-muted-foreground',
+				)}
+				title={player.provisional ? PROVISIONAL_TITLE : undefined}
+			>
+				{player.streak || '—'}
+				{player.provisional && player.streak > 0 ? '*' : ''}
+			</div>
+			<div
+				className={cn('text-center', player.provisional && 'italic text-muted-foreground')}
+				title={player.provisional ? PROVISIONAL_TITLE : undefined}
+			>
+				{player.goals || '—'}
+				{player.provisional && player.goals > 0 ? '*' : ''}
+			</div>
 			{Array.from({ length: numberOfPicks }, (_, i) => {
 				const rank = i + 1
 				const pick = player.picks.find((p) => p.confidenceRank === rank)
@@ -248,28 +260,30 @@ function PlayerRow({
 	)
 }
 
-function LivesCell({ remaining, max }: { remaining: number; max: number }) {
+const PROVISIONAL_TITLE = 'Provisional — settles as earlier picks finish'
+
+// Cup lives are EARNED and uncapped, so there is no meaningful denominator —
+// render a heart glyph + the count (not a fraction). Zero lives dims the heart
+// and flags ⚠; a provisional (not-yet-settled) projection is italic with a *.
+function LivesCell({ remaining, provisional }: { remaining: number; provisional?: boolean }) {
+	const zero = remaining === 0
 	return (
-		<div className="flex items-center gap-0.5">
-			{Array.from({ length: max }, (_, i) => (
-				<span
-					// biome-ignore lint/suspicious/noArrayIndexKey: stable index
-					key={i}
-					className={cn(
-						'inline-block h-2.5 w-2.5 rounded-full',
-						i < remaining ? 'bg-[#dc2626]' : 'ring-1 ring-inset ring-border',
-					)}
-				/>
-			))}
-			<span
-				className={cn(
-					'ml-1 text-[10px]',
-					remaining === 0 ? 'text-red-600 font-bold' : 'text-muted-foreground',
-				)}
-			>
-				{remaining}/{max}
-				{remaining === 0 ? ' ⚠' : ''}
+		<div
+			className={cn(
+				'flex items-center gap-1 text-[11px]',
+				zero ? 'text-red-600 font-bold' : 'text-muted-foreground',
+				provisional && 'italic',
+			)}
+			title={provisional ? PROVISIONAL_TITLE : undefined}
+		>
+			<span aria-hidden className={cn('text-[#dc2626]', zero && 'opacity-40')}>
+				♥
 			</span>
+			<span>
+				{remaining}
+				{provisional ? '*' : ''}
+			</span>
+			{zero ? <span aria-hidden> ⚠</span> : null}
 		</div>
 	)
 }
