@@ -64,6 +64,15 @@ export interface GridCell {
 	homeAway?: 'H' | 'A'
 	score?: string
 	isAuto?: boolean
+	/**
+	 * True on the cell for the round in which this player was eliminated, when a
+	 * real pick exists for that round. The pick + result render as normal and a
+	 * skull marker is overlaid — so a pick that actually won (but the player was
+	 * still eliminated) stays visible rather than being replaced by a bare skull.
+	 * The bare `result: 'skull'` cell is kept only for elimination rounds with no
+	 * pick (e.g. a no-pick elimination).
+	 */
+	eliminatedHere?: boolean
 }
 
 export interface GridPlayer {
@@ -586,6 +595,11 @@ function GridCellView({
 					)}
 				>
 					<span>{pickedLabel}</span>
+					{cell.eliminatedHere && (
+						<span className="absolute -bottom-1.5 -right-1 text-xs leading-none drop-shadow">
+							💀
+						</span>
+					)}
 					{showOpponents && opponentLabel && (
 						<span className="text-[0.55rem] font-normal opacity-80">{opponentLabel}</span>
 					)}

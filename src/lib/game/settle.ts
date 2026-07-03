@@ -175,6 +175,23 @@ async function settleClassicPickRow(
 	// boundary so we coalesce defensively.
 	const homeScore = fx.homeScore ?? 0
 	const awayScore = fx.awayScore ?? 0
+
+	// Unresolved knockout tie → leave the pick PENDING (don't score it a draw).
+	// A knockout match can't end level: if a knockout-round fixture is finished
+	// level with no `winner` reported yet, that's football-data's winner-lag, not
+	// a draw. Scoring it a draw here would wrongly eliminate the backer (whose team
+	// may have advanced on penalties) — and once that elimination completes or
+	// advances the game it can't be undone. Deferring keeps the player alive until
+	// the winner (or a decisive full-time score) lands, at which point the pick
+	// settles correctly via the poll re-fire / recovery sweeps. Group-stage and
+	// league draws are genuine results and are unaffected.
+	const isKnockoutRound =
+		fx.round.competition.type === 'knockout' ||
+		(fx.round.competition.type === 'group_knockout' && wcRoundStage(fx.round.number) === 'knockout')
+	if (isKnockoutRound && fx.winner == null && homeScore === awayScore) {
+		return false
+	}
+
 	const result = determinePickResult({
 		pickedTeamId: p.teamId,
 		homeTeamId: fx.homeTeam.id,
@@ -443,13 +460,29 @@ async function checkAndMaybeCompleteOrAdvance(
 				f.status === 'cancelled',
 		)
 
+	// A classic round with a still-pending pick is NOT fully settled even when
+	// every fixture is terminal: a knockout tie can be `finished` while its pick
+	// is deliberately left pending until the winner resolves (see
+	// settleClassicPickRow). Crowning / advancing on the fixture-only `allFinished`
+	// would decide the game on an unresolved tie. Mirror the turbo/cup invariant —
+	// gate the "round done" verdict on there being no pending picks too. (last-alive
+	// / mass-extinction still fire on alive count inside checkClassicCompletion; the
+	// deferred player stays alive, so those counts stay correct.)
+	let classicRoundSettled = allFinished
+	if (g.gameMode === 'classic' && allFinished) {
+		const roundPicks = await db.query.pick.findMany({
+			where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
+		})
+		if (roundPicks.some((p) => p.result === 'pending')) classicRoundSettled = false
+	}
+
 	// Per-mode completion check. Classic + cup check after every pick
 	// settlement (game can complete mid-gameweek). Turbo only checks once
 	// the round is fully settled.
 	if (g.gameMode === 'classic') {
 		// WC auto-elim runs after the round is fully settled (it needs the
 		// full set of remaining-round candidates).
-		if (allFinished && g.competition.type === 'group_knockout') {
+		if (classicRoundSettled && g.competition.type === 'group_knockout') {
 			await runWcClassicAutoElims(gameId, roundId)
 		}
 		const completion = await checkClassicCompletion(
@@ -457,7 +490,7 @@ async function checkAndMaybeCompleteOrAdvance(
 			g.competitionId,
 			roundId,
 			roundNumber,
-			allFinished,
+			classicRoundSettled,
 		)
 		if (completion.completed) {
 			await applyAutoCompletion(gameId, completion.winnerPlayerIds)
@@ -504,8 +537,10 @@ async function checkAndMaybeCompleteOrAdvance(
 	}
 
 	// Game still active — if the round is fully settled, mark it complete +
-	// advance the game. Classic + cup path only; turbo handled above.
-	if (allFinished) {
+	// advance the game. Classic-only path here (cup + turbo returned above), so
+	// use the pending-aware `classicRoundSettled` — never advance past a deferred,
+	// still-unresolved knockout tie.
+	if (classicRoundSettled) {
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
 		result.roundsCompleted.push(roundId)
 		const advanced = await advanceGameToNextRound(gameId, g.competitionId, roundNumber)

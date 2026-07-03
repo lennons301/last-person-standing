@@ -950,7 +950,11 @@ export async function getProgressGridData(
 		for (const r of rounds) {
 			const thePick = gameData.picks.find((pk) => pk.gamePlayerId === p.id && pk.roundId === r.id)
 
-			if (p.status === 'eliminated' && p.eliminatedRoundId === r.id) {
+			// Elimination round with NO pick (e.g. a no-pick elimination) → bare
+			// skull. With a pick, fall through and render the pick + result as
+			// normal, flagged `eliminatedHere` so a skull marker is overlaid — a
+			// pick that actually won stays visible instead of being hidden.
+			if (p.status === 'eliminated' && p.eliminatedRoundId === r.id && !thePick) {
 				cellsByRoundId[r.id] = { result: 'skull' }
 				continue
 			}
@@ -1027,6 +1031,8 @@ export async function getProgressGridData(
 				homeAway,
 				score,
 				isAuto: thePick.isAuto,
+				eliminatedHere:
+					p.status === 'eliminated' && p.eliminatedRoundId === r.id ? true : undefined,
 			}
 		}
 
