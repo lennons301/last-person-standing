@@ -118,21 +118,30 @@ export function cupStandingsLayout(
 							<div style={{ display: 'flex', width: '180px', fontWeight: 600, fontSize: '18px' }}>
 								{player.name}
 							</div>
-							<div style={{ display: 'flex', alignItems: 'center', gap: '3px', width: '90px' }}>
-								{Array.from({ length: cup.maxLives }).map((_, i) => (
-									<div
-										// biome-ignore lint/suspicious/noArrayIndexKey: stable index
-										key={`life-${player.id}-${i}`}
-										style={{
-											display: 'flex',
-											width: '12px',
-											height: '12px',
-											borderRadius: '6px',
-											background: i < player.livesRemaining ? '#dc2626' : 'transparent',
-											border: i < player.livesRemaining ? 'none' : '1.5px solid #e8e6e1',
-										}}
-									/>
-								))}
+							{/* Cup lives are EARNED and uncapped — show a single red life pip
+							    + the count, not a maxLives-bounded row of dots (maxLives is
+							    startingLives, 0 by default → the old render showed nothing). */}
+							<div style={{ display: 'flex', alignItems: 'center', gap: '5px', width: '90px' }}>
+								<div
+									style={{
+										display: 'flex',
+										width: '12px',
+										height: '12px',
+										borderRadius: '6px',
+										background: player.livesRemaining > 0 ? '#dc2626' : 'transparent',
+										border: player.livesRemaining > 0 ? 'none' : '1.5px solid #e8e6e1',
+									}}
+								/>
+								<div
+									style={{
+										display: 'flex',
+										fontWeight: 700,
+										fontSize: '15px',
+										color: player.livesRemaining > 0 ? '#dc2626' : '#9b9b9b',
+									}}
+								>
+									{player.livesRemaining}
+								</div>
 							</div>
 							<div
 								style={{
