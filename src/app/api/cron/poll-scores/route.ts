@@ -106,7 +106,15 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 				// football-data-bootstrapped competitions (e.g., WC), external_ids.football_data
 				// equals external_id by construction.
 				const [existing] = await db
-					.select({ id: fixture.id, status: fixture.status })
+					.select({
+						id: fixture.id,
+						status: fixture.status,
+						winner: fixture.winner,
+						homeScore: fixture.homeScore,
+						awayScore: fixture.awayScore,
+						regularHomeScore: fixture.regularHomeScore,
+						regularAwayScore: fixture.regularAwayScore,
+					})
 					.from(fixture)
 					.where(sql`${fixture.externalIds}->>'football_data' = ${score.externalId}`)
 				if (!existing) continue
@@ -130,6 +138,20 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 				const nowTerminal = score.status === 'finished' || score.status === 'cancelled'
 				if (!wasTerminal && nowTerminal) {
 					transitionedFixtureIds.push(existing.id)
+				} else if (wasTerminal && nowTerminal) {
+					// Winner-lag / late correction: football-data can report a knockout
+					// tie's winner (or a corrected/regulation score) a poll or two after the
+					// fixture first flips to finished. Re-fire settlement so a classic pick
+					// deferred as an unresolved tie settles the moment the winner lands, and
+					// cup regulation-score corrections re-evaluate. settleFixture only
+					// settles pending picks, so a no-change re-fire is a no-op.
+					const resultChanged =
+						(existing.winner ?? null) !== (score.winner ?? null) ||
+						existing.homeScore !== score.homeScore ||
+						existing.awayScore !== score.awayScore ||
+						existing.regularHomeScore !== (score.regularHomeScore ?? null) ||
+						existing.regularAwayScore !== (score.regularAwayScore ?? null)
+					if (resultChanged) transitionedFixtureIds.push(existing.id)
 				}
 				totalUpdated++
 			}

@@ -129,6 +129,7 @@ export function classicStandingsLayout(
 							</div>
 						))}
 					</div>
+					<div style={{ display: 'flex', width: '60px', justifyContent: 'center' }}>Gls</div>
 					<div style={{ display: 'flex', width: '100px', justifyContent: 'flex-end' }}>Status</div>
 				</div>
 				{visible.map((player) => (
@@ -241,8 +242,8 @@ export function classicStandingsLayout(
 								const bg = RESULT_COLOUR[cell.result] ?? '#888'
 								const teamAccent = cell.teamShortName ? getTeamColour(cell.teamShortName) : bg
 								const opponentLabel = cell.opponentShortName
-									? `${cell.homeAway === 'A' ? '@' : 'v'}${cell.opponentShortName}`
-									: null
+									? `${cell.homeAway === 'A' ? '@' : 'v'}${cell.opponentShortName}${cell.score ? ` ${cell.score}` : ''}`
+									: (cell.score ?? null)
 								return (
 									<div
 										key={r.id}
@@ -258,8 +259,22 @@ export function classicStandingsLayout(
 											borderRadius: '6px',
 											padding: '6px 4px',
 											borderLeft: `4px solid ${teamAccent}`,
+											position: 'relative',
 										}}
 									>
+										{cell.eliminatedHere && (
+											<div
+												style={{
+													display: 'flex',
+													position: 'absolute',
+													top: '-8px',
+													right: '-4px',
+													fontSize: '16px',
+												}}
+											>
+												💀
+											</div>
+										)}
 										<div style={{ display: 'flex', fontSize: '16px' }}>
 											{cell.teamShortName ?? '?'}
 										</div>
@@ -279,6 +294,19 @@ export function classicStandingsLayout(
 									</div>
 								)
 							})}
+						</div>
+						<div
+							style={{
+								display: 'flex',
+								width: '60px',
+								justifyContent: 'center',
+								alignItems: 'center',
+								fontSize: '16px',
+								fontWeight: 700,
+								color: '#1a1a1a',
+							}}
+						>
+							{player.goals || '—'}
 						</div>
 						<div
 							style={{
