@@ -52,7 +52,7 @@ export function CupLadder({ data }: CupLadderProps) {
 
 	return (
 		<div className="space-y-6">
-			<Podium players={top3} maxLives={data.maxLives} />
+			<Podium players={top3} />
 			{unplayed.length > 0 && (
 				<section>
 					<h3 className="flex items-center gap-2 font-display text-lg font-semibold mb-3">
@@ -93,7 +93,7 @@ export function CupLadder({ data }: CupLadderProps) {
 	)
 }
 
-function Podium({ players, maxLives }: { players: CupStandingsPlayer[]; maxLives: number }) {
+function Podium({ players }: { players: CupStandingsPlayer[] }) {
 	if (players.length === 0) return null
 	return (
 		<div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -128,11 +128,17 @@ function Podium({ players, maxLives }: { players: CupStandingsPlayer[]; maxLives
 								className={cn(
 									'flex items-center gap-1 text-xs',
 									lowLives ? 'text-[var(--eliminated)] font-bold' : 'text-muted-foreground',
+									p.provisional && 'italic',
 								)}
-								title={`${p.livesRemaining} of ${maxLives} lives`}
+								title={
+									p.provisional
+										? `${p.livesRemaining} lives (provisional — settles as earlier picks finish)`
+										: `${p.livesRemaining} lives`
+								}
 							>
 								<HeartIcon size={12} />
-								{p.livesRemaining}/{maxLives}
+								{p.livesRemaining}
+								{p.provisional ? '*' : ''}
 							</div>
 							<div className="flex items-center gap-1 text-xs text-muted-foreground">
 								<Target className="h-3 w-3" />

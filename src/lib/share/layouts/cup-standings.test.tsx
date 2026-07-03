@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { cupStandingsLayout } from './cup-standings'
 
@@ -89,6 +91,41 @@ describe('cupStandingsLayout', () => {
 		const { jsx, height } = cupStandingsLayout(withEliminated)
 		expect(jsx).toBeTruthy()
 		expect(height).toBeGreaterThanOrEqual(700)
+	})
+
+	it('renders lives as a numeric count, not maxLives-bounded pips', () => {
+		// Cup lives are earned/uncapped — a huge maxLives must NOT drive the render;
+		// the earned count is shown as text. Before the fix there was no count text.
+		const f = {
+			mode: 'cup' as const,
+			header: fixture.header,
+			overflowCount: 0,
+			cupData: {
+				gameId: 'g1',
+				roundId: 'r1',
+				roundNumber: 7,
+				roundLabel: 'GW7',
+				roundStatus: 'open' as const,
+				numberOfPicks: 10,
+				maxLives: 99,
+				players: [
+					{
+						id: 'p1',
+						userId: 'u1',
+						name: 'Sean',
+						status: 'alive' as const,
+						eliminatedRoundNumber: null,
+						livesRemaining: 4,
+						streak: 8,
+						goals: 12,
+						picks: [],
+						hasSubmitted: true,
+					},
+				],
+			} as never,
+		}
+		render(cupStandingsLayout(f).jsx)
+		expect(screen.getByText('4')).toBeTruthy() // the earned-lives count
 	})
 
 	it('emits overflow row when more than cap', () => {

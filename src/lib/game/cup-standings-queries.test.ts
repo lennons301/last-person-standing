@@ -22,6 +22,7 @@ import {
 	type CupLadderBacker,
 	type CupStandingsPick,
 	type CupStandingsPlayer,
+	computeCupProjection,
 	computeLivesGained,
 	computeLivesSpent,
 	computeStreak,
@@ -30,6 +31,141 @@ import {
 	mapPickResult,
 	projectCupCellFromFixture,
 } from './cup-standings-queries'
+
+describe('computeCupProjection', () => {
+	type Entry = Parameters<typeof computeCupProjection>[0][number]
+	const scheduled = {
+		homeScore: null,
+		awayScore: null,
+		regularHomeScore: null,
+		regularAwayScore: null,
+		winner: null,
+		status: 'scheduled',
+	} as const
+	const entry = (over: Partial<Entry> & { fixture?: Partial<Entry['fixture']> } = {}): Entry => ({
+		confidenceRank: 1,
+		pickedTeam: 'home',
+		tierDifference: 0,
+		result: 'pending',
+		...over,
+		fixture: { ...scheduled, ...(over.fixture ?? {}) },
+	})
+
+	it('projects a qualifying underdog (pending + scored) as a provisional win + life', () => {
+		// away +1 underdog (tierDiff +1 from home), 1-1 at 90, won the shootout.
+		const res = computeCupProjection(
+			[
+				entry({
+					pickedTeam: 'away',
+					tierDifference: 1,
+					result: 'pending',
+					fixture: {
+						homeScore: 3,
+						awayScore: 4,
+						regularHomeScore: 1,
+						regularAwayScore: 1,
+						winner: 'away',
+						status: 'finished',
+					},
+				}),
+			],
+			0,
+		)
+		expect(res).toEqual({ streak: 1, goals: 1, lives: 1, provisional: true })
+	})
+
+	it('is NOT provisional once the contributing pick has settled', () => {
+		const res = computeCupProjection(
+			[
+				entry({
+					pickedTeam: 'away',
+					tierDifference: 1,
+					result: 'win',
+					fixture: {
+						homeScore: 3,
+						awayScore: 4,
+						regularHomeScore: 1,
+						regularAwayScore: 1,
+						winner: 'away',
+						status: 'finished',
+					},
+				}),
+			],
+			0,
+		)
+		expect(res.provisional).toBe(false)
+		expect(res).toEqual({ streak: 1, goals: 1, lives: 1, provisional: false })
+	})
+
+	it('ignores unplayed (unscored) picks — startingLives, empty streak, not provisional', () => {
+		const res = computeCupProjection([entry({ result: 'pending' })], 2)
+		expect(res).toEqual({ streak: 0, goals: 0, lives: 2, provisional: false })
+	})
+
+	it('reflects a spent life consistently (favourite draw saved by a life)', () => {
+		// same-tier draw, no qualifier → saved_by_life when a life is available.
+		const res = computeCupProjection(
+			[
+				entry({
+					pickedTeam: 'home',
+					tierDifference: 0,
+					result: 'pending',
+					fixture: {
+						homeScore: 1,
+						awayScore: 1,
+						regularHomeScore: null,
+						regularAwayScore: null,
+						winner: null,
+						status: 'finished',
+					},
+				}),
+			],
+			1,
+		)
+		expect(res.lives).toBe(0) // spent
+		expect(res.streak).toBe(1) // saved_by_life still extends the streak
+		expect(res.provisional).toBe(true)
+	})
+
+	it('streak is the leading consecutive run — a middle loss stops it', () => {
+		// rank 1 a same-tier win (earns NO life), so rank 2's loss can't be saved.
+		const res = computeCupProjection(
+			[
+				entry({
+					confidenceRank: 1,
+					pickedTeam: 'home',
+					tierDifference: 0,
+					result: 'win',
+					fixture: {
+						homeScore: 1,
+						awayScore: 0,
+						regularHomeScore: null,
+						regularAwayScore: null,
+						winner: 'home',
+						status: 'finished',
+					},
+				}),
+				entry({
+					confidenceRank: 2,
+					pickedTeam: 'home',
+					tierDifference: 0,
+					result: 'loss',
+					fixture: {
+						homeScore: 0,
+						awayScore: 2,
+						regularHomeScore: null,
+						regularAwayScore: null,
+						winner: 'away',
+						status: 'finished',
+					},
+				}),
+			],
+			0,
+		)
+		expect(res.streak).toBe(1)
+		expect(res.provisional).toBe(false) // both settled
+	})
+})
 
 describe('projectCupCellFromFixture', () => {
 	const fx = (over: Partial<Parameters<typeof projectCupCellFromFixture>[2]> = {}) => ({
@@ -314,6 +450,7 @@ describe('isCrucial', () => {
 		livesRemaining,
 		streak: 0,
 		goals: 0,
+		provisional: false,
 		hasSubmitted: true,
 		eliminatedRoundNumber: null,
 		eliminatedRoundLabel: null,
