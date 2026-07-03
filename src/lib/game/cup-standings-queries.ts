@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { roundLabel } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { determineFixtureOutcome } from '@/lib/game-logic/common'
-import { resolveCupQualifier } from '@/lib/game-logic/cup'
+import { evaluateCupPicks, resolveCupQualifier } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import {
 	type FixtureOutcomes,
@@ -33,9 +33,15 @@ export interface CupStandingsPlayer {
 	userId: string
 	name: string
 	status: 'alive' | 'eliminated' | 'winner'
+	// streak / goals / livesRemaining are the PROJECTED aggregate during live play
+	// (consistent — all from one evaluateCupPicks pass over scored fixtures); they
+	// equal the persisted/settled values once everything contributing has settled.
 	livesRemaining: number
 	streak: number
 	goals: number
+	// True when the projection runs ahead of settlement (a scored pick is still
+	// `pending`) — the grid renders streak/goals/lives as provisional.
+	provisional: boolean
 	hasSubmitted: boolean
 	eliminatedRoundNumber: number | null
 	eliminatedRoundLabel: string | null
@@ -160,6 +166,10 @@ export async function getCupStandingsData(
 	const hideOpenPicks =
 		displayRound.status !== 'completed' && (!displayRound.deadline || now < displayRound.deadline)
 
+	// Starting lives default 0 (lives are EARNED in cup) — must match settlement
+	// (settle.ts) so projected lives equal persisted once settled.
+	const startingLives = (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+
 	const players: CupStandingsPlayer[] = g.players
 		.filter((p) => p.eliminatedReason !== 'admin_removed')
 		.map((p) => {
@@ -212,15 +222,42 @@ export async function getCupStandingsData(
 					goalsCounted: pk.goalsScored ?? 0,
 				}
 			})
-			const streak = computeStreak(picks)
+			// Projected aggregate — streak / goals / lives from ONE evaluateCupPicks
+			// pass over scored fixtures, so the row is internally consistent and
+			// agrees with the cells. `provisional` flags that it runs ahead of
+			// settlement (e.g. a qualifying knockout pick whose earlier ranks are
+			// still unplayed). Built from the raw picks + fixtures (tier from HOME).
+			const projectionInput = myPicks
+				.map((pk) => {
+					const fx = displayRound.fixtures.find((f) => f.id === pk.fixtureId)
+					if (!fx) return null
+					const pickedTeam: 'home' | 'away' = pk.teamId === fx.homeTeamId ? 'home' : 'away'
+					return {
+						confidenceRank: pk.confidenceRank ?? 0,
+						pickedTeam,
+						tierDifference: computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type),
+						result: pk.result,
+						fixture: {
+							homeScore: fx.homeScore,
+							awayScore: fx.awayScore,
+							regularHomeScore: fx.regularHomeScore,
+							regularAwayScore: fx.regularAwayScore,
+							winner: fx.winner,
+							status: fx.status,
+						},
+					}
+				})
+				.filter((x): x is NonNullable<typeof x> => x != null)
+			const projection = computeCupProjection(projectionInput, startingLives)
 			return {
 				id: p.id,
 				userId: p.userId,
 				name: userNames.get(p.userId) ?? 'Player',
 				status: p.status,
-				livesRemaining: p.livesRemaining,
-				streak,
-				goals: picks.reduce((sum, pk) => sum + pk.goalsCounted, 0),
+				livesRemaining: projection.lives,
+				streak: projection.streak,
+				goals: projection.goals,
+				provisional: projection.provisional,
 				hasSubmitted: myPicks.length > 0,
 				eliminatedRoundNumber: null,
 				eliminatedRoundLabel: null,
@@ -229,7 +266,6 @@ export async function getCupStandingsData(
 		})
 
 	const competitionType = g.competition.type as 'league' | 'knockout' | 'group_knockout'
-	const startingLives = (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 3
 
 	// Win scenarios — POST-DEADLINE ONLY (pre-deadline picks are hidden; revealing
 	// who-needs-what would leak them). Built from the raw picks + fixture results;
@@ -385,6 +421,70 @@ export function computeStreak(picks: CupStandingsPick[]): number {
 		else break
 	}
 	return streak
+}
+
+/**
+ * Projected cup aggregate for a player: streak / goals / lives derived from ONE
+ * `evaluateCupPicks` pass over the player's picks on scored fixtures (so the
+ * three values are mutually consistent — unlike reading a cell-based streak
+ * alongside persisted goals/lives, which lag). Uses the same `resolveCupQualifier`
+ * + 90-minute inputs the cells use, so the row agrees with the grid cells.
+ *
+ * `provisional` is true when the projection runs ahead of settlement — i.e. the
+ * player has a pick that is still `pending` but whose fixture already has a score
+ * (e.g. a qualifying knockout pick that won't persist as a win until earlier
+ * ranks settle). When everything contributing has settled, the projected values
+ * equal the persisted ones and `provisional` is false.
+ */
+export function computeCupProjection(
+	picks: Array<{
+		confidenceRank: number
+		pickedTeam: 'home' | 'away'
+		/** tier difference from the HOME team's perspective (positive = home higher tier). */
+		tierDifference: number
+		result: string
+		fixture: {
+			homeScore: number | null
+			awayScore: number | null
+			regularHomeScore: number | null
+			regularAwayScore: number | null
+			winner: 'home' | 'away' | null
+			status: string
+		}
+	}>,
+	startingLives: number,
+): { streak: number; goals: number; lives: number; provisional: boolean } {
+	const isScored = (f: (typeof picks)[number]['fixture']) =>
+		f.status !== 'cancelled' && f.homeScore != null && f.awayScore != null
+
+	const inputs = picks
+		.filter((p) => isScored(p.fixture))
+		.sort((a, b) => a.confidenceRank - b.confidenceRank)
+		.map((p) => ({
+			confidenceRank: p.confidenceRank,
+			pickedTeam: p.pickedTeam,
+			homeScore: p.fixture.regularHomeScore ?? p.fixture.homeScore ?? 0,
+			awayScore: p.fixture.regularAwayScore ?? p.fixture.awayScore ?? 0,
+			tierDifference: p.tierDifference,
+			winner: resolveCupQualifier({
+				winner: p.fixture.winner,
+				finished: p.fixture.status === 'finished',
+				fullHomeScore: p.fixture.homeScore,
+				fullAwayScore: p.fixture.awayScore,
+			}),
+		}))
+
+	const evalResult = evaluateCupPicks(inputs, startingLives)
+	// Streak = leading consecutive run of surviving results (win / draw_success /
+	// saved_by_life) in rank order.
+	let streak = 0
+	for (const r of evalResult.pickResults) {
+		if (r.result === 'win' || r.result === 'draw_success' || r.result === 'saved_by_life') streak++
+		else break
+	}
+	const goals = evalResult.pickResults.reduce((sum, r) => sum + r.goalsCounted, 0)
+	const provisional = picks.some((p) => p.result === 'pending' && isScored(p.fixture))
+	return { streak, goals, lives: evalResult.finalLives, provisional }
 }
 
 /**
