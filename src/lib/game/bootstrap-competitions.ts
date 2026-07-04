@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, lt } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, lt } from 'drizzle-orm'
 import { FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter, type FplPreFetched } from '@/lib/data/fpl'
 import { enqueuePollScoresAt } from '@/lib/data/qstash'
@@ -6,6 +6,11 @@ import type { CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
 import { settleFixture } from '@/lib/game/settle'
+import {
+	findByTeamPair,
+	type PlannerRound,
+	planKnockoutSeeding,
+} from '@/lib/game-logic/knockout-bracket'
 import { competition, fixture, round, team } from '@/lib/schema/competition'
 
 export interface BootstrapOptions {
@@ -344,13 +349,17 @@ export async function syncCompetition(
 			existingRound.status === 'open' &&
 			existingRound.deadline != null &&
 			existingRound.deadline.getTime() <= nowForDeadline.getTime()
+		// Prefer the deadline from playable (drawn) fixtures; fall back to the
+		// all-matches schedule so a knockout round carries a correct deadline even
+		// before its bracket is drawn (the R16 pre-draw incident).
+		const roundDeadline = ar.deadline ?? ar.allMatchesDeadline
 		if (existingRound) {
 			roundId = existingRound.id
 			await db
 				.update(round)
 				.set({
 					name: ar.name,
-					deadline: ar.deadline,
+					deadline: roundDeadline,
 					status: newStatus,
 				})
 				.where(eq(round.id, existingRound.id))
@@ -361,7 +370,7 @@ export async function syncCompetition(
 					competitionId: comp.id,
 					number: ar.number,
 					name: ar.name,
-					deadline: ar.deadline,
+					deadline: roundDeadline,
 					status: newStatus,
 				})
 				.returning()
@@ -371,6 +380,12 @@ export async function syncCompetition(
 		if (deadlineHasPassed) {
 			deadlinePassedRoundIds.push(roundId)
 		}
+
+		// Provisional (source-less) fixtures we may have seeded ahead of the draw.
+		// Tier 1 binds them to the real match by team pair when the source draws.
+		const unboundRoundFixtures = await db.query.fixture.findMany({
+			where: and(eq(fixture.roundId, roundId), isNull(fixture.externalId)),
+		})
 
 		for (const af of ar.fixtures) {
 			const home = allTeams.find(
@@ -388,6 +403,10 @@ export async function syncCompetition(
 			const existingFixture = await db.query.fixture.findFirst({
 				where: eq(fixture.externalId, af.externalId),
 			})
+			// A provisional tie we seeded for this same matchup, not yet bound.
+			const provisional = existingFixture
+				? undefined
+				: findByTeamPair(home.id, away.id, unboundRoundFixtures)
 			if (existingFixture) {
 				await db
 					.update(fixture)
@@ -416,6 +435,30 @@ export async function syncCompetition(
 				if (!wasTerminal && nowTerminal) {
 					transitionedToFinishedIds.push(existingFixture.id)
 				}
+			} else if (provisional) {
+				// Bind the provisional tie to the real match: adopt the source's
+				// externalId, kickoff, scores AND home/away orientation (picks reference
+				// teamId, so re-orienting is pick-safe). This is the ONLY correct way to
+				// resolve a slot — by teams, never by a guessed bracket position.
+				await db
+					.update(fixture)
+					.set({
+						homeTeamId: home.id,
+						awayTeamId: away.id,
+						kickoff: af.kickoff,
+						status: af.status,
+						homeScore: af.homeScore,
+						awayScore: af.awayScore,
+						regularHomeScore: af.regularHomeScore ?? null,
+						regularAwayScore: af.regularAwayScore ?? null,
+						winner: af.winner ?? null,
+						externalId: af.externalId,
+						externalIds: { [key]: af.externalId },
+					})
+					.where(eq(fixture.id, provisional.id))
+				const nowTerminal =
+					af.status === 'finished' || af.status === 'cancelled' || af.status === 'postponed'
+				if (nowTerminal) transitionedToFinishedIds.push(provisional.id)
 			} else {
 				await db.insert(fixture).values({
 					roundId,
@@ -436,6 +479,14 @@ export async function syncCompetition(
 		}
 	}
 
+	// Tier 2: seed not-yet-drawn knockout ties from finished feeders, so a
+	// survivor game has the full set of pickable teams before the round deadline
+	// even when the source lags the bracket draw (the R16 pre-draw incident).
+	// Provisional fixtures are UNBOUND (externalId=null) — Tier 1 binds them to
+	// the real match by team pair once the source draws it. Derivation is
+	// self-validated; unvalidatable rounds are skipped, not guessed.
+	totalFixtures += await seedProvisionalKnockoutTies(comp.id, adapterRounds, key)
+
 	// Run per-fixture settlement for every fixture that flipped finished
 	// during this sync. Done after the loop so all related round/fixture
 	// rows are committed and settle reads consistent state.
@@ -449,6 +500,76 @@ export async function syncCompetition(
 		deadlinePassedRoundIds,
 		settledFixtureIds: transitionedToFinishedIds,
 	}
+}
+
+/**
+ * Derive and insert the not-yet-drawn ties for every knockout round whose feeder
+ * has finished. Returns the number of fixtures seeded. Idempotent: a tie already
+ * present (bound or provisional, either orientation) is not re-seeded.
+ */
+async function seedProvisionalKnockoutTies(
+	competitionId: string,
+	adapterRounds: { number: number; isKnockout: boolean; allMatchesDeadline: Date | null }[],
+	key: string,
+): Promise<number> {
+	const dbRounds = await db.query.round.findMany({
+		where: eq(round.competitionId, competitionId),
+		with: { fixtures: true },
+	})
+	const metaByNumber = new Map(adapterRounds.map((r) => [r.number, r]))
+
+	const plannerRounds: PlannerRound[] = dbRounds.map((r) => ({
+		number: r.number,
+		isKnockout: metaByNumber.get(r.number)?.isKnockout ?? false,
+		fixtures: r.fixtures.map((f) => {
+			const fdId = (f.externalIds as Record<string, string | number> | null)?.[key]
+			return {
+				externalId: fdId != null ? String(fdId) : (f.externalId ?? null),
+				homeTeamId: f.homeTeamId,
+				awayTeamId: f.awayTeamId,
+				status: f.status,
+				winner: f.winner,
+			}
+		}),
+	}))
+
+	const { plan, skipped } = planKnockoutSeeding(plannerRounds)
+	for (const s of skipped) {
+		// Only worth surfacing when a knockout round could not be filled despite a
+		// finished feeder — a missing-teams / broken-convention signal for humans.
+		if (
+			metaByNumber.get(s.roundNumber)?.isKnockout &&
+			metaByNumber.get(s.roundNumber - 1)?.isKnockout
+		) {
+			console.warn(`[syncCompetition] knockout round ${s.roundNumber} not seeded: ${s.reason}`)
+		}
+	}
+
+	let seeded = 0
+	for (const entry of plan) {
+		const dbRound = dbRounds.find((r) => r.number === entry.roundNumber)
+		if (!dbRound) continue
+		// Benign placeholder kickoff (round's earliest scheduled match); Tier 1
+		// overwrites it with the exact per-match kickoff on bind.
+		const deadline = metaByNumber.get(entry.roundNumber)?.allMatchesDeadline ?? null
+		const placeholderKickoff = deadline ? new Date(deadline.getTime() + 90 * 60 * 1000) : null
+		for (const tie of entry.ties) {
+			await db.insert(fixture).values({
+				roundId: dbRound.id,
+				homeTeamId: tie.homeTeamId,
+				awayTeamId: tie.awayTeamId,
+				kickoff: placeholderKickoff,
+				status: 'scheduled',
+				externalId: null,
+				externalIds: {},
+			})
+			seeded++
+		}
+		console.log(
+			`[syncCompetition] seeded ${entry.ties.length} provisional ${dbRound.name} tie(s) [${entry.validation}]`,
+		)
+	}
+	return seeded
 }
 
 export async function applyPotAssignments(

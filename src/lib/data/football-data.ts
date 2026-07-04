@@ -206,11 +206,24 @@ export class FootballDataAdapter implements CompetitionAdapter {
 					.filter((t) => Number.isFinite(t))
 					.reduce((min, t) => (min === null || t < min ? t : min), null as number | null)
 				const deadline = earliestKickoff != null ? new Date(earliestKickoff - 90 * 60 * 1000) : null
+				// Same convention but across ALL matches in the round, incl. TBD-team
+				// knockout slots — so a not-yet-drawn round still carries the correct
+				// deadline from its published schedule.
+				const earliestAllKickoff = matches
+					.map((m) => new Date(m.utcDate).getTime())
+					.filter((t) => Number.isFinite(t))
+					.reduce((min, t) => (min === null || t < min ? t : min), null as number | null)
+				const allMatchesDeadline =
+					earliestAllKickoff != null ? new Date(earliestAllKickoff - 90 * 60 * 1000) : null
+				// Knockout rounds carry matchday=null and are keyed by stage.
+				const isKnockout = matches.length > 0 && matches.every((m) => m.matchday == null)
 				return {
 					externalId: String(number),
 					number,
 					name: roundNameForMatches(number, matches),
 					deadline,
+					allMatchesDeadline,
+					isKnockout,
 					finished: matches.every((m) => m.status === 'FINISHED'),
 					fixtures: playable.map(
 						(m): AdapterFixture => ({

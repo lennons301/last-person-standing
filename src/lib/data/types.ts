@@ -26,7 +26,17 @@ export interface AdapterRound {
 	externalId: string
 	number: number
 	name: string
+	/** Deadline derived from PLAYABLE (both-teams-resolved) fixtures only. Null
+	 * until the round's bracket is drawn. */
 	deadline: Date | null
+	/** Deadline derived from ALL of the round's scheduled matches, including
+	 * not-yet-drawn (TBD-team) knockout slots. Lets a knockout round carry a
+	 * correct deadline before the source populates its teams. */
+	allMatchesDeadline: Date | null
+	/** True for knockout-stage rounds (matches keyed by stage, not matchday).
+	 * Bracket ties can be derived from a knockout round's feeder; group rounds
+	 * cannot. */
+	isKnockout: boolean
 	finished: boolean
 	fixtures: AdapterFixture[]
 }
