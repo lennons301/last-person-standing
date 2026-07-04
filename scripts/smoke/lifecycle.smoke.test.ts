@@ -18,8 +18,9 @@
  * See `docs/superpowers/specs/2026-05-12-per-fixture-settlement-and-live-projection-design.md`.
  */
 import { and, eq } from 'drizzle-orm'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/lib/db'
+import { syncCompetition } from '@/lib/game/bootstrap-competitions'
 import { getCupLadderData, getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import {
 	getLivePayload,
@@ -27,7 +28,12 @@ import {
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
 import { settleFixture } from '@/lib/game/settle'
-import { round as roundTable } from '@/lib/schema/competition'
+import {
+	competition,
+	fixture as fixtureTable,
+	round as roundTable,
+	team as teamTable,
+} from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment, payout } from '@/lib/schema/payment'
 import { getShareLiveData } from '@/lib/share/data'
@@ -2154,5 +2160,151 @@ describe('post-deadline + post-completion visibility', () => {
 		const others = cup?.players.find((p) => p.id === gpOther)
 		expect(me?.picks.every((c) => c.result !== 'hidden')).toBe(true)
 		expect(others?.picks.every((c) => c.result === 'hidden')).toBe(true)
+	})
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* WC knockout bracket self-heal (Tier 2 derive + Tier 1 team-pair adopt)  */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Runs the REAL syncCompetition against Postgres with a mocked football-data
+ * `fetch`, proving the end-to-end bracket self-heal that the R16 pre-draw
+ * incident needed:
+ *   - Tier 2: undrawn knockout ties are derived from finished feeders and
+ *     seeded as UNBOUND fixtures, so all teams are pickable before the deadline.
+ *   - deadline: the knockout round carries a deadline from the (TBD) schedule.
+ *   - Tier 1: when the source later draws a tie, the provisional fixture is
+ *     bound by team pair (externalId set) — no duplicate.
+ */
+describe('lifecycle: WC knockout bracket self-heal', () => {
+	// 16 R32 matches (ids 415..430), home team wins each. Consecutive winner
+	// pairs form the 8 R16 ties. We draw 5 in the source and leave 3 TBD.
+	const R32 = Array.from({ length: 16 }, (_, i) => ({
+		id: 415 + i,
+		matchday: null,
+		stage: 'LAST_32',
+		homeTeam: { id: 900 + i, name: `SmokeW${i}`, tla: `W${i}`, crest: '' },
+		awayTeam: { id: 950 + i, name: `SmokeL${i}`, tla: `L${i}`, crest: '' },
+		utcDate: `2026-06-2${8 + (i % 2)}T1${i % 8}:00:00Z`,
+		status: 'FINISHED',
+		score: { winner: 'HOME_TEAM', fullTime: { home: 1, away: 0 } },
+	}))
+	// tie j = winners of R32 pair (2j, 2j+1) → home W(2j), away W(2j+1).
+	const tieTeams = (j: number) => ({
+		home: { id: 900 + 2 * j, name: `SmokeW${2 * j}`, tla: `W${2 * j}`, crest: '' },
+		away: { id: 900 + 2 * j + 1, name: `SmokeW${2 * j + 1}`, tla: `W${2 * j + 1}`, crest: '' },
+	})
+	const TBD = { id: null, name: null, tla: null, crest: null }
+	// Ties drawn by the source below are 0,1,3,4,6 → undrawn (seeded) are 2,5,7.
+	function r16Match(slotIndex: number, tieIndex: number, drawn: boolean) {
+		const t = tieTeams(tieIndex)
+		return {
+			id: 537375 + slotIndex,
+			matchday: null,
+			stage: 'LAST_16',
+			homeTeam: drawn ? t.home : TBD,
+			awayTeam: drawn ? t.away : TBD,
+			utcDate: `2026-07-0${4 + (slotIndex % 4)}T17:00:00Z`,
+			status: 'TIMED',
+			score: { fullTime: { home: null, away: null } },
+		}
+	}
+	// slot→tie assignment: drawn slots carry a real tie; TBD slots carry no teams.
+	const R16 = [
+		r16Match(0, 0, true),
+		r16Match(1, 1, true),
+		r16Match(2, 2, false),
+		r16Match(3, 3, true),
+		r16Match(4, 4, true),
+		r16Match(5, 5, false),
+		r16Match(6, 6, true),
+		r16Match(7, 7, false),
+	]
+
+	function mockFetch(matches: unknown[]) {
+		vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+			const s = typeof url === 'string' ? url : url.toString()
+			if (s.includes('/standings'))
+				return Promise.resolve(new Response(JSON.stringify({ standings: [] })))
+			return Promise.resolve(new Response(JSON.stringify({ matches })))
+		})
+	}
+
+	async function wcComp(): Promise<string> {
+		const [c] = await db
+			.insert(competition)
+			.values({
+				name: 'Smoke WC',
+				type: 'group_knockout',
+				dataSource: 'football_data',
+				externalId: 'WC',
+				status: 'active',
+			})
+			.returning()
+		return c.id
+	}
+
+	afterEach(() => {
+		vi.restoreAllMocks()
+	})
+
+	it('derives + seeds the 3 undrawn R16 ties (unbound) with a real deadline', async () => {
+		const compId = await wcComp()
+		mockFetch([...R32, ...R16])
+		const [c] = await db.select().from(competition).where(eq(competition.id, compId))
+
+		await syncCompetition(c, { footballDataApiKey: 'test-key' })
+
+		const [r16] = await db
+			.select()
+			.from(roundTable)
+			.where(and(eq(roundTable.competitionId, compId), eq(roundTable.name, 'Round of 16')))
+		expect(r16).toBeDefined()
+		// Round has a deadline even though only some ties were drawn.
+		expect(r16.deadline).not.toBeNull()
+
+		const fixtures = await db.select().from(fixtureTable).where(eq(fixtureTable.roundId, r16.id))
+		expect(fixtures).toHaveLength(8)
+		const provisional = fixtures.filter((f) => f.externalId == null)
+		expect(provisional).toHaveLength(3)
+
+		// The provisional fixtures are exactly the undrawn ties (2,5,7) → winner
+		// pairs (W4,W5),(W10,W11),(W14,W15).
+		const teams = await db.select().from(teamTable)
+		const tla = (id: string | null) => teams.find((t) => t.id === id)?.shortName
+		const provPairs = provisional
+			.map((f) => [tla(f.homeTeamId), tla(f.awayTeamId)].sort().join('-'))
+			.sort()
+		expect(provPairs).toEqual(['W10-W11', 'W14-W15', 'W4-W5'].sort())
+	})
+
+	it('binds a provisional tie to the real match by team pair when the source draws it (no duplicate)', async () => {
+		const compId = await wcComp()
+		mockFetch([...R32, ...R16])
+		const [c] = await db.select().from(competition).where(eq(competition.id, compId))
+		await syncCompetition(c, { footballDataApiKey: 'test-key' })
+
+		// Source now draws slot 2 (id 537377) as tie 2 = (W4,W5).
+		const R16drawn2 = R16.map((m, i) => (i === 2 ? r16Match(2, 2, true) : m))
+		mockFetch([...R32, ...R16drawn2])
+		await syncCompetition(c, { footballDataApiKey: 'test-key' })
+
+		const [r16] = await db
+			.select()
+			.from(roundTable)
+			.where(and(eq(roundTable.competitionId, compId), eq(roundTable.name, 'Round of 16')))
+		const fixtures = await db.select().from(fixtureTable).where(eq(fixtureTable.roundId, r16.id))
+		// No duplicate — still 8 fixtures.
+		expect(fixtures).toHaveLength(8)
+		// The (W4,W5) tie is now bound to 537377, and only 2 provisional remain.
+		expect(fixtures.filter((f) => f.externalId == null)).toHaveLength(2)
+		const bound537377 = fixtures.find((f) => f.externalId === '537377')
+		expect(bound537377).toBeDefined()
+		const teams = await db.select().from(teamTable)
+		const tla = (id: string | null) => teams.find((t) => t.id === id)?.shortName
+		expect(
+			[tla(bound537377?.homeTeamId ?? null), tla(bound537377?.awayTeamId ?? null)].sort(),
+		).toEqual(['W4', 'W5'].sort())
 	})
 })

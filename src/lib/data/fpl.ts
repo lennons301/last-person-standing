@@ -102,6 +102,11 @@ export class FplAdapter implements CompetitionAdapter {
 			number: event.id,
 			name: event.name,
 			deadline: new Date(event.deadline_time),
+			// FPL rounds are always fully drawn — no TBD slots — so the all-matches
+			// deadline is the same FPL deadline.
+			allMatchesDeadline: new Date(event.deadline_time),
+			// FPL (Premier League) is a league, not a knockout bracket.
+			isKnockout: false,
 			finished: event.finished,
 			fixtures: (fixturesByEvent.get(event.id) ?? []).map(
 				(f): AdapterFixture => ({

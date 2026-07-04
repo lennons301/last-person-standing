@@ -120,6 +120,30 @@ describe('FootballDataAdapter', () => {
 		expect(rounds[0].deadline).toBeNull()
 	})
 
+	it('exposes allMatchesDeadline from ALL matches (incl. TBD) even when playable deadline is null', async () => {
+		const onlyPlaceholders = {
+			matches: [
+				{
+					id: 9001,
+					matchday: 4,
+					homeTeam: { id: null, name: null, tla: null, crest: null },
+					awayTeam: { id: null, name: null, tla: null, crest: null },
+					utcDate: '2026-06-30T20:00:00Z',
+					status: 'TIMED',
+					score: { fullTime: { home: null, away: null } },
+				},
+			],
+		}
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+			Promise.resolve(new Response(JSON.stringify(onlyPlaceholders))),
+		)
+		const rounds = await adapter.fetchRounds()
+		// playable deadline still null (no resolved fixtures)…
+		expect(rounds[0].deadline).toBeNull()
+		// …but the round's schedule is known from the TBD slot: 90m before kickoff.
+		expect(rounds[0].allMatchesDeadline).toEqual(new Date('2026-06-30T18:30:00Z'))
+	})
+
 	it('maps status correctly', async () => {
 		const rounds = await adapter.fetchRounds()
 		expect(rounds[0].fixtures[0].status).toBe('finished')
@@ -328,6 +352,12 @@ describe('FootballDataAdapter', () => {
 			expect(byNumber[4]?.fixtures).toHaveLength(0)
 			expect(byNumber[4]?.deadline).toBeNull()
 			expect(byNumber[8]?.fixtures).toHaveLength(0)
+			// group matchday is not knockout; every KO stage is.
+			expect(byNumber[3]?.isKnockout).toBe(false)
+			expect(byNumber[4]?.isKnockout).toBe(true)
+			expect(byNumber[8]?.isKnockout).toBe(true)
+			// TBD knockout round still exposes a schedule-derived deadline.
+			expect(byNumber[4]?.allMatchesDeadline).toEqual(new Date('2026-06-28T17:30:00Z'))
 		})
 
 		it('excludes the third-place playoff (not a survivor round)', async () => {

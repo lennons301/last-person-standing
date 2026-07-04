@@ -7,6 +7,7 @@ const {
 	dbQueryRoundFindFirst,
 	dbQueryRoundFindMany,
 	dbQueryFixtureFindFirst,
+	dbQueryFixtureFindMany,
 	dbQueryPlannedPickFindMany,
 	dbInsertFn,
 	dbUpdateFn,
@@ -36,6 +37,7 @@ const {
 		dbQueryRoundFindFirst: vi.fn(),
 		dbQueryRoundFindMany: vi.fn().mockResolvedValue([]),
 		dbQueryFixtureFindFirst: vi.fn(),
+		dbQueryFixtureFindMany: vi.fn().mockResolvedValue([]),
 		dbQueryPlannedPickFindMany: vi.fn().mockResolvedValue([]),
 		dbInsertFn: vi.fn(() => ({
 			values: vi.fn(() => ({
@@ -63,7 +65,7 @@ vi.mock('@/lib/db', () => ({
 			competition: { findFirst: dbQueryCompetitionFindFirst },
 			team: { findFirst: dbQueryTeamFindFirst, findMany: dbQueryTeamFindMany },
 			round: { findFirst: dbQueryRoundFindFirst, findMany: dbQueryRoundFindMany },
-			fixture: { findFirst: dbQueryFixtureFindFirst },
+			fixture: { findFirst: dbQueryFixtureFindFirst, findMany: dbQueryFixtureFindMany },
 			plannedPick: { findMany: dbQueryPlannedPickFindMany },
 		},
 		insert: dbInsertFn,
