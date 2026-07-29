@@ -135,3 +135,17 @@ Before merging a PR that introduces a new competition:
 
 Platform standards and choices: see ~/code/platform/
 This project's registry entry: products/last-person-standing.yaml
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked as GitHub Issues on `lennons301/last-person-standing`, operated via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
