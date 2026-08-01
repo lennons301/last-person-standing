@@ -150,8 +150,11 @@ describe('syncCompetition league-position persistence', () => {
 		fdFetchStandings.mockResolvedValue([])
 	})
 
-	it('persists league_position for each standings row scoped by external id', async () => {
-		fplFetchTeams.mockResolvedValue([])
+	it('persists league_position for each standings row resolved through the current payload', async () => {
+		fplFetchTeams.mockResolvedValue([
+			{ externalId: '1', name: 'Alder FC', shortName: 'ALD', badgeUrl: 'ald.svg' },
+			{ externalId: '2', name: 'Birch FC', shortName: 'BIR', badgeUrl: 'bir.svg' },
+		])
 		fplFetchRounds.mockResolvedValue([])
 		fplFetchStandings.mockResolvedValue([
 			{
@@ -173,11 +176,10 @@ describe('syncCompetition league-position persistence', () => {
 				points: 20,
 			},
 		])
-		dbQueryTeamFindMany.mockResolvedValue([
-			{ id: 'team-1-uuid', externalIds: { fpl: '1' } },
-			{ id: 'team-2-uuid', externalIds: { fpl: '2' } },
-			{ id: 'team-other-uuid', externalIds: { football_data: '99' } },
-		])
+		// Payload teams resolve to existing club rows by name.
+		dbQueryTeamFindFirst
+			.mockResolvedValueOnce({ id: 'team-1-uuid', name: 'Alder FC', externalIds: { fpl: '1' } })
+			.mockResolvedValueOnce({ id: 'team-2-uuid', name: 'Birch FC', externalIds: { fpl: '2' } })
 
 		await syncCompetition(
 			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
@@ -197,7 +199,10 @@ describe('syncCompetition league-position persistence', () => {
 		)
 	})
 
-	it('ignores standings rows whose teamExternalId is not in the competition data source', async () => {
+	it('ignores standings rows whose team is absent from the current payload, even when a stale team row holds that id', async () => {
+		// The payload has no team '999' — but a dormant (relegated) team row
+		// still carries fpl:999 from an earlier season. Resolution must go
+		// through the payload, so the stale row must NOT receive a position.
 		fplFetchTeams.mockResolvedValue([])
 		fplFetchRounds.mockResolvedValue([])
 		fplFetchStandings.mockResolvedValue([
@@ -211,10 +216,7 @@ describe('syncCompetition league-position persistence', () => {
 				points: 0,
 			},
 		])
-		dbQueryTeamFindMany.mockResolvedValue([
-			// Team with different data source key — must not match.
-			{ id: 'team-fd-uuid', externalIds: { football_data: '999' } },
-		])
+		dbQueryTeamFindMany.mockResolvedValue([{ id: 'team-stale-uuid', externalIds: { fpl: '999' } }])
 
 		await syncCompetition(
 			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
@@ -225,6 +227,97 @@ describe('syncCompetition league-position persistence', () => {
 			.map((call) => call[0])
 			.filter((payload) => 'leaguePosition' in payload)
 		expect(positionSets).toHaveLength(0)
+	})
+})
+
+describe('syncCompetition team upsert (payload-driven identity)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbQueryTeamFindMany.mockResolvedValue([])
+		dbQueryRoundFindMany.mockResolvedValue([])
+		dbQueryPlannedPickFindMany.mockResolvedValue([])
+	})
+
+	it('inserts an unseen (promoted) club without the FPL badge URL — the FPL CDN 404s for it', async () => {
+		fplFetchTeams.mockResolvedValue([
+			{
+				externalId: '4',
+				name: 'Grove FC',
+				shortName: 'GRO',
+				badgeUrl: 'https://resources.premierleague.com/premierleague/badges/rb/t24.svg',
+			},
+		])
+		fplFetchRounds.mockResolvedValue([])
+		dbQueryTeamFindFirst.mockResolvedValue(undefined) // never seen this club
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2026/27' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		const insertedValues = dbInsertFn.mock.results
+			.map((r) => (r.value as { values: ReturnType<typeof vi.fn> }).values.mock.calls[0]?.[0])
+			.filter((v): v is Record<string, unknown> => v != null && 'name' in (v as object))
+		expect(insertedValues).toEqual([
+			expect.objectContaining({ name: 'Grove FC', shortName: 'GRO', badgeUrl: null }),
+		])
+	})
+
+	it('never overwrites an existing badge with the FPL CDN URL on re-sync', async () => {
+		// After mergeFootballDataIds lands the football-data crest, a later
+		// daily sync must not stomp it with the constructed FPL badge URL —
+		// that URL 404s for promoted clubs, and the merge that would re-fix it
+		// is exactly the step that fails loudly on a new-season tla gap.
+		fplFetchTeams.mockResolvedValue([
+			{
+				externalId: '4',
+				name: 'Grove FC',
+				shortName: 'GRO',
+				badgeUrl: 'https://resources.premierleague.com/premierleague/badges/rb/t24.svg',
+			},
+		])
+		fplFetchRounds.mockResolvedValue([])
+		dbQueryTeamFindFirst.mockResolvedValue({
+			id: 'team-grove-uuid',
+			name: 'Grove FC',
+			badgeUrl: 'https://crests.football-data.org/grove.png',
+			externalIds: { fpl: '4', football_data: '107' },
+		})
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2026/27' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		const teamUpdate = dbUpdateSet.mock.calls
+			.map((c) => c[0] as { badgeUrl?: string | null })
+			.find((p) => 'badgeUrl' in p)
+		expect(teamUpdate?.badgeUrl).toBe('https://crests.football-data.org/grove.png')
+	})
+
+	it('re-links an existing club to its new payload id by name, not by stored external id', async () => {
+		// Grove FC existed before under fpl:9; this season the payload hands it
+		// id 4. The row must be found by NAME and its fpl id overwritten.
+		fplFetchTeams.mockResolvedValue([
+			{ externalId: '4', name: 'Grove FC', shortName: 'GRO', badgeUrl: 'gro.svg' },
+		])
+		fplFetchRounds.mockResolvedValue([])
+		dbQueryTeamFindFirst.mockResolvedValue({
+			id: 'team-grove-uuid',
+			name: 'Grove FC',
+			badgeUrl: 'gro.svg',
+			externalIds: { fpl: '9', football_data: '107' },
+		})
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2026/27' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		const teamUpdate = dbUpdateSet.mock.calls
+			.map((c) => c[0] as { externalIds?: Record<string, string> })
+			.find((p) => p.externalIds?.fpl != null)
+		expect(teamUpdate?.externalIds).toEqual({ fpl: '4', football_data: '107' })
 	})
 })
 
@@ -470,6 +563,114 @@ describe('mergeFootballDataIds', () => {
 		})
 	})
 
+	it('never touches a team row outside this competition, even on a tla collision', async () => {
+		// A WC country row shares the 3-letter code of a club in the fd payload.
+		// It is not referenced by any of this competition's fixtures, so the
+		// merge must not rewrite its badge or football-data id.
+		const teamArs = {
+			id: 'our-ARS',
+			shortName: 'ARS',
+			name: 'Arsenal',
+			externalIds: { fpl: '1' },
+		}
+		const teamPortugalWc = {
+			id: 'our-POR-wc',
+			shortName: 'POR',
+			name: 'Portugal',
+			externalIds: { football_data: '765' },
+			badgeUrl: 'wc-portugal.png',
+		}
+		dbQueryTeamFindMany
+			.mockResolvedValueOnce([teamArs, teamPortugalWc])
+			.mockResolvedValueOnce([
+				{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } },
+				teamPortugalWc,
+			])
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-ARS',
+						awayTeamId: 'our-ARS',
+						externalIds: { fpl: '1' },
+					},
+				],
+			},
+		])
+
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal FC', shortName: 'ARS', badgeUrl: 'fd-ars.png' },
+			// Hypothetical promoted club whose tla collides with the WC row.
+			{ externalId: '9999', name: 'Portsmouth FC', shortName: 'POR', badgeUrl: 'fd-pompey.png' },
+		])
+		fdFetchRounds.mockResolvedValue([])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		const portsmouthWrite = dbUpdateSet.mock.calls.find(
+			(c) =>
+				(c[0] as { externalIds?: { football_data?: string } }).externalIds?.football_data ===
+				'9999',
+		)
+		expect(portsmouthWrite).toBeUndefined()
+	})
+
+	it('coverage assertion ignores dormant teams not referenced by this competition', async () => {
+		// A relegated club's dormant row still carries an fpl id from an earlier
+		// season but no football-data id. It plays no part in this competition,
+		// so it must not trip the loud team-coverage failure.
+		const teamArs = {
+			id: 'our-ARS',
+			shortName: 'ARS',
+			name: 'Arsenal',
+			externalIds: { fpl: '1' },
+		}
+		const dormantRelegated = {
+			id: 'our-DOR',
+			shortName: 'DOR',
+			name: 'Dormant FC',
+			externalIds: { fpl: '888' },
+		}
+		dbQueryTeamFindMany
+			.mockResolvedValueOnce([teamArs, dormantRelegated])
+			.mockResolvedValueOnce([
+				{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } },
+				dormantRelegated,
+			])
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-ARS',
+						awayTeamId: 'our-ARS',
+						externalIds: { fpl: '1' },
+					},
+				],
+			},
+		])
+
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal FC', shortName: 'ARS', badgeUrl: null },
+		])
+		fdFetchRounds.mockResolvedValue([])
+
+		await expect(
+			mergeFootballDataIds(
+				{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+				'fd-key',
+			),
+		).resolves.toBeUndefined()
+	})
+
 	it('matches teams via FPL_TO_FD_TLA alias when codes differ across sources (NFO → NOT)', async () => {
 		const teamForest = {
 			id: 'our-NFO',
@@ -480,7 +681,20 @@ describe('mergeFootballDataIds', () => {
 		dbQueryTeamFindMany
 			.mockResolvedValueOnce([teamForest])
 			.mockResolvedValueOnce([{ ...teamForest, externalIds: { fpl: '16', football_data: '351' } }])
-		dbQueryRoundFindMany.mockResolvedValue([])
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-NFO',
+						awayTeamId: 'our-NFO',
+						externalIds: { fpl: '16' },
+					},
+				],
+			},
+		])
 
 		// Football-data returns the team with its `tla=NOT`, our DB has `short_name=NFO`.
 		fdFetchTeams.mockResolvedValue([
@@ -536,7 +750,22 @@ describe('mergeFootballDataIds', () => {
 		dbQueryTeamFindMany
 			.mockResolvedValueOnce([newPromotedTeam])
 			.mockResolvedValueOnce([newPromotedTeam])
-		dbQueryRoundFindMany.mockResolvedValue([])
+		// The team is in this competition (a fixture references it) — that is
+		// what makes the coverage gap a loud failure rather than dormant noise.
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-XYZ',
+						awayTeamId: 'our-XYZ',
+						externalIds: { fpl: '900' },
+					},
+				],
+			},
+		])
 
 		// Football-data has the team but under a different tla; merge can't link them.
 		fdFetchTeams.mockResolvedValue([

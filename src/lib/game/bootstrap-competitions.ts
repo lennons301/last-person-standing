@@ -153,6 +153,19 @@ function fdTlaForFplShortName(fplShortName: string): string {
 }
 
 /**
+ * A competition's rounds with their fixtures — the scope boundary for every
+ * sync-owned mutation. External ids are unique only within (competition,
+ * data source), so matching always starts from this set, never the whole
+ * fixture or team table.
+ */
+function competitionRoundsWithFixtures(competitionId: string) {
+	return db.query.round.findMany({
+		where: eq(round.competitionId, competitionId),
+		with: { fixtures: true },
+	})
+}
+
+/**
  * For competitions whose primary adapter is FPL, this fetches the same matchdays
  * from football-data.org and merges football-data IDs into existing teams +
  * fixtures. The FPL adapter remains the source of truth for round structure
@@ -181,9 +194,25 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	const fdTeams = await fdAdapter.fetchTeams()
 	const fdRounds = await fdAdapter.fetchRounds()
 
-	// 1) Merge football-data team IDs onto our teams via short_name === tla
-	// (with the FPL_TO_FD_TLA alias map covering the NFO → NOT case).
-	const ourTeams = await db.query.team.findMany({})
+	// Everything this merge touches must belong to the competition being
+	// merged (same identity rule as syncCompetition's upsert scoping). The
+	// competition's fixtures define its team set — matching by tla over the
+	// whole team table could hit another competition's row (e.g. a WC country
+	// sharing a promoted club's code) and rewrite its badge + football-data id.
+	const ourRounds = await competitionRoundsWithFixtures(comp.id)
+	const compTeamIds = new Set<string>()
+	for (const r of ourRounds) {
+		for (const f of r.fixtures) {
+			compTeamIds.add(f.homeTeamId)
+			compTeamIds.add(f.awayTeamId)
+		}
+	}
+	const teamsInCompetition = async () =>
+		(await db.query.team.findMany({})).filter((t) => compTeamIds.has(t.id))
+
+	// 1) Merge football-data team IDs onto this competition's teams via
+	// short_name === tla (with the FPL_TO_FD_TLA alias map covering NFO → NOT).
+	const ourTeams = await teamsInCompetition()
 	const ourTeamIdByFdId = new Map<string, string>() // football-data id -> our team UUID
 	for (const fdTeam of fdTeams) {
 		const ourTeam = ourTeams.find((t) => fdTlaForFplShortName(t.shortName) === fdTeam.shortName)
@@ -209,10 +238,6 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// they're tracked under in our DB. Since each PL pairing happens exactly
 	// once per home venue per season, (home, away) is a unique key across the
 	// whole competition and gives us a one-shot match regardless of round.
-	const ourRounds = await db.query.round.findMany({
-		where: eq(round.competitionId, comp.id),
-		with: { fixtures: true },
-	})
 	const ourFixtureByPair = new Map<string, (typeof ourRounds)[number]['fixtures'][number]>()
 	for (const r of ourRounds) {
 		for (const f of r.fixtures) {
@@ -244,8 +269,10 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// Fails loudly on team-level gaps because every PL team must be matchable
 	// for live scoring to work; warns on fixture-level gaps because rescheduled
 	// or yet-to-be-published fixtures may legitimately be absent from
-	// football-data temporarily.
-	const refreshedTeams = await db.query.team.findMany({})
+	// football-data temporarily. Scoped to this competition's teams — a dormant
+	// relegated club's row (stale fpl id, no current-season fd merge) plays no
+	// part here and must not trip the loud failure.
+	const refreshedTeams = await teamsInCompetition()
 	const fplTeams = refreshedTeams.filter(
 		(t) => (t.externalIds as Record<string, string | number> | null)?.fpl != null,
 	)
@@ -259,12 +286,7 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 		)
 	}
 
-	const fixturesAll = (
-		await db.query.round.findMany({
-			where: eq(round.competitionId, comp.id),
-			with: { fixtures: true },
-		})
-	).flatMap((r) => r.fixtures)
+	const fixturesAll = (await competitionRoundsWithFixtures(comp.id)).flatMap((r) => r.fixtures)
 	const fixturesMissing = fixturesAll.filter(
 		(f) => (f.externalIds as Record<string, string | number> | null)?.football_data == null,
 	)
@@ -301,41 +323,72 @@ export async function syncCompetition(
 
 	const key = comp.dataSource === 'fpl' ? 'fpl' : 'football_data'
 	const adapterTeams = await adapter.fetchTeams()
+	// Resolve payload team ids to club rows through the payload itself (club
+	// identity = name). Source-assigned ids restart and get reshuffled across
+	// clubs every season (FPL), so they must never be resolved through ids
+	// stored on team rows by an earlier season — a relegated club's stale id
+	// would swallow the promoted club that inherited it.
+	const teamIdByPayloadId = new Map<string, string>()
 	for (const at of adapterTeams) {
 		const existing = await db.query.team.findFirst({ where: eq(team.name, at.name) })
 		if (existing) {
 			await db
 				.update(team)
 				.set({
-					badgeUrl: at.badgeUrl ?? existing.badgeUrl,
+					// For FPL-sourced competitions, never write the constructed FPL
+					// badge URL over what we have: the football-data crest (set by
+					// mergeFootballDataIds) is the durable badge, the FPL CDN 404s
+					// for promoted clubs, and the merge that would re-fix a stomped
+					// crest is exactly the step that fails loudly on a new-season
+					// tla gap.
+					badgeUrl:
+						comp.dataSource === 'fpl' ? existing.badgeUrl : (at.badgeUrl ?? existing.badgeUrl),
 					externalIds: { ...(existing.externalIds ?? {}), [key]: at.externalId },
 				})
 				.where(eq(team.id, existing.id))
+			teamIdByPayloadId.set(at.externalId, existing.id)
 		} else {
-			await db.insert(team).values({
-				name: at.name,
-				shortName: at.shortName,
-				badgeUrl: at.badgeUrl,
-				externalIds: { [key]: at.externalId },
-			})
+			const [created] = await db
+				.insert(team)
+				.values({
+					name: at.name,
+					shortName: at.shortName,
+					// FPL's badge CDN 404s for clubs it has never hosted before
+					// (newly promoted), so an unseen club gets no badge here — the
+					// UI colour fallback applies until mergeFootballDataIds lands
+					// the football-data crest in the same bootstrap pass.
+					badgeUrl: comp.dataSource === 'fpl' ? null : at.badgeUrl,
+					externalIds: { [key]: at.externalId },
+				})
+				.returning()
+			teamIdByPayloadId.set(at.externalId, created.id)
 		}
 	}
 
-	const allTeams = await db.query.team.findMany({})
-
 	// Persist latest league standings into team.leaguePosition when the adapter
-	// supports standings. Scope by externalIds[key] so updates stay within this
-	// competition's data source.
+	// supports standings. Resolved through the current payload's team list so
+	// updates stay within this competition's own teams.
 	if (typeof adapter.fetchStandings === 'function') {
 		const standings = await adapter.fetchStandings()
 		for (const row of standings) {
-			const match = allTeams.find(
-				(t) =>
-					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
-					row.teamExternalId,
-			)
-			if (!match) continue
-			await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, match.id))
+			const teamId = teamIdByPayloadId.get(row.teamExternalId)
+			if (!teamId) continue
+			await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, teamId))
+		}
+	}
+
+	// Fixture upsert matching is scoped to this competition's own rounds:
+	// external ids are unique only within (competition, data source), so a
+	// global match would let restarted FPL ids rewrite another season's rows
+	// in place (the 2026/27 silent-corruption incident).
+	const compRoundsForUpsert = await competitionRoundsWithFixtures(comp.id)
+	const compFixtureByExternalId = new Map<
+		string,
+		(typeof compRoundsForUpsert)[number]['fixtures'][number]
+	>()
+	for (const r of compRoundsForUpsert) {
+		for (const f of r.fixtures) {
+			if (f.externalId != null) compFixtureByExternalId.set(f.externalId, f)
 		}
 	}
 
@@ -410,25 +463,15 @@ export async function syncCompetition(
 		})
 
 		for (const af of ar.fixtures) {
-			const home = allTeams.find(
-				(t) =>
-					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
-					af.homeTeamExternalId,
-			)
-			const away = allTeams.find(
-				(t) =>
-					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
-					af.awayTeamExternalId,
-			)
-			if (!home || !away) continue
+			const homeTeamId = teamIdByPayloadId.get(af.homeTeamExternalId)
+			const awayTeamId = teamIdByPayloadId.get(af.awayTeamExternalId)
+			if (!homeTeamId || !awayTeamId) continue
 
-			const existingFixture = await db.query.fixture.findFirst({
-				where: eq(fixture.externalId, af.externalId),
-			})
+			const existingFixture = compFixtureByExternalId.get(af.externalId)
 			// A provisional tie we seeded for this same matchup, not yet bound.
 			const provisional = existingFixture
 				? undefined
-				: findByTeamPair(home.id, away.id, unboundRoundFixtures)
+				: findByTeamPair(homeTeamId, awayTeamId, unboundRoundFixtures)
 			if (existingFixture) {
 				await db
 					.update(fixture)
@@ -465,8 +508,8 @@ export async function syncCompetition(
 				await db
 					.update(fixture)
 					.set({
-						homeTeamId: home.id,
-						awayTeamId: away.id,
+						homeTeamId,
+						awayTeamId,
 						kickoff: af.kickoff,
 						status: af.status,
 						homeScore: af.homeScore,
@@ -484,8 +527,8 @@ export async function syncCompetition(
 			} else {
 				await db.insert(fixture).values({
 					roundId,
-					homeTeamId: home.id,
-					awayTeamId: away.id,
+					homeTeamId,
+					awayTeamId,
 					kickoff: af.kickoff,
 					status: af.status,
 					homeScore: af.homeScore,
@@ -534,10 +577,7 @@ async function seedProvisionalKnockoutTies(
 	adapterRounds: { number: number; isKnockout: boolean; allMatchesDeadline: Date | null }[],
 	key: string,
 ): Promise<number> {
-	const dbRounds = await db.query.round.findMany({
-		where: eq(round.competitionId, competitionId),
-		with: { fixtures: true },
-	})
+	const dbRounds = await competitionRoundsWithFixtures(competitionId)
 	const metaByNumber = new Map(adapterRounds.map((r) => [r.number, r]))
 
 	const plannerRounds: PlannerRound[] = dbRounds.map((r) => ({
@@ -603,10 +643,7 @@ export async function applyPotAssignments(
 		where: eq(competition.id, competitionId),
 	})
 	if (!comp || comp.status === 'archived') return { matched: 0, unmatched: [] }
-	const rounds = await db.query.round.findMany({
-		where: eq(round.competitionId, competitionId),
-		with: { fixtures: true },
-	})
+	const rounds = await competitionRoundsWithFixtures(competitionId)
 	const teamIds = new Set<string>()
 	for (const r of rounds) {
 		for (const f of r.fixtures) {
