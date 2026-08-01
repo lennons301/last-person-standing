@@ -119,6 +119,8 @@ stateDiagram-v2
 
 Lives are **earned**, not handed out — `startingLives` defaults to 0. The creator can raise it for a more forgiving game.
 
+**No-pick players are eliminated (and refunded) at the deadline.** A player who submitted no picks at all (partial pick sets are fine) is eliminated + refunded by the deadline no-pick lock — which fires at deadline+30s via QStash, with the daily sync as fallback and the crown guard running the same lock before the streak evaluation crowns anyone. See the [README](./README.md#the-deadline-no-pick-lock).
+
 ## Live projection
 
 For in-progress fixtures:

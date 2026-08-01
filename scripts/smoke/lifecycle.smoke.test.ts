@@ -2680,9 +2680,9 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 			modeConfig: { allowRebuys: false },
 		})
 		const gpWin = await makePlayer({ gameId, userId: 'u-win' })
-		const gpBarry = await makePlayer({ gameId, userId: 'u-barry' })
+		const gpPickless = await makePlayer({ gameId, userId: 'u-pickless' })
 		await makePayment({ gameId, userId: 'u-win' })
-		await makePayment({ gameId, userId: 'u-barry' })
+		await makePayment({ gameId, userId: 'u-pickless' })
 
 		// History: both players won rounds 1 + 2 with EQUAL total winning goals,
 		// so a wrong rounds-exhausted completion would split the pot between
@@ -2694,9 +2694,9 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 			teamId: a,
 			fixtureId: fxR1,
 		})
-		const barryR1 = await makePick({
+		const picklessR1 = await makePick({
 			gameId,
-			gamePlayerId: gpBarry,
+			gamePlayerId: gpPickless,
 			roundId: r1,
 			teamId: a,
 			fixtureId: fxR1,
@@ -2708,20 +2708,20 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 			teamId: c,
 			fixtureId: fxR2cf,
 		})
-		const barryR2 = await makePick({
+		const picklessR2 = await makePick({
 			gameId,
-			gamePlayerId: gpBarry,
+			gamePlayerId: gpPickless,
 			roundId: r2,
 			teamId: b,
 			fixtureId: fxR2be,
 		})
 		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, winR1))
-		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, barryR1))
+		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, picklessR1))
 		await db.update(pick).set({ result: 'win', goalsScored: 1 }).where(eq(pick.id, winR2))
-		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, barryR2))
+		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, picklessR2))
 
 		// Final round: the survivor picked B (their only unused finalist).
-		// Barry made no pick — and has already used both A and B, so no legal
+		// The pickless finalist made no pick — and has already used both A and B, so no legal
 		// auto-pick exists.
 		await makePick({ gameId, gamePlayerId: gpWin, roundId: r3, teamId: b, fixtureId: fxFinal })
 
@@ -2729,16 +2729,16 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 		await finishFixture(fxFinal, 0, 1)
 		await settleFixture(fxFinal)
 
-		// Barry is eliminated in the final round — not crowned.
-		const barry = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpBarry) })
-		expect(barry?.status).toBe('eliminated')
-		expect(barry?.eliminatedReason).toBe('no_pick_no_fallback')
-		expect(barry?.eliminatedRoundId).toBe(r3)
-		// No auto-pick was possible — no pick row appears for Barry in r3.
-		const barryFinalPick = await db.query.pick.findFirst({
-			where: and(eq(pick.gamePlayerId, gpBarry), eq(pick.roundId, r3)),
+		// The pickless finalist is eliminated in the final round — not crowned.
+		const pickless = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpPickless) })
+		expect(pickless?.status).toBe('eliminated')
+		expect(pickless?.eliminatedReason).toBe('no_pick_no_fallback')
+		expect(pickless?.eliminatedRoundId).toBe(r3)
+		// No auto-pick was possible — no pick row appears for them in r3.
+		const picklessFinalPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpPickless), eq(pick.roundId, r3)),
 		})
-		expect(barryFinalPick).toBeUndefined()
+		expect(picklessFinalPick).toBeUndefined()
 
 		// The sole survivor is crowned alone with the full pot — no split.
 		const winner = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpWin) })
@@ -2881,7 +2881,7 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 		const f = await makeTeam({ name: 'F', shortName: 'F', leaguePosition: 11 })
 		const c = await makeTeam({ name: 'C', shortName: 'C' })
 		const d = await makeTeam({ name: 'D', shortName: 'D' })
-		const g1 = await makeTeam({ name: 'G', shortName: 'G' })
+		const teamG = await makeTeam({ name: 'G', shortName: 'G' })
 		const h = await makeTeam({ name: 'H', shortName: 'H' })
 
 		// Four completed history rounds so one player can have consumed every
@@ -2890,7 +2890,7 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 		const historyRounds: Array<[string, string]> = [
 			[a, c],
 			[b, d],
-			[e, g1],
+			[e, teamG],
 			[f, h],
 		]
 		const historyFixtures: string[] = []
@@ -2933,7 +2933,7 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 		const gpAuto = await makePlayer({ gameId, userId: 'u-auto' })
 		const gpNoTeam = await makePlayer({ gameId, userId: 'u-noteam' })
 		const gpPicked = await makePlayer({ gameId, userId: 'u-own-pick' })
-		const autoUsed = [c, d, g1, h]
+		const autoUsed = [c, d, teamG, h]
 		const noTeamUsed = [a, b, e, f]
 		for (const [i, r] of rounds.entries()) {
 			historyIds.push(

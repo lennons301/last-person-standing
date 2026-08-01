@@ -9,6 +9,7 @@ import { writeEvent } from '@/lib/game/events'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { processGameRound } from '@/lib/game/process-round'
 import { reconcileAllActiveGames } from '@/lib/game/reconcile'
+import { scheduleDeadlineLockForRound } from '@/lib/game/round-lifecycle'
 import { competition } from '@/lib/schema/competition'
 
 async function handler(request: Request): Promise<Response> {
@@ -38,7 +39,18 @@ async function handler(request: Request): Promise<Response> {
 			// duplicate or early-fired job is harmless. The daily sync remains
 			// the fallback for a trigger that never fires.
 			const summary = await processDeadlineLock([body.roundId])
-			return NextResponse.json({ ok: true, summary })
+			// A sync may have moved the round's deadline LATER after this job
+			// was queued (rescheduled fixtures). In that case the lock above
+			// no-oped on its internal gate — re-arm the trigger for the new
+			// deadline so processing still happens at deadline time, not at the
+			// daily-sync fallback's cadence. No-ops when the deadline has
+			// passed (the normal case).
+			const rescheduledFor = await scheduleDeadlineLockForRound(body.roundId)
+			return NextResponse.json({
+				ok: true,
+				summary,
+				rescheduledFor: rescheduledFor?.toISOString() ?? null,
+			})
 		}
 		case 'sync_competition': {
 			// Re-sync one competition (ingest newly-confirmed fixtures, e.g. the

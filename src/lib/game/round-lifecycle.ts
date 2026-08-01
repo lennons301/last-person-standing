@@ -31,26 +31,37 @@ export async function openRoundForGame(roundId: string): Promise<void> {
 		await db.update(round).set({ status: 'open' }).where(eq(round.id, roundId))
 	}
 	await scheduleAutoSubmitsForRound(roundId)
-	await scheduleDeadlineLockForRound(r.id, r.deadline)
+	await scheduleDeadlineLockForRound(roundId)
 }
 
 /**
  * Schedule the round's no-pick lock (processDeadlineLock via the QStash
- * handler) for just after the deadline. Best-effort: a failed enqueue is
- * logged, never thrown — the daily-sync fallback and the settle-path crown
- * guard both run the same idempotent lock, so a missed trigger delays
- * no-pick processing but can never change its outcome.
+ * handler) for just after the deadline. Returns the scheduled time, or null
+ * when nothing was queued. Best-effort: a failed enqueue is logged, never
+ * thrown — the daily-sync fallback and the settle-path crown guard both run
+ * the same idempotent lock, so a missed trigger delays no-pick processing
+ * but can never change its outcome.
+ *
+ * Also called by the qstash-handler when a deadline_lock job fires while the
+ * round's deadline is still in the future (a sync moved it later after the
+ * job was queued) — the re-enqueue keeps the trigger chained to the real
+ * deadline. The dedup id is derived from the notBefore slot, so a moved
+ * deadline produces a fresh id and QStash accepts the new message.
  */
-async function scheduleDeadlineLockForRound(roundId: string, deadline: Date | null): Promise<void> {
-	if (!deadline) return
-	const notBefore = new Date(deadline.getTime() + DEADLINE_LOCK_LAG_MS)
-	// Deadline already passed (stale round being re-opened / healed): the
-	// fallbacks own it; queueing a trigger now would just burn quota.
-	if (notBefore.getTime() <= Date.now()) return
+export async function scheduleDeadlineLockForRound(roundId: string): Promise<Date | null> {
+	const r = await db.query.round.findFirst({ where: eq(round.id, roundId) })
+	if (!r?.deadline) return null
+	const notBefore = new Date(r.deadline.getTime() + DEADLINE_LOCK_LAG_MS)
+	// Deadline already passed (stale round being re-opened / healed, or the
+	// trigger firing on time): the daily-sync fallback and crown guard own
+	// anything outstanding; queueing a trigger now would just burn quota.
+	if (notBefore.getTime() <= Date.now()) return null
 	try {
 		await enqueueDeadlineLock(roundId, notBefore)
+		return notBefore
 	} catch (err) {
 		console.warn(`[round-lifecycle] failed to enqueue deadline lock for round ${roundId}`, err)
+		return null
 	}
 }
 

@@ -64,6 +64,8 @@ stateDiagram-v2
     end note
 ```
 
+**No-pick players are eliminated (and refunded) at the deadline.** A player who submitted no predictions at all is eliminated + refunded by the deadline no-pick lock — which fires at deadline+30s via QStash, with the daily sync as fallback and the crown guard running the same lock before the streak evaluation crowns anyone. See the [README](./README.md#the-deadline-no-pick-lock).
+
 ## Live projection
 
 For an in-progress fixture:
