@@ -28,6 +28,7 @@ export async function reconcileGameState(gameId: string): Promise<ReconcileResul
 	const g = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
 		with: {
+			competition: true,
 			currentRound: {
 				with: { fixtures: true },
 			},
@@ -35,6 +36,12 @@ export async function reconcileGameState(gameId: string): Promise<ReconcileResul
 	})
 	if (!g) return { ok: false, error: 'game-not-found' }
 	if (g.status !== 'active') return { ok: true, action: 'noop', reason: 'game-not-active' }
+	// Archived competitions are immutable history — reconcile must not settle,
+	// advance, or open rounds on one. Guarding here covers every recovery
+	// surface at once (page SSR, live API, daily-sync sweep, manual cron).
+	if (g.competition?.status === 'archived') {
+		return { ok: true, action: 'noop', reason: 'competition-archived' }
+	}
 	if (!g.currentRoundId || !g.currentRound) {
 		return { ok: true, action: 'noop', reason: 'no-current-round' }
 	}

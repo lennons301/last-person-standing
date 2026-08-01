@@ -58,6 +58,20 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'Competition not found' }, { status: 404 })
 	}
 
+	// Archived competitions (finished seasons/tournaments kept for history) are
+	// excluded from the creation listing, but reject at the API boundary too so
+	// a stale client or crafted request can't attach a new game to a dead season.
+	if (comp.status === 'archived') {
+		return NextResponse.json(
+			{
+				error: 'competition-archived',
+				message:
+					'This competition has finished and is archived. New games cannot be created on it.',
+			},
+			{ status: 400 },
+		)
+	}
+
 	// Cup mode is designed for cup competitions (knockout / group_knockout —
 	// e.g. World Cup, FA Cup, League Cup). It's not appropriate for league
 	// competitions like the PL where the format doesn't match. Reject at the

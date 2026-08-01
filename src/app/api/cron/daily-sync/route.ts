@@ -85,10 +85,13 @@ export async function POST(request: Request) {
 		// the round as open.
 		const activeGames = await db.query.game.findMany({
 			where: eq(game.status, 'active'),
-			with: { currentRound: true },
+			with: { currentRound: true, competition: true },
 		})
 		const reconciledRoundIds: string[] = []
 		for (const g of activeGames) {
+			// Never mutate an archived competition's rounds — its data is frozen
+			// history even if a game row somehow still points at it.
+			if (g.competition?.status === 'archived') continue
 			if (g.currentRound && g.currentRound.status === 'upcoming') {
 				await openRoundForGame(g.currentRound.id)
 				reconciledRoundIds.push(g.currentRound.id)

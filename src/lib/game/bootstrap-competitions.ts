@@ -98,10 +98,20 @@ const PRE_SCHEDULE_LOOKAHEAD_MS = 2 * 24 * 60 * 60 * 1000
 export async function scheduleUpcomingFixturePolls(): Promise<void> {
 	const now = new Date()
 	const lookahead = new Date(now.getTime() + PRE_SCHEDULE_LOOKAHEAD_MS)
+	// Join up to the competition so archived competitions never get polls
+	// enqueued — their fixtures are history, not upcoming matches.
 	const upcoming = await db
 		.select({ id: fixture.id, kickoff: fixture.kickoff })
 		.from(fixture)
-		.where(and(gt(fixture.kickoff, now), lt(fixture.kickoff, lookahead)))
+		.innerJoin(round, eq(fixture.roundId, round.id))
+		.innerJoin(competition, eq(round.competitionId, competition.id))
+		.where(
+			and(
+				gt(fixture.kickoff, now),
+				lt(fixture.kickoff, lookahead),
+				eq(competition.status, 'active'),
+			),
+		)
 
 	for (const f of upcoming) {
 		if (!f.kickoff) continue
@@ -160,6 +170,9 @@ function fdTlaForFplShortName(fplShortName: string): string {
  * Idempotent: re-running this on already-merged data is a no-op.
  */
 export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string): Promise<void> {
+	// Same immutability rule as syncCompetition: never touch an archived
+	// competition's team/fixture external ids.
+	if (comp.status === 'archived') return
 	if (!comp.externalId && comp.dataSource !== 'fpl') return // PL is the only fpl source today
 	const fdCode = comp.externalId ?? 'PL'
 	const fdAdapter = new FootballDataAdapter(fdCode, apiKey)
@@ -274,6 +287,15 @@ export async function syncCompetition(
 	deadlinePassedRoundIds: string[]
 	settledFixtureIds: string[]
 }> {
+	// Archived competitions are immutable — their rounds, fixtures, and external
+	// ids must never change again. The daily-sync loop only enumerates active
+	// competitions, but this guard is the structural backstop for every other
+	// path that reaches here (stale QStash sync_competition jobs, the hardcoded
+	// bootstrap lookups, future callers).
+	if (comp.status === 'archived') {
+		console.warn(`[syncCompetition] skipping archived competition ${comp.id} (${comp.name})`)
+		return { rounds: 0, fixtures: 0, deadlinePassedRoundIds: [], settledFixtureIds: [] }
+	}
 	const adapter = adapterFor(comp, opts)
 	if (!adapter) return { rounds: 0, fixtures: 0, deadlinePassedRoundIds: [], settledFixtureIds: [] }
 
@@ -575,6 +597,12 @@ async function seedProvisionalKnockoutTies(
 export async function applyPotAssignments(
 	competitionId: string,
 ): Promise<{ matched: number; unmatched: string[] }> {
+	// Pot tags land on team rows via external_ids — a sync-owned mutation, so
+	// the archived-competition immutability rule applies here too.
+	const comp = await db.query.competition.findFirst({
+		where: eq(competition.id, competitionId),
+	})
+	if (!comp || comp.status === 'archived') return { matched: 0, unmatched: [] }
 	const rounds = await db.query.round.findMany({
 		where: eq(round.competitionId, competitionId),
 		with: { fixtures: true },

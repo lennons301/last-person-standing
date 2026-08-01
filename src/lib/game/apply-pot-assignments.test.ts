@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		query: {
+			competition: { findFirst: vi.fn() },
 			round: { findMany: vi.fn() },
 			team: { findMany: vi.fn() },
 		},
@@ -16,7 +17,23 @@ vi.mock('@/lib/db', () => ({ db: dbMock }))
 import { applyPotAssignments } from './bootstrap-competitions'
 
 describe('applyPotAssignments', () => {
-	beforeEach(() => vi.clearAllMocks())
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbMock.query.competition.findFirst.mockResolvedValue({ id: 'c1', status: 'active' } as never)
+	})
+
+	it('is a no-op for an archived competition (team pot tags stay untouched)', async () => {
+		dbMock.query.competition.findFirst.mockResolvedValue({
+			id: 'c1',
+			status: 'archived',
+		} as never)
+
+		const result = await applyPotAssignments('c1')
+
+		expect(result).toEqual({ matched: 0, unmatched: [] })
+		expect(dbMock.query.round.findMany).not.toHaveBeenCalled()
+		expect(dbMock.update).not.toHaveBeenCalled()
+	})
 
 	it('returns matched=0, unmatched=[] when no fixtures/teams in competition', async () => {
 		dbMock.query.round.findMany.mockResolvedValue([] as never)

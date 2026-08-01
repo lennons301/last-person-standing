@@ -37,9 +37,14 @@ vi.mock('@/lib/game/round-lifecycle', () => ({
 	openRoundForGame: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('@/lib/game/reconcile', () => ({
+	reconcileAllActiveGames: vi.fn().mockResolvedValue({ checked: 0, settled: 0, advanced: 0 }),
+}))
+
 import { db } from '@/lib/db'
 import { syncCompetition } from '@/lib/game/bootstrap-competitions'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
+import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { POST } from './route'
 
 describe('daily-sync route', () => {
@@ -179,6 +184,37 @@ describe('daily-sync route', () => {
 			}),
 		)
 		expect(processDeadlineLock).not.toHaveBeenCalled()
+	})
+
+	it('does not open upcoming rounds for games on an archived competition', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([] as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			{
+				id: 'g-archived',
+				status: 'active',
+				competition: { id: 'c-old', status: 'archived' },
+				currentRound: { id: 'r-old', status: 'upcoming' },
+			},
+			{
+				id: 'g-live',
+				status: 'active',
+				competition: { id: 'c-new', status: 'active' },
+				currentRound: { id: 'r-new', status: 'upcoming' },
+			},
+		] as never)
+
+		const res = await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: { authorization: 'Bearer test-secret' },
+			}),
+		)
+
+		expect(res.status).toBe(200)
+		expect(openRoundForGame).toHaveBeenCalledTimes(1)
+		expect(openRoundForGame).toHaveBeenCalledWith('r-new')
+		const body = (await res.json()) as { reconciledRoundIds: string[] }
+		expect(body.reconciledRoundIds).toEqual(['r-new'])
 	})
 
 	it('invokes processDeadlineLock once with all transitioned round ids across competitions', async () => {

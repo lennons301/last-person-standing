@@ -48,7 +48,14 @@ export const competition = pgTable('competition', {
 	dataSource: competitionDataSourceEnum('data_source').notNull(),
 	externalId: varchar('external_id', { length: 100 }),
 	season: varchar('season', { length: 20 }),
-	status: varchar('status', { length: 20 }).notNull().default('active'),
+	// Lifecycle: 'active' → offered at game creation, synced daily, polled live.
+	// 'archived' → a finished season/tournament kept for history: hidden from
+	// game creation, skipped by every sync/reconcile/poll surface, and never
+	// mutated again. Completed games on it keep rendering unchanged.
+	status: varchar('status', { length: 20 })
+		.$type<'active' | 'archived'>()
+		.notNull()
+		.default('active'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

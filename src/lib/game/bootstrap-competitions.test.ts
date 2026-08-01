@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -28,7 +29,10 @@ const {
 	}))
 	const selectWhere = vi.fn().mockResolvedValue([])
 	const selectFn = vi.fn(() => ({
-		from: () => ({ where: selectWhere }),
+		from: () => ({
+			innerJoin: () => ({ innerJoin: () => ({ where: selectWhere }) }),
+			where: selectWhere,
+		}),
 	}))
 	return {
 		dbQueryCompetitionFindFirst: vi.fn(),
@@ -595,5 +599,61 @@ describe('scheduleUpcomingFixturePolls', () => {
 
 		await expect(scheduleUpcomingFixturePolls()).resolves.toBeUndefined()
 		expect(enqueuePollScoresAtMock).toHaveBeenCalledTimes(2)
+	})
+
+	it('restricts the fixture query to active competitions so archived ones never get polls', async () => {
+		dbSelectWhere.mockResolvedValue([])
+
+		await scheduleUpcomingFixturePolls()
+
+		const condition = dbSelectWhere.mock.calls[0][0]
+		const { sql: rendered, params } = new PgDialect().sqlToQuery(condition as never)
+		expect(rendered).toContain('"competition"."status"')
+		expect(params).toContain('active')
+	})
+})
+
+describe('archived competition immutability', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it('syncCompetition is a no-op for an archived competition (nothing fetched or written)', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+		const summary = await syncCompetition(
+			{
+				id: 'comp-old',
+				name: 'Premier League 2025/26',
+				dataSource: 'fpl',
+				externalId: null,
+				status: 'archived',
+			} as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		expect(summary).toEqual({
+			rounds: 0,
+			fixtures: 0,
+			deadlinePassedRoundIds: [],
+			settledFixtureIds: [],
+		})
+		expect(fplFetchTeams).not.toHaveBeenCalled()
+		expect(fdFetchTeams).not.toHaveBeenCalled()
+		expect(dbInsertFn).not.toHaveBeenCalled()
+		expect(dbUpdateFn).not.toHaveBeenCalled()
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('archived'))
+		warn.mockRestore()
+	})
+
+	it('mergeFootballDataIds is a no-op for an archived competition', async () => {
+		await mergeFootballDataIds(
+			{ id: 'comp-old', dataSource: 'fpl', externalId: null, status: 'archived' } as never,
+			'fd-key',
+		)
+
+		expect(fdFetchTeams).not.toHaveBeenCalled()
+		expect(fdFetchRounds).not.toHaveBeenCalled()
+		expect(dbUpdateFn).not.toHaveBeenCalled()
 	})
 })

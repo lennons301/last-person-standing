@@ -40,9 +40,12 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 
 	// A game is dispatchable if it has a current round AND its competition
 	// maps to a football-data.org code. Any later gating (live-window,
-	// dispatch loop) must agree on this set.
+	// dispatch loop) must agree on this set. Archived competitions are frozen
+	// history — never poll, write scores, or re-sync them, even if an active
+	// game row somehow still points at one.
 	const dispatchableGames = activeGames.flatMap((g) => {
 		if (!g.currentRoundId) return []
+		if (g.competition.status === 'archived') return []
 		const code = resolveFootballDataCode(g.competition)
 		if (!code) return []
 		return [{ id: g.id, currentRoundId: g.currentRoundId, code }]
@@ -80,6 +83,9 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 	// trigger a bracket re-sync after a knockout fixture finishes.
 	const compByCode = new Map<string, { id: string; type: string }>()
 	for (const g of activeGames) {
+		// Same archived exclusion as dispatchableGames — an archived competition
+		// sharing an external code must never shadow the active one here.
+		if (g.competition.status === 'archived') continue
 		const code = resolveFootballDataCode(g.competition)
 		if (code) compByCode.set(code, { id: g.competition.id, type: g.competition.type })
 	}

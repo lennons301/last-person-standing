@@ -90,6 +90,20 @@ describe('poll-scores short-circuit', () => {
 		expect(body).toEqual({ updated: 0, reason: 'no-active-rounds' })
 	})
 
+	it('never polls a game whose competition is archived', async () => {
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			{
+				currentRoundId: 'r1',
+				competition: { externalId: 'PL', dataSource: 'football_data', status: 'archived' },
+			},
+		] as never)
+		const res = await POST(authedRequest())
+		const body = await res.json()
+		expect(body).toEqual({ updated: 0, reason: 'no-active-rounds' })
+		expect(fetchLiveScoresMock).not.toHaveBeenCalled()
+		expect(enqueuePollScores).not.toHaveBeenCalled()
+	})
+
 	it('short-circuits when no fixtures are in their live window', async () => {
 		vi.mocked(db.query.game.findMany).mockResolvedValue([
 			{
