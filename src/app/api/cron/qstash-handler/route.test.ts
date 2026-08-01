@@ -1,13 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { verifyMock, processGameRoundMock, writeEventMock, submitPlannedPickMock } = vi.hoisted(
-	() => ({
-		verifyMock: vi.fn(),
-		processGameRoundMock: vi.fn().mockResolvedValue({ processed: true }),
-		writeEventMock: vi.fn().mockResolvedValue(undefined),
-		submitPlannedPickMock: vi.fn().mockResolvedValue({ submitted: true }),
+const {
+	verifyMock,
+	processGameRoundMock,
+	writeEventMock,
+	submitPlannedPickMock,
+	processDeadlineLockMock,
+} = vi.hoisted(() => ({
+	verifyMock: vi.fn(),
+	processGameRoundMock: vi.fn().mockResolvedValue({ processed: true }),
+	writeEventMock: vi.fn().mockResolvedValue(undefined),
+	submitPlannedPickMock: vi.fn().mockResolvedValue({ submitted: true }),
+	processDeadlineLockMock: vi.fn().mockResolvedValue({
+		autoPicksInserted: 1,
+		playersEliminated: 0,
+		paymentsRefunded: 0,
 	}),
-)
+}))
 
 vi.mock('@upstash/qstash/nextjs', () => ({
 	verifySignatureAppRouter: (fn: unknown) => fn,
@@ -19,6 +28,8 @@ vi.mock('@/lib/game/process-round', () => ({ processGameRound: processGameRoundM
 vi.mock('@/lib/game/events', () => ({ writeEvent: writeEventMock }))
 
 vi.mock('@/lib/game/auto-submit', () => ({ submitPlannedPick: submitPlannedPickMock }))
+
+vi.mock('@/lib/game/no-pick-handler', () => ({ processDeadlineLock: processDeadlineLockMock }))
 
 import { POST } from './route'
 
@@ -59,6 +70,17 @@ describe('qstash-handler', () => {
 		)
 		expect(res.status).toBe(200)
 		expect(submitPlannedPickMock).toHaveBeenCalledWith('gp', 'r', 't')
+	})
+
+	it('dispatches deadline_lock jobs to the no-pick lock', async () => {
+		const res = await POST(req({ type: 'deadline_lock', roundId: 'r' }))
+		expect(res.status).toBe(200)
+		expect(processDeadlineLockMock).toHaveBeenCalledWith(['r'])
+		const body = await res.json()
+		expect(body).toEqual({
+			ok: true,
+			summary: { autoPicksInserted: 1, playersEliminated: 0, paymentsRefunded: 0 },
+		})
 	})
 
 	it('rejects unknown job types', async () => {

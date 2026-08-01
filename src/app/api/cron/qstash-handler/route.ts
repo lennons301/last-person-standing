@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { submitPlannedPick } from '@/lib/game/auto-submit'
 import { syncCompetition } from '@/lib/game/bootstrap-competitions'
 import { writeEvent } from '@/lib/game/events'
+import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { processGameRound } from '@/lib/game/process-round'
 import { reconcileAllActiveGames } from '@/lib/game/reconcile'
 import { competition } from '@/lib/schema/competition'
@@ -28,6 +29,16 @@ async function handler(request: Request): Promise<Response> {
 		case 'auto_submit': {
 			await submitPlannedPick(body.gamePlayerId, body.roundId, body.teamId)
 			return NextResponse.json({ ok: true })
+		}
+		case 'deadline_lock': {
+			// Deadline-time no-pick processing: auto-pick (or eliminate when no
+			// unused team remains) every alive player without a pick, the moment
+			// the round's deadline passes. Scheduled by openRoundForGame; the
+			// lock is idempotent and internally gated on the deadline, so a
+			// duplicate or early-fired job is harmless. The daily sync remains
+			// the fallback for a trigger that never fires.
+			const summary = await processDeadlineLock([body.roundId])
+			return NextResponse.json({ ok: true, summary })
 		}
 		case 'sync_competition': {
 			// Re-sync one competition (ingest newly-confirmed fixtures, e.g. the

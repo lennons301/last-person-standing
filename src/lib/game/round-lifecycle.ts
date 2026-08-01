@@ -1,10 +1,19 @@
 import { eq } from 'drizzle-orm'
-import { enqueueAutoSubmit } from '@/lib/data/qstash'
+import { enqueueAutoSubmit, enqueueDeadlineLock } from '@/lib/data/qstash'
 import { db } from '@/lib/db'
 import { round } from '@/lib/schema/competition'
 import { plannedPick } from '@/lib/schema/game'
 
 const AUTO_SUBMIT_LEAD_MS = 60_000
+
+/**
+ * How long after the deadline the no-pick lock trigger fires. Orders it
+ * safely after the T-60s auto-submits have landed and absorbs QStash/server
+ * clock skew, so the lock never observes a not-quite-passed deadline (its
+ * internal gate would turn an early firing into a silent no-op with no
+ * retry until the daily-sync fallback).
+ */
+export const DEADLINE_LOCK_LAG_MS = 30_000
 
 /**
  * A round transitions from 'upcoming' → 'open' when a game starts using it
@@ -22,6 +31,27 @@ export async function openRoundForGame(roundId: string): Promise<void> {
 		await db.update(round).set({ status: 'open' }).where(eq(round.id, roundId))
 	}
 	await scheduleAutoSubmitsForRound(roundId)
+	await scheduleDeadlineLockForRound(r.id, r.deadline)
+}
+
+/**
+ * Schedule the round's no-pick lock (processDeadlineLock via the QStash
+ * handler) for just after the deadline. Best-effort: a failed enqueue is
+ * logged, never thrown — the daily-sync fallback and the settle-path crown
+ * guard both run the same idempotent lock, so a missed trigger delays
+ * no-pick processing but can never change its outcome.
+ */
+async function scheduleDeadlineLockForRound(roundId: string, deadline: Date | null): Promise<void> {
+	if (!deadline) return
+	const notBefore = new Date(deadline.getTime() + DEADLINE_LOCK_LAG_MS)
+	// Deadline already passed (stale round being re-opened / healed): the
+	// fallbacks own it; queueing a trigger now would just burn quota.
+	if (notBefore.getTime() <= Date.now()) return
+	try {
+		await enqueueDeadlineLock(roundId, notBefore)
+	} catch (err) {
+		console.warn(`[round-lifecycle] failed to enqueue deadline lock for round ${roundId}`, err)
+	}
 }
 
 /**
