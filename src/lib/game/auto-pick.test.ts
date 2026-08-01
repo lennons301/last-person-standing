@@ -38,6 +38,19 @@ describe('pickLowestRankedUnusedTeam', () => {
 		).toBe('t-eve')
 	})
 
+	it('selects the genuinely worst-placed unused team when every team has a real position', () => {
+		// The post-standings-sync production state: every club carries a real
+		// league position. With the two worst-placed teams already used, the
+		// pick must fall to the next-worst by position, not an arbitrary team.
+		expect(
+			pickLowestRankedUnusedTeam({
+				fixtures,
+				usedTeamIds: new Set(['t-wba', 't-eve']),
+				teamPositions: positions,
+			}),
+		).toBe('t-che')
+	})
+
 	it('returns null when all teams in round are used', () => {
 		expect(
 			pickLowestRankedUnusedTeam({

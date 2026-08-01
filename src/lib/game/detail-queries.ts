@@ -414,6 +414,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 			shortName: f.homeTeam.shortName,
 			badgeUrl: f.homeTeam.badgeUrl,
 			form: formMap.get(f.homeTeamId),
+			leaguePosition: f.homeTeam.leaguePosition,
 		},
 		away: {
 			id: f.awayTeamId,
@@ -421,6 +422,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 			shortName: f.awayTeam.shortName,
 			badgeUrl: f.awayTeam.badgeUrl,
 			form: formMap.get(f.awayTeamId),
+			leaguePosition: f.awayTeam.leaguePosition,
 		},
 		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
 	}))
@@ -489,6 +491,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 			shortName: f.homeTeam.shortName,
 			badgeUrl: f.homeTeam.badgeUrl,
 			form: formMap.get(f.homeTeamId),
+			leaguePosition: f.homeTeam.leaguePosition,
 		},
 		away: {
 			id: f.awayTeamId,
@@ -496,6 +499,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 			shortName: f.awayTeam.shortName,
 			badgeUrl: f.awayTeam.badgeUrl,
 			form: formMap.get(f.awayTeamId),
+			leaguePosition: f.awayTeam.leaguePosition,
 		},
 		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
 	}))
