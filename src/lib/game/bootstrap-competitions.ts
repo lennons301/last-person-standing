@@ -153,6 +153,19 @@ function fdTlaForFplShortName(fplShortName: string): string {
 }
 
 /**
+ * A competition's rounds with their fixtures — the scope boundary for every
+ * sync-owned mutation. External ids are unique only within (competition,
+ * data source), so matching always starts from this set, never the whole
+ * fixture or team table.
+ */
+function competitionRoundsWithFixtures(competitionId: string) {
+	return db.query.round.findMany({
+		where: eq(round.competitionId, competitionId),
+		with: { fixtures: true },
+	})
+}
+
+/**
  * For competitions whose primary adapter is FPL, this fetches the same matchdays
  * from football-data.org and merges football-data IDs into existing teams +
  * fixtures. The FPL adapter remains the source of truth for round structure
@@ -186,10 +199,7 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// competition's fixtures define its team set — matching by tla over the
 	// whole team table could hit another competition's row (e.g. a WC country
 	// sharing a promoted club's code) and rewrite its badge + football-data id.
-	const ourRounds = await db.query.round.findMany({
-		where: eq(round.competitionId, comp.id),
-		with: { fixtures: true },
-	})
+	const ourRounds = await competitionRoundsWithFixtures(comp.id)
 	const compTeamIds = new Set<string>()
 	for (const r of ourRounds) {
 		for (const f of r.fixtures) {
@@ -197,10 +207,12 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 			compTeamIds.add(f.awayTeamId)
 		}
 	}
+	const teamsInCompetition = async () =>
+		(await db.query.team.findMany({})).filter((t) => compTeamIds.has(t.id))
 
 	// 1) Merge football-data team IDs onto this competition's teams via
 	// short_name === tla (with the FPL_TO_FD_TLA alias map covering NFO → NOT).
-	const ourTeams = (await db.query.team.findMany({})).filter((t) => compTeamIds.has(t.id))
+	const ourTeams = await teamsInCompetition()
 	const ourTeamIdByFdId = new Map<string, string>() // football-data id -> our team UUID
 	for (const fdTeam of fdTeams) {
 		const ourTeam = ourTeams.find((t) => fdTlaForFplShortName(t.shortName) === fdTeam.shortName)
@@ -260,7 +272,7 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// football-data temporarily. Scoped to this competition's teams — a dormant
 	// relegated club's row (stale fpl id, no current-season fd merge) plays no
 	// part here and must not trip the loud failure.
-	const refreshedTeams = (await db.query.team.findMany({})).filter((t) => compTeamIds.has(t.id))
+	const refreshedTeams = await teamsInCompetition()
 	const fplTeams = refreshedTeams.filter(
 		(t) => (t.externalIds as Record<string, string | number> | null)?.fpl != null,
 	)
@@ -274,12 +286,7 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 		)
 	}
 
-	const fixturesAll = (
-		await db.query.round.findMany({
-			where: eq(round.competitionId, comp.id),
-			with: { fixtures: true },
-		})
-	).flatMap((r) => r.fixtures)
+	const fixturesAll = (await competitionRoundsWithFixtures(comp.id)).flatMap((r) => r.fixtures)
 	const fixturesMissing = fixturesAll.filter(
 		(f) => (f.externalIds as Record<string, string | number> | null)?.football_data == null,
 	)
@@ -374,10 +381,7 @@ export async function syncCompetition(
 	// external ids are unique only within (competition, data source), so a
 	// global match would let restarted FPL ids rewrite another season's rows
 	// in place (the 2026/27 silent-corruption incident).
-	const compRoundsForUpsert = await db.query.round.findMany({
-		where: eq(round.competitionId, comp.id),
-		with: { fixtures: true },
-	})
+	const compRoundsForUpsert = await competitionRoundsWithFixtures(comp.id)
 	const compFixtureByExternalId = new Map<
 		string,
 		(typeof compRoundsForUpsert)[number]['fixtures'][number]
@@ -573,10 +577,7 @@ async function seedProvisionalKnockoutTies(
 	adapterRounds: { number: number; isKnockout: boolean; allMatchesDeadline: Date | null }[],
 	key: string,
 ): Promise<number> {
-	const dbRounds = await db.query.round.findMany({
-		where: eq(round.competitionId, competitionId),
-		with: { fixtures: true },
-	})
+	const dbRounds = await competitionRoundsWithFixtures(competitionId)
 	const metaByNumber = new Map(adapterRounds.map((r) => [r.number, r]))
 
 	const plannerRounds: PlannerRound[] = dbRounds.map((r) => ({
@@ -642,10 +643,7 @@ export async function applyPotAssignments(
 		where: eq(competition.id, competitionId),
 	})
 	if (!comp || comp.status === 'archived') return { matched: 0, unmatched: [] }
-	const rounds = await db.query.round.findMany({
-		where: eq(round.competitionId, competitionId),
-		with: { fixtures: true },
-	})
+	const rounds = await competitionRoundsWithFixtures(competitionId)
 	const teamIds = new Set<string>()
 	for (const r of rounds) {
 		for (const f of r.fixtures) {

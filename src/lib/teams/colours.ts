@@ -29,6 +29,9 @@ export const TEAM_COLOURS: Record<string, string> = {
 	WOL: '#FDB913',
 }
 
+// Neutral grey for teams without a colour entry.
+export const FALLBACK_TEAM_COLOUR = '#6b6b6b'
+
 export function getTeamColour(shortName: string): string {
-	return TEAM_COLOURS[shortName.toUpperCase()] ?? '#6b6b6b'
+	return TEAM_COLOURS[shortName.toUpperCase()] ?? FALLBACK_TEAM_COLOUR
 }
