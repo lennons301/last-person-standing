@@ -123,6 +123,14 @@ Safety nets for anything that slips through:
 
 All five paths converge on `settleFixture` for the actual work. Settlement is idempotent on every axis: re-running on a settled pick is a no-op (guard on `pick.result !== 'pending'`); re-running elimination guards on `gamePlayer.status === 'alive'`; cup re-eval is naturally idempotent (same inputs → same writes).
 
+### The deadline no-pick lock
+
+`processDeadlineLock` (`src/lib/game/no-pick-handler.ts`) handles alive players who made no pick once a round's deadline passes: classic round 3+ gets the worst-placed unused team auto-assigned (or elimination when every round team is already used); classic rounds 1–2 and turbo/cup eliminate per their mode rules. It is idempotent and internally gated on `round.deadline <= now`, so every surface calls it unconditionally:
+
+1. **QStash `deadline_lock` job** — scheduled by `openRoundForGame` for deadline+30s (same surface that pre-schedules auto-submits; dedup id collapses concurrent games opening the same round). This is the primary path: no-pick processing lands minutes after the deadline, before any fixture kicks off.
+2. **Daily-sync cron** — `syncCompetition` reports deadline-passed open rounds; the route runs the lock over them as the idempotent fallback.
+3. **Crown guard** — `checkAndMaybeCompleteOrAdvance` (the settle path's completion check) runs the lock for the settling round before evaluating ANY completion. No completion path (last-alive, mass-extinction, rounds-exhausted, turbo/cup crowning) can declare winners while an alive player's no-pick processing is outstanding — a pickless finalist is eliminated before the winner evaluation sees them (the WC LPS split-pot incident, which raced the final's settlement against the next morning's daily sync).
+
 ---
 
 ## Verifying the spec

@@ -5,6 +5,7 @@ export type QStashJob =
 	| { type: 'deadline_reminder'; gameId: string; roundId: string; window: '24h' | '2h' }
 	| { type: 'auto_submit'; gamePlayerId: string; roundId: string; teamId: string }
 	| { type: 'sync_competition'; competitionId: string }
+	| { type: 'deadline_lock'; roundId: string }
 
 /**
  * Stable callback origin for QStash jobs.
@@ -83,6 +84,27 @@ export async function enqueueCompetitionSync(
 		body: { type: 'sync_competition', competitionId } satisfies QStashJob,
 		delay: delaySeconds,
 		deduplicationId: `sync-comp-${competitionId}-${bucket}`,
+	})
+}
+
+/**
+ * Enqueue the round's no-pick lock (processDeadlineLock) to fire once the
+ * round's deadline has passed. Scheduled from `openRoundForGame` — the same
+ * surface that pre-schedules auto-submits — so no new trigger path exists;
+ * the daily sync remains the idempotent fallback.
+ *
+ * The dedup id is derived from (roundId, notBefore): every game that opens
+ * the same round enqueues the identical message, so QStash collapses the
+ * cluster to one trigger. Duplicates beyond the dedup window are harmless —
+ * the lock is idempotent and internally gated on the deadline.
+ */
+export async function enqueueDeadlineLock(roundId: string, notBefore: Date): Promise<void> {
+	const notBeforeSec = Math.floor(notBefore.getTime() / 1000)
+	await client().publishJSON({
+		url: handlerUrl(),
+		body: { type: 'deadline_lock', roundId } satisfies QStashJob,
+		notBefore: notBeforeSec,
+		deduplicationId: `deadline-lock-${roundId}-${notBeforeSec}`,
 	})
 }
 

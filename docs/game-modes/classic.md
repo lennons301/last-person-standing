@@ -64,6 +64,8 @@ stateDiagram-v2
 
 **Mid-gameweek auto-completion is also real.** If a fixture's settlement drops the alive count to 1, the game auto-completes immediately — no waiting for the round to finish.
 
+**No-pick processing runs at the deadline, not the next morning.** `processDeadlineLock` fires via a QStash `deadline_lock` job scheduled by `openRoundForGame` for deadline+30s: round 3+ no-pickers get the worst-placed unused team auto-assigned (`isAuto=true`), or are eliminated (`no_pick_no_fallback`) when every team in the round is already used; rounds 1–2 follow the rebuy rules. The daily sync remains the idempotent fallback, and the settle path's completion check runs the same lock before evaluating winners (the crown guard) — so a pickless finalist can never be crowned in the window between the last fixture settling and the next sync. See the [README's trigger surfaces](./README.md#the-deadline-no-pick-lock).
+
 ## Live projection
 
 For an in-progress fixture (status=`live`/`halftime`, scores present):
@@ -115,9 +117,9 @@ See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`
 - Round advancement on last-fixture settle (3 winners → all advance).
 - WC group-stage settle + advance.
 - Live projection: in-progress fixture surfaces projected `'alive'` / `'eliminated'` per player + `'winning'` / `'losing'` per pick.
+- Deadline no-pick lock + crown guard (`lifecycle: deadline no-pick lock + crown guard`): the Barry race (pickless finalist with no legal team eliminated before rounds-exhausted can crown), pre-deadline no-op, worst-placed-unused auto-pick at deadline time, idempotency across the QStash trigger / daily-sync fallback / crown-guard invocations.
 
 Not yet covered (gaps to fill):
 - WC knockout auto-elimination via `computeWcClassicAutoElims`.
 - Mass-extinction tiebreaker.
-- `processDeadlineLock` end-to-end.
 - Rebuy round R1 → R2.

@@ -11,6 +11,7 @@ vi.mock('@upstash/qstash', () => ({
 import {
 	enqueueAutoSubmit,
 	enqueueCompetitionSync,
+	enqueueDeadlineLock,
 	enqueueDeadlineReminder,
 	enqueuePollScores,
 	enqueuePollScoresAt,
@@ -86,6 +87,18 @@ describe('qstash helpers', () => {
 			teamId: 't-1',
 		})
 		expect(call.notBefore).toBe(Math.floor(notBefore.getTime() / 1000))
+	})
+
+	it('enqueues a deadline lock at the given timestamp with a slot-stable dedup id', async () => {
+		const notBefore = new Date('2026-08-21T17:30:30Z')
+		await enqueueDeadlineLock('r-1', notBefore)
+		const call = publishJSONMock.mock.calls[0][0]
+		expect(call.url).toBe('https://example.com/api/cron/qstash-handler')
+		expect(call.body).toEqual({ type: 'deadline_lock', roundId: 'r-1' })
+		expect(call.notBefore).toBe(Math.floor(notBefore.getTime() / 1000))
+		// Stable id: every game opening the same round enqueues the identical
+		// (notBefore, dedup id), so QStash collapses them to one trigger.
+		expect(call.deduplicationId).toBe(`deadline-lock-r-1-${Math.floor(notBefore.getTime() / 1000)}`)
 	})
 
 	it('enqueuePollScores posts to poll-scores grid-aligned with a slot dedup id', async () => {

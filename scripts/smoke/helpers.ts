@@ -65,6 +65,7 @@ export async function makeTeam(opts: {
 	name: string
 	shortName: string
 	fifaPot?: 1 | 2 | 3 | 4
+	leaguePosition?: number
 }): Promise<string> {
 	const externalIds: Record<string, string | number> = {}
 	if (opts.fifaPot != null) externalIds.fifa_pot = opts.fifaPot
@@ -74,6 +75,7 @@ export async function makeTeam(opts: {
 			name: opts.name,
 			shortName: opts.shortName,
 			externalIds,
+			leaguePosition: opts.leaguePosition ?? null,
 		})
 		.returning()
 	return t.id

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { dbMock, enqueueAutoSubmitMock } = vi.hoisted(() => {
+const { dbMock, enqueueAutoSubmitMock, enqueueDeadlineLockMock } = vi.hoisted(() => {
 	const enqueueAutoSubmitMock = vi.fn().mockResolvedValue(undefined)
+	const enqueueDeadlineLockMock = vi.fn().mockResolvedValue(undefined)
 	const updateSet = vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) }))
 	return {
 		enqueueAutoSubmitMock,
+		enqueueDeadlineLockMock,
 		dbMock: {
 			query: {
 				round: { findFirst: vi.fn() },
@@ -18,12 +20,15 @@ const { dbMock, enqueueAutoSubmitMock } = vi.hoisted(() => {
 vi.mock('@/lib/db', () => ({ db: dbMock }))
 vi.mock('@/lib/data/qstash', () => ({
 	enqueueAutoSubmit: enqueueAutoSubmitMock,
+	enqueueDeadlineLock: enqueueDeadlineLockMock,
 }))
 
 import {
+	DEADLINE_LOCK_LAG_MS,
 	openRoundForGame,
 	scheduleAutoSubmitForPlan,
 	scheduleAutoSubmitsForRound,
+	scheduleDeadlineLockForRound,
 } from './round-lifecycle'
 
 describe('openRoundForGame', () => {
@@ -100,6 +105,88 @@ describe('openRoundForGame', () => {
 		await openRoundForGame('missing')
 		expect(dbMock.update).not.toHaveBeenCalled()
 		expect(enqueueAutoSubmitMock).not.toHaveBeenCalled()
+		expect(enqueueDeadlineLockMock).not.toHaveBeenCalled()
+	})
+
+	it('schedules the deadline no-pick lock just after the deadline, even with no auto-submit plans', async () => {
+		const deadline = new Date(Date.now() + 7 * 24 * 3600 * 1000)
+		dbMock.query.round.findFirst.mockResolvedValue({
+			id: 'r1',
+			status: 'upcoming',
+			deadline,
+		} as never)
+		dbMock.query.plannedPick.findMany.mockResolvedValue([] as never)
+
+		await openRoundForGame('r1')
+
+		expect(enqueueDeadlineLockMock).toHaveBeenCalledTimes(1)
+		expect(enqueueDeadlineLockMock).toHaveBeenCalledWith(
+			'r1',
+			new Date(deadline.getTime() + DEADLINE_LOCK_LAG_MS),
+		)
+	})
+
+	it('does not schedule the deadline lock when the deadline has already passed', async () => {
+		// A stale round (deadline in the past) is covered by the daily-sync
+		// fallback + crown guard — re-opening it must not queue a trigger.
+		dbMock.query.round.findFirst.mockResolvedValue({
+			id: 'r1',
+			status: 'upcoming',
+			deadline: new Date(Date.now() - 3600_000),
+		} as never)
+
+		await openRoundForGame('r1')
+
+		expect(enqueueDeadlineLockMock).not.toHaveBeenCalled()
+	})
+
+	it('opens the round even when the deadline-lock enqueue fails (best-effort scheduling)', async () => {
+		// QStash may be unconfigured (local dev) or unreachable — the open
+		// transition must not fail with it; the fallbacks cover the lock.
+		enqueueDeadlineLockMock.mockRejectedValueOnce(new Error('QSTASH_TOKEN not configured'))
+		dbMock.query.round.findFirst.mockResolvedValue({
+			id: 'r1',
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 24 * 3600 * 1000),
+		} as never)
+
+		await expect(openRoundForGame('r1')).resolves.toBeUndefined()
+		// The status flip still happened.
+		expect(dbMock.update).toHaveBeenCalled()
+	})
+})
+
+describe('scheduleDeadlineLockForRound', () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it('returns the scheduled time (deadline + lag) when it enqueues', async () => {
+		const deadline = new Date(Date.now() + 24 * 3600 * 1000)
+		dbMock.query.round.findFirst.mockResolvedValue({ id: 'r1', deadline } as never)
+
+		const scheduled = await scheduleDeadlineLockForRound('r1')
+
+		expect(scheduled).toEqual(new Date(deadline.getTime() + DEADLINE_LOCK_LAG_MS))
+		expect(enqueueDeadlineLockMock).toHaveBeenCalledWith('r1', scheduled)
+	})
+
+	it('returns null without enqueueing when the deadline (+lag) has passed', async () => {
+		dbMock.query.round.findFirst.mockResolvedValue({
+			id: 'r1',
+			deadline: new Date(Date.now() - 3600_000),
+		} as never)
+
+		expect(await scheduleDeadlineLockForRound('r1')).toBeNull()
+		expect(enqueueDeadlineLockMock).not.toHaveBeenCalled()
+	})
+
+	it('returns null when the enqueue fails (best-effort)', async () => {
+		enqueueDeadlineLockMock.mockRejectedValueOnce(new Error('quota'))
+		dbMock.query.round.findFirst.mockResolvedValue({
+			id: 'r1',
+			deadline: new Date(Date.now() + 3600_000),
+		} as never)
+
+		expect(await scheduleDeadlineLockForRound('r1')).toBeNull()
 	})
 })
 
