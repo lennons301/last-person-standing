@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { advanceGameIfReady } from '@/lib/game/process-round'
-import { sweepGameSettlement } from '@/lib/game/settle'
+import { sweepGameSettlement, sweepStuckFixtures } from '@/lib/game/settle'
 import { game } from '@/lib/schema/game'
 
 export type ReconcileResult =
@@ -73,7 +73,16 @@ export async function reconcileAllActiveGames(): Promise<{
 	checked: number
 	settled: number
 	advanced: number
+	stuckFixturesSettled: number
 }> {
+	// All-rounds stranded-pick sweep FIRST: reconcileGameState only walks a
+	// game's CURRENT round, so a pick deferred past its round (a knockout tie
+	// whose winner landed after the game moved on) is invisible to the
+	// per-game pass. sweepStuckFixtures finds every finished fixture with a
+	// pending pick across ALL rounds; settleFixture applies the elimination
+	// to the round the fixture belongs to. Running it first also unblocks any
+	// advancement below that was gated on those picks.
+	const stuck = await sweepStuckFixtures()
 	const activeGames = await db.query.game.findMany({
 		where: eq(game.status, 'active'),
 	})
@@ -84,5 +93,5 @@ export async function reconcileAllActiveGames(): Promise<{
 		if (r.ok && r.action === 'settled') settled += r.fixturesSettled
 		if (r.ok && r.action === 'advanced') advanced++
 	}
-	return { checked: activeGames.length, settled, advanced }
+	return { checked: activeGames.length, settled, advanced, stuckFixturesSettled: stuck.settled }
 }

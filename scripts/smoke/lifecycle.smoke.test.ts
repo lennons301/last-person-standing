@@ -3066,4 +3066,67 @@ describe('lifecycle: stuck-pick recovery', () => {
 			(await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpBacker) }))?.status,
 		).toBe('alive')
 	})
+
+	it('daily reconcile sweeps the deferred pick once the winner lands — elimination in the original round, game unblocked', async () => {
+		// Second half of the scenario: the round is completed at the data layer
+		// with the backer's pick still deferred, and the winner then arrives
+		// WITHOUT an inline settle observing it (the poll chain has moved on).
+		// The daily-sync reconcile pass must find the finished-but-pending
+		// fixture, settle the pick, eliminate the backer in the round the tie
+		// belongs to, and only then let the game advance.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
+		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
+		const win = await makeTeam({ name: 'Win', shortName: 'WIN' })
+		const lose = await makeTeam({ name: 'Lose', shortName: 'LOS' })
+		const next1 = await makeTeam({ name: 'Next1', shortName: 'NX1' })
+		const next2 = await makeTeam({ name: 'Next2', shortName: 'NX2' })
+		const r4 = await makeRound(compId, { number: 4, status: 'open' })
+		const r5 = await makeRound(compId, {
+			number: 5,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fxTie = await makeFixture({ roundId: r4, homeTeamId: home, awayTeamId: away })
+		const fxSafe = await makeFixture({ roundId: r4, homeTeamId: win, awayTeamId: lose })
+		await makeFixture({ roundId: r5, homeTeamId: next1, awayTeamId: next2 })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r4,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpBacker = await makePlayer({ gameId, userId: 'u-backer' })
+		const gpSafe1 = await makePlayer({ gameId, userId: 'u-safe1' })
+		const gpSafe2 = await makePlayer({ gameId, userId: 'u-safe2' })
+		await makePick({ gameId, gamePlayerId: gpBacker, roundId: r4, teamId: home, fixtureId: fxTie })
+		await makePick({ gameId, gamePlayerId: gpSafe1, roundId: r4, teamId: win, fixtureId: fxSafe })
+		await makePick({ gameId, gamePlayerId: gpSafe2, roundId: r4, teamId: win, fixtureId: fxSafe })
+
+		await finishFixture(fxSafe, 2, 0, 'home')
+		await settleFixture(fxSafe)
+		await finishFixture(fxTie, 1, 1, null)
+		await settleFixture(fxTie)
+		await db.update(roundTable).set({ status: 'completed' }).where(eq(roundTable.id, r4))
+
+		// The winner lands late — no settleFixture call observes it.
+		await finishFixture(fxTie, 1, 1, 'away')
+
+		await reconcileAllActiveGames()
+
+		// The pick settles as a loss and the elimination lands in r4.
+		const backerPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gameId, gameId), eq(pick.gamePlayerId, gpBacker)),
+		})
+		expect(backerPick?.result).toBe('loss')
+		const backer = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpBacker) })
+		expect(backer?.status).toBe('eliminated')
+		expect(backer?.eliminatedRoundId).toBe(r4)
+
+		// With the round genuinely settled, the game advances and stays active.
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active')
+		expect(g?.currentRoundId).toBe(r5)
+	})
 })

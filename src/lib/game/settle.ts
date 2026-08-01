@@ -885,9 +885,13 @@ async function voidWholeRound(roundId: string, result: SettleResult): Promise<vo
 }
 
 /**
- * Sweep across rounds that have any pending pick on a finished fixture.
- * Used for production migration after deploying per-fixture settlement
- * — picks up the Brighton stuck-state.
+ * Sweep across ALL rounds for pending picks on finished fixtures — unlike
+ * sweepGameSettlement, which only walks a game's current round. Runs as
+ * part of reconcileAllActiveGames (daily-sync / manual process-rounds), so
+ * a pick stranded behind an already-advanced game (e.g. a deferred knockout
+ * tie whose winner arrived late) self-heals within a day, with the
+ * elimination applied to the round the fixture belongs to. Originally a
+ * production-migration tool for the Brighton stuck-state.
  */
 export async function sweepStuckFixtures(): Promise<{
 	stuckFixtures: number
