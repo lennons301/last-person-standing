@@ -17,6 +17,13 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 	for (const roundId of roundIds) {
 		const roundRow = await db.query.round.findFirst({ where: eq(round.id, roundId) })
 		if (!roundRow) continue
+		// The lock only ever fires after the round's deadline. Gating here (not
+		// at the call sites) makes the lock safe to invoke from ANY surface —
+		// the QStash deadline trigger, the daily-sync fallback, and the crown
+		// guard in the settle path all call it unconditionally; a round whose
+		// deadline hasn't passed (e.g. a rescheduled fixture finishing early,
+		// or an early-fired job) is a no-op.
+		if (roundRow.deadline == null || roundRow.deadline.getTime() > Date.now()) continue
 
 		const games = await db.query.game.findMany({
 			where: and(eq(game.currentRoundId, roundId), ne(game.status, 'completed')),

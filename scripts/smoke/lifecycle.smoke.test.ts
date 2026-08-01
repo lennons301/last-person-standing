@@ -27,6 +27,7 @@ import {
 	getProgressGridData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
+import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { settleFixture } from '@/lib/game/settle'
 import {
 	competition,
@@ -2610,5 +2611,188 @@ describe('lifecycle: PL season rollover sync identity', () => {
 			const after = teams.find((t) => t.name === name)
 			expect(after).toEqual(before)
 		}
+	})
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* deadline no-pick lock + crown guard                                     */
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe('lifecycle: deadline no-pick lock + crown guard', () => {
+	/**
+	 * The Barry race (WC LPS final incident): the last round's fixture finishes
+	 * minutes after the deadline while an alive player has made no pick AND has
+	 * no unused team left to auto-pick. Without deadline-time no-pick
+	 * processing, rounds-exhausted completion crowned the pickless player as a
+	 * co-winner (the daily sync that would have eliminated them ran hours after
+	 * the final settled). The crown guard must run the lock before evaluating
+	 * winners, so the pickless finalist is eliminated in that round and the
+	 * sole survivor is crowned alone — the split outcome cannot occur.
+	 */
+	it('the Barry race: pickless finalist with no legal team is eliminated, sole survivor crowned alone', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const c = await makeTeam({ name: 'C', shortName: 'C' })
+		const d = await makeTeam({ name: 'D', shortName: 'D' })
+		const e = await makeTeam({ name: 'E', shortName: 'E' })
+		const f = await makeTeam({ name: 'F', shortName: 'F' })
+
+		// Two completed history rounds, then round 3 is the FINAL round — no
+		// round 4 exists, so completing r3 evaluates rounds-exhausted.
+		const r1 = await makeRound(compId, { number: 1, status: 'completed' })
+		const r2 = await makeRound(compId, { number: 2, status: 'completed' })
+		const r3 = await makeRound(compId, {
+			number: 3,
+			status: 'open',
+			deadline: new Date(Date.now() - 3_600_000), // deadline an hour ago
+		})
+		const fxR1 = await makeFixture({
+			roundId: r1,
+			homeTeamId: a,
+			awayTeamId: d,
+			status: 'finished',
+			homeScore: 2,
+			awayScore: 0,
+		})
+		const fxR2be = await makeFixture({
+			roundId: r2,
+			homeTeamId: b,
+			awayTeamId: e,
+			status: 'finished',
+			homeScore: 2,
+			awayScore: 0,
+		})
+		const fxR2cf = await makeFixture({
+			roundId: r2,
+			homeTeamId: c,
+			awayTeamId: f,
+			status: 'finished',
+			homeScore: 1,
+			awayScore: 0,
+		})
+		const fxFinal = await makeFixture({ roundId: r3, homeTeamId: a, awayTeamId: b })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r3,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpWin = await makePlayer({ gameId, userId: 'u-win' })
+		const gpBarry = await makePlayer({ gameId, userId: 'u-barry' })
+		await makePayment({ gameId, userId: 'u-win' })
+		await makePayment({ gameId, userId: 'u-barry' })
+
+		// History: both players won rounds 1 + 2 with EQUAL total winning goals,
+		// so a wrong rounds-exhausted completion would split the pot between
+		// them (the production outcome this scenario locks out).
+		const winR1 = await makePick({
+			gameId,
+			gamePlayerId: gpWin,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fxR1,
+		})
+		const barryR1 = await makePick({
+			gameId,
+			gamePlayerId: gpBarry,
+			roundId: r1,
+			teamId: a,
+			fixtureId: fxR1,
+		})
+		const winR2 = await makePick({
+			gameId,
+			gamePlayerId: gpWin,
+			roundId: r2,
+			teamId: c,
+			fixtureId: fxR2cf,
+		})
+		const barryR2 = await makePick({
+			gameId,
+			gamePlayerId: gpBarry,
+			roundId: r2,
+			teamId: b,
+			fixtureId: fxR2be,
+		})
+		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, winR1))
+		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, barryR1))
+		await db.update(pick).set({ result: 'win', goalsScored: 1 }).where(eq(pick.id, winR2))
+		await db.update(pick).set({ result: 'win', goalsScored: 2 }).where(eq(pick.id, barryR2))
+
+		// Final round: the survivor picked B (their only unused finalist).
+		// Barry made no pick — and has already used both A and B, so no legal
+		// auto-pick exists.
+		await makePick({ gameId, gamePlayerId: gpWin, roundId: r3, teamId: b, fixtureId: fxFinal })
+
+		// The final finishes minutes after the deadline: B wins 1-0 away.
+		await finishFixture(fxFinal, 0, 1)
+		await settleFixture(fxFinal)
+
+		// Barry is eliminated in the final round — not crowned.
+		const barry = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpBarry) })
+		expect(barry?.status).toBe('eliminated')
+		expect(barry?.eliminatedReason).toBe('no_pick_no_fallback')
+		expect(barry?.eliminatedRoundId).toBe(r3)
+		// No auto-pick was possible — no pick row appears for Barry in r3.
+		const barryFinalPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpBarry), eq(pick.roundId, r3)),
+		})
+		expect(barryFinalPick).toBeUndefined()
+
+		// The sole survivor is crowned alone with the full pot — no split.
+		const winner = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpWin) })
+		expect(winner?.status).toBe('winner')
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('completed')
+		const payouts = await db.query.payout.findMany({ where: eq(payout.gameId, gameId) })
+		expect(payouts).toHaveLength(1)
+		expect(payouts[0].userId).toBe('u-win')
+		expect(payouts[0].amount).toBe('20.00')
+		expect(payouts[0].isSplit).toBe(false)
+	})
+
+	it('does nothing before the deadline — a rescheduled fixture finishing early cannot trigger the lock', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const c = await makeTeam({ name: 'C', shortName: 'C' })
+		const d = await makeTeam({ name: 'D', shortName: 'D' })
+		const r3 = await makeRound(compId, {
+			number: 3,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000), // deadline tomorrow
+		})
+		const fxAB = await makeFixture({ roundId: r3, homeTeamId: a, awayTeamId: b })
+		await makeFixture({ roundId: r3, homeTeamId: c, awayTeamId: d })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r3,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpPicked = await makePlayer({ gameId, userId: 'u-picked' })
+		const gpNoPick = await makePlayer({ gameId, userId: 'u-nopick' })
+		await makePick({ gameId, gamePlayerId: gpPicked, roundId: r3, teamId: a, fixtureId: fxAB })
+
+		// The lock invoked directly (QStash clock skew, manual ops call) is a
+		// no-op while the deadline is in the future.
+		const direct = await processDeadlineLock([r3])
+		expect(direct).toEqual({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 })
+
+		// A fixture moved EARLIER than the round deadline (rescheduled PL match)
+		// finishing must not fire the lock via the crown guard either.
+		await finishFixture(fxAB, 2, 0)
+		await settleFixture(fxAB)
+
+		const noPickPlayer = await db.query.gamePlayer.findFirst({
+			where: eq(gamePlayer.id, gpNoPick),
+		})
+		expect(noPickPlayer?.status).toBe('alive')
+		const autoPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpNoPick), eq(pick.roundId, r3)),
+		})
+		expect(autoPick).toBeUndefined()
 	})
 })

@@ -59,6 +59,7 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({
 			id: 'r1',
 			number: 1,
+			deadline: new Date(Date.now() - 60_000),
 		} as never)
 		vi.mocked(db.query.game.findMany).mockResolvedValue([
 			makeClassicGame(true, [makeClassicPlayer()]),
@@ -80,6 +81,7 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({
 			id: 'r1',
 			number: 1,
+			deadline: new Date(Date.now() - 60_000),
 		} as never)
 		vi.mocked(db.query.game.findMany).mockResolvedValue([
 			makeClassicGame(false, [makeClassicPlayer()]),
@@ -95,6 +97,7 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({
 			id: 'r2',
 			number: 2,
+			deadline: new Date(Date.now() - 60_000),
 		} as never)
 		vi.mocked(db.query.game.findMany).mockResolvedValue([
 			makeClassicGame(true, [makeClassicPlayer()]),
@@ -120,6 +123,7 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({
 			id: 'r2',
 			number: 2,
+			deadline: new Date(Date.now() - 60_000),
 		} as never)
 		vi.mocked(db.query.game.findMany).mockResolvedValue([
 			makeClassicGame(true, [makeClassicPlayer()]),

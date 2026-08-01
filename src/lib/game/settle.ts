@@ -6,6 +6,7 @@ import {
 	checkCupCompletion,
 	checkTurboCompletion,
 } from '@/lib/game/auto-complete'
+import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import type { WipeoutPlayerInput } from '@/lib/game-logic/auto-complete-tiebreakers'
 import { determinePickResult } from '@/lib/game-logic/common'
@@ -445,6 +446,16 @@ async function checkAndMaybeCompleteOrAdvance(
 		with: { competition: true },
 	})
 	if (!g || g.status !== 'active') return
+
+	// Crown guard: run the no-pick lock for this round before evaluating ANY
+	// completion. If the round's deadline has passed and an alive player made
+	// no pick, they must be auto-picked (or eliminated when no unused team
+	// remains) BEFORE winners are considered — otherwise a pickless finalist
+	// can be crowned in the window between the final fixture settling and the
+	// daily-sync fallback running (the WC LPS split-pot incident). The lock is
+	// idempotent and internally gated on the deadline having passed, so this
+	// is a no-op on healthy rounds.
+	await processDeadlineLock([roundId])
 
 	const allRoundFixtures = await db.query.fixture.findMany({
 		where: eq(fixture.roundId, roundId),
