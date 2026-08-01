@@ -118,10 +118,10 @@ Safety nets for anything that slips through:
 
 3. **Game-detail page SSR** — `reconcileGameState(gameId)` runs `sweepGameSettlement` on every viewer hit.
 4. **`/api/games/[id]/live`** — every 30 s browser poll while a page is open also runs reconcile.
-5. **Daily-sync cron** — `reconcileAllActiveGames` sweeps every active game once per day.
+5. **Daily-sync cron** — `reconcileAllActiveGames` sweeps every active game once per day. This pass also runs `sweepStuckFixtures` first: an all-rounds sweep for pending picks on finished fixtures, so a pick stranded behind an already-advanced game (a deferred knockout tie whose winner arrived late) self-heals within a day, with the elimination applied to the round the fixture belongs to.
 6. **`/api/cron/process-rounds`** — manual ops endpoint (thin wrapper around `reconcileAllActiveGames`).
 
-All five paths converge on `settleFixture` for the actual work. Settlement is idempotent on every axis: re-running on a settled pick is a no-op (guard on `pick.result !== 'pending'`); re-running elimination guards on `gamePlayer.status === 'alive'`; cup re-eval is naturally idempotent (same inputs → same writes).
+All five paths converge on `settleFixture` for the actual work. Advancement is double-gated on pending picks: neither the settle path (`checkAndMaybeCompleteOrAdvance`) nor the reconcile path (`advanceGameIfReady`) will advance a game while its current round has a pending pick for that game — a data-source-completed round can still hold a deferred knockout pick. And a late settle in a round the game already moved past never touches `game.currentRoundId` (the settle path only advances when the settled round IS the game's current round). Settlement is idempotent on every axis: re-running on a settled pick is a no-op (guard on `pick.result !== 'pending'`); re-running elimination guards on `gamePlayer.status === 'alive'`; cup re-eval is naturally idempotent (same inputs → same writes).
 
 ### The deadline no-pick lock
 
