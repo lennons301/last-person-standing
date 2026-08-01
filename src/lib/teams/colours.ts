@@ -1,6 +1,6 @@
 // Team colour mapping by short code.
 // Used for badge backgrounds and contextual accents.
-// Covers 2024/25 and 2025/26 Premier League squads.
+// Covers 2024/25 through 2026/27 Premier League squads.
 export const TEAM_COLOURS: Record<string, string> = {
 	ARS: '#EF0107',
 	AVL: '#670E36',
@@ -9,9 +9,11 @@ export const TEAM_COLOURS: Record<string, string> = {
 	BHA: '#0057B8',
 	BUR: '#6C1D45',
 	CHE: '#034694',
+	COV: '#78D0F5',
 	CRY: '#1B458F',
 	EVE: '#003399',
 	FUL: '#000000',
+	HUL: '#F18A01',
 	IPS: '#3a64a3',
 	LEE: '#FFCD00',
 	LEI: '#003090',
