@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { serializeError } from '@/lib/cron/serialize-error'
 import { FootballDataAdapter, resolveFootballDataCode } from '@/lib/data/football-data'
@@ -111,6 +111,12 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 				// populates external_ids.football_data on FPL fixtures. For
 				// football-data-bootstrapped competitions (e.g., WC), external_ids.football_data
 				// equals external_id by construction.
+				//
+				// Scoped to the polled round's competition — external ids are unique
+				// only within (competition, data source), the same identity rule as
+				// the sync fixture upsert. Competition-level (not round-level)
+				// because a rescheduled fixture can sit under a different round in
+				// our DB than the football-data matchday the score arrived from.
 				const [existing] = await db
 					.select({
 						id: fixture.id,
@@ -122,7 +128,13 @@ async function pollScores(apiKey: string): Promise<NextResponse> {
 						regularAwayScore: fixture.regularAwayScore,
 					})
 					.from(fixture)
-					.where(sql`${fixture.externalIds}->>'football_data' = ${score.externalId}`)
+					.innerJoin(round, eq(fixture.roundId, round.id))
+					.where(
+						and(
+							eq(round.competitionId, roundData.competitionId),
+							sql`${fixture.externalIds}->>'football_data' = ${score.externalId}`,
+						),
+					)
 				if (!existing) continue
 
 				await db

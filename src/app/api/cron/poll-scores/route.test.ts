@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
@@ -130,7 +131,8 @@ describe('poll-scores short-circuit', () => {
 			},
 		] as never)
 		// Two distinct select() calls: (a) the up-front fixturesInRounds
-		// snapshot, then (b) per-score row lookups inside the inner loop.
+		// snapshot, then (b) per-score row lookups inside the inner loop
+		// (competition-scoped, hence the round join).
 		// Mock the snapshot's response first, then the per-score lookup
 		// finds the existing fixture id by ext_id.
 		const selectMock = vi
@@ -142,7 +144,9 @@ describe('poll-scores short-circuit', () => {
 			})
 			.mockReturnValue({
 				from: () => ({
-					where: () => Promise.resolve([{ id: 'f1', status: 'live' }]),
+					innerJoin: () => ({
+						where: () => Promise.resolve([{ id: 'f1', status: 'live' }]),
+					}),
 				}),
 			})
 		vi.mocked(db.select).mockImplementation(selectMock as never)
@@ -212,8 +216,9 @@ describe('poll-scores short-circuit', () => {
 			},
 		] as never)
 		// First select(): fixturesInRounds snapshot. Subsequent select()s:
-		// per-score existing-fixture lookups; both return a live row so the
-		// transition non-finished → finished triggers settleFixture.
+		// per-score existing-fixture lookups (competition-scoped via the round
+		// join); both return a live row so the transition non-finished →
+		// finished triggers settleFixture.
 		const selectMock = vi
 			.fn()
 			.mockReturnValueOnce({
@@ -224,7 +229,9 @@ describe('poll-scores short-circuit', () => {
 			})
 			.mockReturnValue({
 				from: () => ({
-					where: () => Promise.resolve([{ id: 'fx-1-internal', status: 'live' }]),
+					innerJoin: () => ({
+						where: () => Promise.resolve([{ id: 'fx-1-internal', status: 'live' }]),
+					}),
 				}),
 			})
 		vi.mocked(db.select).mockImplementation(selectMock as never)
@@ -241,6 +248,51 @@ describe('poll-scores short-circuit', () => {
 
 		expect(settleFixtureMock).toHaveBeenCalledTimes(1)
 		expect(settleFixtureMock).toHaveBeenCalledWith('fx-1-internal')
+	})
+
+	it("scopes score-write matching to the polled round's competition", async () => {
+		// Same identity family as the sync upsert scoping: external ids are
+		// unique only within (competition, data source), so a score fetched for
+		// one competition must never match another competition's fixture row.
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			{
+				currentRoundId: 'r1',
+				competition: { id: 'comp-pl', externalId: 'PL', dataSource: 'football_data' },
+			},
+		] as never)
+		const perScoreWhere = vi.fn().mockResolvedValue([{ id: 'f1', status: 'live' }])
+		const selectMock = vi
+			.fn()
+			.mockReturnValueOnce({
+				from: () => ({
+					where: () => Promise.resolve([{ id: 'f1', kickoff: new Date(), roundId: 'r1' }]),
+				}),
+			})
+			.mockReturnValue({
+				from: () => ({ innerJoin: () => ({ where: perScoreWhere }) }),
+			})
+		vi.mocked(db.select).mockImplementation(selectMock as never)
+		vi.mocked(hasActiveFixture).mockReturnValue(true)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'r1',
+			number: 5,
+			competitionId: 'comp-pl',
+		} as never)
+		fetchLiveScoresMock.mockResolvedValue([
+			{ externalId: 'm1', homeScore: 1, awayScore: 0, status: 'live' },
+		])
+		const whereMock = vi.fn().mockResolvedValue(undefined)
+		const setMock = vi.fn(() => ({ where: whereMock }))
+		vi.mocked(db.update).mockReturnValue({ set: setMock } as never)
+
+		await POST(authedRequest())
+
+		expect(perScoreWhere).toHaveBeenCalledTimes(1)
+		const condition = perScoreWhere.mock.calls[0][0]
+		const { sql: rendered, params } = new PgDialect().sqlToQuery(condition as never)
+		expect(rendered).toContain('"round"."competition_id"')
+		expect(params).toContain('comp-pl')
+		expect(params).toContain('m1')
 	})
 
 	it('constructs one adapter per distinct competition code', async () => {
