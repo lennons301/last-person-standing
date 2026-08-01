@@ -554,8 +554,14 @@ async function checkAndMaybeCompleteOrAdvance(
 	if (classicRoundSettled) {
 		await db.update(round).set({ status: 'completed' }).where(eq(round.id, roundId))
 		result.roundsCompleted.push(roundId)
-		const advanced = await advanceGameToNextRound(gameId, g.competitionId, roundNumber)
-		if (advanced) result.gamesAdvanced.push(gameId)
+		// Advance only when the settled round IS the game's current round. A
+		// late settle in a round the game already moved past (a stranded pick
+		// healed by the all-rounds sweep) must land its elimination and stop —
+		// re-advancing from the old round would drag currentRoundId backwards.
+		if (g.currentRoundId === roundId) {
+			const advanced = await advanceGameToNextRound(gameId, g.competitionId, roundNumber)
+			if (advanced) result.gamesAdvanced.push(gameId)
+		}
 	}
 }
 

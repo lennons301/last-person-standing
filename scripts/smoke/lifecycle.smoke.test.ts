@@ -3129,4 +3129,280 @@ describe('lifecycle: stuck-pick recovery', () => {
 		expect(g?.status).toBe('active')
 		expect(g?.currentRoundId).toBe(r5)
 	})
+
+	it('sweeps a stranded pick in a NON-current round — elimination lands there, game not dragged backwards', async () => {
+		// The full production incident: the game advanced past the deferred R16
+		// pick (pre-gate) and is now two rounds on. When the tie's winner finally
+		// lands, the daily sweep must settle the stranded pick, eliminate the
+		// player in the round the tie belongs to, and leave the game's current
+		// round exactly where it is — not regress it to the round after the
+		// swept one.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
+		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
+		const winA = await makeTeam({ name: 'WinA', shortName: 'WNA' })
+		const loseA = await makeTeam({ name: 'LoseA', shortName: 'LSA' })
+		const winB = await makeTeam({ name: 'WinB', shortName: 'WNB' })
+		const loseB = await makeTeam({ name: 'LoseB', shortName: 'LSB' })
+		const next1 = await makeTeam({ name: 'Next1', shortName: 'NX1' })
+		const next2 = await makeTeam({ name: 'Next2', shortName: 'NX2' })
+		// r4 completed with the stranded tie; r5 completed; the game sits on r6.
+		const r4 = await makeRound(compId, { number: 4, status: 'completed' })
+		const r5 = await makeRound(compId, { number: 5, status: 'completed' })
+		const r6 = await makeRound(compId, {
+			number: 6,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		// The tie's winner has since landed — away advanced on penalties.
+		const fxTie = await makeFixture({
+			roundId: r4,
+			homeTeamId: home,
+			awayTeamId: away,
+			status: 'finished',
+			homeScore: 1,
+			awayScore: 1,
+		})
+		await db.update(fixtureTable).set({ winner: 'away' }).where(eq(fixtureTable.id, fxTie))
+		const fxSafe4 = await makeFixture({
+			roundId: r4,
+			homeTeamId: winA,
+			awayTeamId: loseA,
+			status: 'finished',
+			homeScore: 2,
+			awayScore: 0,
+		})
+		const fxSafe5 = await makeFixture({
+			roundId: r5,
+			homeTeamId: winB,
+			awayTeamId: loseB,
+			status: 'finished',
+			homeScore: 1,
+			awayScore: 0,
+		})
+		await makeFixture({ roundId: r6, homeTeamId: next1, awayTeamId: next2 })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r6,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpStuck = await makePlayer({ gameId, userId: 'u-stuck' })
+		const gpSafe1 = await makePlayer({ gameId, userId: 'u-safe1' })
+		const gpSafe2 = await makePlayer({ gameId, userId: 'u-safe2' })
+		// r4 history: the stranded pick (still pending) + settled safe picks.
+		const stuckPickId = await makePick({
+			gameId,
+			gamePlayerId: gpStuck,
+			roundId: r4,
+			teamId: home,
+			fixtureId: fxTie,
+		})
+		const settledR4 = [
+			await makePick({
+				gameId,
+				gamePlayerId: gpSafe1,
+				roundId: r4,
+				teamId: winA,
+				fixtureId: fxSafe4,
+			}),
+			await makePick({
+				gameId,
+				gamePlayerId: gpSafe2,
+				roundId: r4,
+				teamId: winA,
+				fixtureId: fxSafe4,
+			}),
+		]
+		// r5 history: everyone (wrongly including the stuck player) survived it.
+		const settledR5 = [
+			await makePick({
+				gameId,
+				gamePlayerId: gpStuck,
+				roundId: r5,
+				teamId: winB,
+				fixtureId: fxSafe5,
+			}),
+			await makePick({
+				gameId,
+				gamePlayerId: gpSafe1,
+				roundId: r5,
+				teamId: winB,
+				fixtureId: fxSafe5,
+			}),
+			await makePick({
+				gameId,
+				gamePlayerId: gpSafe2,
+				roundId: r5,
+				teamId: winB,
+				fixtureId: fxSafe5,
+			}),
+		]
+		await db
+			.update(pick)
+			.set({ result: 'win', goalsScored: 1 })
+			.where(inArray(pick.id, [...settledR4, ...settledR5]))
+
+		await reconcileAllActiveGames()
+
+		// The stranded pick settles and the elimination lands in r4 — the round
+		// the tie was played in, not the game's current round.
+		const stuckPick = await db.query.pick.findFirst({ where: eq(pick.id, stuckPickId) })
+		expect(stuckPick?.result).toBe('loss')
+		const stuck = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpStuck) })
+		expect(stuck?.status).toBe('eliminated')
+		expect(stuck?.eliminatedRoundId).toBe(r4)
+
+		// History preserved: the player's later (r5) pick row is untouched.
+		const laterPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpStuck), eq(pick.roundId, r5)),
+		})
+		expect(laterPick?.result).toBe('win')
+
+		// The game is NOT dragged backwards: still on r6, still active.
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active')
+		expect(g?.currentRoundId).toBe(r6)
+		const r6After = await db.query.round.findFirst({ where: eq(roundTable.id, r6) })
+		expect(r6After?.status).toBe('open')
+	})
+
+	it('sweeping an old round does not regress the game when a later round still holds an unresolved deferred pick', async () => {
+		// Two stranded rounds behind the game: r4's tie has its winner (sweepable)
+		// but r5's tie is STILL unresolved (finished level, winner-lag). Settling
+		// r4 must not move the game's pointer at all — re-advancing from r4 would
+		// park the game on r5, where the pending-pick gate then (correctly)
+		// refuses to advance, leaving the game visibly dragged two rounds back.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const home4 = await makeTeam({ name: 'Home4', shortName: 'HM4' })
+		const away4 = await makeTeam({ name: 'Away4', shortName: 'AW4' })
+		const home5 = await makeTeam({ name: 'Home5', shortName: 'HM5' })
+		const away5 = await makeTeam({ name: 'Away5', shortName: 'AW5' })
+		const winA = await makeTeam({ name: 'WinA', shortName: 'WNA' })
+		const winB = await makeTeam({ name: 'WinB', shortName: 'WNB' })
+		const loseA = await makeTeam({ name: 'LoseA', shortName: 'LSA' })
+		const loseB = await makeTeam({ name: 'LoseB', shortName: 'LSB' })
+		const next1 = await makeTeam({ name: 'Next1', shortName: 'NX1' })
+		const next2 = await makeTeam({ name: 'Next2', shortName: 'NX2' })
+		const r4 = await makeRound(compId, { number: 4, status: 'completed' })
+		const r5 = await makeRound(compId, { number: 5, status: 'completed' })
+		const r6 = await makeRound(compId, {
+			number: 6,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		// r4 tie: winner has landed (away advanced) — the sweep can settle it.
+		const fxTie4 = await makeFixture({
+			roundId: r4,
+			homeTeamId: home4,
+			awayTeamId: away4,
+			status: 'finished',
+			homeScore: 1,
+			awayScore: 1,
+		})
+		await db.update(fixtureTable).set({ winner: 'away' }).where(eq(fixtureTable.id, fxTie4))
+		const fxSafe4 = await makeFixture({
+			roundId: r4,
+			homeTeamId: winA,
+			awayTeamId: loseA,
+			status: 'finished',
+			homeScore: 2,
+			awayScore: 0,
+		})
+		// r5 tie: STILL winner-lagged — finished level, no winner. Not sweepable.
+		const fxTie5 = await makeFixture({
+			roundId: r5,
+			homeTeamId: home5,
+			awayTeamId: away5,
+			status: 'finished',
+			homeScore: 0,
+			awayScore: 0,
+		})
+		const fxSafe5 = await makeFixture({
+			roundId: r5,
+			homeTeamId: winB,
+			awayTeamId: loseB,
+			status: 'finished',
+			homeScore: 1,
+			awayScore: 0,
+		})
+		await makeFixture({ roundId: r6, homeTeamId: next1, awayTeamId: next2 })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r6,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpStuck4 = await makePlayer({ gameId, userId: 'u-stuck4' })
+		const gpStuck5 = await makePlayer({ gameId, userId: 'u-stuck5' })
+		const gpSafe = await makePlayer({ gameId, userId: 'u-safe' })
+		const stuck4PickId = await makePick({
+			gameId,
+			gamePlayerId: gpStuck4,
+			roundId: r4,
+			teamId: home4,
+			fixtureId: fxTie4,
+		})
+		const stuck5PickId = await makePick({
+			gameId,
+			gamePlayerId: gpStuck5,
+			roundId: r5,
+			teamId: home5,
+			fixtureId: fxTie5,
+		})
+		const settledIds = [
+			await makePick({
+				gameId,
+				gamePlayerId: gpStuck5,
+				roundId: r4,
+				teamId: winA,
+				fixtureId: fxSafe4,
+			}),
+			await makePick({
+				gameId,
+				gamePlayerId: gpSafe,
+				roundId: r4,
+				teamId: winA,
+				fixtureId: fxSafe4,
+			}),
+			await makePick({
+				gameId,
+				gamePlayerId: gpStuck4,
+				roundId: r5,
+				teamId: winB,
+				fixtureId: fxSafe5,
+			}),
+			await makePick({
+				gameId,
+				gamePlayerId: gpSafe,
+				roundId: r5,
+				teamId: winB,
+				fixtureId: fxSafe5,
+			}),
+		]
+		await db.update(pick).set({ result: 'win', goalsScored: 1 }).where(inArray(pick.id, settledIds))
+
+		await reconcileAllActiveGames()
+
+		// r4's stranded pick heals; r5's stays deferred (winner still unknown).
+		expect((await db.query.pick.findFirst({ where: eq(pick.id, stuck4PickId) }))?.result).toBe(
+			'loss',
+		)
+		const stuck4 = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpStuck4) })
+		expect(stuck4?.status).toBe('eliminated')
+		expect(stuck4?.eliminatedRoundId).toBe(r4)
+		expect((await db.query.pick.findFirst({ where: eq(pick.id, stuck5PickId) }))?.result).toBe(
+			'pending',
+		)
+		expect(
+			(await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpStuck5) }))?.status,
+		).toBe('alive')
+
+		// The game's pointer never moved.
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active')
+		expect(g?.currentRoundId).toBe(r6)
+	})
 })
