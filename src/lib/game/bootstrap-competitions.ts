@@ -2,7 +2,7 @@ import { and, eq, gt, inArray, isNull, lt } from 'drizzle-orm'
 import { FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter, type FplPreFetched } from '@/lib/data/fpl'
 import { enqueuePollScoresAt } from '@/lib/data/qstash'
-import type { CompetitionAdapter } from '@/lib/data/types'
+import type { AdapterStanding, CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
 import { settleFixture } from '@/lib/game/settle'
@@ -166,6 +166,24 @@ function competitionRoundsWithFixtures(competitionId: string) {
 }
 
 /**
+ * Write source standings into team.leaguePosition, resolved strictly through
+ * the given external-id → team-UUID map (payload-built in syncCompetition,
+ * merge-built in mergeFootballDataIds) so writes stay within the competition
+ * being synced. Rows whose team is not in the map are skipped. Feeds the
+ * pick-UI ordinals and the auto-pick worst-placed-team ordering.
+ */
+async function persistLeaguePositions(
+	standings: AdapterStanding[],
+	teamIdByExternalId: Map<string, string>,
+): Promise<void> {
+	for (const row of standings) {
+		const teamId = teamIdByExternalId.get(row.teamExternalId)
+		if (!teamId) continue
+		await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, teamId))
+	}
+}
+
+/**
  * For competitions whose primary adapter is FPL, this fetches the same matchdays
  * from football-data.org and merges football-data IDs into existing teams +
  * fixtures. The FPL adapter remains the source of truth for round structure
@@ -264,7 +282,13 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 		}
 	}
 
-	// 3) Coverage assertion. Self-diagnosing for the next time the FPL/football-
+	// 3) Persist current league standings into team.leaguePosition, resolved
+	// through the football-data ids merged in step 1. The FPL adapter has no
+	// standings source, so this merge step is what makes positions real for
+	// FPL-bootstrapped competitions.
+	await persistLeaguePositions(await fdAdapter.fetchStandings(), ourTeamIdByFdId)
+
+	// 4) Coverage assertion. Self-diagnosing for the next time the FPL/football-
 	// data data shape drifts (likely each August when promoted PL teams arrive).
 	// Fails loudly on team-level gaps because every PL team must be matchable
 	// for live scoring to work; warns on fixture-level gaps because rescheduled
@@ -369,12 +393,7 @@ export async function syncCompetition(
 	// supports standings. Resolved through the current payload's team list so
 	// updates stay within this competition's own teams.
 	if (typeof adapter.fetchStandings === 'function') {
-		const standings = await adapter.fetchStandings()
-		for (const row of standings) {
-			const teamId = teamIdByPayloadId.get(row.teamExternalId)
-			if (!teamId) continue
-			await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, teamId))
-		}
+		await persistLeaguePositions(await adapter.fetchStandings(), teamIdByPayloadId)
 	}
 
 	// Fixture upsert matching is scoped to this competition's own rounds:
