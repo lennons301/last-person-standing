@@ -264,7 +264,21 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 		}
 	}
 
-	// 3) Coverage assertion. Self-diagnosing for the next time the FPL/football-
+	// 3) Persist current league standings into team.leaguePosition, resolved
+	// through the football-data ids merged in step 1 (the FPL adapter has no
+	// standings source, so this merge step is what makes positions real for
+	// FPL-bootstrapped competitions). Feeds the pick-UI ordinals and the
+	// auto-pick worst-placed-team ordering. Standings rows whose team was not
+	// merged onto one of this competition's teams are skipped — same identity
+	// rule as everything above.
+	const standings = await fdAdapter.fetchStandings()
+	for (const row of standings) {
+		const teamId = ourTeamIdByFdId.get(row.teamExternalId)
+		if (!teamId) continue
+		await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, teamId))
+	}
+
+	// 4) Coverage assertion. Self-diagnosing for the next time the FPL/football-
 	// data data shape drifts (likely each August when promoted PL teams arrive).
 	// Fails loudly on team-level gaps because every PL team must be matchable
 	// for live scoring to work; warns on fixture-level gaps because rescheduled

@@ -407,6 +407,112 @@ describe('mergeFootballDataIds', () => {
 		vi.clearAllMocks()
 		dbQueryTeamFindMany.mockResolvedValue([])
 		dbQueryRoundFindMany.mockResolvedValue([])
+		fdFetchStandings.mockResolvedValue([])
+	})
+
+	it('persists league_position for standings rows resolved through the merged football-data ids', async () => {
+		const teamArs = {
+			id: 'our-ARS',
+			shortName: 'ARS',
+			name: 'Arsenal',
+			externalIds: { fpl: '1' },
+		}
+		const teamLiv = {
+			id: 'our-LIV',
+			shortName: 'LIV',
+			name: 'Liverpool',
+			externalIds: { fpl: '12' },
+		}
+		dbQueryTeamFindMany.mockResolvedValueOnce([teamArs, teamLiv]).mockResolvedValueOnce([
+			{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } },
+			{ ...teamLiv, externalIds: { fpl: '12', football_data: '64' } },
+		])
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-ARS',
+						awayTeamId: 'our-LIV',
+						externalIds: { fpl: '347' },
+					},
+				],
+			},
+		])
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal FC', shortName: 'ARS', badgeUrl: null },
+			{ externalId: '64', name: 'Liverpool FC', shortName: 'LIV', badgeUrl: null },
+		])
+		fdFetchRounds.mockResolvedValue([])
+		fdFetchStandings.mockResolvedValue([
+			{ teamExternalId: '64', position: 1, played: 10, won: 9, drawn: 1, lost: 0, points: 28 },
+			{ teamExternalId: '57', position: 2, played: 10, won: 8, drawn: 1, lost: 1, points: 25 },
+		])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		const positionSets = dbUpdateSet.mock.calls
+			.map((c) => c[0])
+			.filter((payload) => 'leaguePosition' in payload)
+		expect(positionSets).toHaveLength(2)
+		expect(positionSets).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ leaguePosition: 1 }),
+				expect.objectContaining({ leaguePosition: 2 }),
+			]),
+		)
+	})
+
+	it('ignores standings rows whose team was not merged onto one of this competition teams', async () => {
+		// The standings table carries a club (fd id 999) that never merged onto
+		// one of this competition's team rows — its position must not be written
+		// anywhere (same competition-scoped identity rule as the id merge).
+		const teamArs = {
+			id: 'our-ARS',
+			shortName: 'ARS',
+			name: 'Arsenal',
+			externalIds: { fpl: '1' },
+		}
+		dbQueryTeamFindMany
+			.mockResolvedValueOnce([teamArs])
+			.mockResolvedValueOnce([{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } }])
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-ARS',
+						awayTeamId: 'our-ARS',
+						externalIds: { fpl: '1' },
+					},
+				],
+			},
+		])
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal FC', shortName: 'ARS', badgeUrl: null },
+		])
+		fdFetchRounds.mockResolvedValue([])
+		fdFetchStandings.mockResolvedValue([
+			{ teamExternalId: '57', position: 4, played: 10, won: 6, drawn: 2, lost: 2, points: 20 },
+			{ teamExternalId: '999', position: 20, played: 10, won: 0, drawn: 1, lost: 9, points: 1 },
+		])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		const positionSets = dbUpdateSet.mock.calls
+			.map((c) => c[0])
+			.filter((payload) => 'leaguePosition' in payload)
+		expect(positionSets).toEqual([expect.objectContaining({ leaguePosition: 4 })])
 	})
 
 	it('merges football-data team + fixture IDs onto FPL-bootstrapped rows by short_name and (matchday, home, away)', async () => {
@@ -883,6 +989,7 @@ describe('archived competition immutability', () => {
 
 		expect(fdFetchTeams).not.toHaveBeenCalled()
 		expect(fdFetchRounds).not.toHaveBeenCalled()
+		expect(fdFetchStandings).not.toHaveBeenCalled()
 		expect(dbUpdateFn).not.toHaveBeenCalled()
 	})
 })
