@@ -2592,6 +2592,17 @@ describe('lifecycle: PL season rollover sync identity', () => {
 		expect(teams.find((t) => t.name === 'Holt FC')?.badgeUrl).toBe(fdCrest('HOL'))
 		expect(teams.find((t) => t.name === 'Isley FC')?.badgeUrl).toBe(fdCrest('ISL'))
 
+		// A later daily sync (without its merge step — the merge is exactly what
+		// fails loudly on a new-season tla gap) must not stomp the crest with
+		// the 404ing FPL badge URL.
+		await syncSecondSeason()
+		const teamsAfterResync = await db.select().from(teamTable)
+		for (const name of ['Grove FC', 'Holt FC', 'Isley FC']) {
+			const club = S2_CLUBS.find((c) => c.name === name)
+			if (!club) throw new Error(`unknown club ${name}`)
+			expect(teamsAfterResync.find((t) => t.name === name)?.badgeUrl).toBe(fdCrest(club.short_name))
+		}
+
 		// Relegated clubs' rows are untouched by the whole second-season run —
 		// stale external ids and all.
 		for (const name of ['Dorne FC', 'Elm FC', 'Fern FC']) {

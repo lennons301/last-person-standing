@@ -328,7 +328,14 @@ export async function syncCompetition(
 			await db
 				.update(team)
 				.set({
-					badgeUrl: at.badgeUrl ?? existing.badgeUrl,
+					// For FPL-sourced competitions, never write the constructed FPL
+					// badge URL over what we have: the football-data crest (set by
+					// mergeFootballDataIds) is the durable badge, the FPL CDN 404s
+					// for promoted clubs, and the merge that would re-fix a stomped
+					// crest is exactly the step that fails loudly on a new-season
+					// tla gap.
+					badgeUrl:
+						comp.dataSource === 'fpl' ? existing.badgeUrl : (at.badgeUrl ?? existing.badgeUrl),
 					externalIds: { ...(existing.externalIds ?? {}), [key]: at.externalId },
 				})
 				.where(eq(team.id, existing.id))

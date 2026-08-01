@@ -263,6 +263,38 @@ describe('syncCompetition team upsert (payload-driven identity)', () => {
 		])
 	})
 
+	it('never overwrites an existing badge with the FPL CDN URL on re-sync', async () => {
+		// After mergeFootballDataIds lands the football-data crest, a later
+		// daily sync must not stomp it with the constructed FPL badge URL —
+		// that URL 404s for promoted clubs, and the merge that would re-fix it
+		// is exactly the step that fails loudly on a new-season tla gap.
+		fplFetchTeams.mockResolvedValue([
+			{
+				externalId: '4',
+				name: 'Grove FC',
+				shortName: 'GRO',
+				badgeUrl: 'https://resources.premierleague.com/premierleague/badges/rb/t24.svg',
+			},
+		])
+		fplFetchRounds.mockResolvedValue([])
+		dbQueryTeamFindFirst.mockResolvedValue({
+			id: 'team-grove-uuid',
+			name: 'Grove FC',
+			badgeUrl: 'https://crests.football-data.org/grove.png',
+			externalIds: { fpl: '4', football_data: '107' },
+		})
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2026/27' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		const teamUpdate = dbUpdateSet.mock.calls
+			.map((c) => c[0] as { badgeUrl?: string | null })
+			.find((p) => 'badgeUrl' in p)
+		expect(teamUpdate?.badgeUrl).toBe('https://crests.football-data.org/grove.png')
+	})
+
 	it('re-links an existing club to its new payload id by name, not by stored external id', async () => {
 		// Grove FC existed before under fpl:9; this season the payload hands it
 		// id 4. The row must be found by NAME and its fpl id overwritten.
