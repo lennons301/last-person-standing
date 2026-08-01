@@ -301,6 +301,12 @@ export async function syncCompetition(
 
 	const key = comp.dataSource === 'fpl' ? 'fpl' : 'football_data'
 	const adapterTeams = await adapter.fetchTeams()
+	// Resolve payload team ids to club rows through the payload itself (club
+	// identity = name). Source-assigned ids restart and get reshuffled across
+	// clubs every season (FPL), so they must never be resolved through ids
+	// stored on team rows by an earlier season — a relegated club's stale id
+	// would swallow the promoted club that inherited it.
+	const teamIdByPayloadId = new Map<string, string>()
 	for (const at of adapterTeams) {
 		const existing = await db.query.team.findFirst({ where: eq(team.name, at.name) })
 		if (existing) {
@@ -311,31 +317,52 @@ export async function syncCompetition(
 					externalIds: { ...(existing.externalIds ?? {}), [key]: at.externalId },
 				})
 				.where(eq(team.id, existing.id))
+			teamIdByPayloadId.set(at.externalId, existing.id)
 		} else {
-			await db.insert(team).values({
-				name: at.name,
-				shortName: at.shortName,
-				badgeUrl: at.badgeUrl,
-				externalIds: { [key]: at.externalId },
-			})
+			const [created] = await db
+				.insert(team)
+				.values({
+					name: at.name,
+					shortName: at.shortName,
+					// FPL's badge CDN 404s for clubs it has never hosted before
+					// (newly promoted), so an unseen club gets no badge here — the
+					// UI colour fallback applies until mergeFootballDataIds lands
+					// the football-data crest in the same bootstrap pass.
+					badgeUrl: comp.dataSource === 'fpl' ? null : at.badgeUrl,
+					externalIds: { [key]: at.externalId },
+				})
+				.returning()
+			teamIdByPayloadId.set(at.externalId, created.id)
 		}
 	}
 
-	const allTeams = await db.query.team.findMany({})
-
 	// Persist latest league standings into team.leaguePosition when the adapter
-	// supports standings. Scope by externalIds[key] so updates stay within this
-	// competition's data source.
+	// supports standings. Resolved through the current payload's team list so
+	// updates stay within this competition's own teams.
 	if (typeof adapter.fetchStandings === 'function') {
 		const standings = await adapter.fetchStandings()
 		for (const row of standings) {
-			const match = allTeams.find(
-				(t) =>
-					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
-					row.teamExternalId,
-			)
-			if (!match) continue
-			await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, match.id))
+			const teamId = teamIdByPayloadId.get(row.teamExternalId)
+			if (!teamId) continue
+			await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, teamId))
+		}
+	}
+
+	// Fixture upsert matching is scoped to this competition's own rounds:
+	// external ids are unique only within (competition, data source), so a
+	// global match would let restarted FPL ids rewrite another season's rows
+	// in place (the 2026/27 silent-corruption incident).
+	const compRoundsForUpsert = await db.query.round.findMany({
+		where: eq(round.competitionId, comp.id),
+		with: { fixtures: true },
+	})
+	const compFixtureByExternalId = new Map<
+		string,
+		(typeof compRoundsForUpsert)[number]['fixtures'][number]
+	>()
+	for (const r of compRoundsForUpsert) {
+		for (const f of r.fixtures) {
+			if (f.externalId != null) compFixtureByExternalId.set(f.externalId, f)
 		}
 	}
 
@@ -410,25 +437,15 @@ export async function syncCompetition(
 		})
 
 		for (const af of ar.fixtures) {
-			const home = allTeams.find(
-				(t) =>
-					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
-					af.homeTeamExternalId,
-			)
-			const away = allTeams.find(
-				(t) =>
-					String((t.externalIds as Record<string, string | number> | null)?.[key]) ===
-					af.awayTeamExternalId,
-			)
-			if (!home || !away) continue
+			const homeTeamId = teamIdByPayloadId.get(af.homeTeamExternalId)
+			const awayTeamId = teamIdByPayloadId.get(af.awayTeamExternalId)
+			if (!homeTeamId || !awayTeamId) continue
 
-			const existingFixture = await db.query.fixture.findFirst({
-				where: eq(fixture.externalId, af.externalId),
-			})
+			const existingFixture = compFixtureByExternalId.get(af.externalId)
 			// A provisional tie we seeded for this same matchup, not yet bound.
 			const provisional = existingFixture
 				? undefined
-				: findByTeamPair(home.id, away.id, unboundRoundFixtures)
+				: findByTeamPair(homeTeamId, awayTeamId, unboundRoundFixtures)
 			if (existingFixture) {
 				await db
 					.update(fixture)
@@ -465,8 +482,8 @@ export async function syncCompetition(
 				await db
 					.update(fixture)
 					.set({
-						homeTeamId: home.id,
-						awayTeamId: away.id,
+						homeTeamId,
+						awayTeamId,
 						kickoff: af.kickoff,
 						status: af.status,
 						homeScore: af.homeScore,
@@ -484,8 +501,8 @@ export async function syncCompetition(
 			} else {
 				await db.insert(fixture).values({
 					roundId,
-					homeTeamId: home.id,
-					awayTeamId: away.id,
+					homeTeamId,
+					awayTeamId,
 					kickoff: af.kickoff,
 					status: af.status,
 					homeScore: af.homeScore,

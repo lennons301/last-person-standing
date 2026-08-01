@@ -17,10 +17,10 @@
  * Adding a new competition? Add a scenario for each supported mode here.
  * See `docs/superpowers/specs/2026-05-12-per-fixture-settlement-and-live-projection-design.md`.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/lib/db'
-import { syncCompetition } from '@/lib/game/bootstrap-competitions'
+import { mergeFootballDataIds, syncCompetition } from '@/lib/game/bootstrap-competitions'
 import { getCupLadderData, getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import {
 	getLivePayload,
@@ -2306,5 +2306,298 @@ describe('lifecycle: WC knockout bracket self-heal', () => {
 		expect(
 			[tla(bound537377?.homeTeamId ?? null), tla(bound537377?.awayTeamId ?? null)].sort(),
 		).toEqual(['W4', 'W5'].sort())
+	})
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* PL season rollover — season-safe sync identity                          */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Runs the REAL syncCompetition + mergeFootballDataIds against Postgres,
+ * proving a second-season sync is structurally unable to touch the first
+ * season's rows (the 2026/27 silent-corruption incident):
+ *   - FPL fixture ids restart every season (1..380) — the upsert must only
+ *     ever find rows inside the competition being synced.
+ *   - FPL team ids restart too and get reassigned across clubs, so team
+ *     resolution must go through the current payload, never per-season ids
+ *     stored on team rows from an earlier season.
+ *   - Promoted clubs are new rows whose badge comes from the football-data
+ *     crest (the FPL badge CDN 404s for newly promoted clubs); relegated
+ *     clubs' rows are left dormant.
+ *
+ * The first-season competition deliberately stays ACTIVE — the scoping must
+ * hold structurally, not by leaning on the archived-status guard.
+ */
+describe('lifecycle: PL season rollover sync identity', () => {
+	// Season 1 clubs, FPL ids assigned alphabetically. Dorne/Elm/Fern are
+	// relegated after season 1; Grove/Holt/Isley come up. FPL then reassigns
+	// ids alphabetically again, so ids 4-6 point at DIFFERENT clubs in season
+	// 2 — the stale-id trap.
+	const S1_CLUBS = [
+		{ id: 1, name: 'Alder FC', short_name: 'ALD', code: 11, fdId: 101 },
+		{ id: 2, name: 'Birch FC', short_name: 'BIR', code: 12, fdId: 102 },
+		{ id: 3, name: 'Cedar FC', short_name: 'CED', code: 13, fdId: 103 },
+		{ id: 4, name: 'Dorne FC', short_name: 'DOR', code: 14, fdId: 104 },
+		{ id: 5, name: 'Elm FC', short_name: 'ELM', code: 15, fdId: 105 },
+		{ id: 6, name: 'Fern FC', short_name: 'FER', code: 16, fdId: 106 },
+	]
+	const S2_CLUBS = [
+		{ id: 1, name: 'Alder FC', short_name: 'ALD', code: 11, fdId: 101 },
+		{ id: 2, name: 'Birch FC', short_name: 'BIR', code: 12, fdId: 102 },
+		{ id: 3, name: 'Cedar FC', short_name: 'CED', code: 13, fdId: 103 },
+		{ id: 4, name: 'Grove FC', short_name: 'GRO', code: 24, fdId: 107 },
+		{ id: 5, name: 'Holt FC', short_name: 'HOL', code: 25, fdId: 108 },
+		{ id: 6, name: 'Isley FC', short_name: 'ISL', code: 26, fdId: 109 },
+	]
+
+	// Season 1: one finished gameweek, fixture ids 1-3, with final scores.
+	const S1_FPL = {
+		bootstrap: {
+			teams: S1_CLUBS.map(({ fdId: _fdId, ...t }) => t),
+			events: [
+				{ id: 1, name: 'Gameweek 1', deadline_time: '2025-08-15T17:30:00Z', finished: true },
+			],
+		},
+		fixtures: [
+			{ id: 1, event: 1, team_h: 1, team_a: 2, kickoff_time: '2025-08-16T14:00:00Z', h: 2, a: 0 },
+			{ id: 2, event: 1, team_h: 3, team_a: 4, kickoff_time: '2025-08-16T16:30:00Z', h: 1, a: 1 },
+			{ id: 3, event: 1, team_h: 5, team_a: 6, kickoff_time: '2025-08-17T13:00:00Z', h: 0, a: 3 },
+		].map((f) => ({
+			id: f.id,
+			event: f.event,
+			team_h: f.team_h,
+			team_a: f.team_a,
+			kickoff_time: f.kickoff_time,
+			started: true,
+			finished: true,
+			finished_provisional: true,
+			team_h_score: f.h,
+			team_a_score: f.a,
+		})),
+	}
+
+	// Season 2: fixture ids RESTART at 1, scheduled, no scores. Payload team
+	// id 4 is now the promoted Grove FC (was Dorne FC in season 1).
+	const S2_FPL = {
+		bootstrap: {
+			teams: S2_CLUBS.map(({ fdId: _fdId, ...t }) => t),
+			events: [
+				{ id: 1, name: 'Gameweek 1', deadline_time: '2026-08-21T17:30:00Z', finished: false },
+			],
+		},
+		fixtures: [
+			{ id: 1, event: 1, team_h: 1, team_a: 4, kickoff_time: '2026-08-22T14:00:00Z' },
+			{ id: 2, event: 1, team_h: 2, team_a: 5, kickoff_time: '2026-08-22T16:30:00Z' },
+			{ id: 3, event: 1, team_h: 3, team_a: 6, kickoff_time: '2026-08-23T13:00:00Z' },
+		].map((f) => ({
+			id: f.id,
+			event: f.event,
+			team_h: f.team_h,
+			team_a: f.team_a,
+			kickoff_time: f.kickoff_time,
+			started: false,
+			finished: false,
+			finished_provisional: false,
+			team_h_score: null,
+			team_a_score: null,
+		})),
+	}
+
+	const fdCrest = (tla: string) => `https://crests.example/${tla.toLowerCase()}.png`
+	const fdTeam = (club: (typeof S1_CLUBS)[number]) => ({
+		id: club.fdId,
+		name: club.name,
+		tla: club.short_name,
+		crest: fdCrest(club.short_name),
+	})
+	const clubByFplId = (clubs: typeof S1_CLUBS, id: number) => {
+		const club = clubs.find((c) => c.id === id)
+		if (!club) throw new Error(`no club with fpl id ${id}`)
+		return club
+	}
+
+	// football-data mirror of each season, for the merge step. fd match ids
+	// are globally unique across seasons (unlike FPL's).
+	const S1_FD_MATCHES = S1_FPL.fixtures.map((f, i) => ({
+		id: 9001 + i,
+		matchday: 1,
+		homeTeam: fdTeam(clubByFplId(S1_CLUBS, f.team_h)),
+		awayTeam: fdTeam(clubByFplId(S1_CLUBS, f.team_a)),
+		utcDate: f.kickoff_time,
+		status: 'FINISHED',
+		score: { fullTime: { home: f.team_h_score, away: f.team_a_score } },
+	}))
+	const S2_FD_MATCHES = S2_FPL.fixtures.map((f, i) => ({
+		id: 9101 + i,
+		matchday: 1,
+		homeTeam: fdTeam(clubByFplId(S2_CLUBS, f.team_h)),
+		awayTeam: fdTeam(clubByFplId(S2_CLUBS, f.team_a)),
+		utcDate: f.kickoff_time,
+		status: 'TIMED',
+		score: { fullTime: { home: null, away: null } },
+	}))
+
+	function mockFdFetch(matches: unknown[]) {
+		vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+			const s = typeof url === 'string' ? url : url.toString()
+			if (s.includes('/standings'))
+				return Promise.resolve(new Response(JSON.stringify({ standings: [] })))
+			return Promise.resolve(new Response(JSON.stringify({ matches })))
+		})
+	}
+
+	async function makeSeasonComp(name: string): Promise<typeof competition.$inferSelect> {
+		const [c] = await db
+			.insert(competition)
+			.values({ name, type: 'league', dataSource: 'fpl', status: 'active' })
+			.returning()
+		return c
+	}
+
+	/** Sync + merge season 1, snapshot its rows, then sync + merge season 2. */
+	async function runRollover() {
+		const c1 = await makeSeasonComp('Smoke PL 2025/26')
+		await syncCompetition(c1, { fplData: S1_FPL })
+		mockFdFetch(S1_FD_MATCHES)
+		await mergeFootballDataIds(c1, 'test-key')
+
+		const s1Rounds = await db
+			.select()
+			.from(roundTable)
+			.where(eq(roundTable.competitionId, c1.id))
+			.orderBy(roundTable.number)
+		const s1Fixtures = await db
+			.select()
+			.from(fixtureTable)
+			.where(
+				inArray(
+					fixtureTable.roundId,
+					s1Rounds.map((r) => r.id),
+				),
+			)
+			.orderBy(fixtureTable.externalId)
+		const s1Teams = await db.select().from(teamTable).orderBy(teamTable.name)
+
+		const c2 = await makeSeasonComp('Smoke PL 2026/27')
+		const syncSecondSeason = async () => {
+			await syncCompetition(c2, { fplData: S2_FPL })
+		}
+		const mergeSecondSeason = async () => {
+			mockFdFetch(S2_FD_MATCHES)
+			await mergeFootballDataIds(c2, 'test-key')
+		}
+		return { c1, c2, s1Rounds, s1Fixtures, s1Teams, syncSecondSeason, mergeSecondSeason }
+	}
+
+	afterEach(() => {
+		vi.restoreAllMocks()
+	})
+
+	it('leaves the first season’s fixture and round rows byte-for-byte untouched', async () => {
+		const { c1, s1Rounds, s1Fixtures, syncSecondSeason, mergeSecondSeason } = await runRollover()
+		await syncSecondSeason()
+		await mergeSecondSeason()
+
+		const roundsAfter = await db
+			.select()
+			.from(roundTable)
+			.where(eq(roundTable.competitionId, c1.id))
+			.orderBy(roundTable.number)
+		const fixturesAfter = await db
+			.select()
+			.from(fixtureTable)
+			.where(
+				inArray(
+					fixtureTable.roundId,
+					roundsAfter.map((r) => r.id),
+				),
+			)
+			.orderBy(fixtureTable.externalId)
+		expect(roundsAfter).toEqual(s1Rounds)
+		expect(fixturesAfter).toEqual(s1Fixtures)
+	})
+
+	it('cannot collide restarted external ids — the upsert only finds in-competition rows', async () => {
+		const { c1, c2, syncSecondSeason } = await runRollover()
+		await syncSecondSeason()
+
+		// Both seasons hold fixtures with external ids 1-3, on distinct rows.
+		for (const comp of [c1, c2]) {
+			const rounds = await db.select().from(roundTable).where(eq(roundTable.competitionId, comp.id))
+			const fixtures = await db
+				.select()
+				.from(fixtureTable)
+				.where(
+					inArray(
+						fixtureTable.roundId,
+						rounds.map((r) => r.id),
+					),
+				)
+			expect(fixtures.map((f) => f.externalId).sort()).toEqual(['1', '2', '3'])
+		}
+	})
+
+	it('attaches new-season fixtures to the correct club rows via the payload, not stale team ids', async () => {
+		const { c2, s1Teams, syncSecondSeason } = await runRollover()
+		await syncSecondSeason()
+
+		const teams = await db.select().from(teamTable)
+		const byName = (name: string) => {
+			const t = teams.find((row) => row.name === name)
+			if (!t) throw new Error(`missing team row: ${name}`)
+			return t
+		}
+		const [r2] = await db.select().from(roundTable).where(eq(roundTable.competitionId, c2.id))
+		const fixtures = await db.select().from(fixtureTable).where(eq(fixtureTable.roundId, r2.id))
+		const byExternalId = (id: string) => {
+			const f = fixtures.find((row) => row.externalId === id)
+			if (!f) throw new Error(`missing season-2 fixture ${id}`)
+			return f
+		}
+
+		// Payload id 4 is Grove FC this season. A stale-id lookup would resolve
+		// it to Dorne FC (relegated, still holding fpl id 4 from season 1).
+		expect(byExternalId('1').homeTeamId).toBe(byName('Alder FC').id)
+		expect(byExternalId('1').awayTeamId).toBe(byName('Grove FC').id)
+		expect(byExternalId('1').awayTeamId).not.toBe(byName('Dorne FC').id)
+		expect(byExternalId('2').awayTeamId).toBe(byName('Holt FC').id)
+		expect(byExternalId('3').awayTeamId).toBe(byName('Isley FC').id)
+
+		// Promoted clubs are NEW rows — no season-1 row was renamed or reused.
+		const s1Ids = new Set(s1Teams.map((t) => t.id))
+		for (const name of ['Grove FC', 'Holt FC', 'Isley FC']) {
+			expect(s1Ids.has(byName(name).id)).toBe(false)
+		}
+	})
+
+	it('creates promoted clubs with football-data crest badges and leaves relegated rows dormant', async () => {
+		const { s1Teams, syncSecondSeason, mergeSecondSeason } = await runRollover()
+		await syncSecondSeason()
+
+		// After the sync (before the fd merge) a promoted club must NOT carry
+		// the FPL badge CDN URL — it 404s for newly promoted clubs. It stays
+		// empty until the merge lands the crest, so the UI colour fallback
+		// applies rather than a broken image.
+		const teamsAfterSync = await db.select().from(teamTable)
+		for (const name of ['Grove FC', 'Holt FC', 'Isley FC']) {
+			const t = teamsAfterSync.find((row) => row.name === name)
+			expect(t?.badgeUrl ?? null).toBeNull()
+		}
+
+		await mergeSecondSeason()
+
+		const teams = await db.select().from(teamTable)
+		expect(teams.find((t) => t.name === 'Grove FC')?.badgeUrl).toBe(fdCrest('GRO'))
+		expect(teams.find((t) => t.name === 'Holt FC')?.badgeUrl).toBe(fdCrest('HOL'))
+		expect(teams.find((t) => t.name === 'Isley FC')?.badgeUrl).toBe(fdCrest('ISL'))
+
+		// Relegated clubs' rows are untouched by the whole second-season run —
+		// stale external ids and all.
+		for (const name of ['Dorne FC', 'Elm FC', 'Fern FC']) {
+			const before = s1Teams.find((t) => t.name === name)
+			const after = teams.find((t) => t.name === name)
+			expect(after).toEqual(before)
+		}
 	})
 })
