@@ -3384,7 +3384,11 @@ describe('lifecycle: stuck-pick recovery', () => {
 		]
 		await db.update(pick).set({ result: 'win', goalsScored: 1 }).where(inArray(pick.id, settledIds))
 
-		await reconcileAllActiveGames()
+		const summary = await reconcileAllActiveGames()
+
+		// The summary reports only genuinely settled fixtures: fxTie4 settled;
+		// fxTie5 was attempted but its pick stayed deferred (winner-lag).
+		expect(summary.stuckFixturesSettled).toBe(1)
 
 		// r4's stranded pick heals; r5's stays deferred (winner still unknown).
 		expect((await db.query.pick.findFirst({ where: eq(pick.id, stuck4PickId) }))?.result).toBe(
@@ -3404,5 +3408,58 @@ describe('lifecycle: stuck-pick recovery', () => {
 		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
 		expect(g?.status).toBe('active')
 		expect(g?.currentRoundId).toBe(r6)
+	})
+
+	it('never sweeps a stranded pick on an archived competition — archived history is immutable', async () => {
+		// The archived-immutability invariant: every recovery surface must leave
+		// archived competitions untouched. reconcileGameState already guards, but
+		// the all-rounds sweep runs outside the per-game pass — it must filter
+		// archived competitions itself or it would re-settle frozen history daily.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
+		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
+		const r4 = await makeRound(compId, { number: 4, status: 'completed' })
+		const fxTie = await makeFixture({
+			roundId: r4,
+			homeTeamId: home,
+			awayTeamId: away,
+			status: 'finished',
+			homeScore: 1,
+			awayScore: 1,
+		})
+		await db.update(fixtureTable).set({ winner: 'away' }).where(eq(fixtureTable.id, fxTie))
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r4,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpStuck = await makePlayer({ gameId, userId: 'u-stuck' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		const stuckPickId = await makePick({
+			gameId,
+			gamePlayerId: gpStuck,
+			roundId: r4,
+			teamId: home,
+			fixtureId: fxTie,
+		})
+		await db.update(competition).set({ status: 'archived' }).where(eq(competition.id, compId))
+
+		await reconcileAllActiveGames()
+
+		// Frozen exactly as archived: pick pending, player alive, game untouched.
+		expect((await db.query.pick.findFirst({ where: eq(pick.id, stuckPickId) }))?.result).toBe(
+			'pending',
+		)
+		expect(
+			(await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpStuck) }))?.status,
+		).toBe('alive')
+		expect(
+			(await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpOther) }))?.status,
+		).toBe('alive')
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active')
+		expect(g?.currentRoundId).toBe(r4)
 	})
 })

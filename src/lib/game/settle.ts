@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	applyAutoCompletion,
@@ -17,7 +17,7 @@ import {
 	type WcFixture,
 	wcRoundStage,
 } from '@/lib/game-logic/wc-classic'
-import { fixture, round } from '@/lib/schema/competition'
+import { competition, fixture, round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
 /**
@@ -70,6 +70,23 @@ function emptyResult(fixtureId: string): SettleResult {
 		gamesAdvanced: [],
 		roundsCompleted: [],
 	}
+}
+
+/**
+ * Does this game still have a pending pick in the given round? The shared
+ * advancement gate: both the settle path (checkAndMaybeCompleteOrAdvance)
+ * and the reconcile path (advanceGameIfReady) refuse to advance a game
+ * while this is true — a finished knockout tie can hold a deferred pending
+ * pick (winner-lag) even when the data layer says the round is done.
+ */
+export async function gameHasPendingPicksInRound(
+	gameId: string,
+	roundId: string,
+): Promise<boolean> {
+	const pending = await db.query.pick.findFirst({
+		where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId), eq(pick.result, 'pending')),
+	})
+	return pending != null
 }
 
 export async function settleFixture(fixtureId: string): Promise<SettleResult> {
@@ -137,9 +154,9 @@ export async function settleFixture(fixtureId: string): Promise<SettleResult> {
 		} else if (g.gameMode === 'classic') {
 			for (const p of gamePicks) {
 				if (p.result !== 'pending') continue
-				const eliminated = await settleClassicPickRow(p, fx, g)
-				result.classicSettled++
-				if (eliminated) result.classicEliminated++
+				const rowResult = await settleClassicPickRow(p, fx, g)
+				if (rowResult.settled) result.classicSettled++
+				if (rowResult.eliminated) result.classicEliminated++
 			}
 			await checkAndMaybeCompleteOrAdvance(gameId, fx.round.id, fx.round.number, result)
 		} else if (g.gameMode === 'turbo') {
@@ -166,11 +183,16 @@ type FixtureWithRound = typeof fixture.$inferSelect & {
 	awayTeam: { id: string }
 }
 
+/**
+ * Settle one classic pick row against its finished fixture. Returns whether
+ * the row was actually written (`settled: false` = deferred winner-lag tie,
+ * left pending on purpose) and whether the player was eliminated by it.
+ */
 async function settleClassicPickRow(
 	p: PickRow,
 	fx: FixtureWithRound,
 	g?: typeof game.$inferSelect,
-): Promise<boolean> {
+): Promise<{ settled: boolean; eliminated: boolean }> {
 	// `fx.homeScore` and `fx.awayScore` are pre-validated non-null by the
 	// settleFixture entry point — the narrowing is lost across the helper
 	// boundary so we coalesce defensively.
@@ -190,7 +212,7 @@ async function settleClassicPickRow(
 		fx.round.competition.type === 'knockout' ||
 		(fx.round.competition.type === 'group_knockout' && wcRoundStage(fx.round.number) === 'knockout')
 	if (isKnockoutRound && fx.winner == null && homeScore === awayScore) {
-		return false
+		return { settled: false, eliminated: false }
 	}
 
 	const result = determinePickResult({
@@ -205,15 +227,15 @@ async function settleClassicPickRow(
 	const goalsScored = result === 'win' ? (pickedHome ? homeScore : awayScore) : 0
 	await db.update(pick).set({ result, goalsScored }).where(eq(pick.id, p.id))
 
-	if (g == null) return false
+	if (g == null) return { settled: true, eliminated: false }
 
-	if (result === 'win') return false
+	if (result === 'win') return { settled: true, eliminated: false }
 
 	// Starting-round exemption matches the predecessor: round 1 + allowRebuys=false
 	// is the "starting gameweek" — losses/draws don't eliminate.
 	const allowRebuys = (g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
 	const isStartingRound = fx.round.number === 1 && !allowRebuys
-	if (isStartingRound) return false
+	if (isStartingRound) return { settled: true, eliminated: false }
 
 	// Eliminate only if currently alive. Guard makes this race-safe and
 	// double-call-safe.
@@ -226,7 +248,7 @@ async function settleClassicPickRow(
 		})
 		.where(and(eq(gamePlayer.id, p.gamePlayerId), eq(gamePlayer.status, 'alive')))
 		.returning({ id: gamePlayer.id })
-	return updated.length > 0
+	return { settled: true, eliminated: updated.length > 0 }
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -480,11 +502,12 @@ async function checkAndMaybeCompleteOrAdvance(
 	// / mass-extinction still fire on alive count inside checkClassicCompletion; the
 	// deferred player stays alive, so those counts stay correct.)
 	let classicRoundSettled = allFinished
-	if (g.gameMode === 'classic' && allFinished) {
-		const roundPicks = await db.query.pick.findMany({
-			where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
-		})
-		if (roundPicks.some((p) => p.result === 'pending')) classicRoundSettled = false
+	if (
+		g.gameMode === 'classic' &&
+		allFinished &&
+		(await gameHasPendingPicksInRound(gameId, roundId))
+	) {
+		classicRoundSettled = false
 	}
 
 	// Per-mode completion check. Classic + cup check after every pick
@@ -905,11 +928,15 @@ export async function sweepStuckFixtures(): Promise<{
 }> {
 	// Find fixtures with status='finished' that have at least one pick still
 	// 'pending'. Two-step query keeps Drizzle happy and avoids a custom raw
-	// SQL join.
+	// SQL join. Archived competitions are excluded at the query — they are
+	// immutable history, and this sweep runs outside reconcileGameState's
+	// per-game archived guard.
 	const finishedFixtures = await db
 		.select({ id: fixture.id })
 		.from(fixture)
-		.where(eq(fixture.status, 'finished'))
+		.innerJoin(round, eq(fixture.roundId, round.id))
+		.innerJoin(competition, eq(round.competitionId, competition.id))
+		.where(and(eq(fixture.status, 'finished'), ne(competition.status, 'archived')))
 	const ids = finishedFixtures.map((f) => f.id)
 	if (ids.length === 0) return { stuckFixtures: 0, settled: 0 }
 	const pendingPicks = await db
@@ -921,8 +948,10 @@ export async function sweepStuckFixtures(): Promise<{
 	)
 	let settled = 0
 	for (const fid of stuckIds) {
-		await settleFixture(fid)
-		settled++
+		const r = await settleFixture(fid)
+		// Only count fixtures where something actually settled — a deferred
+		// knockout tie whose winner is still unknown stays pending on purpose.
+		if (r.classicSettled + r.turboSettled + r.cupGamesReevaluated > 0) settled++
 	}
 	return { stuckFixtures: stuckIds.length, settled }
 }

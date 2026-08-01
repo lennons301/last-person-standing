@@ -38,7 +38,9 @@ vi.mock('@/lib/game/round-lifecycle', () => ({
 }))
 
 vi.mock('@/lib/game/reconcile', () => ({
-	reconcileAllActiveGames: vi.fn().mockResolvedValue({ checked: 0, settled: 0, advanced: 0 }),
+	reconcileAllActiveGames: vi
+		.fn()
+		.mockResolvedValue({ checked: 0, settled: 0, advanced: 0, stuckFixturesSettled: 0 }),
 }))
 
 import { db } from '@/lib/db'

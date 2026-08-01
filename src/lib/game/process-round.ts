@@ -1,9 +1,9 @@
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
-import { settleFixture, sweepGameSettlement } from '@/lib/game/settle'
+import { gameHasPendingPicksInRound, settleFixture, sweepGameSettlement } from '@/lib/game/settle'
 import { fixture, round } from '@/lib/schema/competition'
-import { game, pick } from '@/lib/schema/game'
+import { game } from '@/lib/schema/game'
 
 /**
  * Advance the game's currentRoundId pointer to the next round in the
@@ -64,14 +64,7 @@ export async function advanceGameIfReady(
 	// pick (winner-lag) can still be pending on a finished fixture. Advancing
 	// past it strands the pick forever — the player survives rounds they
 	// should have gone out in.
-	const pendingPick = await db.query.pick.findFirst({
-		where: and(
-			eq(pick.gameId, gameId),
-			eq(pick.roundId, g.currentRound.id),
-			eq(pick.result, 'pending'),
-		),
-	})
-	if (pendingPick) {
+	if (await gameHasPendingPicksInRound(gameId, g.currentRound.id)) {
 		return { advanced: false, reason: 'pending-picks' }
 	}
 	const result = await advanceGameToNextRound(g.id, g.competitionId, g.currentRound.number)
