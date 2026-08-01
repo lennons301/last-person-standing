@@ -150,8 +150,11 @@ describe('syncCompetition league-position persistence', () => {
 		fdFetchStandings.mockResolvedValue([])
 	})
 
-	it('persists league_position for each standings row scoped by external id', async () => {
-		fplFetchTeams.mockResolvedValue([])
+	it('persists league_position for each standings row resolved through the current payload', async () => {
+		fplFetchTeams.mockResolvedValue([
+			{ externalId: '1', name: 'Alder FC', shortName: 'ALD', badgeUrl: 'ald.svg' },
+			{ externalId: '2', name: 'Birch FC', shortName: 'BIR', badgeUrl: 'bir.svg' },
+		])
 		fplFetchRounds.mockResolvedValue([])
 		fplFetchStandings.mockResolvedValue([
 			{
@@ -173,11 +176,10 @@ describe('syncCompetition league-position persistence', () => {
 				points: 20,
 			},
 		])
-		dbQueryTeamFindMany.mockResolvedValue([
-			{ id: 'team-1-uuid', externalIds: { fpl: '1' } },
-			{ id: 'team-2-uuid', externalIds: { fpl: '2' } },
-			{ id: 'team-other-uuid', externalIds: { football_data: '99' } },
-		])
+		// Payload teams resolve to existing club rows by name.
+		dbQueryTeamFindFirst
+			.mockResolvedValueOnce({ id: 'team-1-uuid', name: 'Alder FC', externalIds: { fpl: '1' } })
+			.mockResolvedValueOnce({ id: 'team-2-uuid', name: 'Birch FC', externalIds: { fpl: '2' } })
 
 		await syncCompetition(
 			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
@@ -197,7 +199,10 @@ describe('syncCompetition league-position persistence', () => {
 		)
 	})
 
-	it('ignores standings rows whose teamExternalId is not in the competition data source', async () => {
+	it('ignores standings rows whose team is absent from the current payload, even when a stale team row holds that id', async () => {
+		// The payload has no team '999' — but a dormant (relegated) team row
+		// still carries fpl:999 from an earlier season. Resolution must go
+		// through the payload, so the stale row must NOT receive a position.
 		fplFetchTeams.mockResolvedValue([])
 		fplFetchRounds.mockResolvedValue([])
 		fplFetchStandings.mockResolvedValue([
@@ -211,10 +216,7 @@ describe('syncCompetition league-position persistence', () => {
 				points: 0,
 			},
 		])
-		dbQueryTeamFindMany.mockResolvedValue([
-			// Team with different data source key — must not match.
-			{ id: 'team-fd-uuid', externalIds: { football_data: '999' } },
-		])
+		dbQueryTeamFindMany.mockResolvedValue([{ id: 'team-stale-uuid', externalIds: { fpl: '999' } }])
 
 		await syncCompetition(
 			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
@@ -225,6 +227,65 @@ describe('syncCompetition league-position persistence', () => {
 			.map((call) => call[0])
 			.filter((payload) => 'leaguePosition' in payload)
 		expect(positionSets).toHaveLength(0)
+	})
+})
+
+describe('syncCompetition team upsert (payload-driven identity)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbQueryTeamFindMany.mockResolvedValue([])
+		dbQueryRoundFindMany.mockResolvedValue([])
+		dbQueryPlannedPickFindMany.mockResolvedValue([])
+	})
+
+	it('inserts an unseen (promoted) club without the FPL badge URL — the FPL CDN 404s for it', async () => {
+		fplFetchTeams.mockResolvedValue([
+			{
+				externalId: '4',
+				name: 'Grove FC',
+				shortName: 'GRO',
+				badgeUrl: 'https://resources.premierleague.com/premierleague/badges/rb/t24.svg',
+			},
+		])
+		fplFetchRounds.mockResolvedValue([])
+		dbQueryTeamFindFirst.mockResolvedValue(undefined) // never seen this club
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2026/27' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		const insertedValues = dbInsertFn.mock.results
+			.map((r) => (r.value as { values: ReturnType<typeof vi.fn> }).values.mock.calls[0]?.[0])
+			.filter((v): v is Record<string, unknown> => v != null && 'name' in (v as object))
+		expect(insertedValues).toEqual([
+			expect.objectContaining({ name: 'Grove FC', shortName: 'GRO', badgeUrl: null }),
+		])
+	})
+
+	it('re-links an existing club to its new payload id by name, not by stored external id', async () => {
+		// Grove FC existed before under fpl:9; this season the payload hands it
+		// id 4. The row must be found by NAME and its fpl id overwritten.
+		fplFetchTeams.mockResolvedValue([
+			{ externalId: '4', name: 'Grove FC', shortName: 'GRO', badgeUrl: 'gro.svg' },
+		])
+		fplFetchRounds.mockResolvedValue([])
+		dbQueryTeamFindFirst.mockResolvedValue({
+			id: 'team-grove-uuid',
+			name: 'Grove FC',
+			badgeUrl: 'gro.svg',
+			externalIds: { fpl: '9', football_data: '107' },
+		})
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2026/27' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		const teamUpdate = dbUpdateSet.mock.calls
+			.map((c) => c[0] as { externalIds?: Record<string, string> })
+			.find((p) => p.externalIds?.fpl != null)
+		expect(teamUpdate?.externalIds).toEqual({ fpl: '4', football_data: '107' })
 	})
 })
 
