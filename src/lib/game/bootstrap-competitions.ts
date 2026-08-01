@@ -181,9 +181,26 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	const fdTeams = await fdAdapter.fetchTeams()
 	const fdRounds = await fdAdapter.fetchRounds()
 
-	// 1) Merge football-data team IDs onto our teams via short_name === tla
-	// (with the FPL_TO_FD_TLA alias map covering the NFO → NOT case).
-	const ourTeams = await db.query.team.findMany({})
+	// Everything this merge touches must belong to the competition being
+	// merged (same identity rule as syncCompetition's upsert scoping). The
+	// competition's fixtures define its team set — matching by tla over the
+	// whole team table could hit another competition's row (e.g. a WC country
+	// sharing a promoted club's code) and rewrite its badge + football-data id.
+	const ourRounds = await db.query.round.findMany({
+		where: eq(round.competitionId, comp.id),
+		with: { fixtures: true },
+	})
+	const compTeamIds = new Set<string>()
+	for (const r of ourRounds) {
+		for (const f of r.fixtures) {
+			compTeamIds.add(f.homeTeamId)
+			compTeamIds.add(f.awayTeamId)
+		}
+	}
+
+	// 1) Merge football-data team IDs onto this competition's teams via
+	// short_name === tla (with the FPL_TO_FD_TLA alias map covering NFO → NOT).
+	const ourTeams = (await db.query.team.findMany({})).filter((t) => compTeamIds.has(t.id))
 	const ourTeamIdByFdId = new Map<string, string>() // football-data id -> our team UUID
 	for (const fdTeam of fdTeams) {
 		const ourTeam = ourTeams.find((t) => fdTlaForFplShortName(t.shortName) === fdTeam.shortName)
@@ -209,10 +226,6 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// they're tracked under in our DB. Since each PL pairing happens exactly
 	// once per home venue per season, (home, away) is a unique key across the
 	// whole competition and gives us a one-shot match regardless of round.
-	const ourRounds = await db.query.round.findMany({
-		where: eq(round.competitionId, comp.id),
-		with: { fixtures: true },
-	})
 	const ourFixtureByPair = new Map<string, (typeof ourRounds)[number]['fixtures'][number]>()
 	for (const r of ourRounds) {
 		for (const f of r.fixtures) {
@@ -244,8 +257,10 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// Fails loudly on team-level gaps because every PL team must be matchable
 	// for live scoring to work; warns on fixture-level gaps because rescheduled
 	// or yet-to-be-published fixtures may legitimately be absent from
-	// football-data temporarily.
-	const refreshedTeams = await db.query.team.findMany({})
+	// football-data temporarily. Scoped to this competition's teams — a dormant
+	// relegated club's row (stale fpl id, no current-season fd merge) plays no
+	// part here and must not trip the loud failure.
+	const refreshedTeams = (await db.query.team.findMany({})).filter((t) => compTeamIds.has(t.id))
 	const fplTeams = refreshedTeams.filter(
 		(t) => (t.externalIds as Record<string, string | number> | null)?.fpl != null,
 	)
