@@ -49,13 +49,13 @@ import { db } from '../../src/lib/db'
 import { competition, fixture, round, team } from '../../src/lib/schema/competition'
 import {
 	fail,
+	fixtureCensusLines,
 	heading,
+	inPl2526Window,
 	PL_2526_EXPECTED_FIXTURES,
 	PL_2526_EXPECTED_ROUNDS,
 	PL_2526_EXPECTED_TEAMS,
 	PL_2526_FD_SEASON,
-	PL_2526_KICKOFF_MAX,
-	PL_2526_KICKOFF_MIN,
 	PL_2526_SEASON,
 } from './shared'
 
@@ -159,22 +159,8 @@ async function main() {
 	}
 
 	// Current-state census — the corruption evidence the dry run documents.
-	const inWindow = (d: Date | null) =>
-		d != null && d >= PL_2526_KICKOFF_MIN && d <= PL_2526_KICKOFF_MAX
-	const statusCounts = new Map<string, number>()
-	for (const f of fixtures) statusCounts.set(f.status, (statusCounts.get(f.status) ?? 0) + 1)
 	console.log(`\nCurrent state (${fixtures.length} fixtures):`)
-	console.log(`  status: ${[...statusCounts].map(([s, n]) => `${s}=${n}`).join(' ')}`)
-	console.log(
-		`  kickoff in ${PL_2526_SEASON} window: ${fixtures.filter((f) => inWindow(f.kickoff)).length}` +
-			` | outside: ${fixtures.filter((f) => f.kickoff != null && !inWindow(f.kickoff)).length}` +
-			` | null: ${fixtures.filter((f) => f.kickoff == null).length}`,
-	)
-	console.log(`  missing scores: ${fixtures.filter((f) => f.homeScore == null).length}`)
-	console.log(
-		`  carrying an FPL id: ${withFplId.length}` +
-			` | carrying a football-data id: ${fixtures.filter((f) => fdId(f.externalIds) != null).length}`,
-	)
+	for (const line of fixtureCensusLines(fixtures)) console.log(`  ${line}`)
 
 	// ── The archive ───────────────────────────────────────────────────────
 	const apiKey = process.env.FOOTBALL_DATA_API_KEY
@@ -197,7 +183,7 @@ async function main() {
 			fail(`archive match ${m.id} has unresolved teams`)
 		}
 		const kickoff = new Date(m.utcDate)
-		if (Number.isNaN(kickoff.getTime()) || !inWindow(kickoff)) {
+		if (Number.isNaN(kickoff.getTime()) || !inPl2526Window(kickoff)) {
 			fail(
 				`archive match ${m.id} kicks off at ${m.utcDate}, outside the ${PL_2526_SEASON} window — wrong season?`,
 			)
@@ -288,6 +274,12 @@ async function main() {
 	if (matchByFixtureId.size !== fixtures.length) {
 		fail(`matched ${matchByFixtureId.size}/${fixtures.length} fixtures — bijection broken`)
 	}
+	// The unit of every remaining step: a fixture row with its archive match.
+	const pairs = fixtures.map((f) => {
+		const m = matchByFixtureId.get(f.id)
+		if (!m) fail(`unreachable: fixture ${f.id} lost its archive match`)
+		return { f, m }
+	})
 
 	// ── Restored round deadlines ──────────────────────────────────────────
 	// Earliest restored kickoff in the round − 90 minutes (FPL's deadline
@@ -295,8 +287,8 @@ async function main() {
 	// OUR round rows — the FPL gameweek grouping the picks were made against
 	// — not football-data's matchday, which can differ after reschedules.
 	const deadlineByRoundId = new Map<string, Date>()
-	for (const f of fixtures) {
-		const kickoff = new Date((matchByFixtureId.get(f.id) as FdArchiveMatch).utcDate)
+	for (const { f, m } of pairs) {
+		const kickoff = new Date(m.utcDate)
 		const current = deadlineByRoundId.get(f.roundId)
 		if (!current || kickoff.getTime() < current.getTime()) {
 			deadlineByRoundId.set(f.roundId, kickoff)
@@ -310,28 +302,26 @@ async function main() {
 
 	// ── Intended mutations ────────────────────────────────────────────────
 	heading('Intended mutations')
-	const fixturesByRoundId = new Map<string, (typeof fixtures)[number][]>()
-	for (const f of fixtures) {
-		const bucket = fixturesByRoundId.get(f.roundId) ?? []
-		bucket.push(f)
-		fixturesByRoundId.set(f.roundId, bucket)
+	const pairsByRoundId = new Map<string, typeof pairs>()
+	for (const p of pairs) {
+		const bucket = pairsByRoundId.get(p.f.roundId) ?? []
+		bucket.push(p)
+		pairsByRoundId.set(p.f.roundId, bucket)
 	}
 	for (const r of rounds) {
 		const newDeadline = deadlineByRoundId.get(r.id) as Date
 		console.log(`\nR${r.number} ${r.name}: deadline ${fmt(r.deadline)} → ${fmt(newDeadline)}`)
-		const bucket = (fixturesByRoundId.get(r.id) ?? []).sort(
-			(a, b) =>
-				new Date((matchByFixtureId.get(a.id) as FdArchiveMatch).utcDate).getTime() -
-				new Date((matchByFixtureId.get(b.id) as FdArchiveMatch).utcDate).getTime(),
+		const bucket = (pairsByRoundId.get(r.id) ?? []).sort(
+			(a, b) => new Date(a.m.utcDate).getTime() - new Date(b.m.utcDate).getTime(),
 		)
-		for (const f of bucket) {
-			const m = matchByFixtureId.get(f.id) as FdArchiveMatch
+		for (const { f, m } of bucket) {
 			const oldScore = f.homeScore != null ? `${f.homeScore}-${f.awayScore}` : '—'
+			const winner = mapWinner(m.score.winner)
 			console.log(
 				`  ${shortName(f.homeTeamId)} v ${shortName(f.awayTeamId)}: ` +
 					`kickoff ${fmt(f.kickoff)} → ${m.utcDate}, ` +
 					`${f.status} ${oldScore} → finished ${m.score.fullTime.home}-${m.score.fullTime.away}` +
-					`${mapWinner(m.score.winner) ? ` (winner=${mapWinner(m.score.winner)})` : ''}, ` +
+					`${winner ? ` (winner=${winner})` : ''}, ` +
 					`fpl id ${f.externalId ?? fplId(f.externalIds) ?? '—'} → cleared, ` +
 					`fd id ${fdId(f.externalIds) ?? '—'} → ${m.id}`,
 			)
@@ -349,8 +339,7 @@ async function main() {
 
 	// ── Apply ─────────────────────────────────────────────────────────────
 	await db.transaction(async (tx) => {
-		for (const f of fixtures) {
-			const m = matchByFixtureId.get(f.id) as FdArchiveMatch
+		for (const { f, m } of pairs) {
 			await tx
 				.update(fixture)
 				.set({
@@ -392,7 +381,7 @@ async function main() {
 		`fixtures finished with scores: ${fixturesAfter.filter((f) => f.status === 'finished' && f.homeScore != null).length}/${fixturesAfter.length} (expect ${PL_2526_EXPECTED_FIXTURES})`,
 	)
 	console.log(
-		`kickoffs in ${PL_2526_SEASON} window: ${fixturesAfter.filter((f) => inWindow(f.kickoff)).length}/${fixturesAfter.length} (expect ${PL_2526_EXPECTED_FIXTURES})`,
+		`kickoffs in ${PL_2526_SEASON} window: ${fixturesAfter.filter((f) => inPl2526Window(f.kickoff)).length}/${fixturesAfter.length} (expect ${PL_2526_EXPECTED_FIXTURES})`,
 	)
 	console.log(
 		`carrying an FPL id: ${fixturesAfter.filter((f) => f.externalId != null || fplId(f.externalIds) != null).length} (expect 0)`,

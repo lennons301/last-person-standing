@@ -32,6 +32,38 @@ export const PL_2526_EXPECTED_TEAMS = 20
 export const PL_2526_KICKOFF_MIN = new Date('2025-08-01T00:00:00Z')
 export const PL_2526_KICKOFF_MAX = new Date('2026-06-15T00:00:00Z')
 
+export function inPl2526Window(d: Date | null): boolean {
+	return d != null && d >= PL_2526_KICKOFF_MIN && d <= PL_2526_KICKOFF_MAX
+}
+
+/** The fixture columns the #121 census inspects (structural, schema-free). */
+interface CensusFixture {
+	status: string
+	kickoff: Date | null
+	homeScore: number | null
+	externalId: string | null
+	externalIds: Record<string, string | number> | null
+}
+
+/**
+ * The corruption/restoration census shared by the #121 inspector and the
+ * restore script's current-state print: statuses, kickoff-window buckets,
+ * missing scores, and which external ids the rows carry.
+ */
+export function fixtureCensusLines(fixtures: CensusFixture[]): string[] {
+	const statusCounts = new Map<string, number>()
+	for (const f of fixtures) statusCounts.set(f.status, (statusCounts.get(f.status) ?? 0) + 1)
+	return [
+		`status: ${[...statusCounts].map(([s, n]) => `${s}=${n}`).join(' ')}`,
+		`kickoff in ${PL_2526_SEASON} window: ${fixtures.filter((f) => inPl2526Window(f.kickoff)).length}` +
+			` | outside: ${fixtures.filter((f) => f.kickoff != null && !inPl2526Window(f.kickoff)).length}` +
+			` | null: ${fixtures.filter((f) => f.kickoff == null).length}`,
+		`missing scores: ${fixtures.filter((f) => f.homeScore == null).length}`,
+		`carrying an FPL id: ${fixtures.filter((f) => f.externalId != null || f.externalIds?.fpl != null).length}` +
+			` | carrying a football-data id: ${fixtures.filter((f) => f.externalIds?.football_data != null).length}`,
+	]
+}
+
 /** Parse a numeric-string money amount (e.g. '80.00') into integer pence. */
 export function toPence(amount: string): number {
 	const parsed = Number(amount)

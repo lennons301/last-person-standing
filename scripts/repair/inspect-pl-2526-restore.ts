@@ -17,7 +17,7 @@ import { db } from '../../src/lib/db'
 import { user } from '../../src/lib/schema/auth'
 import { competition, fixture, round, team } from '../../src/lib/schema/competition'
 import { game, gamePlayer, pick } from '../../src/lib/schema/game'
-import { heading, PL_2526_KICKOFF_MAX, PL_2526_KICKOFF_MIN, PL_2526_SEASON } from './shared'
+import { fixtureCensusLines, heading, PL_2526_SEASON } from './shared'
 
 type FixtureRow = typeof fixture.$inferSelect
 
@@ -70,23 +70,9 @@ async function main() {
 	}
 
 	// ── Fixture census ────────────────────────────────────────────────────
-	const inWindow = (d: Date | null) =>
-		d != null && d >= PL_2526_KICKOFF_MIN && d <= PL_2526_KICKOFF_MAX
-	const statusCounts = new Map<string, number>()
-	for (const f of fixtures) statusCounts.set(f.status, (statusCounts.get(f.status) ?? 0) + 1)
-	const ids = (f: FixtureRow) => f.externalIds as Record<string, string | number> | null
+	const extIds = (f: FixtureRow) => f.externalIds as Record<string, string | number> | null
 	console.log(`\nFixture census (${fixtures.length} fixtures, ${rounds.length} rounds):`)
-	console.log(`  status: ${[...statusCounts].map(([s, n]) => `${s}=${n}`).join(' ')}`)
-	console.log(
-		`  kickoff in ${PL_2526_SEASON} window: ${fixtures.filter((f) => inWindow(f.kickoff)).length}` +
-			` | outside: ${fixtures.filter((f) => f.kickoff != null && !inWindow(f.kickoff)).length}` +
-			` | null: ${fixtures.filter((f) => f.kickoff == null).length}`,
-	)
-	console.log(`  missing scores: ${fixtures.filter((f) => f.homeScore == null).length}`)
-	console.log(
-		`  carrying an FPL id: ${fixtures.filter((f) => f.externalId != null || ids(f)?.fpl != null).length}` +
-			` | carrying a football-data id: ${fixtures.filter((f) => ids(f)?.football_data != null).length}`,
-	)
+	for (const line of fixtureCensusLines(fixtures)) console.log(`  ${line}`)
 
 	// ── Rounds ────────────────────────────────────────────────────────────
 	console.log('\nRounds:')
@@ -115,7 +101,7 @@ async function main() {
 				`  ${shortName(f.homeTeamId)} ${score(f)} ${shortName(f.awayTeamId)}` +
 					` kickoff=${fmt(f.kickoff)} status=${f.status}` +
 					`${f.winner ? ` winner=${f.winner}` : ''}` +
-					` fplId=${f.externalId ?? ids(f)?.fpl ?? '—'} fdId=${ids(f)?.football_data ?? '—'}`,
+					` fplId=${f.externalId ?? extIds(f)?.fpl ?? '—'} fdId=${extIds(f)?.football_data ?? '—'}`,
 			)
 		}
 	}
