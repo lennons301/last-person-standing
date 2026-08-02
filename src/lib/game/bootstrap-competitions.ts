@@ -264,7 +264,7 @@ const FPL_TO_FD_TLA: Record<string, string> = {
 	NFO: 'NOT',
 }
 
-function fdTlaForFplShortName(fplShortName: string): string {
+export function fdTlaForFplShortName(fplShortName: string): string {
 	return FPL_TO_FD_TLA[fplShortName] ?? fplShortName
 }
 
