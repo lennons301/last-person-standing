@@ -94,18 +94,21 @@ GitHub Actions secrets (repo-level):
 - `VERCEL_PROD_URL` — full https URL of the Vercel production deployment. Used by `live-scores.yml` as the request target.
 - `PROD_DATABASE_URL` — same value as Doppler `prd.DATABASE_URL`. Used by `migrate.yml` to apply Drizzle migrations on push to `main`. Duplicated from Doppler intentionally; revisit if rotation cadence increases.
 
-## PL season rollover (annual ritual)
+## PL season rollover (annual verification ritual)
 
-Every August, the Premier League season changes — 3 promoted teams replace 3 relegated ones. Bootstrap merges FPL data with football-data IDs by `short_name === tla`, plus an alias map `FPL_TO_FD_TLA` in `src/lib/game/bootstrap-competitions.ts` for the rare cases where the two sources disagree on a team's 3-letter code. (As of 2025/26: only Nottingham Forest mismatched — FPL `NFO`, football-data `NOT`.)
+Every August, the Premier League season changes — 3 promoted teams replace 3 relegated ones. The rollover itself is **automatic**: the daily sync (a GitHub Actions workflow, `.github/workflows/daily-sync.yml`, scheduled 04:00 UTC — *not* a Vercel cron; FPL's Cloudflare blocks Vercel egress, so the workflow fetches the FPL payloads and POSTs them to `/api/cron/daily-sync`) detects the season via football-data's `currentSeason` cross-checked against FPL's GW1 deadline (`ensureCurrentPlSeasonCompetition`), creates "Premier League YYYY/YY", and archives the predecessor in one transaction — all before any sync writes. On detection failure it throws `SeasonDetectionError`: zero writes, a failed `cron_run` row, a red Actions job. It never guesses.
 
-After a season rollover:
+The human ritual is **verification only** — nothing to execute:
 
-1. **Re-run bootstrap once** locally with prod creds (or wait for the daily Vercel Cron at 04:00 UTC).
-2. **If `mergeFootballDataIds` throws** with `missing football-data IDs after merge: <list>`, that's the new-season gap. The error names the unmatched team(s).
-3. **Look up the team's football-data tla** at `https://api.football-data.org/v4/competitions/PL/teams` and add a one-line entry to `FPL_TO_FD_TLA`.
-4. **Re-run bootstrap.** Coverage assertion passes; live scoring works for the new team.
+1. **Check the first August daily-sync runs are green**: `gh run list --workflow=daily-sync.yml`.
+2. **Run the read-only inspector** (season-agnostic — it derives the expected season from the sources): `doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/inspect-pl-rollover.ts`. It verifies the new competition (38 rounds / 380 fixtures / 20 teams), GW1 pairings against both FPL and football-data, team badge + external-id coverage, and that predecessor seasons stay archived and untouched. Exits non-zero on any failed check.
+3. **Add colour entries for promoted clubs** in `src/lib/teams/colours.ts` if the inspector flags any team falling back to grey.
+4. **Confirm a GW1 game can be created** — the new competition's Gameweek 1 must be pickable (future deadline) in the game-creation flow.
 
-Fixture-level coverage gaps are warn-only (rescheduled / late-published matches fill in on subsequent bootstrap runs). Team gaps fail loudly because every team must be matchable for live scoring to work.
+Two failure modes need a human hand, and both fail loudly rather than corrupt:
+
+- **`SeasonDetectionError`** (red run, zero writes): the sources disagree or one is missing data — investigate before anything else; do not hand-create the season.
+- **`mergeFootballDataIds` team-coverage error** (`missing football-data IDs after merge: <list>`): a promoted club's FPL `short_name` and football-data `tla` disagree (as of 2025/26 only Nottingham Forest: FPL `NFO`, fd `NOT`). Add a one-line entry to `FPL_TO_FD_TLA` in `src/lib/game/bootstrap-competitions.ts`, deploy, and let the next sync run. Team gaps fail loudly because every team must be matchable for live scoring; fixture-level gaps are warn-only (rescheduled / late-published matches fill in on subsequent runs).
 
 ## Per-fixture settlement
 
