@@ -5,6 +5,7 @@ import type { FplPreFetched } from '@/lib/data/fpl'
 import { db } from '@/lib/db'
 import {
 	applyPotAssignments,
+	ensureCurrentPlSeasonCompetition,
 	mergeFootballDataIds,
 	scheduleUpcomingFixturePolls,
 	syncCompetition,
@@ -40,6 +41,14 @@ export async function POST(request: Request) {
 	try {
 		const body = await readJsonBody(request)
 		const apiKey = process.env.FOOTBALL_DATA_API_KEY
+		// Season detection + rollover runs BEFORE any sync writes: it derives the
+		// current PL season from football-data's currentSeason cross-checked
+		// against FPL's GW1 deadline, creating the new-season competition and
+		// archiving the predecessor when the sources flip in August. A detection
+		// failure (missing data, source disagreement) throws — the run aborts
+		// with zero writes, a failed cron_run, and a red Actions job. It never
+		// guesses a season.
+		await ensureCurrentPlSeasonCompetition({ footballDataApiKey: apiKey, fplData: body.fpl })
 		const comps = await db.query.competition.findMany({
 			where: eq(competition.status, 'active'),
 		})
