@@ -133,6 +133,13 @@ export interface StandingRow {
 	points: number
 }
 
+/** The source's explicit current season (e.g. startDate '2026-08-14',
+ * endDate '2027-05-23' for the 2026/27 PL season). */
+export interface FdCurrentSeason {
+	startDate: string
+	endDate: string
+}
+
 export class FootballDataAdapter implements CompetitionAdapter {
 	constructor(
 		private competitionCode: string,
@@ -267,6 +274,21 @@ export class FootballDataAdapter implements CompetitionAdapter {
 				status: m.status === 'FINISHED' ? ('finished' as const) : ('live' as const),
 				winner: mapWinner(m.score.winner),
 			}))
+	}
+
+	/**
+	 * The competition's explicit current season from the detail endpoint
+	 * (`/competitions/{code}` → `currentSeason`). Returns null when the source
+	 * doesn't report one (or reports it without dates) — the caller decides
+	 * whether that absence is fatal (season detection aborts rather than guess).
+	 */
+	async fetchCurrentSeason(): Promise<FdCurrentSeason | null> {
+		const data = await this.request<{
+			currentSeason?: { startDate?: string | null; endDate?: string | null } | null
+		}>(`/competitions/${this.competitionCode}`)
+		const season = data.currentSeason
+		if (!season?.startDate || !season?.endDate) return null
+		return { startDate: season.startDate, endDate: season.endDate }
 	}
 
 	async fetchStandings(): Promise<StandingRow[]> {
