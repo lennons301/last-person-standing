@@ -121,29 +121,37 @@ export async function ensureCurrentPlSeasonCompetition(
 		})
 	).filter((c) => c.season !== season)
 
-	let current = existing
-	if (!current) {
-		const [created] = await db
-			.insert(competition)
-			.values({
-				name: `Premier League ${season}`,
-				type: 'league',
-				dataSource: 'fpl',
-				season,
-				status: 'active',
-			})
-			.returning()
-		current = created
-	}
+	// Steady state: the detected season's competition is the only active one.
+	if (existing && predecessors.length === 0) return existing
 
-	for (const old of predecessors) {
-		await db.update(competition).set({ status: 'archived' }).where(eq(competition.id, old.id))
-		console.warn(
-			`[bootstrap] season rollover: detected PL season ${season} — created/kept "${current.name}" (${current.id}), archived predecessor "${old.name}" (${old.id})`,
-		)
-	}
-
-	return current
+	// Create the new season's competition and archive its predecessors in one
+	// transaction so a crash can never leave two active PL competitions.
+	return await db.transaction(async (tx) => {
+		let current = existing
+		if (!current) {
+			const [created] = await tx
+				.insert(competition)
+				.values({
+					name: `Premier League ${season}`,
+					type: 'league',
+					dataSource: 'fpl',
+					season,
+					status: 'active',
+				})
+				.returning()
+			current = created
+			console.warn(
+				`[bootstrap] season rollover: created "${created.name}" (${created.id}) for detected PL season ${season}`,
+			)
+		}
+		for (const old of predecessors) {
+			await tx.update(competition).set({ status: 'archived' }).where(eq(competition.id, old.id))
+			console.warn(
+				`[bootstrap] season rollover: archived predecessor "${old.name}" (${old.id}) — superseded by "${current.name}" (${current.id})`,
+			)
+		}
+		return current
+	})
 }
 
 export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<void> {

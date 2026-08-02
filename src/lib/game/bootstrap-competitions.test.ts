@@ -14,6 +14,7 @@ const {
 	dbInsertFn,
 	dbUpdateFn,
 	dbUpdateSet,
+	dbTransactionFn,
 	dbSelectFn,
 	dbSelectWhere,
 	fplFetchTeams,
@@ -37,6 +38,12 @@ const {
 			where: selectWhere,
 		}),
 	}))
+	const insertFn = vi.fn(() => ({
+		values: vi.fn(() => ({
+			returning: vi.fn().mockResolvedValue([{ id: 'new', externalId: 'WC' }]),
+		})),
+	}))
+	const updateFn = vi.fn(() => ({ set: updateSet }))
 	return {
 		dbQueryCompetitionFindFirst: vi.fn(),
 		dbQueryCompetitionFindMany: vi.fn().mockResolvedValue([]),
@@ -47,13 +54,14 @@ const {
 		dbQueryFixtureFindFirst: vi.fn(),
 		dbQueryFixtureFindMany: vi.fn().mockResolvedValue([]),
 		dbQueryPlannedPickFindMany: vi.fn().mockResolvedValue([]),
-		dbInsertFn: vi.fn(() => ({
-			values: vi.fn(() => ({
-				returning: vi.fn().mockResolvedValue([{ id: 'new', externalId: 'WC' }]),
-			})),
-		})),
-		dbUpdateFn: vi.fn(() => ({ set: updateSet })),
+		dbInsertFn: insertFn,
+		dbUpdateFn: updateFn,
 		dbUpdateSet: updateSet,
+		// db.transaction passthrough: the callback gets a tx exposing the same
+		// insert/update mocks, so assertions on writes see through transactions.
+		dbTransactionFn: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+			fn({ insert: insertFn, update: updateFn }),
+		),
 		dbSelectFn: selectFn,
 		dbSelectWhere: selectWhere,
 		fplFetchTeams: vi.fn().mockResolvedValue([]),
@@ -84,6 +92,7 @@ vi.mock('@/lib/db', () => ({
 		insert: dbInsertFn,
 		update: dbUpdateFn,
 		select: dbSelectFn,
+		transaction: dbTransactionFn,
 	},
 }))
 
