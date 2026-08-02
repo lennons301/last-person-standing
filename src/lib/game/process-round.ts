@@ -1,7 +1,7 @@
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
-import { settleFixture, sweepGameSettlement } from '@/lib/game/settle'
+import { gameHasPendingPicksInRound, settleFixture, sweepGameSettlement } from '@/lib/game/settle'
 import { fixture, round } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
 
@@ -57,6 +57,15 @@ export async function advanceGameIfReady(
 	if (!g.currentRound) return { advanced: false, reason: 'no-current-round' }
 	if (g.currentRound.status !== 'completed') {
 		return { advanced: false, reason: 'round-not-completed' }
+	}
+	// Same pending-pick gate as the settle-path advancement
+	// (checkAndMaybeCompleteOrAdvance): the round's status is the data
+	// source's verdict that its fixtures are done, but a deferred knockout
+	// pick (winner-lag) can still be pending on a finished fixture. Advancing
+	// past it strands the pick forever — the player survives rounds they
+	// should have gone out in.
+	if (await gameHasPendingPicksInRound(gameId, g.currentRound.id)) {
+		return { advanced: false, reason: 'pending-picks' }
 	}
 	const result = await advanceGameToNextRound(g.id, g.competitionId, g.currentRound.number)
 	return { advanced: result.advanced, reason: result.reason ?? 'advanced' }
