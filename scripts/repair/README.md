@@ -54,6 +54,8 @@ doppler run -p last-person-standing -c prd -- bash -c '
 # 2. Verify — expect "ALL CHECKS PASSED" (38 rounds / 380 fixtures / 20
 #    teams, GW1 pairings matching FPL + football-data, promoted clubs with
 #    football-data crests + colour entries, 2025/26 archived + untouched).
+#    Eyeball the printed GW1 list against the ticket's spot-checks:
+#    ARS v COV, HUL v MUN, EVE v CRY, IPS v SUN.
 doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/inspect-pl-rollover.ts
 
 # 3. UI spot-checks on https://last-person-standing.app:
@@ -178,5 +180,8 @@ grep -ci 'application error\|internal server error' /tmp/lps-game.html
 
 Also confirm the deleted game is gone from the signed-in dashboard listing.
 
-These scripts are single-use: once applied and verified, their
-preconditions can never pass again (each aborts loudly if re-run).
+The mutating scripts are single-use: once applied and verified, their
+preconditions can never pass again (each aborts loudly if re-run). The
+inspectors are read-only and safe to re-run any time —
+`inspect-pl-rollover.ts` in particular is the perennial season-rollover
+verification tool.

@@ -14,11 +14,13 @@
  *      38 rounds / 380 fixtures / 20 teams; its GW1 pairings match the
  *      sources; GW1 is pickable for a new classic game (future deadline);
  *      every team carries both external ids, a badge, and a colour entry.
- *   3. DB — every predecessor fpl competition is archived and untouched
- *      (no fixture carries an FPL id; no kickoff strays into the new season).
+ *   3. DB — predecessor fpl competitions are untouched: archived ones pass a
+ *      strict census (complete, fully finished, no kickoff straying into the
+ *      new season; the 2025/26 restore's no-FPL-id signature stays zeroed).
  *
  * Before the rollover has run, section 1 still executes as a pre-flight and
- * the current-season DB section reports the baseline instead of failing.
+ * the DB sections report the baseline instead of failing — a predecessor
+ * that is still active pre-rollover is normal, not an error.
  * SELECT-only — safe to run against prod at any time.
  *
  * Usage (prod):
@@ -32,12 +34,20 @@ import { db } from '../../src/lib/db'
 import { deriveSeasonLabel, fdTlaForFplShortName } from '../../src/lib/game/bootstrap-competitions'
 import { competition, fixture, round, team } from '../../src/lib/schema/competition'
 import { FALLBACK_TEAM_COLOUR, getTeamColour } from '../../src/lib/teams/colours'
-import { heading } from './shared'
+import { heading, PL_2526_SEASON } from './shared'
+
+type FixtureRow = typeof fixture.$inferSelect
 
 const PL_EXPECTED_ROUNDS = 38
 const PL_EXPECTED_FIXTURES = 380
 const PL_EXPECTED_TEAMS = 20
+// Mirrors game creation's candidate statuses (src/app/api/games/route.ts):
+// a round is pickable iff its status is one of these AND its deadline is in
+// the future.
 const PICKABLE_ROUND_STATUSES = ['upcoming', 'open', 'active']
+// mergeFootballDataIds writes football-data crests; the FPL badge CDN 404s
+// for newly promoted clubs, so their badge must live on this host.
+const FD_CREST_HOST = 'crests.football-data.org'
 
 const failures: string[] = []
 
@@ -50,7 +60,8 @@ function fmt(d: Date | null | undefined): string {
 	return d ? d.toISOString() : '—'
 }
 
-/** Order-insensitive pairing key in football-data tla space. */
+/** Home-first pairing key in football-data tla space — a flipped home/away
+ * is a real mismatch, so orientation is part of the key. */
 function pairKey(homeTla: string, awayTla: string): string {
 	return `${homeTla} v ${awayTla}`
 }
@@ -165,19 +176,48 @@ async function main() {
 	const fplComps = await db.select().from(competition).where(eq(competition.dataSource, 'fpl'))
 	const current = fplComps.find((c) => c.season === season)
 	const predecessors = fplComps.filter((c) => c.season !== season)
-	const predecessorTlas = new Set<string>()
+
+	// Each predecessor's fixtures + team short names, loaded once — used for
+	// both promoted-club detection (section 2) and the untouched census
+	// (section 3).
+	const predecessorData = new Map<string, { fixtures: FixtureRow[]; tlas: Set<string> }>()
+	for (const pred of predecessors) {
+		const predRounds = await db
+			.select({ id: round.id })
+			.from(round)
+			.where(eq(round.competitionId, pred.id))
+		const predFixtures =
+			predRounds.length > 0
+				? await db
+						.select()
+						.from(fixture)
+						.where(
+							inArray(
+								fixture.roundId,
+								predRounds.map((r) => r.id),
+							),
+						)
+				: []
+		const predTeamIds = new Set(predFixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId]))
+		const predTeams =
+			predTeamIds.size > 0
+				? await db
+						.select({ shortName: team.shortName })
+						.from(team)
+						.where(inArray(team.id, [...predTeamIds]))
+				: []
+		predecessorData.set(pred.id, {
+			fixtures: predFixtures,
+			tlas: new Set(predTeams.map((t) => t.shortName)),
+		})
+	}
 
 	if (!current) {
-		const active = fplComps.filter((c) => c.status === 'active')
 		console.log(
 			`  No fpl competition with season ${season} — the rollover has NOT run yet (pre-execution baseline).`,
 		)
 		console.log(
 			`  fpl competitions present: ${fplComps.map((c) => `"${c.name}" (${c.status})`).join(', ') || 'none'}`,
-		)
-		check(
-			active.length === 0,
-			'no active fpl competition awaiting archive (predecessors already archived)',
 		)
 	} else {
 		check(current.status === 'active', `competition status is active (got ${current.status})`)
@@ -295,34 +335,8 @@ async function main() {
 		)
 
 		// Promoted clubs (not in any predecessor season's team set): the badge
-		// must be a football-data crest — the FPL CDN 404s for them.
-		for (const pred of predecessors) {
-			const predRounds = await db
-				.select({ id: round.id })
-				.from(round)
-				.where(eq(round.competitionId, pred.id))
-			const predFixtures =
-				predRounds.length > 0
-					? await db
-							.select({ homeTeamId: fixture.homeTeamId, awayTeamId: fixture.awayTeamId })
-							.from(fixture)
-							.where(
-								inArray(
-									fixture.roundId,
-									predRounds.map((r) => r.id),
-								),
-							)
-					: []
-			const predTeamIds = new Set(predFixtures.flatMap((f) => [f.homeTeamId, f.awayTeamId]))
-			const predTeams =
-				predTeamIds.size > 0
-					? await db
-							.select()
-							.from(team)
-							.where(inArray(team.id, [...predTeamIds]))
-					: []
-			for (const t of predTeams) predecessorTlas.add(t.shortName)
-		}
+		// must be a football-data crest — the FPL badge CDN 404s for them.
+		const predecessorTlas = new Set([...predecessorData.values()].flatMap((d) => [...d.tlas]))
 		const promoted = teams.filter((t) => !predecessorTlas.has(t.shortName))
 		console.log(
 			`  promoted clubs (new vs predecessor seasons): ${promoted.map((t) => t.shortName).join(', ') || '—'}`,
@@ -332,6 +346,14 @@ async function main() {
 				`    ${t.shortName} ${t.name}: badge=${t.badgeUrl ?? '—'} colour=${getTeamColour(t.shortName)}`,
 			)
 		}
+		const promotedWrongBadge = promoted.filter((t) => !t.badgeUrl?.includes(FD_CREST_HOST))
+		check(
+			promotedWrongBadge.length === 0,
+			`every promoted club's badge is a football-data crest (${FD_CREST_HOST})` +
+				(promotedWrongBadge.length > 0
+					? ` — wrong: ${promotedWrongBadge.map((t) => t.shortName).join(', ')}`
+					: ''),
+		)
 	}
 
 	// ── 3. DB — predecessors archived + untouched ─────────────────────────
@@ -339,40 +361,59 @@ async function main() {
 	if (predecessors.length === 0) console.log('  (none)')
 	for (const pred of predecessors) {
 		console.log(`  "${pred.name}" (season ${pred.season}, id ${pred.id})`)
-		check(pred.status === 'archived', `${pred.season}: status is archived (got ${pred.status})`)
-		const predRounds = await db
-			.select({ id: round.id })
-			.from(round)
-			.where(eq(round.competitionId, pred.id))
-		const predFixtures =
-			predRounds.length > 0
-				? await db
-						.select()
-						.from(fixture)
-						.where(
-							inArray(
-								fixture.roundId,
-								predRounds.map((r) => r.id),
-							),
-						)
-				: []
+		// Post-rollover every predecessor must be archived. Pre-rollover a
+		// still-active predecessor is the normal state — the rollover is what
+		// archives it — so it's reported, not failed.
+		if (current) {
+			check(pred.status === 'archived', `${pred.season}: status is archived (got ${pred.status})`)
+		} else {
+			console.log(
+				`    status=${pred.status}${pred.status === 'active' ? ' (awaiting rollover archive)' : ''}`,
+			)
+		}
+		const predFixtures = predecessorData.get(pred.id)?.fixtures ?? []
 		const statusCounts = new Map<string, number>()
 		for (const f of predFixtures) statusCounts.set(f.status, (statusCounts.get(f.status) ?? 0) + 1)
+		const missingScores = predFixtures.filter((f) => f.homeScore == null).length
 		console.log(
 			`    fixtures=${predFixtures.length} status: ${[...statusCounts].map(([s, n]) => `${s}=${n}`).join(' ')}` +
-				` | missing scores: ${predFixtures.filter((f) => f.homeScore == null).length}`,
+				` | missing scores: ${missingScores}`,
 		)
-		// The 2026/27-corruption signature: colliding FPL ids and new-season
-		// kickoffs on an old season's rows. Both must stay at zero forever.
+		// Archived competitions are immutable — a drifting census means a sync
+		// wrote into frozen history.
+		if (pred.status === 'archived') {
+			const finished = statusCounts.get('finished') ?? 0
+			check(
+				predFixtures.length === PL_EXPECTED_FIXTURES,
+				`${pred.season}: census intact — ${PL_EXPECTED_FIXTURES} fixtures (got ${predFixtures.length})`,
+			)
+			check(
+				finished === predFixtures.length,
+				`${pred.season}: census intact — every fixture finished (got ${finished}/${predFixtures.length})`,
+			)
+			check(
+				missingScores === 0,
+				`${pred.season}: census intact — no missing scores (got ${missingScores})`,
+			)
+		}
+		// The #121 restore cleared 2025/26's colliding FPL ids; that signature
+		// must stay zeroed. Not generic: seasons archived after the #124
+		// competition-scoped sync fix legitimately keep their own FPL ids.
 		const withFplId = predFixtures.filter(
 			(f) =>
 				f.externalId != null ||
 				(f.externalIds as Record<string, string | number> | null)?.fpl != null,
 		)
-		check(
-			withFplId.length === 0,
-			`${pred.season}: no fixture carries an FPL id (got ${withFplId.length})`,
-		)
+		if (pred.season === PL_2526_SEASON) {
+			check(
+				withFplId.length === 0,
+				`${pred.season}: no fixture carries an FPL id (got ${withFplId.length})`,
+			)
+		} else {
+			console.log(`    fixtures carrying an FPL id: ${withFplId.length}`)
+		}
+		// New-season kickoffs on an old season's rows — the 2026-08-01
+		// corruption mode — can never be legitimate, archived or not.
 		const seasonStart = fdSeason ? new Date(fdSeason.startDate) : null
 		const strayKickoffs = seasonStart
 			? predFixtures.filter((f) => f.kickoff != null && f.kickoff >= seasonStart)
