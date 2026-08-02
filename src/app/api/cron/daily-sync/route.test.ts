@@ -21,6 +21,12 @@ vi.mock('@/lib/game/bootstrap-competitions', () => ({
 	}),
 	mergeFootballDataIds: vi.fn().mockResolvedValue(undefined),
 	scheduleUpcomingFixturePolls: vi.fn().mockResolvedValue(undefined),
+	ensureCurrentPlSeasonCompetition: vi.fn().mockResolvedValue({
+		id: 'c-pl',
+		dataSource: 'fpl',
+		season: '2026/27',
+		status: 'active',
+	}),
 }))
 
 vi.mock('@/lib/game/no-pick-handler', () => ({
@@ -44,7 +50,10 @@ vi.mock('@/lib/game/reconcile', () => ({
 }))
 
 import { db } from '@/lib/db'
-import { syncCompetition } from '@/lib/game/bootstrap-competitions'
+import {
+	ensureCurrentPlSeasonCompetition,
+	syncCompetition,
+} from '@/lib/game/bootstrap-competitions'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { POST } from './route'
@@ -55,6 +64,55 @@ describe('daily-sync route', () => {
 		cronRunInsertValues.mockClear()
 		cronRunInsertValues.mockResolvedValue(undefined)
 		process.env.CRON_SECRET = 'test-secret'
+		process.env.FOOTBALL_DATA_API_KEY = 'fd-test-key'
+		vi.mocked(ensureCurrentPlSeasonCompetition).mockResolvedValue({
+			id: 'c-pl',
+			dataSource: 'fpl',
+			season: '2026/27',
+			status: 'active',
+		} as never)
+	})
+
+	it('runs season detection/rollover with the pre-fetched payload before syncing anything', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([{ id: 'c1' }] as never)
+		const fplPayload = { bootstrap: { teams: [], events: [] }, fixtures: [] }
+		await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: {
+					authorization: 'Bearer test-secret',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({ fpl: fplPayload }),
+			}),
+		)
+		expect(ensureCurrentPlSeasonCompetition).toHaveBeenCalledWith({
+			footballDataApiKey: 'fd-test-key',
+			fplData: fplPayload,
+		})
+		// Detection must complete before the first competition sync — a season
+		// failure has to abort the run with zero sync writes.
+		expect(vi.mocked(ensureCurrentPlSeasonCompetition).mock.invocationCallOrder[0]).toBeLessThan(
+			vi.mocked(syncCompetition).mock.invocationCallOrder[0],
+		)
+	})
+
+	it('aborts the whole run — no competition syncs — when season detection fails', async () => {
+		vi.mocked(db.query.competition.findMany).mockResolvedValue([{ id: 'c1' }] as never)
+		vi.mocked(ensureCurrentPlSeasonCompetition).mockRejectedValue(
+			new Error('season disagreement: football-data says 2026 but FPL says 2025'),
+		)
+		const res = await POST(
+			new Request('http://x', {
+				method: 'POST',
+				headers: { authorization: 'Bearer test-secret' },
+			}),
+		)
+		expect(res.status).toBe(500)
+		const body = (await res.json()) as { error: { message: string } }
+		expect(body.error.message).toContain('season disagreement')
+		expect(syncCompetition).not.toHaveBeenCalled()
+		expect(cronRunInsertValues.mock.calls[0][0]).toMatchObject({ status: 'failure' })
 	})
 
 	it('records a success cron_run when the body completes', async () => {

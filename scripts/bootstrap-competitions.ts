@@ -3,7 +3,10 @@ import { bootstrapCompetitions } from '../src/lib/game/bootstrap-competitions'
 async function main() {
 	const apiKey = process.env.FOOTBALL_DATA_API_KEY
 	if (!apiKey) {
-		console.warn('FOOTBALL_DATA_API_KEY not set — WC competition will be created but not synced')
+		console.error(
+			'FOOTBALL_DATA_API_KEY not set — season detection needs football-data currentSeason; aborting',
+		)
+		process.exit(1)
 	}
 	await bootstrapCompetitions({ footballDataApiKey: apiKey })
 	console.log('Bootstrap complete')

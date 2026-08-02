@@ -20,7 +20,12 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/lib/db'
-import { mergeFootballDataIds, syncCompetition } from '@/lib/game/bootstrap-competitions'
+import {
+	ensureCurrentPlSeasonCompetition,
+	mergeFootballDataIds,
+	SeasonDetectionError,
+	syncCompetition,
+} from '@/lib/game/bootstrap-competitions'
 import { getCupLadderData, getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import {
 	getLivePayload,
@@ -2612,6 +2617,190 @@ describe('lifecycle: PL season rollover sync identity', () => {
 			const after = teams.find((t) => t.name === name)
 			expect(after).toEqual(before)
 		}
+	})
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* PL season rollover: automatic detection + competition archival          */
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe('lifecycle: PL season rollover auto-detection', () => {
+	// Two seasons of pre-fetched FPL payloads. Season 2 relegates Cedar/Dorne,
+	// promotes Grove/Holt, and — the FPL trap — restarts fixture and team ids.
+	const S1_CLUBS = [
+		{ id: 1, name: 'Alder FC', short_name: 'ALD', code: 11 },
+		{ id: 2, name: 'Birch FC', short_name: 'BIR', code: 12 },
+		{ id: 3, name: 'Cedar FC', short_name: 'CED', code: 13 },
+		{ id: 4, name: 'Dorne FC', short_name: 'DOR', code: 14 },
+	]
+	const S2_CLUBS = [
+		{ id: 1, name: 'Alder FC', short_name: 'ALD', code: 11 },
+		{ id: 2, name: 'Birch FC', short_name: 'BIR', code: 12 },
+		{ id: 3, name: 'Grove FC', short_name: 'GRO', code: 24 },
+		{ id: 4, name: 'Holt FC', short_name: 'HOL', code: 25 },
+	]
+
+	const fplPayload = (clubs: typeof S1_CLUBS, gw1Deadline: string, kickoffs: [string, string]) => ({
+		bootstrap: {
+			teams: clubs,
+			events: [{ id: 1, name: 'Gameweek 1', deadline_time: gw1Deadline, finished: false }],
+		},
+		fixtures: [
+			{ id: 1, team_h: 1, team_a: 3, kickoff_time: kickoffs[0] },
+			{ id: 2, team_h: 2, team_a: 4, kickoff_time: kickoffs[1] },
+		].map((f) => ({
+			...f,
+			event: 1,
+			started: false,
+			finished: false,
+			finished_provisional: false,
+			team_h_score: null,
+			team_a_score: null,
+		})),
+	})
+
+	// FPL still on 2025/26 (GW1 deadline in 2025)…
+	const S1_FPL = fplPayload(S1_CLUBS, '2025-08-15T17:30:00Z', [
+		'2025-08-16T14:00:00Z',
+		'2025-08-16T16:30:00Z',
+	])
+	// …and the 2026/27 payload after the sources flip.
+	const S2_FPL = fplPayload(S2_CLUBS, '2026-08-21T17:30:00Z', [
+		'2026-08-22T14:00:00Z',
+		'2026-08-22T16:30:00Z',
+	])
+
+	/** Serve football-data's competition-detail endpoint (season detection). */
+	function mockFdCurrentSeason(currentSeason: { startDate: string; endDate: string } | null) {
+		vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+			const s = typeof url === 'string' ? url : url.toString()
+			if (s.endsWith('/competitions/PL'))
+				return Promise.resolve(new Response(JSON.stringify({ currentSeason })))
+			return Promise.resolve(new Response('Not found', { status: 404 }))
+		})
+	}
+
+	async function seedPredecessor(): Promise<typeof competition.$inferSelect> {
+		const [c] = await db
+			.insert(competition)
+			.values({
+				name: 'Premier League 2025/26',
+				type: 'league',
+				dataSource: 'fpl',
+				season: '2025/26',
+				status: 'active',
+			})
+			.returning()
+		return c
+	}
+
+	const compRounds = (competitionId: string) =>
+		db.select().from(roundTable).where(eq(roundTable.competitionId, competitionId))
+	const roundFixtures = (roundIds: string[]) =>
+		roundIds.length === 0
+			? Promise.resolve([])
+			: db.select().from(fixtureTable).where(inArray(fixtureTable.roundId, roundIds))
+
+	afterEach(() => {
+		vi.restoreAllMocks()
+	})
+
+	it('rolls over: creates "Premier League 2026/27", archives the predecessor, and populates the new competition only', async () => {
+		const predecessor = await seedPredecessor()
+		await syncCompetition(predecessor, { fplData: S1_FPL })
+		const s1Rounds = await compRounds(predecessor.id)
+		const s1Fixtures = await roundFixtures(s1Rounds.map((r) => r.id))
+		expect(s1Fixtures).toHaveLength(2)
+
+		mockFdCurrentSeason({ startDate: '2026-08-14', endDate: '2027-05-23' })
+		const current = await ensureCurrentPlSeasonCompetition({
+			footballDataApiKey: 'test-key',
+			fplData: S2_FPL,
+		})
+
+		expect(current.name).toBe('Premier League 2026/27')
+		expect(current.season).toBe('2026/27')
+		expect(current.status).toBe('active')
+		expect(current.id).not.toBe(predecessor.id)
+
+		const archived = await db.query.competition.findFirst({
+			where: eq(competition.id, predecessor.id),
+		})
+		expect(archived?.status).toBe('archived')
+
+		// The sync lands rounds/fixtures/teams on the NEW competition only.
+		await syncCompetition(current, { fplData: S2_FPL })
+		const s2Rounds = await compRounds(current.id)
+		expect(s2Rounds).toHaveLength(1)
+		const s2Fixtures = await roundFixtures(s2Rounds.map((r) => r.id))
+		expect(s2Fixtures).toHaveLength(2)
+		const teams = await db.select().from(teamTable)
+		expect(teams.map((t) => t.name).sort()).toEqual([
+			'Alder FC',
+			'Birch FC',
+			'Cedar FC',
+			'Dorne FC',
+			'Grove FC',
+			'Holt FC',
+		])
+
+		// The archived predecessor's rows are byte-for-byte untouched.
+		expect(await compRounds(predecessor.id)).toEqual(s1Rounds)
+		expect(await roundFixtures(s1Rounds.map((r) => r.id))).toEqual(s1Fixtures)
+	})
+
+	it('re-running the sync after rollover is idempotent — no duplicate competitions', async () => {
+		const predecessor = await seedPredecessor()
+		mockFdCurrentSeason({ startDate: '2026-08-14', endDate: '2027-05-23' })
+
+		const first = await ensureCurrentPlSeasonCompetition({
+			footballDataApiKey: 'test-key',
+			fplData: S2_FPL,
+		})
+		await syncCompetition(first, { fplData: S2_FPL })
+
+		const again = await ensureCurrentPlSeasonCompetition({
+			footballDataApiKey: 'test-key',
+			fplData: S2_FPL,
+		})
+		await syncCompetition(again, { fplData: S2_FPL })
+
+		expect(again.id).toBe(first.id)
+		const fplComps = await db.select().from(competition).where(eq(competition.dataSource, 'fpl'))
+		expect(fplComps).toHaveLength(2) // predecessor + current, nothing else
+		expect(fplComps.find((c) => c.id === predecessor.id)?.status).toBe('archived')
+		expect(fplComps.filter((c) => c.season === '2026/27')).toHaveLength(1)
+		// Re-sync did not duplicate rounds or fixtures either.
+		const rounds = await compRounds(first.id)
+		expect(rounds).toHaveLength(1)
+		expect(await roundFixtures(rounds.map((r) => r.id))).toHaveLength(2)
+	})
+
+	it('a source season disagreement aborts loudly with no writes', async () => {
+		const predecessor = await seedPredecessor()
+		// football-data has flipped to 2026/27 but FPL still serves 2025/26.
+		mockFdCurrentSeason({ startDate: '2026-08-14', endDate: '2027-05-23' })
+
+		await expect(
+			ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'test-key', fplData: S1_FPL }),
+		).rejects.toThrow(SeasonDetectionError)
+
+		const comps = await db.select().from(competition)
+		expect(comps).toEqual([predecessor]) // untouched: still active, still alone
+		expect(await db.select().from(roundTable)).toHaveLength(0)
+		expect(await db.select().from(teamTable)).toHaveLength(0)
+	})
+
+	it('a missing football-data currentSeason aborts loudly with no writes', async () => {
+		const predecessor = await seedPredecessor()
+		mockFdCurrentSeason(null)
+
+		await expect(
+			ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'test-key', fplData: S2_FPL }),
+		).rejects.toThrow(SeasonDetectionError)
+
+		const comps = await db.select().from(competition)
+		expect(comps).toEqual([predecessor])
 	})
 })
 

@@ -1,5 +1,5 @@
 import { and, eq, gt, inArray, isNull, lt } from 'drizzle-orm'
-import { FootballDataAdapter } from '@/lib/data/football-data'
+import { type FdCurrentSeason, FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter, type FplPreFetched } from '@/lib/data/fpl'
 import { enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { AdapterStanding, CompetitionAdapter } from '@/lib/data/types'
@@ -23,23 +23,139 @@ export interface BootstrapOptions {
 
 type CompetitionRow = typeof competition.$inferSelect
 
-export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<void> {
-	let pl = await db.query.competition.findFirst({
-		where: and(eq(competition.dataSource, 'fpl'), eq(competition.season, '2025/26')),
-	})
-	if (!pl) {
-		const [created] = await db
-			.insert(competition)
-			.values({
-				name: 'Premier League 2025/26',
-				type: 'league',
-				dataSource: 'fpl',
-				season: '2025/26',
-				status: 'active',
-			})
-			.returning()
-		pl = created
+/**
+ * Season detection could not produce a trustworthy answer (source data
+ * missing, malformed, or the two sources disagree). Always fatal: the sync
+ * must abort with zero writes rather than guess a season — a wrong guess is
+ * exactly how the 2026/27 silent-corruption incident happened.
+ */
+export class SeasonDetectionError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'SeasonDetectionError'
 	}
+}
+
+/**
+ * Derive the PL season label (e.g. '2026/27') from football-data's explicit
+ * `currentSeason`, cross-checked against the year of FPL's Gameweek 1
+ * deadline. Throws SeasonDetectionError on any absence, malformed dates, or
+ * disagreement between the sources — it never guesses.
+ */
+export function deriveSeasonLabel(
+	fdSeason: FdCurrentSeason | null,
+	fplGw1Deadline: Date | null,
+): string {
+	if (!fdSeason) {
+		throw new SeasonDetectionError(
+			'football-data reported no currentSeason for the PL — cannot derive the season; aborting sync',
+		)
+	}
+	const startYear = new Date(fdSeason.startDate).getUTCFullYear()
+	const endYear = new Date(fdSeason.endDate).getUTCFullYear()
+	if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) {
+		throw new SeasonDetectionError(
+			`football-data currentSeason dates are unparseable (startDate=${fdSeason.startDate}, endDate=${fdSeason.endDate}); aborting sync`,
+		)
+	}
+	if (endYear !== startYear + 1) {
+		throw new SeasonDetectionError(
+			`football-data currentSeason is not a cross-year league season (startDate=${fdSeason.startDate}, endDate=${fdSeason.endDate}); aborting sync`,
+		)
+	}
+	if (!fplGw1Deadline || Number.isNaN(fplGw1Deadline.getTime())) {
+		throw new SeasonDetectionError(
+			'FPL bootstrap carries no Gameweek 1 deadline — cannot cross-check the season; aborting sync',
+		)
+	}
+	const fplYear = fplGw1Deadline.getUTCFullYear()
+	if (fplYear !== startYear) {
+		throw new SeasonDetectionError(
+			`season disagreement: football-data currentSeason starts in ${startYear} but FPL's Gameweek 1 deadline is in ${fplYear} (${fplGw1Deadline.toISOString()}); aborting sync`,
+		)
+	}
+	return `${startYear}/${String(endYear).slice(-2)}`
+}
+
+/**
+ * Detect the current PL season from the sources and return the competition
+ * row to sync into, creating it (and archiving its predecessor) when the
+ * season has rolled over. Runs BEFORE any sync writes so a detection failure
+ * (SeasonDetectionError) aborts the run with zero writes.
+ *
+ * Idempotent: once the detected season's competition exists and is the only
+ * active fpl-sourced one, this is a pure read.
+ */
+export async function ensureCurrentPlSeasonCompetition(
+	opts: BootstrapOptions,
+): Promise<CompetitionRow> {
+	if (!opts.footballDataApiKey) {
+		throw new SeasonDetectionError(
+			'FOOTBALL_DATA_API_KEY is not configured — season detection needs football-data currentSeason; aborting sync',
+		)
+	}
+	const fplAdapter = new FplAdapter(opts.fplData)
+	const fdAdapter = new FootballDataAdapter('PL', opts.footballDataApiKey)
+	const [fdSeason, fplGw1Deadline] = await Promise.all([
+		fdAdapter.fetchCurrentSeason(),
+		fplAdapter.fetchGw1Deadline(),
+	])
+	const season = deriveSeasonLabel(fdSeason, fplGw1Deadline)
+
+	const existing = await db.query.competition.findFirst({
+		where: and(eq(competition.dataSource, 'fpl'), eq(competition.season, season)),
+	})
+	if (existing?.status === 'archived') {
+		// An archived competition is permanently immutable — if the CURRENT
+		// season's row is archived, something is wrong (manual intervention?).
+		// Abort rather than resurrect it or create a duplicate.
+		throw new Error(
+			`detected current PL season ${season}, but competition "${existing.name}" (${existing.id}) is archived — refusing to sync into an archived season`,
+		)
+	}
+
+	// Any other still-active fpl-sourced competition is a predecessor season.
+	const predecessors = (
+		await db.query.competition.findMany({
+			where: and(eq(competition.dataSource, 'fpl'), eq(competition.status, 'active')),
+		})
+	).filter((c) => c.season !== season)
+
+	// Steady state: the detected season's competition is the only active one.
+	if (existing && predecessors.length === 0) return existing
+
+	// Create the new season's competition and archive its predecessors in one
+	// transaction so a crash can never leave two active PL competitions.
+	return await db.transaction(async (tx) => {
+		let current = existing
+		if (!current) {
+			const [created] = await tx
+				.insert(competition)
+				.values({
+					name: `Premier League ${season}`,
+					type: 'league',
+					dataSource: 'fpl',
+					season,
+					status: 'active',
+				})
+				.returning()
+			current = created
+			console.warn(
+				`[bootstrap] season rollover: created "${created.name}" (${created.id}) for detected PL season ${season}`,
+			)
+		}
+		for (const old of predecessors) {
+			await tx.update(competition).set({ status: 'archived' }).where(eq(competition.id, old.id))
+			console.warn(
+				`[bootstrap] season rollover: archived predecessor "${old.name}" (${old.id}) — superseded by "${current.name}" (${current.id})`,
+			)
+		}
+		return current
+	})
+}
+
+export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<void> {
+	const pl = await ensureCurrentPlSeasonCompetition(opts)
 
 	let wc = await db.query.competition.findFirst({
 		where: and(eq(competition.dataSource, 'football_data'), eq(competition.externalId, 'WC')),

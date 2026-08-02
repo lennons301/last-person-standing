@@ -450,4 +450,43 @@ describe('FootballDataAdapter', () => {
 			points: 25,
 		})
 	})
+
+	describe('fetchCurrentSeason', () => {
+		function mockCompetitionDetail(body: unknown) {
+			vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+				const urlStr = typeof url === 'string' ? url : url.toString()
+				if (urlStr.endsWith('/competitions/PL'))
+					return Promise.resolve(new Response(JSON.stringify(body)))
+				return Promise.resolve(new Response('Not found', { status: 404 }))
+			})
+		}
+
+		it('returns the current season start/end dates from the competition detail endpoint', async () => {
+			mockCompetitionDetail({
+				id: 2021,
+				code: 'PL',
+				currentSeason: {
+					id: 2403,
+					startDate: '2026-08-14',
+					endDate: '2027-05-23',
+					currentMatchday: 1,
+				},
+			})
+
+			await expect(adapter.fetchCurrentSeason()).resolves.toEqual({
+				startDate: '2026-08-14',
+				endDate: '2027-05-23',
+			})
+		})
+
+		it('returns null when the response carries no currentSeason', async () => {
+			mockCompetitionDetail({ id: 2021, code: 'PL' })
+			await expect(adapter.fetchCurrentSeason()).resolves.toBeNull()
+		})
+
+		it('returns null when currentSeason is missing its dates', async () => {
+			mockCompetitionDetail({ currentSeason: { id: 2403, startDate: null, endDate: null } })
+			await expect(adapter.fetchCurrentSeason()).resolves.toBeNull()
+		})
+	})
 })
