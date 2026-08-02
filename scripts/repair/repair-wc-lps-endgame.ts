@@ -13,7 +13,10 @@
  *   3. Flips the pickless finalist from winner to eliminated in the final
  *      round (reason: no_pick_no_fallback) — they had no legal pick left.
  *   4. Deletes both £80 split payout rows and creates a single £160
- *      non-split payout for the sole remaining winner.
+ *      non-split payout for the sole remaining winner. ("Void" from the
+ *      ticket is implemented as delete + replace: the payout table has no
+ *      voided status, and the acceptance criteria require that no split
+ *      payout rows remain.)
  *
  * All pick rows are preserved; only the one stuck pick's result changes.
  * Targets are found structurally (the pending pick, the winner without a
@@ -36,6 +39,8 @@ import { fail, heading, toPence, toPounds, WC_LPS_GAME_ID, WC_LPS_GAME_NAME } fr
 
 const EXPECTED_STUCK_TEAM_SHORT = 'COL'
 const EXPECTED_SPLIT_PAYOUT_PENCE = 8000 // £80.00 each
+
+type PickRow = typeof pick.$inferSelect
 
 async function userName(userId: string): Promise<string> {
 	const row = await db.query.user.findFirst({ where: eq(user.id, userId) })
@@ -142,7 +147,7 @@ async function main() {
 		.where(and(eq(gamePlayer.gameId, g.id), eq(gamePlayer.status, 'winner')))
 	if (winners.length !== 2) fail(`expected exactly 2 winners, found ${winners.length}`)
 
-	const finalPicksByWinner = new Map<string, (typeof pendingPicks)[number][]>()
+	const finalPicksByWinner = new Map<string, PickRow[]>()
 	for (const w of winners) {
 		finalPicksByWinner.set(
 			w.id,
