@@ -1,20 +1,66 @@
-# One-off prod repair scripts — issue #119
+# One-off prod repair scripts
 
-Two approved production repairs from the World Cup endgame incidents
-(parent spec: #112), plus a read-only inspector to verify them. Prod
-execution is gated on human sign-off: the agent delivers the scripts and
-dry-run evidence; **a human runs `--apply`**.
+Approved production repairs from the #112 parent spec, each with a
+read-only inspector to verify it. Prod execution is gated on human
+sign-off: the agent delivers the scripts and dry-run evidence; **a human
+runs `--apply`**.
 
 Convention: every mutating script is dry-run by default, prints every
 intended mutation, asserts hard preconditions against live data (any drift
 aborts loudly with no writes), and only mutates with an explicit `--apply`
 flag — all writes in a single transaction.
 
-## Runbook (human, in order)
-
 All commands run from the repo root. WSL note: run outside any network
 sandbox (Neon DNS is blocked in it); Neon idle-suspends, so retry once on
 an initial `ETIMEDOUT`.
+
+## Issue #121 — 2025/26 PL season restore + archive
+
+The pre-#124 nightly sync matched fixtures on globally-unique external
+ids; when FPL flipped to 2026/27 it rewrote all 380 of the 2025/26
+season's fixture rows in place (2026/27 kickoffs, wiped scores, colliding
+FPL ids — team pairings untouched). `restore-pl-2526-season.ts` restores
+the season from football-data's archive (`?season=2025`) and archives the
+competition. Requires `FOOTBALL_DATA_API_KEY` (in Doppler `prd`).
+
+### Runbook (human, in order)
+
+```bash
+# 0. Baseline — read-only census of the competition + its games
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/inspect-pl-2526-restore.ts
+
+# 1a. Restore + archive — dry run, review the printed mutations
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/restore-pl-2526-season.ts
+# 1b. ...then apply
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/restore-pl-2526-season.ts --apply
+
+# 2. Re-run the inspector and check against the acceptance criteria below
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/inspect-pl-2526-restore.ts
+```
+
+Expected inspector output after apply (issue #121 acceptance criteria):
+
+- Fixture census: **380 finished** fixtures, **0 missing scores**,
+  **380 kickoffs inside the 2025/26 window** (0 outside, 0 null),
+  **0 carrying an FPL id**, **380 carrying a football-data id**.
+- The GW1 listing opens with **LIV 4-2 BOU, kickoff 2025-08-15**; the
+  GW38 listing shows ten finished fixtures all kicking off 2026-05-24.
+- Every round shows a 2025/26 deadline (earliest kickoff − 90 min).
+- Competition **status=archived**.
+- "Last Day Lightning 26" picks list real scores and kickoffs on their
+  fixtures.
+
+Then verify the game page renders through real SSR (curl recipe in the
+issue-#119 section below, with the game id from the inspector output) and
+spot-check a few printed scores across the season against
+football-data / BBC.
+
+## Issue #119 — World Cup endgame repairs
+
+Two approved production repairs from the World Cup endgame incidents,
+plus a read-only inspector to verify them.
+
+### Runbook (human, in order)
 
 ```bash
 # 0. Baseline — read-only census of both games
@@ -47,7 +93,7 @@ criteria):
   result changed).
 - SI World Cup reports **`Game NOT FOUND (deleted...)`**.
 
-## 4. Authenticated page check (final acceptance criterion)
+### Authenticated page check (final acceptance criterion)
 
 Verify the corrected game page renders through real SSR without errors
 (headless browsers are usually blocked here; use the curl recipe):
