@@ -108,10 +108,71 @@ vi.mock('@/lib/data/football-data', () => ({
 
 import {
 	bootstrapCompetitions,
+	deriveSeasonLabel,
 	mergeFootballDataIds,
+	SeasonDetectionError,
 	scheduleUpcomingFixturePolls,
 	syncCompetition,
 } from './bootstrap-competitions'
+
+describe('deriveSeasonLabel', () => {
+	it('derives the season label from football-data currentSeason, cross-checked against the FPL GW1 year', () => {
+		expect(
+			deriveSeasonLabel(
+				{ startDate: '2026-08-14', endDate: '2027-05-23' },
+				new Date('2026-08-21T17:30:00Z'),
+			),
+		).toBe('2026/27')
+	})
+
+	it('throws when football-data reports no currentSeason — never guesses', () => {
+		expect(() => deriveSeasonLabel(null, new Date('2026-08-21T17:30:00Z'))).toThrow(
+			SeasonDetectionError,
+		)
+		expect(() => deriveSeasonLabel(null, new Date('2026-08-21T17:30:00Z'))).toThrow(/currentSeason/)
+	})
+
+	it('throws when the FPL Gameweek 1 deadline is missing', () => {
+		expect(() =>
+			deriveSeasonLabel({ startDate: '2026-08-14', endDate: '2027-05-23' }, null),
+		).toThrow(SeasonDetectionError)
+		expect(() =>
+			deriveSeasonLabel({ startDate: '2026-08-14', endDate: '2027-05-23' }, null),
+		).toThrow(/Gameweek 1/)
+	})
+
+	it('throws on a season disagreement between the sources, naming both values', () => {
+		// football-data has flipped to 2026/27 but FPL still serves the 2025/26
+		// GW1 — a weird API state; abort rather than pick a side.
+		const call = () =>
+			deriveSeasonLabel(
+				{ startDate: '2026-08-14', endDate: '2027-05-23' },
+				new Date('2025-08-15T17:30:00Z'),
+			)
+		expect(call).toThrow(SeasonDetectionError)
+		expect(call).toThrow(/2026/)
+		expect(call).toThrow(/2025/)
+	})
+
+	it('throws when the currentSeason dates are not a cross-year league season', () => {
+		// A single-year or multi-year span is not a PL season shape — abort.
+		expect(() =>
+			deriveSeasonLabel(
+				{ startDate: '2026-08-14', endDate: '2026-12-19' },
+				new Date('2026-08-21T17:30:00Z'),
+			),
+		).toThrow(SeasonDetectionError)
+	})
+
+	it('throws when the currentSeason dates are unparseable', () => {
+		expect(() =>
+			deriveSeasonLabel(
+				{ startDate: 'not-a-date', endDate: '2027-05-23' },
+				new Date('2026-08-21T17:30:00Z'),
+			),
+		).toThrow(SeasonDetectionError)
+	})
+})
 
 describe('bootstrapCompetitions', () => {
 	beforeEach(() => {

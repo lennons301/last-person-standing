@@ -1,5 +1,5 @@
 import { and, eq, gt, inArray, isNull, lt } from 'drizzle-orm'
-import { FootballDataAdapter } from '@/lib/data/football-data'
+import { type FdCurrentSeason, FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter, type FplPreFetched } from '@/lib/data/fpl'
 import { enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { AdapterStanding, CompetitionAdapter } from '@/lib/data/types'
@@ -22,6 +22,60 @@ export interface BootstrapOptions {
 }
 
 type CompetitionRow = typeof competition.$inferSelect
+
+/**
+ * Season detection could not produce a trustworthy answer (source data
+ * missing, malformed, or the two sources disagree). Always fatal: the sync
+ * must abort with zero writes rather than guess a season — a wrong guess is
+ * exactly how the 2026/27 silent-corruption incident happened.
+ */
+export class SeasonDetectionError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'SeasonDetectionError'
+	}
+}
+
+/**
+ * Derive the PL season label (e.g. '2026/27') from football-data's explicit
+ * `currentSeason`, cross-checked against the year of FPL's Gameweek 1
+ * deadline. Throws SeasonDetectionError on any absence, malformed dates, or
+ * disagreement between the sources — it never guesses.
+ */
+export function deriveSeasonLabel(
+	fdSeason: FdCurrentSeason | null,
+	fplGw1Deadline: Date | null,
+): string {
+	if (!fdSeason) {
+		throw new SeasonDetectionError(
+			'football-data reported no currentSeason for the PL — cannot derive the season; aborting sync',
+		)
+	}
+	const startYear = new Date(fdSeason.startDate).getUTCFullYear()
+	const endYear = new Date(fdSeason.endDate).getUTCFullYear()
+	if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) {
+		throw new SeasonDetectionError(
+			`football-data currentSeason dates are unparseable (startDate=${fdSeason.startDate}, endDate=${fdSeason.endDate}); aborting sync`,
+		)
+	}
+	if (endYear !== startYear + 1) {
+		throw new SeasonDetectionError(
+			`football-data currentSeason is not a cross-year league season (startDate=${fdSeason.startDate}, endDate=${fdSeason.endDate}); aborting sync`,
+		)
+	}
+	if (!fplGw1Deadline || Number.isNaN(fplGw1Deadline.getTime())) {
+		throw new SeasonDetectionError(
+			'FPL bootstrap carries no Gameweek 1 deadline — cannot cross-check the season; aborting sync',
+		)
+	}
+	const fplYear = fplGw1Deadline.getUTCFullYear()
+	if (fplYear !== startYear) {
+		throw new SeasonDetectionError(
+			`season disagreement: football-data currentSeason starts in ${startYear} but FPL's Gameweek 1 deadline is in ${fplYear} (${fplGw1Deadline.toISOString()}); aborting sync`,
+		)
+	}
+	return `${startYear}/${String(endYear).slice(-2)}`
+}
 
 export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<void> {
 	let pl = await db.query.competition.findFirst({
