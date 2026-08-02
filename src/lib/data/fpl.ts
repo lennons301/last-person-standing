@@ -122,6 +122,18 @@ export class FplAdapter implements CompetitionAdapter {
 		}))
 	}
 
+	/**
+	 * Deadline of Gameweek 1, used to cross-check football-data's currentSeason
+	 * during season detection (the GW1 year must equal the season's start year).
+	 * Returns null when the payload carries no Gameweek 1 — the caller treats
+	 * that absence as fatal rather than guessing the season.
+	 */
+	async fetchGw1Deadline(): Promise<Date | null> {
+		const data = await this.getBootstrap()
+		const gw1 = data.events.find((e) => e.id === 1)
+		return gw1 ? new Date(gw1.deadline_time) : null
+	}
+
 	async fetchLiveScores(roundNumber: number): Promise<AdapterFixtureScore[]> {
 		const fixtures = await this.getFixtures()
 		return fixtures

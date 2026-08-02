@@ -98,6 +98,19 @@ describe('FplAdapter', () => {
 		expect(headers.Accept).toContain('application/json')
 	})
 
+	it('exposes the Gameweek 1 deadline for season cross-checking', async () => {
+		const preFetched = new FplAdapter({ bootstrap: mockBootstrap, fixtures: mockFixtures })
+		await expect(preFetched.fetchGw1Deadline()).resolves.toEqual(new Date('2025-08-16T10:00:00Z'))
+	})
+
+	it('returns null for the Gameweek 1 deadline when the payload has no Gameweek 1', async () => {
+		const preFetched = new FplAdapter({
+			bootstrap: { teams: [], events: [] },
+			fixtures: [],
+		})
+		await expect(preFetched.fetchGw1Deadline()).resolves.toBeNull()
+	})
+
 	it('uses pre-fetched payloads instead of making network calls when provided', async () => {
 		// The pre-fetched path is how production runs — GH Actions fetches FPL
 		// (Cloudflare allows their IPs) and POSTs the JSON to Vercel for
