@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
 	dbQueryCompetitionFindFirst,
+	dbQueryCompetitionFindMany,
 	dbQueryTeamFindFirst,
 	dbQueryTeamFindMany,
 	dbQueryRoundFindFirst,
@@ -18,9 +19,11 @@ const {
 	fplFetchTeams,
 	fplFetchRounds,
 	fplFetchStandings,
+	fplFetchGw1Deadline,
 	fdFetchTeams,
 	fdFetchRounds,
 	fdFetchStandings,
+	fdFetchCurrentSeason,
 	enqueueAutoSubmitMock,
 	enqueuePollScoresAtMock,
 } = vi.hoisted(() => {
@@ -36,6 +39,7 @@ const {
 	}))
 	return {
 		dbQueryCompetitionFindFirst: vi.fn(),
+		dbQueryCompetitionFindMany: vi.fn().mockResolvedValue([]),
 		dbQueryTeamFindFirst: vi.fn(),
 		dbQueryTeamFindMany: vi.fn().mockResolvedValue([]),
 		dbQueryRoundFindFirst: vi.fn(),
@@ -55,9 +59,11 @@ const {
 		fplFetchTeams: vi.fn().mockResolvedValue([]),
 		fplFetchRounds: vi.fn().mockResolvedValue([]),
 		fplFetchStandings: vi.fn().mockResolvedValue([]),
+		fplFetchGw1Deadline: vi.fn().mockResolvedValue(null),
 		fdFetchTeams: vi.fn().mockResolvedValue([]),
 		fdFetchRounds: vi.fn().mockResolvedValue([]),
 		fdFetchStandings: vi.fn().mockResolvedValue([]),
+		fdFetchCurrentSeason: vi.fn().mockResolvedValue(null),
 		enqueueAutoSubmitMock: vi.fn().mockResolvedValue(undefined),
 		enqueuePollScoresAtMock: vi.fn().mockResolvedValue(undefined),
 	}
@@ -66,7 +72,10 @@ const {
 vi.mock('@/lib/db', () => ({
 	db: {
 		query: {
-			competition: { findFirst: dbQueryCompetitionFindFirst },
+			competition: {
+				findFirst: dbQueryCompetitionFindFirst,
+				findMany: dbQueryCompetitionFindMany,
+			},
 			team: { findFirst: dbQueryTeamFindFirst, findMany: dbQueryTeamFindMany },
 			round: { findFirst: dbQueryRoundFindFirst, findMany: dbQueryRoundFindMany },
 			fixture: { findFirst: dbQueryFixtureFindFirst, findMany: dbQueryFixtureFindMany },
@@ -90,6 +99,7 @@ vi.mock('@/lib/data/fpl', () => ({
 			fetchTeams: fplFetchTeams,
 			fetchRounds: fplFetchRounds,
 			fetchStandings: fplFetchStandings,
+			fetchGw1Deadline: fplFetchGw1Deadline,
 		}
 	}),
 }))
@@ -101,6 +111,7 @@ vi.mock('@/lib/data/football-data', () => ({
 			fetchTeams: fdFetchTeams,
 			fetchRounds: fdFetchRounds,
 			fetchStandings: fdFetchStandings,
+			fetchCurrentSeason: fdFetchCurrentSeason,
 		}
 	}),
 	resolveFootballDataCode: vi.fn(() => 'PL'),
@@ -109,11 +120,19 @@ vi.mock('@/lib/data/football-data', () => ({
 import {
 	bootstrapCompetitions,
 	deriveSeasonLabel,
+	ensureCurrentPlSeasonCompetition,
 	mergeFootballDataIds,
 	SeasonDetectionError,
 	scheduleUpcomingFixturePolls,
 	syncCompetition,
 } from './bootstrap-competitions'
+
+/** Every insert(...).values(...) payload captured by the db mock. */
+function insertedValues(): Record<string, unknown>[] {
+	return dbInsertFn.mock.results
+		.map((r) => (r.value as { values: ReturnType<typeof vi.fn> }).values.mock.calls[0]?.[0])
+		.filter((v): v is Record<string, unknown> => v != null)
+}
 
 describe('deriveSeasonLabel', () => {
 	it('derives the season label from football-data currentSeason, cross-checked against the FPL GW1 year', () => {
@@ -174,12 +193,141 @@ describe('deriveSeasonLabel', () => {
 	})
 })
 
+describe('ensureCurrentPlSeasonCompetition', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbQueryCompetitionFindMany.mockResolvedValue([])
+	})
+
+	function mockDetectedSeason(startYear: number) {
+		fdFetchCurrentSeason.mockResolvedValue({
+			startDate: `${startYear}-08-14`,
+			endDate: `${startYear + 1}-05-23`,
+		})
+		fplFetchGw1Deadline.mockResolvedValue(new Date(`${startYear}-08-21T17:30:00Z`))
+	}
+
+	it('creates the competition with the DERIVED name and season when no PL competition exists', async () => {
+		// A deliberately non-current year: proves the values come from the
+		// payload derivation, not from any literal left in the module.
+		mockDetectedSeason(2031)
+		dbQueryCompetitionFindFirst.mockResolvedValue(undefined)
+
+		await ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'fd-key' })
+
+		expect(insertedValues()).toEqual([
+			expect.objectContaining({
+				name: 'Premier League 2031/32',
+				type: 'league',
+				dataSource: 'fpl',
+				season: '2031/32',
+				status: 'active',
+			}),
+		])
+	})
+
+	it('returns the existing competition for the detected season without any writes', async () => {
+		mockDetectedSeason(2026)
+		const current = {
+			id: 'comp-current',
+			name: 'Premier League 2026/27',
+			dataSource: 'fpl',
+			season: '2026/27',
+			status: 'active',
+		}
+		dbQueryCompetitionFindFirst.mockResolvedValue(current)
+		dbQueryCompetitionFindMany.mockResolvedValue([current])
+
+		const comp = await ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'fd-key' })
+
+		expect(comp).toBe(current)
+		expect(dbInsertFn).not.toHaveBeenCalled()
+		expect(dbUpdateFn).not.toHaveBeenCalled()
+	})
+
+	it('rolls over: creates the new-season competition and archives the predecessor, loudly', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		mockDetectedSeason(2026)
+		const predecessor = {
+			id: 'comp-old',
+			name: 'Premier League 2025/26',
+			dataSource: 'fpl',
+			season: '2025/26',
+			status: 'active',
+		}
+		// No competition exists yet for the detected season…
+		dbQueryCompetitionFindFirst.mockResolvedValue(undefined)
+		// …and the active PL competition is last season's.
+		dbQueryCompetitionFindMany.mockResolvedValue([predecessor])
+
+		await ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'fd-key' })
+
+		expect(insertedValues()).toEqual([
+			expect.objectContaining({ name: 'Premier League 2026/27', season: '2026/27' }),
+		])
+		const archiveSets = dbUpdateSet.mock.calls.map((c) => c[0]).filter((p) => 'status' in p)
+		expect(archiveSets).toEqual([expect.objectContaining({ status: 'archived' })])
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('season rollover'))
+		warn.mockRestore()
+	})
+
+	it('aborts with zero writes on a season disagreement between the sources', async () => {
+		fdFetchCurrentSeason.mockResolvedValue({ startDate: '2026-08-14', endDate: '2027-05-23' })
+		fplFetchGw1Deadline.mockResolvedValue(new Date('2025-08-15T17:30:00Z'))
+
+		await expect(
+			ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'fd-key' }),
+		).rejects.toThrow(SeasonDetectionError)
+		expect(dbInsertFn).not.toHaveBeenCalled()
+		expect(dbUpdateFn).not.toHaveBeenCalled()
+	})
+
+	it('aborts with zero writes when football-data reports no currentSeason', async () => {
+		fdFetchCurrentSeason.mockResolvedValue(null)
+		fplFetchGw1Deadline.mockResolvedValue(new Date('2026-08-21T17:30:00Z'))
+
+		await expect(
+			ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'fd-key' }),
+		).rejects.toThrow(SeasonDetectionError)
+		expect(dbInsertFn).not.toHaveBeenCalled()
+		expect(dbUpdateFn).not.toHaveBeenCalled()
+	})
+
+	it('aborts when the football-data API key is missing — detection cannot run', async () => {
+		await expect(ensureCurrentPlSeasonCompetition({})).rejects.toThrow(/FOOTBALL_DATA_API_KEY/)
+		expect(dbInsertFn).not.toHaveBeenCalled()
+	})
+
+	it('refuses to resurrect an archived competition for the detected season', async () => {
+		// The detected season's competition exists but an operator archived it —
+		// an unexpected state; abort rather than sync into (or duplicate) it.
+		mockDetectedSeason(2026)
+		dbQueryCompetitionFindFirst.mockResolvedValue({
+			id: 'comp-current',
+			name: 'Premier League 2026/27',
+			dataSource: 'fpl',
+			season: '2026/27',
+			status: 'archived',
+		})
+
+		await expect(
+			ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'fd-key' }),
+		).rejects.toThrow(/archived/)
+		expect(dbInsertFn).not.toHaveBeenCalled()
+		expect(dbUpdateFn).not.toHaveBeenCalled()
+	})
+})
+
 describe('bootstrapCompetitions', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		dbQueryTeamFindMany.mockResolvedValue([])
 		dbQueryRoundFindMany.mockResolvedValue([])
 		dbQueryPlannedPickFindMany.mockResolvedValue([])
+		dbQueryCompetitionFindMany.mockResolvedValue([])
+		// Season sources agree on 2026/27 unless a test overrides them.
+		fdFetchCurrentSeason.mockResolvedValue({ startDate: '2026-08-14', endDate: '2027-05-23' })
+		fplFetchGw1Deadline.mockResolvedValue(new Date('2026-08-21T17:30:00Z'))
 	})
 
 	it('creates PL and WC competitions when they do not exist', async () => {
@@ -188,13 +336,30 @@ describe('bootstrapCompetitions', () => {
 		expect(dbInsertFn).toHaveBeenCalled()
 	})
 
+	it('creates the PL competition from the derived season, not a hardcoded literal', async () => {
+		dbQueryCompetitionFindFirst.mockResolvedValue(undefined)
+		fdFetchCurrentSeason.mockResolvedValue({ startDate: '2027-08-13', endDate: '2028-05-21' })
+		fplFetchGw1Deadline.mockResolvedValue(new Date('2027-08-20T17:30:00Z'))
+
+		await bootstrapCompetitions({ footballDataApiKey: 'fd-key' })
+
+		const plInsert = insertedValues().find((v) => v.dataSource === 'fpl')
+		expect(plInsert).toEqual(
+			expect.objectContaining({ name: 'Premier League 2027/28', season: '2027/28' }),
+		)
+	})
+
 	it('is idempotent when competitions already exist', async () => {
 		dbQueryCompetitionFindFirst.mockResolvedValue({
 			id: 'existing',
 			dataSource: 'fpl',
 			externalId: null,
+			season: '2026/27',
 			status: 'active',
 		})
+		dbQueryCompetitionFindMany.mockResolvedValue([
+			{ id: 'existing', dataSource: 'fpl', season: '2026/27', status: 'active' },
+		])
 		await bootstrapCompetitions({ footballDataApiKey: 'fd-key' })
 		// No assertion that insert was NOT called — adapters may still insert teams/rounds.
 		// This test just ensures the function runs without error when comps already exist.

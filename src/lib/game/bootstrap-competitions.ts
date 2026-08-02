@@ -77,23 +77,77 @@ export function deriveSeasonLabel(
 	return `${startYear}/${String(endYear).slice(-2)}`
 }
 
-export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<void> {
-	let pl = await db.query.competition.findFirst({
-		where: and(eq(competition.dataSource, 'fpl'), eq(competition.season, '2025/26')),
+/**
+ * Detect the current PL season from the sources and return the competition
+ * row to sync into, creating it (and archiving its predecessor) when the
+ * season has rolled over. Runs BEFORE any sync writes so a detection failure
+ * (SeasonDetectionError) aborts the run with zero writes.
+ *
+ * Idempotent: once the detected season's competition exists and is the only
+ * active fpl-sourced one, this is a pure read.
+ */
+export async function ensureCurrentPlSeasonCompetition(
+	opts: BootstrapOptions,
+): Promise<CompetitionRow> {
+	if (!opts.footballDataApiKey) {
+		throw new SeasonDetectionError(
+			'FOOTBALL_DATA_API_KEY is not configured — season detection needs football-data currentSeason; aborting sync',
+		)
+	}
+	const fplAdapter = new FplAdapter(opts.fplData)
+	const fdAdapter = new FootballDataAdapter('PL', opts.footballDataApiKey)
+	const [fdSeason, fplGw1Deadline] = await Promise.all([
+		fdAdapter.fetchCurrentSeason(),
+		fplAdapter.fetchGw1Deadline(),
+	])
+	const season = deriveSeasonLabel(fdSeason, fplGw1Deadline)
+
+	const existing = await db.query.competition.findFirst({
+		where: and(eq(competition.dataSource, 'fpl'), eq(competition.season, season)),
 	})
-	if (!pl) {
+	if (existing?.status === 'archived') {
+		// An archived competition is permanently immutable — if the CURRENT
+		// season's row is archived, something is wrong (manual intervention?).
+		// Abort rather than resurrect it or create a duplicate.
+		throw new Error(
+			`detected current PL season ${season}, but competition "${existing.name}" (${existing.id}) is archived — refusing to sync into an archived season`,
+		)
+	}
+
+	// Any other still-active fpl-sourced competition is a predecessor season.
+	const predecessors = (
+		await db.query.competition.findMany({
+			where: and(eq(competition.dataSource, 'fpl'), eq(competition.status, 'active')),
+		})
+	).filter((c) => c.season !== season)
+
+	let current = existing
+	if (!current) {
 		const [created] = await db
 			.insert(competition)
 			.values({
-				name: 'Premier League 2025/26',
+				name: `Premier League ${season}`,
 				type: 'league',
 				dataSource: 'fpl',
-				season: '2025/26',
+				season,
 				status: 'active',
 			})
 			.returning()
-		pl = created
+		current = created
 	}
+
+	for (const old of predecessors) {
+		await db.update(competition).set({ status: 'archived' }).where(eq(competition.id, old.id))
+		console.warn(
+			`[bootstrap] season rollover: detected PL season ${season} — created/kept "${current.name}" (${current.id}), archived predecessor "${old.name}" (${old.id})`,
+		)
+	}
+
+	return current
+}
+
+export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<void> {
+	const pl = await ensureCurrentPlSeasonCompetition(opts)
 
 	let wc = await db.query.competition.findFirst({
 		where: and(eq(competition.dataSource, 'football_data'), eq(competition.externalId, 'WC')),
