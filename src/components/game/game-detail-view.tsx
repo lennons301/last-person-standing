@@ -2,12 +2,12 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { AdminPanel } from '@/components/game/admin-panel'
 import { AutoPickBanner } from '@/components/game/auto-pick-banner'
 import { GameHeader, type GameHeaderRoundInfo } from '@/components/game/game-header'
+import { ManageGameFold } from '@/components/game/manage-game-fold'
 import { MyPaymentStrip } from '@/components/game/my-payment-strip'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
-import { type AdminPayment, PaymentsPanel } from '@/components/game/payments-panel'
+import type { AdminPayment } from '@/components/game/payments-panel'
 import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
 import { WinnerBanner, type WinnerBannerEntry } from '@/components/game/winner-banner'
@@ -176,29 +176,17 @@ export function GameDetailView({
 				)}
 
 				{game.isAdmin && (
-					<div className="mt-6">
-						<AdminPanel
-							gameId={game.id}
-							gameName={game.name}
-							aliveCount={game.aliveCount}
-							potTotal={game.pot.total}
-						/>
-					</div>
-				)}
-
-				{game.isAdmin && game.adminPayments && game.adminPayments.length > 0 && (
-					<div className="mt-6">
-						<PaymentsPanel
-							gameId={game.id}
-							gameName={game.name}
-							inviteCode={game.inviteCode}
-							entryFee={game.entryFee}
-							gameStatus={game.status}
-							totals={game.pot}
-							payments={game.adminPayments}
-							onChange={refresh}
-						/>
-					</div>
+					<ManageGameFold
+						gameId={game.id}
+						gameName={game.name}
+						inviteCode={game.inviteCode}
+						entryFee={game.entryFee}
+						gameStatus={game.status}
+						aliveCount={game.aliveCount}
+						pot={game.pot}
+						payments={game.adminPayments}
+						onChange={refresh}
+					/>
 				)}
 
 				<ShareDialog

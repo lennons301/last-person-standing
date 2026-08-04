@@ -38,10 +38,7 @@ export function AdminPanel({ gameId, gameName, aliveCount, potTotal }: AdminPane
 	return (
 		<>
 			<div className="rounded-xl border border-border bg-card p-4">
-				<div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-					<span className="rounded-sm bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">
-						Admin
-					</span>
+				<div className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">
 					Game actions
 				</div>
 				<div className="flex flex-wrap gap-2">
