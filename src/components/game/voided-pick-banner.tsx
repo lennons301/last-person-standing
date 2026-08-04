@@ -67,26 +67,43 @@ export function VoidedPickBanner({
 		// slot as well as standalone.
 		<div className="space-y-2">
 			{visiblePicks.map((p) => (
-				<div
+				<VoidedPickNotice
 					key={pickKey(p.fixtureId)}
-					className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm dark:border-sky-800/50 dark:bg-sky-900/30"
-				>
-					<div className="flex-1">
-						<p className="font-semibold text-sky-900 dark:text-sky-100">Pick voided</p>
-						<p className="mt-0.5 text-sky-800 dark:text-sky-200">
-							{messageFor(gameMode, p.fixtureId)}
-						</p>
-					</div>
-					<button
-						type="button"
-						aria-label="Dismiss"
-						onClick={() => dismiss(p.fixtureId)}
-						className="text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
-					>
-						<X className="h-4 w-4" />
-					</button>
-				</div>
+					message={voidedPickMessage(gameMode)}
+					onDismiss={() => dismiss(p.fixtureId)}
+				/>
 			))}
+		</div>
+	)
+}
+
+/**
+ * Presentational half of the voided-pick notice. Split out so the preview
+ * gallery can render the real markup without a live payload behind it.
+ */
+export function VoidedPickNotice({
+	message,
+	onDismiss,
+}: {
+	message: string
+	onDismiss?: () => void
+}) {
+	return (
+		<div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm dark:border-sky-800/50 dark:bg-sky-900/30">
+			<div className="flex-1">
+				<p className="font-semibold text-sky-900 dark:text-sky-100">Pick voided</p>
+				<p className="mt-0.5 text-sky-800 dark:text-sky-200">{message}</p>
+			</div>
+			{onDismiss && (
+				<button
+					type="button"
+					aria-label="Dismiss"
+					onClick={onDismiss}
+					className="text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+				>
+					<X className="h-4 w-4" />
+				</button>
+			)}
 		</div>
 	)
 }
@@ -95,7 +112,7 @@ function pickKey(fixtureId: string | null): string {
 	return fixtureId ?? 'unknown'
 }
 
-function messageFor(mode: 'classic' | 'turbo' | 'cup', _fixtureId: string | null): string {
+export function voidedPickMessage(mode: 'classic' | 'turbo' | 'cup'): string {
 	switch (mode) {
 		case 'classic':
 			return 'A fixture you picked was cancelled. Your pick is voided — you stay alive, and the team is locked from re-use.'

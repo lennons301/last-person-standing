@@ -46,8 +46,30 @@ export function AutoPickBanner({ pickId, teamShortName, kickoffLabel }: AutoPick
 	}
 
 	return (
-		// Spacing is the caller's job — this renders inside the game hero's notice
-		// slot as well as standalone.
+		<AutoPickNotice
+			teamShortName={teamShortName}
+			kickoffLabel={kickoffLabel}
+			onDismiss={handleDismiss}
+		/>
+	)
+}
+
+/**
+ * Presentational half of the auto-pick notice. Split out so the preview gallery
+ * can render the real markup without the localStorage dismissal state.
+ * Spacing is the caller's job — this renders inside the game hero's notice slot
+ * as well as standalone.
+ */
+export function AutoPickNotice({
+	teamShortName,
+	kickoffLabel,
+	onDismiss,
+}: {
+	teamShortName: string
+	kickoffLabel: string
+	onDismiss?: () => void
+}) {
+	return (
 		<div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-card p-3">
 			<span className="text-lg text-amber-500">⚠</span>
 			<div className="flex-1">
@@ -57,14 +79,16 @@ export function AutoPickBanner({ pickId, teamShortName, kickoffLabel }: AutoPick
 					is {kickoffLabel}. Message the admin if you want to swap.
 				</p>
 			</div>
-			<button
-				type="button"
-				onClick={handleDismiss}
-				className="text-sm text-muted-foreground"
-				aria-label="Dismiss"
-			>
-				✕
-			</button>
+			{onDismiss && (
+				<button
+					type="button"
+					onClick={onDismiss}
+					className="text-sm text-muted-foreground"
+					aria-label="Dismiss"
+				>
+					✕
+				</button>
+			)}
 		</div>
 	)
 }

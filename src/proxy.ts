@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { previewRoutesEnabled } from '@/lib/preview'
 
 // Paths that bypass the Better Auth session check in this proxy.
 // /auth — login page renders for unauthenticated users.
@@ -22,6 +23,12 @@ export async function proxy(request: NextRequest) {
 
 	// Allow public paths
 	if (publicPaths.some((p) => pathname.startsWith(p))) {
+		return NextResponse.next()
+	}
+
+	// Component preview gallery — no auth outside production. On production it
+	// falls through to the session check and then 404s in the route itself.
+	if (pathname.startsWith('/preview') && previewRoutesEnabled()) {
 		return NextResponse.next()
 	}
 
