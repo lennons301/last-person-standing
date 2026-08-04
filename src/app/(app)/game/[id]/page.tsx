@@ -315,6 +315,7 @@ export default async function GameDetailPage({
 				// current round stays interactive for them; for everyone else it locks.
 				currentRoundClosed={roundDeadlinePassed && !actingAsTarget}
 				actingAs={actingAsForPickUI}
+				summaryInHero={gameView.hero.kind === 'pick-made'}
 			/>
 		) : game.currentRound && isAlive && (!roundDeadlinePassed || !!actingAsTarget) ? (
 			game.gameMode === 'turbo' && turboPickData ? (
