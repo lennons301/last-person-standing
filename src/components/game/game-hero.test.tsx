@@ -51,6 +51,19 @@ describe('GameHero', () => {
 		expect(screen.getByText('4 of 10 ranked so far.')).toBeTruthy()
 	})
 
+	it('pluralises the call to action for multi-pick modes', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'pick-open',
+			mode: 'cup',
+			round,
+			picksMade: 0,
+			picksRequired: 6,
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: 'Make your picks' })).toBeTruthy()
+	})
+
 	it('confirms a made classic pick with a change affordance', () => {
 		const hero: GameHeroDescriptor = {
 			kind: 'pick-made',

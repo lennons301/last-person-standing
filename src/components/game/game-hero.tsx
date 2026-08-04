@@ -122,12 +122,15 @@ function PickOpenBody({
 	pickAnchor: string
 }) {
 	const partial = picksMade > 0
+	const heading = partial
+		? 'Finish your picks'
+		: picksRequired > 1
+			? 'Make your picks'
+			: 'Make your pick'
 	return (
 		<div className="mt-3 flex items-end justify-between gap-4 flex-wrap">
 			<div className="min-w-0">
-				<h2 className="font-display text-xl md:text-2xl font-bold leading-tight">
-					{partial ? 'Finish your picks' : 'Make your pick'}
-				</h2>
+				<h2 className="font-display text-xl md:text-2xl font-bold leading-tight">{heading}</h2>
 				<p className="text-sm text-muted-foreground mt-1">
 					{promptFor(mode, round, picksRequired)}
 					{partial && (
@@ -139,7 +142,7 @@ function PickOpenBody({
 				</p>
 			</div>
 			<Button asChild size="lg" className="gap-1.5">
-				<a href={pickAnchor}>{partial ? 'Finish picks' : 'Make your pick'}</a>
+				<a href={pickAnchor}>{partial ? 'Finish picks' : heading}</a>
 			</Button>
 		</div>
 	)
@@ -154,6 +157,8 @@ function PickMadeBody({
 	pick: HeroPickSummary
 	pickAnchor: string
 }) {
+	const changeLabel =
+		pick.type === 'ranked' && pick.picksRequired > 1 ? 'Change picks' : 'Change pick'
 	return (
 		<div className="mt-3 flex items-center justify-between gap-4 flex-wrap">
 			<div className="flex items-center gap-3 min-w-0">
@@ -196,7 +201,7 @@ function PickMadeBody({
 				<Button asChild variant="outline" className="gap-1.5">
 					<a href={pickAnchor} onClick={() => requestPickEdit()}>
 						<Pencil className="h-3.5 w-3.5" />
-						Change pick
+						{changeLabel}
 					</a>
 				</Button>
 				<span className="text-[0.7rem] text-muted-foreground">Editable until the deadline</span>
