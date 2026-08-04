@@ -46,7 +46,9 @@ export function AutoPickBanner({ pickId, teamShortName, kickoffLabel }: AutoPick
 	}
 
 	return (
-		<div className="mx-4 my-3 flex items-start gap-3 rounded-lg border border-amber-500/50 bg-card p-3">
+		// Spacing is the caller's job — this renders inside the game hero's notice
+		// slot as well as standalone.
+		<div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-card p-3">
 			<span className="text-lg text-amber-500">⚠</span>
 			<div className="flex-1">
 				<h4 className="text-xs font-bold">You missed the deadline</h4>

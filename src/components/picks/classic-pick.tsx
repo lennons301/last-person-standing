@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ChainRibbon, type ChainSlot } from '@/components/picks/chain-ribbon'
+import { useOnPickEditRequest } from '@/components/picks/edit-pick-event'
 import { PlannerRound } from '@/components/picks/planner-round'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
@@ -79,6 +80,10 @@ export function ClassicPick({
 	const [error, setError] = useState<string | null>(null)
 	// Collapse fixtures by default if a pick is already locked in
 	const [expanded, setExpanded] = useState(!existingPickTeamId)
+
+	// The hero above owns the pick confirmation; its "Change pick" button expands
+	// the fixtures here so changing a pick stays a one-click action.
+	useOnPickEditRequest(() => setExpanded(true))
 
 	function handlePick(fixture: ClassicPickFixture, side: 'home' | 'away') {
 		const teamId = side === 'home' ? fixture.home.id : fixture.away.id

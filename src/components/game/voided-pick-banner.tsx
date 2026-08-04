@@ -63,7 +63,9 @@ export function VoidedPickBanner({
 	}
 
 	return (
-		<div className="mb-4 space-y-2">
+		// Spacing is the caller's job — this renders inside the game hero's notice
+		// slot as well as standalone.
+		<div className="space-y-2">
 			{visiblePicks.map((p) => (
 				<div
 					key={pickKey(p.fixtureId)}
