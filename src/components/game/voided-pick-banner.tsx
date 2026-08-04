@@ -2,6 +2,7 @@
 
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { voidedPickMessage } from '@/components/game/voided-pick-message'
 import { useLiveGame } from '@/components/live/use-live-game'
 
 /**
@@ -110,15 +111,4 @@ export function VoidedPickNotice({
 
 function pickKey(fixtureId: string | null): string {
 	return fixtureId ?? 'unknown'
-}
-
-export function voidedPickMessage(mode: 'classic' | 'turbo' | 'cup'): string {
-	switch (mode) {
-		case 'classic':
-			return 'A fixture you picked was cancelled. Your pick is voided — you stay alive, and the team is locked from re-use.'
-		case 'turbo':
-			return 'A fixture you ranked was cancelled. That rank is voided and doesn’t count towards your streak.'
-		case 'cup':
-			return 'A fixture you ranked was cancelled. That rank is voided — no life gained or spent.'
-	}
 }

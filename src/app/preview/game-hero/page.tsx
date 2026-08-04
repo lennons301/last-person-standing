@@ -2,7 +2,8 @@ import { buildHeroFixtures, type HeroFixture } from '@/app/preview/game-hero/fix
 import { AutoPickNotice } from '@/components/game/auto-pick-banner'
 import { GameHero } from '@/components/game/game-hero'
 import { GameStatLine } from '@/components/game/game-stat-line'
-import { VoidedPickNotice, voidedPickMessage } from '@/components/game/voided-pick-banner'
+import { VoidedPickNotice } from '@/components/game/voided-pick-banner'
+import { voidedPickMessage } from '@/components/game/voided-pick-message'
 
 // Fixtures are relative to render time, so never cache this page.
 export const dynamic = 'force-dynamic'
