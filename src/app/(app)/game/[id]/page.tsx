@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq, gt } from 'drizzle-orm'
 import { notFound, redirect } from 'next/navigation'
 import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
@@ -279,14 +279,18 @@ export default async function GameDetailPage({
 
 	// The round the game moves to next — the round-result hero points at it. Only
 	// needed once the current round has been settled, and only in classic: turbo
-	// and cup are single-round, so they never advance to an N+1.
+	// and cup are single-round, so they never advance to an N+1. Queried the same
+	// way `advanceGameToNextRound` picks its target (lowest number above this one,
+	// not number + 1) so the hero can't disagree with the engine on a competition
+	// whose round numbers aren't contiguous.
 	const nextRoundRow =
 		game.gameMode === 'classic' && heroRound?.status === 'completed'
 			? ((await db.query.round.findFirst({
 					where: and(
 						eq(roundTable.competitionId, game.competition.id),
-						eq(roundTable.number, heroRound.number + 1),
+						gt(roundTable.number, heroRound.number),
 					),
+					orderBy: [asc(roundTable.number)],
 				})) ?? null)
 			: null
 
@@ -345,6 +349,8 @@ export default async function GameDetailPage({
 		eliminatedRoundLabel: eliminatedRoundRow
 			? roundLabel(competitionType, eliminatedRoundRow.number)
 			: null,
+		eliminatedRoundId: targetPlayer?.eliminatedRoundId ?? null,
+		allowRebuys: game.modeConfig?.allowRebuys === true,
 		winner: winnerBanner,
 		viewerUserId: session.user.id,
 		pot: {

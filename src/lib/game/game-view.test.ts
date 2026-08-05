@@ -391,6 +391,135 @@ describe('buildGameView — live hero', () => {
 	})
 })
 
+/**
+ * Round 1 of a no-rebuys classic game can't put anyone out — the rule lives in
+ * `settleClassicPickRow`, in `processDeadlineLock`'s round-1 branch and in the
+ * standings' `projectClassicPlayer`. The hero reads the same scoreboard as those
+ * standings, so a losing pick here must not say "Out" above a table saying alive.
+ */
+describe('buildGameView — classic starting-round exemption', () => {
+	const STARTING_ROUND: BuildGameViewInput['round'] = {
+		...ACTIVE_ROUND,
+		number: 1,
+		label: 'GW1',
+		longLabel: 'Gameweek 1',
+	}
+
+	it('keeps a losing round-1 pick surviving when rebuys are off', () => {
+		const view = buildGameView(
+			baseInput({
+				round: STARTING_ROUND,
+				allowRebuys: false,
+				pick: {
+					...classicPick,
+					fixture: liveFixture({ homeScore: 0, awayScore: 2 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'surviving',
+			startingRoundExemption: true,
+		})
+	})
+
+	it('keeps a settled round-1 draw and loss surviving when rebuys are off', () => {
+		for (const result of ['draw', 'loss'] as const) {
+			const view = buildGameView(
+				baseInput({
+					round: STARTING_ROUND,
+					allowRebuys: false,
+					pick: {
+						...classicPick,
+						results: [result],
+						fixture: liveFixture({ status: 'finished', homeScore: 1, awayScore: 1 }),
+					},
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'live', survival: 'surviving' })
+		}
+	})
+
+	it('does not warn a round-1 no-picker that they are out', () => {
+		// `processDeadlineLock` leaves round-1 no-pickers alone in a no-rebuys game.
+		const view = buildGameView(baseInput({ round: STARTING_ROUND, allowRebuys: false, pick: null }))
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'unknown',
+			entry: { type: 'none' },
+			startingRoundExemption: true,
+		})
+	})
+
+	it('still eliminates on a losing round-1 pick when rebuys are on', () => {
+		// With rebuys the exemption doesn't apply: round 1 puts you out, and the
+		// rebuy offer is the way back in.
+		const view = buildGameView(
+			baseInput({
+				round: STARTING_ROUND,
+				allowRebuys: true,
+				pick: {
+					...classicPick,
+					results: ['loss'],
+					fixture: liveFixture({ status: 'finished', homeScore: 0, awayScore: 2 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'out',
+			startingRoundExemption: false,
+		})
+	})
+
+	it('never exempts a later round, or the single-round modes', () => {
+		const laterRound = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				allowRebuys: false,
+				pick: { ...classicPick, results: ['loss'], fixture: liveFixture() },
+			}),
+		)
+		expect(laterRound.hero).toMatchObject({
+			kind: 'live',
+			survival: 'out',
+			startingRoundExemption: false,
+		})
+
+		for (const mode of ['turbo', 'cup'] as const) {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					picksRequired: 6,
+					round: STARTING_ROUND,
+					allowRebuys: false,
+					pick: { picksMade: 6, isAuto: false, team: null, results: ['loss'] },
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'live', startingRoundExemption: false })
+		}
+	})
+
+	it('flags the exemption on the settled round-result hero too', () => {
+		const view = buildGameView(
+			baseInput({
+				round: { ...STARTING_ROUND, status: 'completed' },
+				allowRebuys: false,
+				pick: {
+					...classicPick,
+					results: ['draw'],
+					fixture: liveFixture({ status: 'finished', homeScore: 1, awayScore: 1 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'round-result',
+			result: 'survived',
+			startingRoundExemption: true,
+		})
+	})
+})
+
 describe('buildGameView — round result', () => {
 	it('reports survival and the next round for classic', () => {
 		const view = buildGameView(
@@ -419,10 +548,35 @@ describe('buildGameView — round result', () => {
 				round: COMPLETED_ROUND,
 				isAlive: false,
 				eliminatedRoundLabel: 'GW7',
+				eliminatedRoundId: ROUND_ID,
 				pick: { ...classicPick, results: ['loss'] },
 			}),
 		)
 		expect(view.hero).toMatchObject({ kind: 'round-result', result: 'eliminated' })
+	})
+
+	// A game can sit on a settled round for days (`advanceGameToNextRound` parks
+	// there when the next round is TBD), and a competition-scoped round can settle
+	// before this game advances. Someone who went out three rounds ago must not be
+	// told "you're out" again on a round they never picked in.
+	it('sends a player eliminated in an earlier round to the spectator hero', () => {
+		const view = buildGameView(
+			baseInput({
+				round: COMPLETED_ROUND,
+				isAlive: false,
+				eliminatedRoundLabel: 'GW5',
+				eliminatedRoundId: 'round-5',
+				pick: null,
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'spectator', eliminatedRoundLabel: 'GW5' })
+	})
+
+	// `eliminatedRoundId` is null for an admin-removed player: no round claims the
+	// elimination, so nothing should announce one.
+	it('spectates when the elimination round is unknown', () => {
+		const view = buildGameView(baseInput({ round: COMPLETED_ROUND, isAlive: false, pick: null }))
+		expect(view.hero).toMatchObject({ kind: 'spectator' })
 	})
 
 	it('has no survival verdict for the single-round modes', () => {

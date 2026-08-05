@@ -118,6 +118,7 @@ describe('GameHero', () => {
 				},
 			},
 			survival: 'surviving',
+			startingRoundExemption: false,
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} />)
@@ -155,6 +156,7 @@ describe('GameHero', () => {
 				},
 			},
 			survival: 'out',
+			startingRoundExemption: false,
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} />)
@@ -179,6 +181,7 @@ describe('GameHero', () => {
 				livesRemaining: 1,
 			},
 			survival: 'surviving',
+			startingRoundExemption: false,
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} />)
@@ -194,12 +197,60 @@ describe('GameHero', () => {
 			round,
 			entry: { type: 'none' },
 			survival: 'out',
+			startingRoundExemption: false,
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} />)
 		expect(screen.getByText('No pick in')).toBeTruthy()
 		expect(screen.getByText('You missed the deadline')).toBeTruthy()
 		expect(screen.getByText('Out')).toBeTruthy()
+	})
+
+	// Round 1 of a no-rebuys game can't eliminate anyone, so the hero has to
+	// explain a losing scoreline sitting next to a green "Surviving".
+	it('explains the starting-round exemption on a losing round-1 pick', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'live',
+			mode: 'classic',
+			round: { number: 1, label: 'GW1', longLabel: 'Gameweek 1', deadlineIso: null },
+			entry: {
+				type: 'team',
+				shortName: 'BUR',
+				name: 'Burnley',
+				opponentName: 'Manchester City',
+				side: 'away',
+				fixture: {
+					id: 'fixture-3',
+					status: 'live',
+					homeShort: 'MCI',
+					awayShort: 'BUR',
+					homeScore: 2,
+					awayScore: 0,
+					kickoffIso: '2099-08-08T14:00:00.000Z',
+				},
+			},
+			survival: 'surviving',
+			startingRoundExemption: true,
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} />)
+		expect(screen.getByText('Surviving')).toBeTruthy()
+		expect(screen.getByText(/Starting round — a non-win doesn't eliminate/)).toBeTruthy()
+	})
+
+	it('drops the no-pick warning when the starting round exempts it', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'live',
+			mode: 'classic',
+			round: { number: 1, label: 'GW1', longLabel: 'Gameweek 1', deadlineIso: null },
+			entry: { type: 'none' },
+			survival: 'unknown',
+			startingRoundExemption: true,
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} />)
+		expect(screen.queryByText(/No pick means no survival/)).toBeNull()
+		expect(screen.getByText(/Starting round — a non-win doesn't eliminate/)).toBeTruthy()
 	})
 
 	it('reports the round result and points at the next round', () => {
@@ -230,6 +281,7 @@ describe('GameHero', () => {
 				longLabel: 'Gameweek 8',
 				deadlineIso: '2099-08-15T17:30:00.000Z',
 			},
+			startingRoundExemption: false,
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} />)
@@ -255,6 +307,7 @@ describe('GameHero', () => {
 			},
 			result: 'played',
 			nextRound: null,
+			startingRoundExemption: false,
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} />)
@@ -278,6 +331,7 @@ describe('GameHero', () => {
 				longLabel: 'Gameweek 8',
 				deadlineIso: '2099-08-15T17:30:00.000Z',
 			},
+			startingRoundExemption: false,
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} />)

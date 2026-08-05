@@ -156,6 +156,12 @@ export type GameHeroDescriptor =
 			round: HeroRound
 			entry: HeroEntry
 			survival: HeroSurvival
+			/**
+			 * Classic's starting-round exemption is in force: round 1 of a no-rebuys
+			 * game, where a non-win doesn't eliminate. The hero says so, because the
+			 * scoreline on its own would read like an elimination.
+			 */
+			startingRoundExemption: boolean
 			actingAsName: string | null
 	  }
 	| {
@@ -169,6 +175,8 @@ export type GameHeroDescriptor =
 			 */
 			result: 'survived' | 'eliminated' | 'played'
 			nextRound: HeroRound | null
+			/** As on `live` — the round-1 non-win that didn't cost anything. */
+			startingRoundExemption: boolean
 			actingAsName: string | null
 	  }
 	| {
@@ -323,6 +331,18 @@ export interface BuildGameViewInput {
 	} | null
 	/** Round the player went out in — the quiet note on the spectator hero. */
 	eliminatedRoundLabel?: string | null
+	/**
+	 * Id of that round, for the one comparison the label can't make: whether the
+	 * elimination happened on the round being rendered. `gamePlayer.eliminatedRoundId`
+	 * verbatim — null for a player who is still in, or was removed by an admin.
+	 */
+	eliminatedRoundId?: string | null
+	/**
+	 * `modeConfig.allowRebuys`. Classic only, and only for the starting-round
+	 * exemption: round 1 of a no-rebuys game can't eliminate anyone, so the live
+	 * hero must not read a losing scoreline as an exit.
+	 */
+	allowRebuys?: boolean
 	/** Winner payload for a completed game (from `buildWinnerBanner`). */
 	winner?: { winners: HeroWinnerEntry[]; runnerUpName?: string } | null
 	/** Decides whether the winner hero reads as the viewer's win or someone else's. */
@@ -427,9 +447,18 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 	// Out of the game with no way back in: the hero goes quiet and the standings
 	// below become the page. Admin acting-as mode passes isAlive=true even for
 	// eliminated targets, because an admin can rebuy-via-pick on their behalf.
-	// The round-result hero below is the exception — the round they went out in
-	// still gets to say so before the hero settles into spectating.
-	if (!input.isAlive && roundStatus !== 'completed') {
+	//
+	// The one exception is the settled round they actually went out in — that
+	// round still gets to say so, via the round-result hero below, before the
+	// hero settles into spectating. It has to be *that* round, not just any
+	// settled one: `advanceGameToNextRound` deliberately parks a game on a
+	// completed round when the next one is TBD, and a competition-scoped round
+	// can settle before this game advances — so a player eliminated in GW5 would
+	// otherwise be told "you're out" all over again on a settled GW6, on a round
+	// they never picked in.
+	const eliminatedThisRound =
+		input.eliminatedRoundId != null && input.eliminatedRoundId === round.id
+	if (!input.isAlive && !(roundStatus === 'completed' && eliminatedThisRound)) {
 		return {
 			kind: 'spectator',
 			mode: gameMode,
@@ -461,6 +490,7 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 							deadlineIso: input.nextRound.deadline ? input.nextRound.deadline.toISOString() : null,
 						}
 					: null,
+			startingRoundExemption: isStartingRoundExempt(input),
 			actingAsName: input.actingAsName,
 		}
 	}
@@ -474,6 +504,7 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 			round: heroRound,
 			entry,
 			survival: deriveSurvival(input, entry),
+			startingRoundExemption: isStartingRoundExempt(input),
 			actingAsName: input.actingAsName,
 		}
 	}
@@ -558,17 +589,36 @@ function buildEntry(input: BuildGameViewInput, picksRequired: number): HeroEntry
 	}
 }
 
+/**
+ * Classic's starting-round exemption: in round 1 of a no-rebuys game a loss, a
+ * draw and even a missed deadline all leave the player in. It's a rule of the
+ * mode (`docs/game-modes/classic.md`), encoded in `settleClassicPickRow`, in
+ * `processDeadlineLock`'s round-1 branch, and in the standings' own projection
+ * (`projectClassicPlayer`). The hero reads the same scoreboard as those
+ * standings, so without this it would announce "Out" directly above a table
+ * showing the same player alive.
+ */
+function isStartingRoundExempt(input: BuildGameViewInput): boolean {
+	return input.gameMode === 'classic' && input.round?.number === 1 && input.allowRebuys !== true
+}
+
 function deriveSurvival(input: BuildGameViewInput, entry: HeroEntry): HeroSurvival {
+	const exempt = isStartingRoundExempt(input)
+
 	if (entry.type === 'none') {
-		// Classic has no way back from a missed deadline once the round settles;
-		// the ranked modes just score nothing for the empty slots.
-		return input.gameMode === 'classic' ? 'out' : 'unknown'
+		// Classic has no way back from a missed deadline once the round settles —
+		// unless the exemption is in force, where round 1's no-pickers are left
+		// alone. The ranked modes just score nothing for the empty slots.
+		if (input.gameMode !== 'classic' || exempt) return 'unknown'
+		return 'out'
 	}
 
 	if (entry.type === 'team') {
 		const result = input.pick?.results?.[0] ?? 'pending'
 		if (result === 'win' || result === 'saved_by_life') return 'surviving'
-		if (result === 'loss' || result === 'draw') return 'out'
+		// Under the exemption the settled non-win is real but harmless: the player
+		// is through, and saying otherwise would contradict the standings below.
+		if (result === 'loss' || result === 'draw') return exempt ? 'surviving' : 'out'
 		if (result === 'void') return 'unknown'
 
 		const fx = entry.fixture
@@ -577,8 +627,9 @@ function deriveSurvival(input: BuildGameViewInput, entry: HeroEntry): HeroSurviv
 			return 'unknown'
 		}
 		const margin = entry.side === 'home' ? fx.homeScore - fx.awayScore : fx.awayScore - fx.homeScore
-		if (fx.status === 'finished') return margin > 0 ? 'surviving' : 'out'
-		return margin > 0 ? 'surviving' : 'at-risk'
+		if (margin > 0) return 'surviving'
+		if (exempt) return 'surviving'
+		return fx.status === 'finished' ? 'out' : 'at-risk'
 	}
 
 	if (!input.isAlive) return 'out'

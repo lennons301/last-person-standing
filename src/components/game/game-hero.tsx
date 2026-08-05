@@ -138,7 +138,12 @@ export function GameHero({ hero, notices, rebuyAction, pickAnchor = '#pick' }: G
 					<PickMadeBody mode={hero.mode} pick={hero.pick} pickAnchor={pickAnchor} />
 				)}
 				{hero.kind === 'live' && (
-					<LiveBody mode={hero.mode} entry={hero.entry} survival={hero.survival} />
+					<LiveBody
+						mode={hero.mode}
+						entry={hero.entry}
+						survival={hero.survival}
+						exempt={hero.startingRoundExemption}
+					/>
 				)}
 				{hero.kind === 'round-result' && (
 					<RoundResultBody
@@ -147,6 +152,7 @@ export function GameHero({ hero, notices, rebuyAction, pickAnchor = '#pick' }: G
 						entry={hero.entry}
 						result={hero.result}
 						nextRound={hero.nextRound}
+						exempt={hero.startingRoundExemption}
 					/>
 				)}
 				{hero.kind === 'winner' && (
@@ -353,34 +359,53 @@ function LiveBody({
 	mode,
 	entry,
 	survival,
+	exempt,
 }: {
 	mode: GameMode
 	entry: HeroEntry
 	survival: HeroSurvival
+	exempt: boolean
 }) {
 	const verdict = SURVIVAL_COPY[survival]
 	return (
-		<div className="mt-3 flex items-center justify-between gap-4 flex-wrap">
-			<div className="flex items-center gap-3 min-w-0">
-				{entry.type === 'team' && <TeamBadge shortName={entry.shortName} size="lg" />}
-				<div className="min-w-0">
-					<div className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
-						{entry.type === 'none'
-							? 'No pick in'
-							: entry.type === 'ranked' && entry.picksRequired > 1
-								? 'Your picks'
-								: 'Your pick'}
+		<div className="mt-3">
+			<div className="flex items-center justify-between gap-4 flex-wrap">
+				<div className="flex items-center gap-3 min-w-0">
+					{entry.type === 'team' && <TeamBadge shortName={entry.shortName} size="lg" />}
+					<div className="min-w-0">
+						<div className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
+							{entry.type === 'none'
+								? 'No pick in'
+								: entry.type === 'ranked' && entry.picksRequired > 1
+									? 'Your picks'
+									: 'Your pick'}
+						</div>
+						<EntryHeadline mode={mode} entry={entry} />
+						<EntryMeta mode={mode} entry={entry} exempt={exempt} />
 					</div>
-					<EntryHeadline mode={mode} entry={entry} />
-					<EntryMeta mode={mode} entry={entry} />
 				</div>
+				{verdict && (
+					<div className={cn('font-display text-xl md:text-2xl font-bold', verdict.tint)}>
+						{verdict.word}
+					</div>
+				)}
 			</div>
-			{verdict && (
-				<div className={cn('font-display text-xl md:text-2xl font-bold', verdict.tint)}>
-					{verdict.word}
-				</div>
-			)}
+			<ExemptionNote exempt={exempt} />
 		</div>
+	)
+}
+
+/**
+ * The starting-round exemption, spelled out. Without it a 0–2 next to
+ * "Surviving" reads like a bug — this is the line that explains why the round
+ * can't put anyone out.
+ */
+function ExemptionNote({ exempt }: { exempt: boolean }) {
+	if (!exempt) return null
+	return (
+		<p className="mt-1 text-xs text-[var(--alive)]">
+			Starting round — a non-win doesn't eliminate. You're through either way.
+		</p>
 	)
 }
 
@@ -436,8 +461,19 @@ function EntryHeadline({ mode, entry }: { mode: GameMode; entry: HeroEntry }) {
  * The small line under the headline. No match minute: fixtures carry a status,
  * not a clock, so live matches read "Live" rather than "60'".
  */
-function EntryMeta({ mode, entry }: { mode: GameMode; entry: HeroEntry }) {
+function EntryMeta({
+	mode,
+	entry,
+	exempt,
+}: {
+	mode: GameMode
+	entry: HeroEntry
+	exempt?: boolean
+}) {
 	if (entry.type === 'none') {
+		// Under the starting-round exemption a missed deadline costs nothing, so
+		// the usual warning would be false; the exemption note carries that state.
+		if (mode === 'classic' && exempt) return null
 		return (
 			<div className="text-xs text-muted-foreground mt-0.5">
 				{mode === 'classic'
@@ -499,12 +535,14 @@ function RoundResultBody({
 	entry,
 	result,
 	nextRound,
+	exempt,
 }: {
 	mode: GameMode
 	round: HeroRound
 	entry: HeroEntry
 	result: 'survived' | 'eliminated' | 'played'
 	nextRound: HeroRound | null
+	exempt: boolean
 }) {
 	const heading =
 		result === 'survived'
@@ -528,7 +566,8 @@ function RoundResultBody({
 						{heading}
 					</h2>
 					<EntryHeadline mode={mode} entry={entry} />
-					<EntryMeta mode={mode} entry={entry} />
+					<EntryMeta mode={mode} entry={entry} exempt={exempt} />
+					<ExemptionNote exempt={exempt} />
 				</div>
 			</div>
 			{nextRound && (
