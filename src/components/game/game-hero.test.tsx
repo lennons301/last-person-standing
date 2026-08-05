@@ -205,6 +205,7 @@ describe('GameHero', () => {
 			actingAsName: null,
 		}
 		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByText('Your picks')).toBeTruthy()
 		expect(screen.getByText('3 of 6 correct')).toBeTruthy()
 		expect(screen.getByText('1 wrong · 2 still to play · 1 life left')).toBeTruthy()
 	})
@@ -282,6 +283,29 @@ describe('GameHero', () => {
 		render(<GameHero hero={hero} stats={stats} />)
 		expect(screen.getByRole('heading', { name: 'Gameweek 7 is done' })).toBeTruthy()
 		expect(screen.getByText('7 of 10 correct')).toBeTruthy()
+		// Every slot has landed — no "0 still to play".
+		expect(screen.getByText('3 wrong')).toBeTruthy()
+		expect(screen.queryByText(/Next up:/)).toBeNull()
+	})
+
+	it('does not tell an eliminated player the next round is theirs', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'round-result',
+			mode: 'classic',
+			round,
+			entry: { type: 'none' },
+			result: 'eliminated',
+			nextRound: {
+				number: 8,
+				label: 'GW8',
+				longLabel: 'Gameweek 8',
+				deadlineIso: '2099-08-15T17:30:00.000Z',
+			},
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: "You're out" })).toBeTruthy()
+		expect(screen.getByText(/The game goes on:/)).toBeTruthy()
 		expect(screen.queryByText(/Next up:/)).toBeNull()
 	})
 

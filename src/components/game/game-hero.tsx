@@ -379,7 +379,11 @@ function LiveBody({
 				{entry.type === 'team' && <TeamBadge shortName={entry.shortName} size="lg" />}
 				<div className="min-w-0">
 					<div className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
-						{entry.type === 'none' ? 'No pick in' : 'Your pick'}
+						{entry.type === 'none'
+							? 'No pick in'
+							: entry.type === 'ranked' && entry.picksRequired > 1
+								? 'Your picks'
+								: 'Your pick'}
 					</div>
 					<EntryHeadline mode={mode} entry={entry} />
 					<EntryMeta mode={mode} entry={entry} />
@@ -479,7 +483,9 @@ function EntryMeta({ mode, entry }: { mode: GameMode; entry: HeroEntry }) {
 		)
 	}
 
-	const bits = [`${entry.wrong} wrong`, `${entry.pending} still to play`]
+	// "0 still to play" is noise once every slot has landed.
+	const bits = [`${entry.wrong} wrong`]
+	if (entry.pending > 0) bits.push(`${entry.pending} still to play`)
 	if (entry.livesRemaining != null) {
 		bits.push(`${entry.livesRemaining} ${entry.livesRemaining === 1 ? 'life' : 'lives'} left`)
 	}
@@ -541,7 +547,10 @@ function RoundResultBody({
 			</div>
 			{nextRound && (
 				<p className="text-sm text-muted-foreground">
-					Next up: <span className="font-semibold text-foreground">{nextRound.longLabel}</span>
+					{/* "Next up" would be a lie for someone who just went out — the round
+					    is still worth naming, it just isn't theirs any more. */}
+					{result === 'eliminated' ? 'The game goes on: ' : 'Next up: '}
+					<span className="font-semibold text-foreground">{nextRound.longLabel}</span>
 					{nextRound.deadlineIso ? (
 						<>
 							{' '}
