@@ -11,7 +11,6 @@ import {
 	Target,
 	UserCog,
 } from 'lucide-react'
-import { GameStatLine } from '@/components/game/game-stat-line'
 import { LocalDateTime } from '@/components/local-datetime'
 import { requestPickEdit } from '@/components/picks/edit-pick-event'
 import { TeamBadge } from '@/components/picks/team-badge'
@@ -20,7 +19,6 @@ import { formatDeadline } from '@/lib/format'
 import type {
 	GameHeroDescriptor,
 	GameMode,
-	GameViewStats,
 	HeroEntry,
 	HeroPickSummary,
 	HeroRound,
@@ -49,7 +47,6 @@ import { cn } from '@/lib/utils'
  */
 export interface GameHeroProps {
 	hero: GameHeroDescriptor
-	stats: GameViewStats
 	/** Auto-pick / voided-pick / pending-rebuy notices, rendered inside the body. */
 	notices?: React.ReactNode
 	/** Rebuy buttons — only rendered by the `rebuy` variant. */
@@ -108,13 +105,7 @@ function survivalFrame(survival: HeroSurvival): string {
 	}
 }
 
-export function GameHero({
-	hero,
-	stats,
-	notices,
-	rebuyAction,
-	pickAnchor = '#pick',
-}: GameHeroProps) {
+export function GameHero({ hero, notices, rebuyAction, pickAnchor = '#pick' }: GameHeroProps) {
 	if (hero.kind === 'none') return null
 
 	const skin = skinFor(hero)
@@ -188,11 +179,6 @@ export function GameHero({
 
 				{notices}
 			</div>
-
-			<GameStatLine
-				stats={stats}
-				className="border-t border-border/60 bg-card/60 px-4 md:px-5 py-2.5"
-			/>
 		</section>
 	)
 }

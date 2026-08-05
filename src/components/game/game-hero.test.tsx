@@ -2,15 +2,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { GameHero } from '@/components/game/game-hero'
-import type { GameHeroDescriptor, GameViewStats } from '@/lib/game/game-view'
-
-const stats: GameViewStats = {
-	potConfirmed: '60.00',
-	potTotal: '80.00',
-	aliveCount: 5,
-	playerCount: 8,
-	rebuyAvailable: false,
-}
+import type { GameHeroDescriptor } from '@/lib/game/game-view'
 
 const round = {
 	number: 7,
@@ -29,7 +21,7 @@ describe('GameHero', () => {
 			picksRequired: 1,
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'Make your pick' })).toBeTruthy()
 		expect(screen.getByRole('link', { name: 'Make your pick' }).getAttribute('href')).toBe('#pick')
 		// Round label + deadline live in the hero, not a separate strip.
@@ -46,7 +38,7 @@ describe('GameHero', () => {
 			picksRequired: 10,
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'Finish your picks' })).toBeTruthy()
 		expect(screen.getByText('4 of 10 ranked so far.')).toBeTruthy()
 	})
@@ -60,7 +52,7 @@ describe('GameHero', () => {
 			picksRequired: 6,
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'Make your picks' })).toBeTruthy()
 	})
 
@@ -80,7 +72,7 @@ describe('GameHero', () => {
 			},
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByText("You're in")).toBeTruthy()
 		expect(screen.getByText('Arsenal')).toBeTruthy()
 		expect(screen.getByText(/vs Everton \(H\)/)).toBeTruthy()
@@ -96,27 +88,12 @@ describe('GameHero', () => {
 			pick: { type: 'ranked', picksMade: 6, picksRequired: 6, isAuto: true },
 			actingAsName: 'Dave',
 		}
-		render(<GameHero hero={hero} stats={stats} notices={<p>We auto-picked for you</p>} />)
+		render(<GameHero hero={hero} notices={<p>We auto-picked for you</p>} />)
 		expect(screen.getByText('Auto-pick locked in')).toBeTruthy()
 		expect(screen.getByText('6 of 6 predictions locked')).toBeTruthy()
 		expect(screen.getByText('Picking as Dave')).toBeTruthy()
 		const notice = screen.getByText('We auto-picked for you')
 		expect(screen.getByRole('region', { name: 'Your pick' }).contains(notice)).toBe(true)
-	})
-
-	it('renders the stat line', () => {
-		const hero: GameHeroDescriptor = {
-			kind: 'pick-open',
-			mode: 'classic',
-			round,
-			picksMade: 0,
-			picksRequired: 1,
-			actingAsName: null,
-		}
-		render(<GameHero hero={hero} stats={{ ...stats, rebuyAvailable: true }} />)
-		expect(screen.getByText('£60.00')).toBeTruthy()
-		expect(screen.getByText('5')).toBeTruthy()
-		expect(screen.getByText('Rebuy available')).toBeTruthy()
 	})
 
 	it('gives a classic live pick its scoreboard and survival read', () => {
@@ -143,7 +120,7 @@ describe('GameHero', () => {
 			survival: 'surviving',
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByText('Your pick')).toBeTruthy()
 		expect(screen.getByText('Arsenal')).toBeTruthy()
 		expect(screen.getByText('1–0')).toBeTruthy()
@@ -180,7 +157,7 @@ describe('GameHero', () => {
 			survival: 'out',
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByText('0–3')).toBeTruthy()
 		expect(screen.queryByText('3–0')).toBeNull()
 		// The meta line keeps the true home–away scoreline, named on both sides.
@@ -204,7 +181,7 @@ describe('GameHero', () => {
 			survival: 'surviving',
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByText('Your picks')).toBeTruthy()
 		expect(screen.getByText('3 of 6 correct')).toBeTruthy()
 		expect(screen.getByText('1 wrong · 2 still to play · 1 life left')).toBeTruthy()
@@ -219,7 +196,7 @@ describe('GameHero', () => {
 			survival: 'out',
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByText('No pick in')).toBeTruthy()
 		expect(screen.getByText('You missed the deadline')).toBeTruthy()
 		expect(screen.getByText('Out')).toBeTruthy()
@@ -255,7 +232,7 @@ describe('GameHero', () => {
 			},
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'You survived Gameweek 7' })).toBeTruthy()
 		expect(screen.getByText('2–1')).toBeTruthy()
 		expect(screen.getByText(/Next up:/)).toBeTruthy()
@@ -280,7 +257,7 @@ describe('GameHero', () => {
 			nextRound: null,
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'Gameweek 7 is done' })).toBeTruthy()
 		expect(screen.getByText('7 of 10 correct')).toBeTruthy()
 		// Every slot has landed — no "0 still to play".
@@ -303,7 +280,7 @@ describe('GameHero', () => {
 			},
 			actingAsName: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: "You're out" })).toBeTruthy()
 		expect(screen.getByText(/The game goes on:/)).toBeTruthy()
 		expect(screen.queryByText(/Next up:/)).toBeNull()
@@ -326,7 +303,7 @@ describe('GameHero', () => {
 			viewerOutcome: 'won',
 			viewerPotShare: '80.00',
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'You won £80.00' })).toBeTruthy()
 		expect(screen.getByText('Sean')).toBeTruthy()
 		expect(screen.getByText(/Runner-up:/)).toBeTruthy()
@@ -344,7 +321,7 @@ describe('GameHero', () => {
 			viewerOutcome: 'lost',
 			viewerPotShare: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'Sean wins' })).toBeTruthy()
 		expect(screen.queryByText('Gameweek 7')).toBeNull()
 	})
@@ -363,7 +340,7 @@ describe('GameHero', () => {
 			viewerOutcome: 'shared',
 			viewerPotShare: '16.66',
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(
 			screen.getByRole('heading', { name: 'You share the pot — your cut is £16.66' }),
 		).toBeTruthy()
@@ -382,7 +359,7 @@ describe('GameHero', () => {
 			viewerOutcome: 'lost',
 			viewerPotShare: null,
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'Sean & Dave share the pot' })).toBeTruthy()
 		expect(screen.getByText('Split pot · 2 way')).toBeTruthy()
 	})
@@ -397,9 +374,7 @@ describe('GameHero', () => {
 			pendingPayment: null,
 			eliminatedRoundLabel: 'GW1',
 		}
-		render(
-			<GameHero hero={hero} stats={stats} rebuyAction={<button type="button">Rebuy</button>} />,
-		)
+		render(<GameHero hero={hero} rebuyAction={<button type="button">Rebuy</button>} />)
 		expect(screen.getByRole('heading', { name: 'Buy back in for £10.00' })).toBeTruthy()
 		expect(screen.getByText(/You went out in GW1\./)).toBeTruthy()
 		expect(screen.getByRole('button', { name: 'Rebuy' })).toBeTruthy()
@@ -415,7 +390,7 @@ describe('GameHero', () => {
 			pendingPayment: { id: 'pay-1', amount: '10.00' },
 			eliminatedRoundLabel: 'GW1',
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('heading', { name: 'Rebuy payment pending' })).toBeTruthy()
 	})
 
@@ -426,7 +401,7 @@ describe('GameHero', () => {
 			round,
 			eliminatedRoundLabel: 'GW34',
 		}
-		render(<GameHero hero={hero} stats={stats} />)
+		render(<GameHero hero={hero} />)
 		expect(screen.getByRole('region', { name: 'Spectating' })).toBeTruthy()
 		expect(screen.getByText(/Eliminated in/)).toBeTruthy()
 		expect(screen.getByText('GW34')).toBeTruthy()
@@ -437,10 +412,7 @@ describe('GameHero', () => {
 
 	it('renders nothing when there is no hero state yet', () => {
 		const { container } = render(
-			<GameHero
-				hero={{ kind: 'none', mode: 'classic', round: null, reason: 'round-locked' }}
-				stats={stats}
-			/>,
+			<GameHero hero={{ kind: 'none', mode: 'classic', round: null, reason: 'round-locked' }} />,
 		)
 		expect(container.innerHTML).toBe('')
 	})

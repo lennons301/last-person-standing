@@ -19,18 +19,73 @@ export interface HeroFixture {
 	title: string
 	note?: string
 	hero: GameHeroDescriptor
-	stats: GameViewStats
 	/** Which notice to render inside the hero's notice slot, if any. */
 	notice?: 'auto-pick' | 'voided'
 }
 
 const BASE_STATS: GameViewStats = {
 	potConfirmed: '60.00',
+	potPending: '20.00',
 	potTotal: '80.00',
+	potUnpaid: '20.00',
+	potTarget: '100.00',
 	aliveCount: 5,
 	playerCount: 8,
 	rebuyAvailable: false,
 }
+
+/** Stat-line-only fixtures — the line is page-level chrome, not part of a hero. */
+export interface StatLineFixture {
+	id: string
+	title: string
+	note?: string
+	stats: GameViewStats
+	/** Renders the viewer's own "unpaid — settle up" aside on the line. */
+	unpaid?: { amount: string; status: 'pending' | 'claimed' }
+}
+
+export const STAT_LINE_FIXTURES: StatLineFixture[] = [
+	{
+		id: 'stat-line-everyone-paid',
+		title: 'Stat line · everyone paid',
+		note: 'Nothing outstanding — the pot equals its target.',
+		stats: {
+			potConfirmed: '120.00',
+			potPending: '0.00',
+			potTotal: '120.00',
+			potUnpaid: '0.00',
+			potTarget: '120.00',
+			aliveCount: 8,
+			playerCount: 12,
+			rebuyAvailable: false,
+		},
+	},
+	{
+		id: 'stat-line-money-outstanding',
+		title: 'Stat line · money outstanding',
+		note: 'Tap the pot for the confirmed / pending / unpaid / target breakdown.',
+		stats: BASE_STATS,
+	},
+	{
+		id: 'stat-line-rebuy',
+		title: 'Stat line · rebuy available',
+		stats: { ...BASE_STATS, aliveCount: 1, playerCount: 12, rebuyAvailable: true },
+	},
+	{
+		id: 'stat-line-unpaid-notice',
+		title: 'Stat line · viewer owes money',
+		note: 'The quiet inline notice that replaced the full-width payment band.',
+		stats: BASE_STATS,
+		unpaid: { amount: '10.00', status: 'pending' },
+	},
+	{
+		id: 'stat-line-unpaid-claimed',
+		title: 'Stat line · viewer has claimed payment',
+		note: 'Claimed but not yet confirmed by the organiser.',
+		stats: BASE_STATS,
+		unpaid: { amount: '10.00', status: 'claimed' },
+	},
+]
 
 function hours(now: Date, n: number): string {
 	return new Date(now.getTime() + n * 60 * 60 * 1000).toISOString()
@@ -79,7 +134,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				picksRequired: 1,
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'classic-pick-open-deadline-soon',
@@ -92,7 +146,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				picksRequired: 1,
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, rebuyAvailable: true },
 		},
 		{
 			id: 'classic-pick-open-acting-as',
@@ -105,7 +158,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				picksRequired: 1,
 				actingAsName: 'Dave',
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'classic-pick-made',
@@ -126,7 +178,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				},
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'classic-pick-made-auto',
@@ -146,7 +197,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				},
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 			notice: 'auto-pick',
 		},
 		{
@@ -167,7 +217,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				},
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'turbo-pick-open',
@@ -180,7 +229,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				picksRequired: 10,
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 4, playerCount: 4 },
 		},
 		{
 			id: 'turbo-pick-open-partial',
@@ -194,7 +242,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				picksRequired: 10,
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 4, playerCount: 4 },
 		},
 		{
 			id: 'turbo-pick-made',
@@ -206,7 +253,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				pick: { type: 'ranked', picksMade: 10, picksRequired: 10, isAuto: false },
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 4, playerCount: 4 },
 		},
 		{
 			id: 'cup-pick-open',
@@ -219,13 +265,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				picksRequired: 6,
 				actingAsName: null,
 			},
-			stats: {
-				...BASE_STATS,
-				potConfirmed: '120.00',
-				potTotal: '120.00',
-				aliveCount: 9,
-				playerCount: 12,
-			},
 		},
 		{
 			id: 'cup-pick-made',
@@ -236,13 +275,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				round: cupRound,
 				pick: { type: 'ranked', picksMade: 6, picksRequired: 6, isAuto: false },
 				actingAsName: 'Rachel',
-			},
-			stats: {
-				...BASE_STATS,
-				potConfirmed: '120.00',
-				potTotal: '120.00',
-				aliveCount: 9,
-				playerCount: 12,
 			},
 			notice: 'voided',
 		},
@@ -267,7 +299,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				survival: 'surviving',
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'classic-live-at-risk',
@@ -287,7 +318,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				survival: 'at-risk',
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'classic-live-out',
@@ -313,7 +343,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				survival: 'out',
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'classic-live-no-pick',
@@ -326,7 +355,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				survival: 'out',
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'classic-live-not-started',
@@ -353,7 +381,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				survival: 'unknown',
 				actingAsName: null,
 			},
-			stats: BASE_STATS,
 		},
 		{
 			id: 'turbo-live',
@@ -375,7 +402,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				survival: 'unknown',
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 4, playerCount: 4 },
 		},
 		{
 			id: 'cup-live-last-life',
@@ -395,13 +421,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				},
 				survival: 'at-risk',
 				actingAsName: null,
-			},
-			stats: {
-				...BASE_STATS,
-				potConfirmed: '120.00',
-				potTotal: '120.00',
-				aliveCount: 5,
-				playerCount: 12,
 			},
 		},
 
@@ -430,7 +449,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				},
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 4 },
 		},
 		{
 			id: 'classic-round-result-eliminated',
@@ -462,7 +480,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				},
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 4 },
 		},
 		{
 			id: 'turbo-round-result',
@@ -485,7 +502,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				nextRound: null,
 				actingAsName: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 4, playerCount: 4 },
 		},
 		{
 			id: 'cup-round-result',
@@ -506,13 +522,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				result: 'played',
 				nextRound: null,
 				actingAsName: null,
-			},
-			stats: {
-				...BASE_STATS,
-				potConfirmed: '120.00',
-				potTotal: '120.00',
-				aliveCount: 5,
-				playerCount: 12,
 			},
 		},
 
@@ -541,7 +550,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				viewerOutcome: 'won',
 				viewerPotShare: '80.00',
 			},
-			stats: { ...BASE_STATS, aliveCount: 1 },
 		},
 		{
 			id: 'turbo-winner-someone-else',
@@ -565,7 +573,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				viewerOutcome: 'lost',
 				viewerPotShare: null,
 			},
-			stats: { ...BASE_STATS, aliveCount: 1, playerCount: 5 },
 		},
 		{
 			id: 'cup-winner-split',
@@ -602,13 +609,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				// Dave's cut, not Sean's — the pot didn't divide evenly.
 				viewerPotShare: '60.00',
 			},
-			stats: {
-				...BASE_STATS,
-				potConfirmed: '120.01',
-				potTotal: '120.01',
-				aliveCount: 2,
-				playerCount: 12,
-			},
 		},
 
 		// ── Out of the game (classic only) ────────────────────────────────────
@@ -625,7 +625,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				pendingPayment: null,
 				eliminatedRoundLabel: 'GW1',
 			},
-			stats: { ...BASE_STATS, rebuyAvailable: true },
 		},
 		{
 			id: 'classic-rebuy-pending',
@@ -639,7 +638,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				pendingPayment: { id: 'payment-1', amount: '10.00' },
 				eliminatedRoundLabel: 'GW1',
 			},
-			stats: { ...BASE_STATS, rebuyAvailable: true },
 		},
 		{
 			id: 'classic-spectator',
@@ -651,7 +649,6 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				round: plRound(hours(now, -3)),
 				eliminatedRoundLabel: 'GW34',
 			},
-			stats: { ...BASE_STATS, aliveCount: 2 },
 		},
 	]
 }

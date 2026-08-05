@@ -220,26 +220,35 @@ export type GameHeroDescriptor =
 			reason: HeroNoneReason
 	  }
 
-/** Compact stat line rendered under the hero. */
+/**
+ * The page's compact stat line: pot + how many players are still in, with the
+ * pot's breakdown revealed on demand rather than shown as four standing figures.
+ */
 export interface GameViewStats {
+	/** Money actually banked. */
 	potConfirmed: string
+	/** Claimed-but-unconfirmed money. */
+	potPending: string
+	/** confirmed + pending — the headline figure. */
 	potTotal: string
+	/** Still owed across the game: target − total. */
+	potUnpaid: string
+	/** What the pot holds once everyone has paid: entry fee × expected entries. */
+	potTarget: string
 	aliveCount: number
 	playerCount: number
 	rebuyAvailable: boolean
 }
 
 /**
- * Bands the hero has taken ownership of. The page hides the corresponding
- * pre-redesign chrome when the flag is set, and keeps rendering it when it
- * isn't — which is what keeps post-deadline rendering untouched while only the
- * pre-deadline states have hero variants.
+ * Chrome the hero has taken ownership of. The page hides the corresponding
+ * standalone element when the flag is set, and keeps rendering it when it
+ * isn't — which is what keeps the `none` states rendering intact while every
+ * state that does have a hero variant lets the hero speak for it.
  */
 export interface GameViewDemotions {
-	/** Hero owns the round label + deadline: the header's round strip must not render. */
-	headerRoundStrip: boolean
-	/** Hero's stat line owns pot + player counts: the header's pot block must not render. */
-	headerStats: boolean
+	/** Hero owns the round label + deadline: the standalone round strip must not render. */
+	roundStrip: boolean
 }
 
 export interface GameViewDescriptor {
@@ -318,7 +327,15 @@ export interface BuildGameViewInput {
 	winner?: { winners: HeroWinnerEntry[]; runnerUpName?: string } | null
 	/** Decides whether the winner hero reads as the viewer's win or someone else's. */
 	viewerUserId?: string | null
-	pot: { confirmed: string; total: string }
+	pot: {
+		confirmed: string
+		pending: string
+		total: string
+		/** Still owed across the game: target − total. */
+		unpaid: string
+		/** Entry fee × expected entries. */
+		target: string
+	}
 	aliveCount: number
 	playerCount: number
 	now: Date
@@ -331,14 +348,16 @@ export function buildGameView(input: BuildGameViewInput): GameViewDescriptor {
 		hero,
 		stats: {
 			potConfirmed: input.pot.confirmed,
+			potPending: input.pot.pending,
 			potTotal: input.pot.total,
+			potUnpaid: input.pot.unpaid,
+			potTarget: input.pot.target,
 			aliveCount: input.aliveCount,
 			playerCount: input.playerCount,
 			rebuyAvailable: input.rebuyAvailable,
 		},
 		demote: {
-			headerRoundStrip: heroActive,
-			headerStats: heroActive,
+			roundStrip: heroActive,
 		},
 	}
 }

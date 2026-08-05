@@ -113,7 +113,7 @@ Two failure modes need a human hand, and both fail loudly rather than corrupt:
 
 ## Component preview gallery
 
-`/preview` renders components against hand-built fixtures — no auth, no database, no live game. It's the review surface for UI work: `/preview/game-hero` covers every `GameHero` state × game mode from descriptors shaped like `buildGameView`'s output.
+`/preview` renders components against hand-built fixtures — no auth, no database, no live game. It's the review surface for UI work: `/preview/game-hero` covers the game page's top-of-page chrome — the identity bar, the stat line (including the pot disclosure and the unpaid notice) and every `GameHero` state × game mode — from descriptors shaped like `buildGameView`'s output.
 
 - Gated by `previewRoutesEnabled()` (`src/lib/preview.ts`): enabled unless `VERCEL_ENV === 'production'`. Enforced twice — `proxy.ts` only waives auth for `/preview` outside production, and `src/app/preview/layout.tsx` calls `notFound()` on production.
 - Fixtures live next to their gallery page (e.g. `src/app/preview/game-hero/fixtures.ts`). When you add a state to a state-driven component, add its fixture there in the same PR.

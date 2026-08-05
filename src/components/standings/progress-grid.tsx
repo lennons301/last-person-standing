@@ -93,7 +93,6 @@ interface ProgressGridProps {
 	players: GridPlayer[]
 	aliveCount: number
 	eliminatedCount: number
-	pot: string
 	defaultFilter?: 'all' | 'last5' | 'last3'
 	gameId?: string
 	/** Called with the grid's current sort + filter encoded as a query string,
