@@ -1554,6 +1554,83 @@ async function seed() {
 		)
 	}
 
+	// --- Round settled, game not advanced: the round-result hero ---
+	// The one post-deadline state with no other route into a dev server. In
+	// production it's the window between `settleFixture` marking the round
+	// complete and `advanceGame` moving the pointer on, so it's real but brief:
+	// currentRoundId still points at GW6, which is already 'completed'.
+	//
+	// dev  — survived GW6 (picked a winner)   <- round-result / survived
+	// dave — went out in GW6 (picked a loser) <- round-result / eliminated
+	// mike — survived GW6
+	{
+		const settledRound = rounds.find((r) => r.number === 6)
+		const settledFixtures = settledRound ? (fixturesByRound.get(settledRound.id) ?? []) : []
+		if (settledRound && settledFixtures.length > 0) {
+			const [settledGame] = await db
+				.insert(game)
+				.values({
+					name: 'Round Settled (GW6)',
+					createdBy: userIds['dev@example.com'],
+					competitionId: pl.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: settledRound.id,
+				})
+				.returning()
+
+			const settledPlayers: Array<{ email: string; survived: boolean }> = [
+				{ email: 'dev@example.com', survived: true },
+				{ email: 'dave@example.com', survived: false },
+				{ email: 'mike@example.com', survived: true },
+			]
+			const settledUsedTeamIds = new Set<string>()
+			for (const { email, survived } of settledPlayers) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: settledGame.id,
+						userId: userIds[email],
+						status: survived ? 'alive' : 'eliminated',
+						eliminatedRoundId: survived ? null : settledRound.id,
+						eliminatedReason: survived ? null : 'loss',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: settledGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				for (const f of settledFixtures) {
+					const team = survived ? fixtureWinnerTeam(f) : fixtureLoserTeam(f)
+					if (!team || settledUsedTeamIds.has(team.id)) continue
+					settledUsedTeamIds.add(team.id)
+					const scored = team.id === f.homeTeamId ? f.homeScore : f.awayScore
+					await db.insert(pick).values({
+						gameId: settledGame.id,
+						gamePlayerId: gp.id,
+						roundId: settledRound.id,
+						teamId: team.id,
+						fixtureId: f.id,
+						result: survived ? 'win' : 'loss',
+						goalsScored: scored ?? 0,
+					})
+					break
+				}
+			}
+
+			console.log('Created "Round Settled (GW6)" — GW6 complete, the game has not advanced yet')
+		}
+	}
+
 	console.log('\nSeed complete!')
 	console.log('\nLog in with any of these (password: password123):')
 	for (const u of DEV_USERS) console.log(`  ${u.email}`)
