@@ -18,10 +18,17 @@
  *    `structuredClone` throws on function refs where `JSON.stringify` silently
  *    drops them (PR #55 → #57 incident).
  *
- * Only the pre-deadline hero variants (`pick-open`, `pick-made`) exist today.
- * Everything else lands on `{ kind: 'none' }` with a reason, and the page falls
- * back to its pre-redesign rendering. Later tickets in the hierarchy redesign
- * replace those `none` cases with real variants.
+ * The hero is the *personal* lens on the game. Before the deadline that means
+ * the viewer's pick (`pick-open` / `pick-made`); after it, their own live read
+ * (`live`), their round result (`round-result`), the rebuy offer that follows a
+ * round-1 elimination (`rebuy`), the quiet spectator note once they're out for
+ * good (`spectator`), and the winner outcome on a completed game (`winner`).
+ * The field-wide standings below the hero stay the calm view, so the two never
+ * duplicate live information.
+ *
+ * `{ kind: 'none' }` is now only for states with nothing personal to say (no
+ * round at all, a round the game hasn't reached, a completed game with no
+ * winner recorded); the page falls back to its pre-redesign rendering there.
  */
 
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
@@ -57,16 +64,72 @@ export type HeroPickSummary =
 			isAuto: boolean
 	  }
 
+/** Why no hero renders — the page keeps its pre-redesign rendering for these. */
+export type HeroNoneReason = 'no-round' | 'round-locked' | 'game-completed'
+
+/** Persisted per-slot pick outcome (`pick.result` in the schema). */
+export type HeroPickResult = 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_life' | 'void'
+
+/** The fixture a classic pick rides on, with its latest score snapshot. */
+export interface HeroFixtureSnapshot {
+	id: string
+	status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
+	homeShort: string
+	awayShort: string
+	homeScore: number | null
+	awayScore: number | null
+	kickoffIso: string | null
+}
+
 /**
- * Why no hero renders. Each of these becomes its own variant in a later ticket;
- * until then the page keeps its pre-redesign rendering for them.
+ * How the player is doing on the round that's in play (or has just finished).
+ *
+ * - `surviving` — winning / won it.
+ * - `at-risk` — level or behind with the match still running, or out of lives.
+ * - `out` — the pick lost, or there was no pick to lose with.
+ * - `unknown` — nothing to read yet (not kicked off, or a mode with no
+ *   round-to-round elimination).
  */
-export type HeroNoneReason =
-	| 'no-round'
-	| 'round-locked'
-	| 'round-completed'
-	| 'game-completed'
-	| 'not-playing'
+export type HeroSurvival = 'surviving' | 'at-risk' | 'out' | 'unknown'
+
+/** The player's entry on a round that's past its deadline. */
+export type HeroEntry =
+	| {
+			type: 'team'
+			shortName: string
+			name: string
+			opponentName: string | null
+			side: 'home' | 'away' | null
+			fixture: HeroFixtureSnapshot | null
+	  }
+	| {
+			type: 'ranked'
+			picksMade: number
+			picksRequired: number
+			correct: number
+			wrong: number
+			pending: number
+			/** Cup only — null in the other modes. */
+			livesRemaining: number | null
+	  }
+	/** The deadline passed with nothing submitted. */
+	| { type: 'none' }
+
+/** One winner on a completed game. Icons are string keys, never component refs. */
+export type HeroWinnerStatIcon = 'flame' | 'target' | 'heart' | 'list-checks'
+
+export interface HeroWinnerStat {
+	iconKey: HeroWinnerStatIcon
+	value: number | string
+	label: string
+}
+
+export interface HeroWinnerEntry {
+	userId: string
+	name: string
+	potShare: string
+	stats: HeroWinnerStat[]
+}
 
 export type GameHeroDescriptor =
 	| {
@@ -86,6 +149,53 @@ export type GameHeroDescriptor =
 			round: HeroRound
 			pick: HeroPickSummary
 			actingAsName: string | null
+	  }
+	| {
+			kind: 'live'
+			mode: GameMode
+			round: HeroRound
+			entry: HeroEntry
+			survival: HeroSurvival
+			actingAsName: string | null
+	  }
+	| {
+			kind: 'round-result'
+			mode: GameMode
+			round: HeroRound
+			entry: HeroEntry
+			/**
+			 * `played` is the ranked modes: one round, no survive-to-advance, so the
+			 * round ending isn't a survival verdict — the standings settle it.
+			 */
+			result: 'survived' | 'eliminated' | 'played'
+			nextRound: HeroRound | null
+			actingAsName: string | null
+	  }
+	| {
+			kind: 'winner'
+			mode: GameMode
+			round: HeroRound | null
+			winners: HeroWinnerEntry[]
+			runnerUpName: string | null
+			/** The viewer's own relationship to that result. */
+			viewerOutcome: 'won' | 'shared' | 'lost'
+	  }
+	| {
+			kind: 'rebuy'
+			mode: GameMode
+			round: HeroRound
+			entryFee: string
+			/** Rebuys close at the round-2 deadline. */
+			closesAtIso: string | null
+			/** Set once a rebuy has been started and is waiting on payment. */
+			pendingPayment: { id: string; amount: string } | null
+			eliminatedRoundLabel: string | null
+	  }
+	| {
+			kind: 'spectator'
+			mode: GameMode
+			round: HeroRound
+			eliminatedRoundLabel: string | null
 	  }
 	| {
 			kind: 'none'
@@ -136,6 +246,10 @@ export interface GameViewPickInput {
 		side: 'home' | 'away' | null
 		kickoffIso: string | null
 	} | null
+	/** Classic only — the fixture that pick rides on, for the post-deadline read. */
+	fixture?: HeroFixtureSnapshot | null
+	/** Persisted result of every filled slot in this round. */
+	results?: HeroPickResult[]
 }
 
 export interface BuildGameViewInput {
@@ -163,6 +277,31 @@ export interface BuildGameViewInput {
 	/** Slots needed for a complete entry: 1 for classic, `numberOfPicks` otherwise. */
 	picksRequired: number
 	rebuyAvailable: boolean
+	/** Cup only — lives left for the player being rendered. */
+	livesRemaining?: number | null
+	/** Where the game goes after this round — shown on the round-result hero. */
+	nextRound?: {
+		number: number
+		label: string
+		longLabel: string
+		deadline: Date | null
+	} | null
+	/**
+	 * The classic rebuy offer, when one stands. Mirrors `getGameDetail`'s
+	 * `rebuyBanner`: an offer for an eliminated player, or a started rebuy waiting
+	 * on payment.
+	 */
+	rebuy?: {
+		entryFee: string
+		closesAt: Date | null
+		pendingPayment: { id: string; amount: string } | null
+	} | null
+	/** Round the player went out in — the quiet note on the spectator hero. */
+	eliminatedRoundLabel?: string | null
+	/** Winner payload for a completed game (from `buildWinnerBanner`). */
+	winner?: { winners: HeroWinnerEntry[]; runnerUpName?: string } | null
+	/** Decides whether the winner hero reads as the viewer's win or someone else's. */
+	viewerUserId?: string | null
 	pot: { confirmed: string; total: string }
 	aliveCount: number
 	playerCount: number
@@ -200,8 +339,37 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 		deadlineIso: round.deadline ? round.deadline.toISOString() : null,
 	}
 
+	// A finished game leads with its outcome, whoever's looking.
 	if (input.gameStatus === 'completed') {
-		return { kind: 'none', mode: gameMode, round: heroRound, reason: 'game-completed' }
+		const winners = input.winner?.winners ?? []
+		if (winners.length === 0) {
+			return { kind: 'none', mode: gameMode, round: heroRound, reason: 'game-completed' }
+		}
+		const viewerWon = input.viewerUserId
+			? winners.some((w) => w.userId === input.viewerUserId)
+			: false
+		return {
+			kind: 'winner',
+			mode: gameMode,
+			round: heroRound,
+			winners,
+			runnerUpName: input.winner?.runnerUpName ?? null,
+			viewerOutcome: viewerWon ? (winners.length > 1 ? 'shared' : 'won') : 'lost',
+		}
+	}
+
+	// A standing rebuy offer outranks everything else: it's the one thing an
+	// eliminated player can still act on, and it expires at the round-2 deadline.
+	if (!input.isAlive && input.rebuy) {
+		return {
+			kind: 'rebuy',
+			mode: gameMode,
+			round: heroRound,
+			entryFee: input.rebuy.entryFee,
+			closesAtIso: input.rebuy.closesAt ? input.rebuy.closesAt.toISOString() : null,
+			pendingPayment: input.rebuy.pendingPayment,
+			eliminatedRoundLabel: input.eliminatedRoundLabel ?? null,
+		}
 	}
 
 	const roundStatus = deriveGameRoundStatus({
@@ -210,22 +378,61 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 		now: input.now,
 	})
 
-	// Everything from the deadline onwards belongs to a later ticket.
-	if (roundStatus === 'completed') {
-		return { kind: 'none', mode: gameMode, round: heroRound, reason: 'round-completed' }
+	// Out of the game with no way back in: the hero goes quiet and the standings
+	// below become the page. Admin acting-as mode passes isAlive=true even for
+	// eliminated targets, because an admin can rebuy-via-pick on their behalf.
+	// The round-result hero below is the exception — the round they went out in
+	// still gets to say so before the hero settles into spectating.
+	if (!input.isAlive && roundStatus !== 'completed') {
+		return {
+			kind: 'spectator',
+			mode: gameMode,
+			round: heroRound,
+			eliminatedRoundLabel: input.eliminatedRoundLabel ?? null,
+		}
 	}
+
+	const picksRequired = Math.max(1, input.picksRequired)
+
+	// The round has been settled but the game hasn't moved on yet: report the
+	// player's result and point at what's next.
+	if (roundStatus === 'completed') {
+		const entry = buildEntry(input, picksRequired)
+		return {
+			kind: 'round-result',
+			mode: gameMode,
+			round: heroRound,
+			entry,
+			result: gameMode === 'classic' ? (input.isAlive ? 'survived' : 'eliminated') : 'played',
+			nextRound: input.nextRound
+				? {
+						number: input.nextRound.number,
+						label: input.nextRound.label,
+						longLabel: input.nextRound.longLabel,
+						deadlineIso: input.nextRound.deadline ? input.nextRound.deadline.toISOString() : null,
+					}
+				: null,
+			actingAsName: input.actingAsName,
+		}
+	}
+
+	// Deadline gone, matches on: the personal live read.
+	if (roundStatus === 'active') {
+		const entry = buildEntry(input, picksRequired)
+		return {
+			kind: 'live',
+			mode: gameMode,
+			round: heroRound,
+			entry,
+			survival: deriveSurvival(input, entry),
+			actingAsName: input.actingAsName,
+		}
+	}
+
 	if (roundStatus !== 'open') {
 		return { kind: 'none', mode: gameMode, round: heroRound, reason: 'round-locked' }
 	}
 
-	// Eliminated players (and non-members) get no pick hero. Admin acting-as
-	// mode passes isAlive=true even for eliminated targets, because an admin can
-	// rebuy-via-pick on their behalf.
-	if (!input.isAlive) {
-		return { kind: 'none', mode: gameMode, round: heroRound, reason: 'not-playing' }
-	}
-
-	const picksRequired = Math.max(1, input.picksRequired)
 	const picksMade = input.pick?.picksMade ?? 0
 	const isAuto = input.pick?.isAuto ?? false
 
@@ -263,4 +470,71 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 		pick: summary,
 		actingAsName: input.actingAsName,
 	}
+}
+
+/**
+ * The player's entry on a round past its deadline: the classic team pick with
+ * the scoreboard it rides on, or the ranked slate broken down into correct /
+ * wrong / still-to-play.
+ */
+function buildEntry(input: BuildGameViewInput, picksRequired: number): HeroEntry {
+	const pick = input.pick
+	if (!pick || pick.picksMade === 0) return { type: 'none' }
+
+	if (input.gameMode === 'classic' && pick.team) {
+		return {
+			type: 'team',
+			shortName: pick.team.shortName,
+			name: pick.team.name,
+			opponentName: pick.team.opponentName,
+			side: pick.team.side,
+			fixture: pick.fixture ?? null,
+		}
+	}
+
+	const results = pick.results ?? []
+	// `void` (cancelled fixture) is settled-as-non-event: neither a hit nor a
+	// miss, and not waiting on anything either.
+	const correct = results.filter((r) => r === 'win' || r === 'saved_by_life').length
+	const wrong = results.filter((r) => r === 'loss' || r === 'draw').length
+	const pending = results.filter((r) => r === 'pending').length
+	return {
+		type: 'ranked',
+		picksMade: pick.picksMade,
+		picksRequired,
+		correct,
+		wrong,
+		pending,
+		livesRemaining: input.gameMode === 'cup' ? (input.livesRemaining ?? null) : null,
+	}
+}
+
+function deriveSurvival(input: BuildGameViewInput, entry: HeroEntry): HeroSurvival {
+	if (entry.type === 'none') {
+		// Classic has no way back from a missed deadline once the round settles;
+		// the ranked modes just score nothing for the empty slots.
+		return input.gameMode === 'classic' ? 'out' : 'unknown'
+	}
+
+	if (entry.type === 'team') {
+		const result = input.pick?.results?.[0] ?? 'pending'
+		if (result === 'win' || result === 'saved_by_life') return 'surviving'
+		if (result === 'loss' || result === 'draw') return 'out'
+		if (result === 'void') return 'unknown'
+
+		const fx = entry.fixture
+		if (!fx || fx.homeScore == null || fx.awayScore == null || !entry.side) return 'unknown'
+		if (fx.status === 'scheduled' || fx.status === 'postponed' || fx.status === 'cancelled') {
+			return 'unknown'
+		}
+		const margin = entry.side === 'home' ? fx.homeScore - fx.awayScore : fx.awayScore - fx.homeScore
+		if (fx.status === 'finished') return margin > 0 ? 'surviving' : 'out'
+		return margin > 0 ? 'surviving' : 'at-risk'
+	}
+
+	if (!input.isAlive) return 'out'
+	// Turbo never eliminates mid-round — the standings, not the hero, tell that
+	// story. Cup does, once the lives run out.
+	if (input.gameMode !== 'cup') return 'unknown'
+	return (entry.livesRemaining ?? 0) <= 0 ? 'at-risk' : 'surviving'
 }
