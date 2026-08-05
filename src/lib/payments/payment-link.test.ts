@@ -47,6 +47,18 @@ describe('normalisePaymentHandle', () => {
 		expect(normalisePaymentHandle('alice jones')).toBeNull()
 		expect(normalisePaymentHandle('<script>')).toBeNull()
 	})
+
+	// A dot run is a relative path segment even without a slash: `monzo.me/../10.00`
+	// collapses in the browser to `monzo.me/10.00`, a dead link the creator would
+	// never see was broken.
+	it('rejects dot-run and dot-only handles', () => {
+		expect(normalisePaymentHandle('.')).toBeNull()
+		expect(normalisePaymentHandle('..')).toBeNull()
+		expect(normalisePaymentHandle('...')).toBeNull()
+		expect(normalisePaymentHandle('alice..jones')).toBeNull()
+		// A single interior or trailing dot is a legitimate username character.
+		expect(normalisePaymentHandle('alice.jones')).toBe('alice.jones')
+	})
 })
 
 describe('buildPaymentReference', () => {

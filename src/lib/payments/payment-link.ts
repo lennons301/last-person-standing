@@ -18,6 +18,15 @@ export type PaymentProvider = 'monzo' | 'revolut'
  */
 const HANDLE_PATTERN = /^[A-Za-z0-9._-]{1,64}$/
 
+/**
+ * A run of dots is a relative path segment even with no slash in sight: a `..`
+ * handle builds `monzo.me/../10.00`, which the browser collapses to
+ * `monzo.me/10.00` — a dead link rather than an origin escape (the host is
+ * fixed), but a dead link nobody would notice. Single dots between characters
+ * are fine; real usernames use them.
+ */
+const DOT_RUN = /\.\.|^\.+$/
+
 /** `monzo.me/` or `revolut.me/`, optionally `www.`-prefixed — no scheme. */
 const BARE_PROVIDER_PREFIX = /^(?:www\.)?(?:monzo|revolut)\.me\//i
 
@@ -38,6 +47,7 @@ export function normalisePaymentHandle(input: string | null | undefined): string
 	// Any scheme at all — including `javascript:` — is out.
 	if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null
 	const bare = trimmed.replace(BARE_PROVIDER_PREFIX, '').replace(/^@/, '')
+	if (DOT_RUN.test(bare)) return null
 	return HANDLE_PATTERN.test(bare) ? bare : null
 }
 
