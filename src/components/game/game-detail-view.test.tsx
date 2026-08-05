@@ -111,6 +111,37 @@ describe('GameDetailView management fold', () => {
 		expect(screen.queryByText('Target')).toBeNull()
 	})
 
+	it('names the round on its own strip while no hero owns it', () => {
+		const currentRound = {
+			label: 'GW7',
+			longLabel: 'Gameweek 7',
+			deadline: new Date('2026-08-08T17:30:00.000Z'),
+			deadlinePassed: true,
+			roundCompleted: false,
+		}
+		render(<GameDetailView game={game({ currentRound })} view={view} pickSection={null} />)
+		expect(screen.getByText('Gameweek 7')).toBeTruthy()
+		expect(screen.getByText('Locked')).toBeTruthy()
+	})
+
+	it('drops the round strip once a hero owns the round', () => {
+		const currentRound = {
+			label: 'GW7',
+			longLabel: 'Gameweek 7',
+			deadline: new Date('2026-08-08T17:30:00.000Z'),
+			deadlinePassed: false,
+			roundCompleted: false,
+		}
+		render(
+			<GameDetailView
+				game={game({ currentRound })}
+				view={{ ...view, demote: { roundStrip: true } }}
+				pickSection={null}
+			/>,
+		)
+		expect(screen.queryByText('Gameweek 7')).toBeNull()
+	})
+
 	it('hangs an unpaid balance off the stat line instead of a band', () => {
 		render(
 			<GameDetailView
