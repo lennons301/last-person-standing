@@ -365,6 +365,22 @@ export default async function GameDetailPage({
 		now,
 	})
 
+	// The stand-in for a player with no pick interface to show. Suppressed once a
+	// hero owns the state: "You have been eliminated from this game." under the
+	// spectator hero, or "Round closed — picks locked" under the live one, is the
+	// same duplication the standalone rebuy and winner bands were.
+	const pickPlaceholder = gameView.demote.pickPlaceholder ? null : (
+		<div className="p-4 rounded-lg border border-border bg-card text-sm text-muted-foreground text-center">
+			{game.myMembership?.status === 'eliminated'
+				? 'You have been eliminated from this game.'
+				: game.status === 'completed'
+					? 'This game has ended.'
+					: roundDeadlinePassed
+						? 'Round closed — picks locked. Live scores and standings update below.'
+						: 'Waiting for the next round.'}
+		</div>
+	)
+
 	const pickSection =
 		game.currentRound && isAlive && game.gameMode === 'classic' && classicPickData ? (
 			// Classic stays interactive even after the current deadline passes: the
@@ -430,15 +446,7 @@ export default async function GameDetailPage({
 				</div>
 			)
 		) : (
-			<div className="p-4 rounded-lg border border-border bg-card text-sm text-muted-foreground text-center">
-				{game.myMembership?.status === 'eliminated'
-					? 'You have been eliminated from this game.'
-					: game.status === 'completed'
-						? 'This game has ended.'
-						: roundDeadlinePassed
-							? 'Round closed — picks locked. Live scores and standings update below.'
-							: 'Waiting for the next round.'}
-			</div>
+			pickPlaceholder
 		)
 
 	return (

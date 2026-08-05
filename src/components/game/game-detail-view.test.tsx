@@ -28,7 +28,7 @@ const view: GameViewDescriptor = {
 		playerCount: 4,
 		rebuyAvailable: false,
 	},
-	demote: { roundStrip: false },
+	demote: { roundStrip: false, pickPlaceholder: false },
 }
 
 const adminPayments: AdminPayment[] = [
@@ -135,7 +135,7 @@ describe('GameDetailView management fold', () => {
 		render(
 			<GameDetailView
 				game={game({ currentRound })}
-				view={{ ...view, demote: { roundStrip: true } }}
+				view={{ ...view, demote: { roundStrip: true, pickPlaceholder: false } }}
 				pickSection={null}
 			/>,
 		)

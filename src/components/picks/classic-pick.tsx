@@ -348,18 +348,25 @@ export function ClassicPick({
 		</div>
 	)
 
+	const planner = futureRounds && futureRounds.length > 0 && (
+		<PlannerSection
+			gameId={gameId}
+			rounds={futureRounds}
+			handlers={resolvedHandlers}
+			defaultOpen={currentRoundClosed}
+		/>
+	)
+
+	// A closed round whose card has stood down, with no chain and nothing to plan,
+	// has nothing left to render — and an empty wrapper would still take the
+	// section's bottom margin.
+	if (currentRoundClosed && !closedRoundCard && !chain && !planner) return null
+
 	return (
 		<div className="space-y-4">
 			{chain && <ChainRibbon slots={chain.slots} summary={chain.summary} />}
 			{currentRoundClosed ? closedRoundCard : <div>{currentRoundCard}</div>}
-			{futureRounds && futureRounds.length > 0 && (
-				<PlannerSection
-					gameId={gameId}
-					rounds={futureRounds}
-					handlers={resolvedHandlers}
-					defaultOpen={currentRoundClosed}
-				/>
-			)}
+			{planner}
 		</div>
 	)
 }

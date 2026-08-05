@@ -136,7 +136,7 @@ describe('buildGameView — pre-deadline pick states', () => {
 
 			it('demotes the standalone round strip while a hero renders', () => {
 				const view = buildGameView(baseInput({ gameMode: mode, picksRequired, pick: complete }))
-				expect(view.demote).toEqual({ roundStrip: true })
+				expect(view.demote).toEqual({ roundStrip: true, pickPlaceholder: false })
 			})
 
 			it('flips to the live hero once the deadline passes', () => {
@@ -145,7 +145,7 @@ describe('buildGameView — pre-deadline pick states', () => {
 				)
 				expect(view.hero.kind).toBe('live')
 				// The live hero names the round, so the strip stays demoted.
-				expect(view.demote).toEqual({ roundStrip: true })
+				expect(view.demote).toEqual({ roundStrip: true, pickPlaceholder: true })
 			})
 		})
 	}
@@ -672,7 +672,7 @@ describe('buildGameView — winner', () => {
 			)
 			expect(view.hero).toMatchObject({ kind: 'winner', mode, round: null, viewerOutcome: 'won' })
 			// The hero stands in for the round strip even without a round to name.
-			expect(view.demote).toEqual({ roundStrip: true })
+			expect(view.demote).toEqual({ roundStrip: true, pickPlaceholder: true })
 		})
 	}
 
@@ -815,7 +815,53 @@ describe('buildGameView — no hero', () => {
 			baseInput({ game: { currentRoundId: 'round-5', currentRoundNumber: 5 } }),
 		)
 		expect(view.hero).toMatchObject({ kind: 'none', reason: 'round-locked' })
-		expect(view.demote).toEqual({ roundStrip: false })
+		expect(view.demote).toEqual({ roundStrip: false, pickPlaceholder: false })
+	})
+})
+
+describe('buildGameView — placeholder demotion', () => {
+	// The pick section's stand-in card ("You have been eliminated from this
+	// game.", "Round closed — picks locked…") restates whatever the hero already
+	// said, for every state the hero has a variant for.
+	it('stands the placeholder card down for every post-deadline variant', () => {
+		const cases: Array<[string, BuildGameViewInput]> = [
+			['live', baseInput({ round: ACTIVE_ROUND, pick: classicPick })],
+			['round-result', baseInput({ round: COMPLETED_ROUND, pick: classicPick })],
+			[
+				'winner',
+				baseInput({
+					gameStatus: 'completed',
+					round: null,
+					game: { currentRoundId: null, currentRoundNumber: null },
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
+			],
+			[
+				'rebuy',
+				baseInput({
+					isAlive: false,
+					rebuy: { entryFee: '10.00', closesAt: FUTURE_DEADLINE, pendingPayment: null },
+				}),
+			],
+			['spectator', baseInput({ isAlive: false })],
+		]
+		for (const [kind, input] of cases) {
+			const view = buildGameView(input)
+			expect(view.hero.kind).toBe(kind)
+			expect(view.demote.pickPlaceholder).toBe(true)
+		}
+	})
+
+	it('keeps the placeholder for the pre-deadline and no-hero states', () => {
+		const open = buildGameView(baseInput({ pick: null }))
+		const made = buildGameView(baseInput({ pick: classicPick }))
+		const none = buildGameView(
+			baseInput({ round: null, game: { currentRoundId: null, currentRoundNumber: null } }),
+		)
+		expect(open.demote.pickPlaceholder).toBe(false)
+		expect(made.demote.pickPlaceholder).toBe(false)
+		expect(none.demote.pickPlaceholder).toBe(false)
 	})
 })
 

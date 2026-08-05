@@ -257,6 +257,12 @@ export interface GameViewStats {
 export interface GameViewDemotions {
 	/** Hero owns the round label + deadline: the standalone round strip must not render. */
 	roundStrip: boolean
+	/**
+	 * Hero owns the post-deadline state: the pick section's placeholder card
+	 * ("You have been eliminated from this game.", "Round closed — picks
+	 * locked…", "This game has ended.") must not restate it underneath.
+	 */
+	pickPlaceholder: boolean
 }
 
 export interface GameViewDescriptor {
@@ -361,6 +367,15 @@ export interface BuildGameViewInput {
 	now: Date
 }
 
+/** The variants that speak for a round whose deadline has already gone. */
+const POST_DEADLINE_HERO_KINDS: Array<GameHeroDescriptor['kind']> = [
+	'live',
+	'round-result',
+	'winner',
+	'rebuy',
+	'spectator',
+]
+
 export function buildGameView(input: BuildGameViewInput): GameViewDescriptor {
 	const hero = buildHero(input)
 	const heroActive = hero.kind !== 'none'
@@ -378,6 +393,10 @@ export function buildGameView(input: BuildGameViewInput): GameViewDescriptor {
 		},
 		demote: {
 			roundStrip: heroActive,
+			// Every post-deadline variant already says what the placeholder card was
+			// there to say. The pre-deadline ones don't: the pick interface (or its
+			// "waiting for the next round" stand-in) still belongs below the hero.
+			pickPlaceholder: POST_DEADLINE_HERO_KINDS.includes(hero.kind),
 		},
 	}
 }
