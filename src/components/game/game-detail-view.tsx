@@ -13,7 +13,7 @@ import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
 import { WinnerBanner, type WinnerBannerEntry } from '@/components/game/winner-banner'
 import { LiveProvider } from '@/components/live/live-provider'
-import { LiveScoreTicker } from '@/components/live/live-score-ticker'
+import { LiveScoresSheet } from '@/components/live/live-scores-sheet'
 import { CupStandings } from '@/components/standings/cup-standings'
 import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/standings/progress-grid'
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
@@ -113,7 +113,9 @@ export function GameDetailView({
 	return (
 		<LiveProvider gameId={game.id}>
 			<div>
-				<LiveScoreTicker />
+				{/* Reference scores are on-demand — a control, not a permanent band,
+				    and only while there's live action to check. */}
+				<LiveScoresSheet />
 
 				{view.hero.kind === 'none' ? (
 					<div className="mb-4 space-y-2">{notices}</div>

@@ -60,7 +60,7 @@ export function LiveFixtureCard({
 		>
 			{isMyPick && (
 				// Inline at top of card (was previously `absolute -top-1.5` which got
-				// clipped by the live-ticker's overflow-x-auto wrapper on mobile).
+				// clipped by the scrolling wrapper it renders inside on mobile).
 				<span className="self-end -mb-0.5 rounded-sm bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
 					My pick
 				</span>
