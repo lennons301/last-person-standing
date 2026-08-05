@@ -3,12 +3,14 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { AutoPickBanner } from '@/components/game/auto-pick-banner'
-import { GameHeader, type GameHeaderRoundInfo } from '@/components/game/game-header'
 import { GameHero } from '@/components/game/game-hero'
+import { GameIdentityBar } from '@/components/game/game-identity-bar'
+import { GameStatLine } from '@/components/game/game-stat-line'
 import { ManageGameFold } from '@/components/game/manage-game-fold'
-import { MyPaymentStrip } from '@/components/game/my-payment-strip'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import type { AdminPayment } from '@/components/game/payments-panel'
+import { RoundStrip, type RoundStripInfo } from '@/components/game/round-strip'
+import { SettleUpNotice } from '@/components/game/settle-up-notice'
 import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
 import { WinnerBanner, type WinnerBannerEntry } from '@/components/game/winner-banner'
@@ -28,10 +30,7 @@ interface GameDetailViewProps {
 		gameMode: string
 		competition: string
 		pot: PotBreakdown
-		target: string
-		unpaid: string
 		entryFee: string | null
-		playerCount: number
 		aliveCount: number
 		status: string
 		inviteCode: string
@@ -45,7 +44,7 @@ interface GameDetailViewProps {
 			teamShortName: string
 			kickoffLabel: string
 		} | null
-		currentRound: GameHeaderRoundInfo | null
+		currentRound: RoundStripInfo | null
 		defaultShareVariant: 'standings' | 'live' | 'winner'
 		liveShareAvailable: boolean
 		winnerShareAvailable: boolean
@@ -58,7 +57,6 @@ interface GameDetailViewProps {
 		players: GridPlayer[]
 		aliveCount: number
 		eliminatedCount: number
-		pot: string
 	} | null
 	turboStandings?: {
 		rounds: TurboRoundSummary[]
@@ -115,39 +113,22 @@ export function GameDetailView({
 			<div>
 				<LiveScoreTicker />
 
-				{view.hero.kind === 'none' ? (
-					<div className="mb-4 space-y-2">{notices}</div>
-				) : (
-					<GameHero
-						hero={view.hero}
-						stats={view.stats}
-						notices={<div className="mt-4 space-y-2">{notices}</div>}
-					/>
-				)}
-
-				<GameHeader
+				<GameIdentityBar
 					name={game.name}
 					mode={game.gameMode}
 					competition={game.competition}
-					potBreakdown={game.pot}
-					target={game.target}
-					unpaid={game.unpaid}
 					entryFee={game.entryFee}
-					playerCount={game.playerCount}
-					aliveCount={game.aliveCount}
-					status={game.status}
-					inviteCode={game.inviteCode}
-					currentRound={game.currentRound}
-					showRoundStrip={!view.demote.headerRoundStrip}
-					compactStats={view.demote.headerStats}
 					onShare={() => openShare()}
 				/>
 
-				{game.myPayment &&
-					game.myPayment.status !== 'paid' &&
-					game.myPayment.status !== 'refunded' && (
-						<div className="mb-4">
-							<MyPaymentStrip
+				<GameStatLine
+					stats={view.stats}
+					className="mb-4 md:mb-6"
+					unpaidNotice={
+						game.myPayment &&
+						game.myPayment.status !== 'paid' &&
+						game.myPayment.status !== 'refunded' ? (
+							<SettleUpNotice
 								gameId={game.id}
 								paymentId={game.myPayment.id}
 								status={game.myPayment.status}
@@ -155,8 +136,19 @@ export function GameDetailView({
 								creatorName={game.creatorName}
 								onClaimed={refresh}
 							/>
-						</div>
-					)}
+						) : null
+					}
+				/>
+
+				{!view.demote.roundStrip && game.currentRound && game.status !== 'completed' && (
+					<RoundStrip round={game.currentRound} />
+				)}
+
+				{view.hero.kind === 'none' ? (
+					<div className="mb-4 space-y-2">{notices}</div>
+				) : (
+					<GameHero hero={view.hero} notices={<div className="mt-4 space-y-2">{notices}</div>} />
+				)}
 
 				{/* `id` is the target of the hero's CTA / "Change pick" affordance. */}
 				<div id="pick" className="mb-6 scroll-mt-4">
@@ -173,7 +165,6 @@ export function GameDetailView({
 						players={classicGrid.players}
 						aliveCount={classicGrid.aliveCount}
 						eliminatedCount={classicGrid.eliminatedCount}
-						pot={classicGrid.pot}
 						gameId={game.id}
 						onShare={openShare}
 						showAdminActions={game.isAdmin}

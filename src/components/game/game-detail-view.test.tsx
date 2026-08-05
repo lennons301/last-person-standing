@@ -20,12 +20,15 @@ const view: GameViewDescriptor = {
 	hero: { kind: 'none', mode: 'classic', round: null, reason: 'no-round' },
 	stats: {
 		potConfirmed: '30.00',
+		potPending: '10.00',
 		potTotal: '40.00',
+		potUnpaid: '10.00',
+		potTarget: '50.00',
 		aliveCount: 4,
 		playerCount: 4,
 		rebuyAvailable: false,
 	},
-	demote: { headerRoundStrip: false, headerStats: false },
+	demote: { roundStrip: false },
 }
 
 const adminPayments: AdminPayment[] = [
@@ -49,10 +52,7 @@ function game(overrides: Record<string, unknown> = {}) {
 		gameMode: 'classic',
 		competition: 'Premier League 2026/27',
 		pot: { confirmed: '30.00', pending: '10.00', total: '40.00' },
-		target: '40.00',
-		unpaid: '10.00',
 		entryFee: '10.00',
-		playerCount: 4,
 		aliveCount: 4,
 		status: 'active',
 		inviteCode: 'ABC123',
