@@ -33,3 +33,8 @@ next-env.d.ts
 # tooling
 .superpowers/
 .worktrees/
+
+# pnpm writes this on an interactive `approve-builds` prompt, with placeholder
+# values that fail `pnpm install` on CI's pnpm 9 ("packages field missing or
+# empty"). This is a single-package repo — there is no workspace to declare.
+pnpm-workspace.yaml
