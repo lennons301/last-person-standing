@@ -997,7 +997,7 @@ export async function getProgressGridData(
 			// For in-progress fixtures (pending result but fixture has scores), we
 			// project the cell visuals from the live score — the design decision
 			// is that an in-progress pick renders with the same treatment as the
-			// settled equivalent. Fixture status (live ticker / kickoff time)
+			// settled equivalent. Fixture status (live scores pop-out / kickoff time)
 			// conveys "in progress" to the viewer.
 			//
 			// Voided picks (fixture cancelled or whole round voided) get the
