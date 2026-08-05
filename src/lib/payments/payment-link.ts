@@ -82,15 +82,25 @@ export interface PaymentLinkInput {
  * no-link sentinel every caller renders as today's manual fallback ("admin will
  * collect payment separately").
  *
- * Verified formats (August 2026):
+ * Formats (checked August 2026):
  * - Monzo: `monzo.me/{handle}/{amount}?d={note}` — amount and note both
- *   pre-fill. The `d` parameter is long-standing but undocumented, so the link
- *   stays valid without it.
+ *   pre-fill.
  * - Revolut: `revolut.me/{handle}/{amount}gbp` — amount only. There's no
  *   reference parameter, so the note is dropped rather than faked.
  *
- * Both are card-rail: any payer settles with an ordinary debit card, no
- * matching app required.
+ * Neither provider *documents* these parameters — both are long-standing
+ * conventions, and Monzo's and Revolut's own help pages describe only the
+ * in-app flow. That's why the amount and note are additive: strip them and
+ * what's left, `provider.me/{handle}`, is the plain link the provider does
+ * document, so the worst case if a convention changes is a payer who types the
+ * amount themselves rather than a dead end.
+ *
+ * Both are card-rail — any payer settles with an ordinary debit card, no
+ * matching app required — and neither charges the *recipient* on a personal
+ * link, so the pot doesn't silently shrink. (Business/Pro links do charge
+ * 1%–2.8% + £0.20; we deliberately point at personal links only.) Two rail
+ * limits worth knowing when reading a bug report: monzo.me refuses credit and
+ * prepaid cards, and revolut.me caps card-funded receipts at £250/week.
  */
 export function buildPaymentLink(input: PaymentLinkInput): string | null {
 	const handle = normalisePaymentHandle(input.handle)
