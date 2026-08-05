@@ -108,6 +108,13 @@ export function GameDetailView({
 		</>
 	)
 
+	// The viewer's own outstanding entry money. It rides the stat line as a quiet
+	// aside rather than a band of its own — see `SettleUpNotice`.
+	const owed =
+		game.myPayment && game.myPayment.status !== 'paid' && game.myPayment.status !== 'refunded'
+			? game.myPayment
+			: null
+
 	return (
 		<LiveProvider gameId={game.id}>
 			<div>
@@ -125,18 +132,16 @@ export function GameDetailView({
 					stats={view.stats}
 					className="mb-4 md:mb-6"
 					unpaidNotice={
-						game.myPayment &&
-						game.myPayment.status !== 'paid' &&
-						game.myPayment.status !== 'refunded' ? (
+						owed && (
 							<SettleUpNotice
 								gameId={game.id}
-								paymentId={game.myPayment.id}
-								status={game.myPayment.status}
-								amount={game.myPayment.amount}
+								paymentId={owed.id}
+								status={owed.status}
+								amount={owed.amount}
 								creatorName={game.creatorName}
 								onClaimed={refresh}
 							/>
-						) : null
+						)
 					}
 				/>
 
