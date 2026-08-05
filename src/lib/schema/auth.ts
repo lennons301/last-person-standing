@@ -1,4 +1,5 @@
 import { boolean, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import type { PaymentProvider } from '../payments/payment-link'
 
 export const user = pgTable('user', {
 	id: text('id').primaryKey(),
@@ -6,6 +7,13 @@ export const user = pgTable('user', {
 	email: text('email').notNull().unique(),
 	emailVerified: boolean('email_verified').notNull().default(false),
 	image: text('image'),
+	// Where players pay this user when they run a game. Both nullable: absent
+	// either one means no link is configured and collection stays manual.
+	// Deliberately `text` rather than a pgEnum — adding a third provider should
+	// be a one-line change, not an enum-rewrite migration (see the `mangopay`
+	// removal in 0009 for what that costs).
+	paymentProvider: text('payment_provider').$type<PaymentProvider>(),
+	paymentHandle: text('payment_handle'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
