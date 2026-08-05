@@ -36,6 +36,51 @@ describe('PaymentHandleField', () => {
 		expect(screen.getByText(/optional/i)).toBeTruthy()
 	})
 
+	it('announces the question as the group label, with the provider radios inside it', () => {
+		render(
+			<PaymentHandleField
+				provider={null}
+				handle=""
+				onProviderChange={vi.fn()}
+				onHandleChange={vi.fn()}
+			/>,
+		)
+
+		// The visible question has to be the group's accessible name — otherwise
+		// the radios read as two bare "Monzo"/"Revolut" options with nothing
+		// saying what's being chosen.
+		const group = screen.getByRole('group', { name: /where do players pay you/i })
+		expect(group.contains(screen.getByLabelText('Monzo'))).toBe(true)
+		expect(group.contains(screen.getByLabelText('Revolut'))).toBe(true)
+	})
+
+	it('names the username input from a visible label, not a hidden one', () => {
+		const { rerender } = render(
+			<PaymentHandleField
+				provider={null}
+				handle=""
+				onProviderChange={vi.fn()}
+				onHandleChange={vi.fn()}
+			/>,
+		)
+
+		// With no provider chosen the field can't claim to be a Monzo one, and the
+		// name it's announced by must be text a sighted user can see too.
+		const input = screen.getByLabelText('Username')
+		expect(input.hasAttribute('aria-label')).toBe(false)
+		expect(screen.getByText('Username')).toBeTruthy()
+
+		rerender(
+			<PaymentHandleField
+				provider="revolut"
+				handle=""
+				onProviderChange={vi.fn()}
+				onHandleChange={vi.fn()}
+			/>,
+		)
+		expect(screen.getByLabelText('Revolut username')).toBe(input)
+	})
+
 	it('reports provider and handle edits to its owner', () => {
 		const onProviderChange = vi.fn()
 		const onHandleChange = vi.fn()

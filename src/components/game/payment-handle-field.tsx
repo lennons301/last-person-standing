@@ -31,9 +31,17 @@ export function PaymentHandleField({
 	/** Distinguishes the radio group when two of these render on one page. */
 	idPrefix?: string
 }) {
+	// The question labels the whole group, so the radios aren't announced as two
+	// bare brand names. The username input gets its own visible label — an
+	// aria-label would override the question and read as "Monzo username" even
+	// with no provider picked.
+	const handleLabel = provider ? `${PROVIDER_LABELS[provider]} username` : 'Username'
+
 	return (
-		<div className="space-y-2">
-			<Label htmlFor={`${idPrefix}-handle`}>Where do players pay you?</Label>
+		<fieldset className="space-y-2">
+			<legend className="text-sm leading-none font-medium select-none">
+				Where do players pay you?
+			</legend>
 			<div className="flex items-center gap-4">
 				{(Object.keys(PROVIDER_LABELS) as PaymentProvider[]).map((p) => (
 					<label key={p} className="flex items-center gap-1.5 text-sm" htmlFor={`${idPrefix}-${p}`}>
@@ -49,18 +57,18 @@ export function PaymentHandleField({
 					</label>
 				))}
 			</div>
+			<Label htmlFor={`${idPrefix}-handle`}>{handleLabel}</Label>
 			<Input
 				id={`${idPrefix}-handle`}
 				value={handle}
 				onChange={(e) => onHandleChange(e.target.value)}
 				placeholder="alicejones"
-				aria-label={`${provider === 'revolut' ? 'Revolut' : 'Monzo'} username`}
 				autoComplete="off"
 			/>
 			<p className="text-xs text-muted-foreground">
 				Optional. Just your username — we'll build a <code>{provider ?? 'monzo'}.me</code> link with
 				the amount filled in, so players can pay by card. We never handle the money.
 			</p>
-		</div>
+		</fieldset>
 	)
 }
