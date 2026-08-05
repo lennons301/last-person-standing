@@ -3187,6 +3187,71 @@ describe('lifecycle: deadline no-pick lock + crown guard', () => {
 		})
 		expect(alive.map((p) => p.id).sort()).toEqual([gpAuto, gpPicked].sort())
 	})
+
+	/**
+	 * Sequential idempotency (above) rests on a read-then-insert: check for an
+	 * existing pick, then insert one. Two *concurrent* invocations can both pass
+	 * that read, and the pick unique index doesn't catch classic picks because it
+	 * includes confidence_rank, which is NULL there (Postgres treats NULLs as
+	 * distinct). The partial index `pick_player_round_classic_idx` is what closes
+	 * it — this exercises the real database, so it also proves the migration
+	 * landed and that the ON CONFLICT clause infers that index.
+	 */
+	it('two concurrent lock invocations insert exactly one auto-pick', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', leaguePosition: 3 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', leaguePosition: 17 })
+		const r3 = await makeRound(compId, {
+			number: 3,
+			status: 'open',
+			deadline: new Date(Date.now() - 60_000),
+		})
+		const fxAB = await makeFixture({
+			roundId: r3,
+			homeTeamId: a,
+			awayTeamId: b,
+			kickoff: new Date(Date.now() + 3_600_000),
+		})
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r3,
+			modeConfig: { allowRebuys: false },
+		})
+		const gp = await makePlayer({ gameId, userId: 'u-race' })
+
+		// The deadline trigger and the daily-sync fallback firing at the same
+		// instant: both read "no pick", both try to insert.
+		const [first, second] = await Promise.all([
+			processDeadlineLock([r3]),
+			processDeadlineLock([r3]),
+		])
+
+		const picks = await db.query.pick.findMany({
+			where: and(eq(pick.gamePlayerId, gp), eq(pick.roundId, r3)),
+		})
+		expect(picks).toHaveLength(1)
+		expect(picks[0].teamId).toBe(b) // worst-placed unused team
+		expect(picks[0].isAuto).toBe(true)
+		// Whoever lost the race must not report an insert it didn't make.
+		expect(first.autoPicksInserted + second.autoPicksInserted).toBe(1)
+		expect(first.playersEliminated + second.playersEliminated).toBe(0)
+
+		// And the invariant holds against any writer, not just this code path.
+		await expect(async () => {
+			await db.insert(pick).values({
+				gameId,
+				gamePlayerId: gp,
+				roundId: r3,
+				teamId: a,
+				fixtureId: fxAB,
+			})
+		}).rejects.toThrow() // duplicate key value violates pick_player_round_classic_idx
+		const afterRawInsert = await db.query.pick.findMany({
+			where: and(eq(pick.gamePlayerId, gp), eq(pick.roundId, r3)),
+		})
+		expect(afterRawInsert).toHaveLength(1)
+	})
 })
 
 /* ────────────────────────────────────────────────────────────────────── */

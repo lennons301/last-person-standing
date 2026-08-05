@@ -194,18 +194,20 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			}
 		}
 
-		// Delete existing pick for this player+round if it exists, then insert new one.
-		// We cannot use onConflictDoUpdate because the unique index includes confidenceRank,
-		// which is null for classic picks, and PostgreSQL treats nulls as distinct.
+		// Replace any existing pick for this player+round: delete, then insert.
+		// Both happen inside the transaction because `pick_player_round_classic_idx`
+		// (unique on player+round where confidenceRank is null) can now reject the
+		// insert if an auto-pick raced in between — rolling back restores the
+		// player's previous pick instead of leaving them with none.
 		const existingPick = previousPicks.find((p) => p.roundId === roundId)
-		if (existingPick) {
-			await db.delete(pick).where(eq(pick.id, existingPick.id))
-		}
 
 		let newPick!: typeof pick.$inferSelect
 		let unEliminated = false
 
 		await db.transaction(async (tx) => {
+			if (existingPick) {
+				await tx.delete(pick).where(eq(pick.id, existingPick.id))
+			}
 			const picks = await tx
 				.insert(pick)
 				.values({
