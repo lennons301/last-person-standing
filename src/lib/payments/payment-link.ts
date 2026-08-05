@@ -40,3 +40,28 @@ export function normalisePaymentHandle(input: string | null | undefined): string
 	const bare = trimmed.replace(BARE_PROVIDER_PREFIX, '').replace(/^@/, '')
 	return HANDLE_PATTERN.test(bare) ? bare : null
 }
+
+/**
+ * Payment notes are short. 35 characters is the conservative common
+ * denominator across the note fields a reference can end up in (a Monzo.me
+ * description, a bank statement line), and it comfortably fits a game name
+ * plus a first name.
+ */
+export const PAYMENT_REFERENCE_MAX_LENGTH = 35
+
+/**
+ * The note a player's payment carries: `{game name} {first name}`, so the
+ * creator recognises it at a glance. Hard-truncated — a reference that runs
+ * past the field limit gets cut somewhere anyway; better it happens where we
+ * can guarantee no trailing whitespace.
+ */
+export function buildPaymentReference(gameName: string, playerName: string): string {
+	const game = collapseWhitespace(gameName)
+	const firstName = collapseWhitespace(playerName).split(' ')[0] ?? ''
+	const reference = [game, firstName].filter(Boolean).join(' ')
+	return reference.slice(0, PAYMENT_REFERENCE_MAX_LENGTH).trimEnd()
+}
+
+function collapseWhitespace(value: string): string {
+	return value.trim().replace(/\s+/g, ' ')
+}
