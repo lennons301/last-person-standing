@@ -86,6 +86,7 @@ Variables:
 - `QSTASH_TOKEN` — Upstash QStash client token.
 - `QSTASH_CURRENT_SIGNING_KEY` and `QSTASH_NEXT_SIGNING_KEY` — QStash webhook signature verification.
 - `VERCEL_URL` — deployment URL used as the QStash callback base. Populated automatically in Vercel builds; set manually in dev if you want to exercise QStash locally.
+- `VERCEL_ENV` — `production` | `preview` | `development`, set by Vercel itself (never by us). Read only by `src/lib/preview.ts` to gate the `/preview` component gallery: auth-free everywhere except production, 404 on production. Leave unset locally.
 - `NEXT_PUBLIC_APP_URL` — public origin of the deployed app. Used by the Better Auth client (`src/lib/auth-client.ts`) as its `baseURL`. **Must match the deployed URL exactly** so the browser can reach `/api/auth/*`. As a `NEXT_PUBLIC_*` var, it's bundled into the client at build time — changing it requires a redeploy.
 - `RESEND_API_KEY` — Resend API key for transactional email (password reset). Provisioned manually via Doppler (same path as every other secret): Doppler `prd` auto-syncs to Vercel Production; Doppler `stg` is pushed to Vercel Preview via `just sync-preview-env`. Sender domain is `last-person-standing.app`, verified in LPS's own Resend workspace (separate from moontide's account — Resend free tier is one verified domain per workspace). If absent in local dev, `src/lib/email.ts` logs the email payload to stdout instead of sending, which keeps unit/integration tests deterministic.
 
@@ -109,6 +110,14 @@ Two failure modes need a human hand, and both fail loudly rather than corrupt:
 
 - **`SeasonDetectionError`** (red run, zero writes): the sources disagree or one is missing data — investigate before anything else; do not hand-create the season.
 - **`mergeFootballDataIds` team-coverage error** (`missing football-data IDs after merge: <list>`): a promoted club's FPL `short_name` and football-data `tla` disagree (as of 2025/26 only Nottingham Forest: FPL `NFO`, fd `NOT`). Add a one-line entry to `FPL_TO_FD_TLA` in `src/lib/game/bootstrap-competitions.ts`, deploy, and let the next sync run. Team gaps fail loudly because every team must be matchable for live scoring; fixture-level gaps are warn-only (rescheduled / late-published matches fill in on subsequent runs).
+
+## Component preview gallery
+
+`/preview` renders components against hand-built fixtures — no auth, no database, no live game. It's the review surface for UI work: `/preview/game-hero` covers every `GameHero` state × game mode from descriptors shaped like `buildGameView`'s output.
+
+- Gated by `previewRoutesEnabled()` (`src/lib/preview.ts`): enabled unless `VERCEL_ENV === 'production'`. Enforced twice — `proxy.ts` only waives auth for `/preview` outside production, and `src/app/preview/layout.tsx` calls `notFound()` on production.
+- Fixtures live next to their gallery page (e.g. `src/app/preview/game-hero/fixtures.ts`). When you add a state to a state-driven component, add its fixture there in the same PR.
+- Galleries must stay database-free. If a component needs client state or a live payload to render (e.g. the dismissible banners), split the presentational half out and render that.
 
 ## Per-fixture settlement
 

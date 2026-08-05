@@ -9,8 +9,24 @@ vi.mock('next/navigation', () => ({
 	useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }))
 
+import type { GameViewDescriptor } from '@/lib/game/game-view'
 import { GameDetailView } from './game-detail-view'
 import type { AdminPayment } from './payments-panel'
+
+// The fold lives well below the hero, so these tests pin the hero to its
+// no-variant case: the page falls back to its pre-redesign top-of-page chrome
+// and nothing above the fold interferes with the assertions.
+const view: GameViewDescriptor = {
+	hero: { kind: 'none', mode: 'classic', round: null, reason: 'no-round' },
+	stats: {
+		potConfirmed: '30.00',
+		potTotal: '40.00',
+		aliveCount: 4,
+		playerCount: 4,
+		rebuyAvailable: false,
+	},
+	demote: { headerRoundStrip: false, headerStats: false },
+}
 
 const adminPayments: AdminPayment[] = [
 	{
@@ -73,7 +89,7 @@ describe('GameDetailView management fold', () => {
 	})
 
 	it('renders the collapsed Manage game fold for admins', () => {
-		render(<GameDetailView game={game()} pickSection={null} />)
+		render(<GameDetailView game={game()} view={view} pickSection={null} />)
 
 		const toggle = screen.getByRole('button', { name: /manage game/i })
 		expect(toggle.getAttribute('aria-expanded')).toBe('false')
@@ -85,6 +101,7 @@ describe('GameDetailView management fold', () => {
 		render(
 			<GameDetailView
 				game={game({ isAdmin: false, adminPayments: undefined })}
+				view={view}
 				pickSection={null}
 			/>,
 		)
