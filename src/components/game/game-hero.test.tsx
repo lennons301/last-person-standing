@@ -147,11 +147,44 @@ describe('GameHero', () => {
 		expect(screen.getByText('Your pick')).toBeTruthy()
 		expect(screen.getByText('Arsenal')).toBeTruthy()
 		expect(screen.getByText('1–0')).toBeTruthy()
-		expect(screen.getByText(/ARS v EVE · Live/)).toBeTruthy()
+		expect(screen.getByText(/ARS 1–0 EVE · Live/)).toBeTruthy()
 		expect(screen.getByText('Surviving')).toBeTruthy()
 		// The picks are locked — no change affordance, no countdown.
 		expect(screen.queryByRole('link', { name: /Change pick/ })).toBeNull()
 		expect(screen.getByText('Picks locked')).toBeTruthy()
+	})
+
+	// The score sits directly after the picked team's name, so it has to read from
+	// their side: "Burnley 3–0" for an away pick in a 3–0 home defeat is a lie.
+	it('orients the score to the picked team when the pick was away', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'live',
+			mode: 'classic',
+			round,
+			entry: {
+				type: 'team',
+				shortName: 'BUR',
+				name: 'Burnley',
+				opponentName: 'Manchester City',
+				side: 'away',
+				fixture: {
+					id: 'fixture-2',
+					status: 'finished',
+					homeShort: 'MCI',
+					awayShort: 'BUR',
+					homeScore: 3,
+					awayScore: 0,
+					kickoffIso: '2099-08-08T14:00:00.000Z',
+				},
+			},
+			survival: 'out',
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByText('0–3')).toBeTruthy()
+		expect(screen.queryByText('3–0')).toBeNull()
+		// The meta line keeps the true home–away scoreline, named on both sides.
+		expect(screen.getByText(/MCI 3–0 BUR · Full time/)).toBeTruthy()
 	})
 
 	it('summarises a live ranked slate with lives left', () => {

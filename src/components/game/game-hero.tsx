@@ -406,13 +406,22 @@ function EntryHeadline({ mode, entry }: { mode: GameMode; entry: HeroEntry }) {
 
 	if (entry.type === 'team') {
 		const fx = entry.fixture
-		const hasScore = fx && fx.homeScore != null && fx.awayScore != null
+		// The score sits right after the picked team's name, so it has to read from
+		// THEIR side: an away pick in a 3–0 home win is 0–3, not 3–0. Without a
+		// known side there's nothing to orient against — the meta line below carries
+		// the scoreline with both short names instead.
+		const oriented =
+			fx && fx.homeScore != null && fx.awayScore != null && entry.side
+				? entry.side === 'away'
+					? { for: fx.awayScore, against: fx.homeScore }
+					: { for: fx.homeScore, against: fx.awayScore }
+				: null
 		return (
 			<div className="font-display text-lg md:text-xl font-semibold leading-tight">
 				{entry.name}
-				{hasScore && (
+				{oriented && (
 					<span className="ml-2 tabular-nums">
-						{fx.homeScore}–{fx.awayScore}
+						{oriented.for}–{oriented.against}
 					</span>
 				)}
 				{entry.opponentName && (
@@ -451,9 +460,15 @@ function EntryMeta({ mode, entry }: { mode: GameMode; entry: HeroEntry }) {
 	if (entry.type === 'team') {
 		const fx = entry.fixture
 		if (!fx) return null
+		// Home–away, with both short names around it: the one place the scoreline is
+		// unambiguous whichever side the pick was on.
+		const scoreline =
+			fx.homeScore != null && fx.awayScore != null
+				? `${fx.homeShort} ${fx.homeScore}–${fx.awayScore} ${fx.awayShort}`
+				: `${fx.homeShort} v ${fx.awayShort}`
 		return (
 			<div className="text-xs text-muted-foreground mt-0.5">
-				{fx.homeShort} v {fx.awayShort} · {matchStateLabel(fx.status)}
+				{scoreline} · {matchStateLabel(fx.status)}
 				{fx.status === 'scheduled' && fx.kickoffIso && (
 					<>
 						{' '}
