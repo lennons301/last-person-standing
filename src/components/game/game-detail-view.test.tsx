@@ -20,12 +20,15 @@ const view: GameViewDescriptor = {
 	hero: { kind: 'none', mode: 'classic', round: null, reason: 'no-round' },
 	stats: {
 		potConfirmed: '30.00',
+		potPending: '10.00',
 		potTotal: '40.00',
+		potUnpaid: '10.00',
+		potTarget: '50.00',
 		aliveCount: 4,
 		playerCount: 4,
 		rebuyAvailable: false,
 	},
-	demote: { headerRoundStrip: false, headerStats: false },
+	demote: { roundStrip: false },
 }
 
 const adminPayments: AdminPayment[] = [
@@ -49,10 +52,7 @@ function game(overrides: Record<string, unknown> = {}) {
 		gameMode: 'classic',
 		competition: 'Premier League 2026/27',
 		pot: { confirmed: '30.00', pending: '10.00', total: '40.00' },
-		target: '40.00',
-		unpaid: '10.00',
 		entryFee: '10.00',
-		playerCount: 4,
 		aliveCount: 4,
 		status: 'active',
 		inviteCode: 'ABC123',
@@ -95,6 +95,65 @@ describe('GameDetailView management fold', () => {
 		expect(toggle.getAttribute('aria-expanded')).toBe('false')
 		expect(screen.queryByRole('button', { name: '+ Add player' })).toBeNull()
 		expect(screen.queryByText('Payments')).toBeNull()
+	})
+
+	it('tops the page with the identity bar and the stat line, and nothing else', () => {
+		render(<GameDetailView game={game()} view={view} pickSection={null} />)
+
+		expect(screen.getByRole('heading', { name: 'Cup Tuesday' })).toBeTruthy()
+		expect(screen.getByRole('button', { name: 'How classic mode works' })).toBeTruthy()
+		expect(screen.getByRole('button', { name: /£30\.00 pot/ })).toBeTruthy()
+		expect(screen.getByText(/of\s+4 in/)).toBeTruthy()
+		// Invite code and entry fee left the persistent page for the share flow
+		// and the rules dialog; the pot breakdown is behind the disclosure.
+		expect(screen.queryByText('ABC123')).toBeNull()
+		expect(screen.queryByText(/entry/i)).toBeNull()
+		expect(screen.queryByText('Target')).toBeNull()
+	})
+
+	it('names the round on its own strip while no hero owns it', () => {
+		const currentRound = {
+			label: 'GW7',
+			longLabel: 'Gameweek 7',
+			deadline: new Date('2026-08-08T17:30:00.000Z'),
+			deadlinePassed: true,
+			roundCompleted: false,
+		}
+		render(<GameDetailView game={game({ currentRound })} view={view} pickSection={null} />)
+		expect(screen.getByText('Gameweek 7')).toBeTruthy()
+		expect(screen.getByText('Locked')).toBeTruthy()
+	})
+
+	it('drops the round strip once a hero owns the round', () => {
+		const currentRound = {
+			label: 'GW7',
+			longLabel: 'Gameweek 7',
+			deadline: new Date('2026-08-08T17:30:00.000Z'),
+			deadlinePassed: false,
+			roundCompleted: false,
+		}
+		render(
+			<GameDetailView
+				game={game({ currentRound })}
+				view={{ ...view, demote: { roundStrip: true } }}
+				pickSection={null}
+			/>,
+		)
+		expect(screen.queryByText('Gameweek 7')).toBeNull()
+	})
+
+	it('hangs an unpaid balance off the stat line instead of a band', () => {
+		render(
+			<GameDetailView
+				game={game({ myPayment: { id: 'pay1', status: 'pending', amount: '10.00' } })}
+				view={view}
+				pickSection={null}
+			/>,
+		)
+
+		const notice = screen.getByRole('button', { name: /£10\.00 unpaid — settle up/ })
+		const statLine = screen.getByRole('button', { name: /£30\.00 pot/ }).parentElement
+		expect(statLine?.contains(notice)).toBe(true)
 	})
 
 	it('never renders the fold for non-admins', () => {

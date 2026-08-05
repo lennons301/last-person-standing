@@ -30,7 +30,13 @@ function baseInput(overrides: Partial<BuildGameViewInput> = {}): BuildGameViewIn
 		pick: null,
 		picksRequired: 1,
 		rebuyAvailable: false,
-		pot: { confirmed: '60.00', total: '80.00' },
+		pot: {
+			confirmed: '60.00',
+			pending: '20.00',
+			total: '80.00',
+			unpaid: '40.00',
+			target: '120.00',
+		},
 		aliveCount: 5,
 		playerCount: 8,
 		now: NOW,
@@ -86,12 +92,12 @@ describe('buildGameView — pre-deadline pick states', () => {
 				expect(view.hero.kind).toBe('pick-made')
 			})
 
-			it('demotes the header round strip and stats while a hero renders', () => {
+			it('demotes the standalone round strip while a hero renders', () => {
 				const view = buildGameView(baseInput({ gameMode: mode, picksRequired, pick: complete }))
-				expect(view.demote).toEqual({ headerRoundStrip: true, headerStats: true })
+				expect(view.demote).toEqual({ roundStrip: true })
 			})
 
-			it('leaves the pre-redesign header alone once the deadline passes', () => {
+			it('hands the round strip back once the deadline passes', () => {
 				const view = buildGameView(
 					baseInput({
 						gameMode: mode,
@@ -108,7 +114,7 @@ describe('buildGameView — pre-deadline pick states', () => {
 					}),
 				)
 				expect(view.hero).toMatchObject({ kind: 'none', reason: 'round-locked' })
-				expect(view.demote).toEqual({ headerRoundStrip: false, headerStats: false })
+				expect(view.demote).toEqual({ roundStrip: false })
 			})
 		})
 	}
@@ -181,7 +187,13 @@ describe('buildGameView — pre-deadline pick states', () => {
 	it('passes the stat line through untouched', () => {
 		const view = buildGameView(
 			baseInput({
-				pot: { confirmed: '120.00', total: '150.00' },
+				pot: {
+					confirmed: '120.00',
+					pending: '30.00',
+					total: '150.00',
+					unpaid: '50.00',
+					target: '200.00',
+				},
 				aliveCount: 3,
 				playerCount: 12,
 				rebuyAvailable: true,
@@ -189,7 +201,10 @@ describe('buildGameView — pre-deadline pick states', () => {
 		)
 		expect(view.stats).toEqual({
 			potConfirmed: '120.00',
+			potPending: '30.00',
 			potTotal: '150.00',
+			potUnpaid: '50.00',
+			potTarget: '200.00',
 			aliveCount: 3,
 			playerCount: 12,
 			rebuyAvailable: true,

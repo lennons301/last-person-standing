@@ -102,11 +102,14 @@ const RULES: Record<string, ModeRules> = {
 
 interface GameRulesDialogProps {
 	mode: string
+	/** The game's stake. Shown here (and in the join / payment flow) rather than
+	 *  on the page itself — it's a fact you look up, not one you monitor. */
+	entryFee?: string | null
 	open: boolean
 	onOpenChange: (open: boolean) => void
 }
 
-export function GameRulesDialog({ mode, open, onOpenChange }: GameRulesDialogProps) {
+export function GameRulesDialog({ mode, entryFee, open, onOpenChange }: GameRulesDialogProps) {
 	const rules = RULES[mode.toLowerCase()] ?? RULES.classic
 
 	return (
@@ -117,6 +120,13 @@ export function GameRulesDialog({ mode, open, onOpenChange }: GameRulesDialogPro
 					<DialogDescription>{rules.intro}</DialogDescription>
 				</DialogHeader>
 				<div className="space-y-4">
+					{entryFee && (
+						<p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+							<span className="text-muted-foreground">Entry fee</span>{' '}
+							<span className="font-display font-semibold">£{entryFee}</span>
+							<span className="text-muted-foreground"> — collected by the organiser.</span>
+						</p>
+					)}
 					{rules.sections.map((section) => (
 						<div key={section.heading}>
 							<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
