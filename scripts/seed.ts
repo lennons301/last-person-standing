@@ -496,6 +496,8 @@ async function seed() {
 			creatorSubmittedCurrentPick: true,
 		},
 		{
+			// The dev viewer goes out in round 5 with no rebuys configured, which is
+			// what makes the quiet spectator hero reachable locally.
 			name: 'Family LPS',
 			mode: 'classic',
 			creatorEmail: 'mike@example.com',
@@ -557,6 +559,29 @@ async function seed() {
 			players: ['dev@example.com', 'mike@example.com', 'rachel@example.com'],
 			entryFee: '10.00',
 			turboRoundNumber: 7,
+			turboState: 'live',
+			viewerSubmittedCurrentPick: true,
+		},
+		// GW9's deadline is pulled into the past below (see "Live Lads"), so these
+		// two sit past their deadline with matches in flight — the post-deadline
+		// live hero in turbo and cup. "Live Lads" covers classic.
+		{
+			name: 'Turbo Live (GW9)',
+			mode: 'turbo',
+			creatorEmail: 'dev@example.com',
+			players: ['dev@example.com', 'dave@example.com', 'rich@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 9,
+			turboState: 'live',
+			viewerSubmittedCurrentPick: true,
+		},
+		{
+			name: 'Cup Live (GW9)',
+			mode: 'cup',
+			creatorEmail: 'dev@example.com',
+			players: ['dev@example.com', 'sarah@example.com', 'tom@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 9,
 			turboState: 'live',
 			viewerSubmittedCurrentPick: true,
 		},
@@ -1056,8 +1081,13 @@ async function seed() {
 	// Active game whose current round (GW9) is 'active' and has a live fixture.
 	// This makes defaultShareVariant === 'live'.
 	{
-		// Promote GW9 from 'upcoming' to 'active'
-		await db.update(roundTable).set({ status: 'active' }).where(eq(roundTable.id, gw9_4c5.id))
+		// Promote GW9 from 'upcoming' to 'active' and pull its deadline into the
+		// past: a round only counts as in play once picks have locked, and that's
+		// what the hero's live variant keys off (deriveGameRoundStatus).
+		await db
+			.update(roundTable)
+			.set({ status: 'active', deadline: addHours(now, -2) })
+			.where(eq(roundTable.id, gw9_4c5.id))
 
 		// Update the first GW9 fixture to live status with a score
 		const gw9Fixtures = fixturesByRound.get(gw9_4c5.id) ?? []
@@ -1301,6 +1331,159 @@ async function seed() {
 		}
 
 		console.log(`Created "Split Cup (4c5 smoke)" — 2 winners + 3 eliminated, pot £100`)
+	}
+
+	// --- Rebuy window: the eliminated-with-rebuy hero, for the dev viewer ---
+	// `isRebuyEligible` gates the offer on the *competition's* round-2 deadline
+	// still being in the future, and the main PL seed puts rounds 1–6 in the past
+	// — so no game on it can ever show the offer. This second competition exists
+	// purely to make that hero (and the rebuy → claim flow behind it) reachable
+	// locally: round 1 was played two days ago, round 2 is still open.
+	//
+	// dev  — eliminated in round 1 (loss), one payment  <- the rebuy hero
+	// dave — alive, paid
+	// mike — alive, paid
+	{
+		const [rebuyComp] = await db
+			.insert(competition)
+			.values({
+				name: 'Rebuy Window (dev)',
+				type: 'league',
+				dataSource: 'manual',
+				season: '2025/26',
+			})
+			.returning()
+
+		const [rwRound1] = await db
+			.insert(roundTable)
+			.values({
+				competitionId: rebuyComp.id,
+				number: 1,
+				name: 'Gameweek 1',
+				status: 'completed',
+				deadline: addDays(now, -2),
+			})
+			.returning()
+		const [rwRound2] = await db
+			.insert(roundTable)
+			.values({
+				competitionId: rebuyComp.id,
+				number: 2,
+				name: 'Gameweek 2',
+				status: 'open',
+				deadline: addDays(now, 2),
+			})
+			.returning()
+
+		// Five fixtures per round off the top of the team list — round 1 finished
+		// (so there's a winner and a loser to pick), round 2 still to play.
+		const rwPairs: Array<[TeamRow, TeamRow]> = []
+		for (let i = 0; i < 10; i += 2) {
+			const home = teams[i]
+			const away = teams[i + 1]
+			if (home && away) rwPairs.push([home, away])
+		}
+
+		const rwRound1Fixtures: FixtureRow[] = []
+		for (let i = 0; i < rwPairs.length; i++) {
+			const [home, away] = rwPairs[i]
+			const [f] = await db
+				.insert(fixture)
+				.values({
+					roundId: rwRound1.id,
+					homeTeamId: home.id,
+					awayTeamId: away.id,
+					kickoff: addHours(addDays(now, -2), 20),
+					homeScore: 2,
+					awayScore: 0,
+					status: 'finished',
+				})
+				.returning()
+			rwRound1Fixtures.push(f)
+		}
+		for (const [home, away] of rwPairs) {
+			await db.insert(fixture).values({
+				roundId: rwRound2.id,
+				homeTeamId: away.id,
+				awayTeamId: home.id,
+				kickoff: addHours(addDays(now, 2), 20),
+				status: 'scheduled',
+			})
+		}
+
+		const [rebuyWindowGame] = await db
+			.insert(game)
+			.values({
+				name: 'Rebuy Window (dev)',
+				createdBy: userIds['dave@example.com'],
+				competitionId: rebuyComp.id,
+				gameMode: 'classic',
+				modeConfig: { allowRebuys: true },
+				entryFee: '10.00',
+				inviteCode: generateInviteCode(),
+				status: 'active',
+				currentRoundId: rwRound2.id,
+			})
+			.returning()
+
+		const rwPlayers: Array<{ email: string; status: 'alive' | 'eliminated' }> = [
+			{ email: 'dev@example.com', status: 'eliminated' },
+			{ email: 'dave@example.com', status: 'alive' },
+			{ email: 'mike@example.com', status: 'alive' },
+		]
+		const rwPlayerRows: Record<string, { id: string }> = {}
+		for (const { email, status } of rwPlayers) {
+			const [gp] = await db
+				.insert(gamePlayer)
+				.values({
+					gameId: rebuyWindowGame.id,
+					userId: userIds[email],
+					status,
+					eliminatedRoundId: status === 'eliminated' ? rwRound1.id : null,
+					eliminatedReason: status === 'eliminated' ? 'loss' : null,
+					livesRemaining: 0,
+				})
+				.returning()
+			rwPlayerRows[email] = { id: gp.id }
+
+			await db.insert(payment).values({
+				gameId: rebuyWindowGame.id,
+				userId: userIds[email],
+				amount: '10.00',
+				status: 'paid',
+				paidAt: new Date(),
+			})
+		}
+
+		// Round 1: dev backed the away team (lost), the others backed the home team.
+		const rwLossFixture = rwRound1Fixtures[0]
+		const rwWinFixture = rwRound1Fixtures[1]
+		if (rwLossFixture && rwWinFixture) {
+			await db.insert(pick).values({
+				gameId: rebuyWindowGame.id,
+				gamePlayerId: rwPlayerRows['dev@example.com'].id,
+				roundId: rwRound1.id,
+				teamId: rwLossFixture.awayTeamId,
+				fixtureId: rwLossFixture.id,
+				result: 'loss',
+				goalsScored: 0,
+			})
+			for (const email of ['dave@example.com', 'mike@example.com']) {
+				await db.insert(pick).values({
+					gameId: rebuyWindowGame.id,
+					gamePlayerId: rwPlayerRows[email].id,
+					roundId: rwRound1.id,
+					teamId: rwWinFixture.homeTeamId,
+					fixtureId: rwWinFixture.id,
+					result: 'win',
+					goalsScored: 2,
+				})
+			}
+		}
+
+		console.log(
+			'Created "Rebuy Window (dev)" — dev eliminated in round 1 with the rebuy offer open',
+		)
 	}
 
 	console.log('\nSeed complete!')
