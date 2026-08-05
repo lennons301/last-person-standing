@@ -1,19 +1,12 @@
 'use client'
 
 import { CheckCircle2, Clock, Pencil, UserCog } from 'lucide-react'
-import { GameStatLine } from '@/components/game/game-stat-line'
 import { LocalDateTime } from '@/components/local-datetime'
 import { requestPickEdit } from '@/components/picks/edit-pick-event'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { Button } from '@/components/ui/button'
 import { formatDeadline } from '@/lib/format'
-import type {
-	GameHeroDescriptor,
-	GameMode,
-	GameViewStats,
-	HeroPickSummary,
-	HeroRound,
-} from '@/lib/game/game-view'
+import type { GameHeroDescriptor, GameMode, HeroPickSummary, HeroRound } from '@/lib/game/game-view'
 
 /**
  * Top-of-page hero. One state-driven band that owns the round label, the
@@ -29,14 +22,13 @@ import type {
  */
 export interface GameHeroProps {
 	hero: GameHeroDescriptor
-	stats: GameViewStats
 	/** Auto-pick / voided-pick notices, rendered inside the hero body. */
 	notices?: React.ReactNode
 	/** Anchor the CTA scrolls to — the pick interface further down the page. */
 	pickAnchor?: string
 }
 
-export function GameHero({ hero, stats, notices, pickAnchor = '#pick' }: GameHeroProps) {
+export function GameHero({ hero, notices, pickAnchor = '#pick' }: GameHeroProps) {
 	if (hero.kind === 'none') return null
 
 	const loud = hero.kind === 'pick-open'
@@ -74,11 +66,6 @@ export function GameHero({ hero, stats, notices, pickAnchor = '#pick' }: GameHer
 
 				{notices}
 			</div>
-
-			<GameStatLine
-				stats={stats}
-				className="border-t border-border/60 bg-card/60 px-4 md:px-5 py-2.5"
-			/>
 		</section>
 	)
 }

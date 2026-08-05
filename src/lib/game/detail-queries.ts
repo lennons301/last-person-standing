@@ -1067,12 +1067,10 @@ export async function getProgressGridData(
 
 	const aliveCount = players.filter((p) => p.status === 'alive').length
 	const eliminatedCount = players.filter((p) => p.status === 'eliminated').length
-	const payments = await db.query.payment.findMany({
-		where: eq(payment.gameId, gameId),
-	})
-	const pot = calculatePot(payments).total
 
-	return { rounds, players, aliveCount, eliminatedCount, pot }
+	// No pot figure here on purpose: the page's stat line owns the pot headline,
+	// so the standings section neither queries nor prints one.
+	return { rounds, players, aliveCount, eliminatedCount }
 }
 
 export async function getLivePayload(gameId: string, viewerUserId: string) {
