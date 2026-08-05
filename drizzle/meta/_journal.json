@@ -64,6 +64,13 @@
       "when": 1782635794192,
       "tag": "0008_outgoing_misty_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785973334224,
+      "tag": "0009_add_classic_pick_unique_idx",
+      "breakpoints": true
     }
   ]
 }
