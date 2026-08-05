@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+	buildPaymentLink,
 	buildPaymentReference,
 	normalisePaymentHandle,
 	PAYMENT_REFERENCE_MAX_LENGTH,
+	type PaymentProvider,
 } from './payment-link'
 
 describe('normalisePaymentHandle', () => {
@@ -73,5 +75,86 @@ describe('buildPaymentReference', () => {
 
 	it('collapses surrounding and repeated whitespace', () => {
 		expect(buildPaymentReference('  The  Lads LPS ', ' Alice  Jones ')).toBe('The Lads LPS Alice')
+	})
+})
+
+describe('buildPaymentLink', () => {
+	const handle = 'alicejones'
+
+	it('builds a Monzo link with the amount and reference pre-filled', () => {
+		expect(
+			buildPaymentLink({
+				provider: 'monzo',
+				handle,
+				amount: '10.00',
+				reference: 'The Lads LPS Alice',
+			}),
+		).toBe('https://monzo.me/alicejones/10.00?d=The%20Lads%20LPS%20Alice')
+	})
+
+	it('builds a Revolut link with the amount pre-filled', () => {
+		// revolut.me carries no reference parameter — degrade to amount-only
+		// rather than smuggle the note into a path segment.
+		expect(
+			buildPaymentLink({
+				provider: 'revolut',
+				handle,
+				amount: '10.00',
+				reference: 'The Lads LPS Alice',
+			}),
+		).toBe('https://revolut.me/alicejones/10.00gbp')
+	})
+
+	it('normalises the amount to two decimal places', () => {
+		expect(buildPaymentLink({ provider: 'monzo', handle, amount: '10' })).toBe(
+			'https://monzo.me/alicejones/10.00',
+		)
+		expect(buildPaymentLink({ provider: 'revolut', handle, amount: '7.5' })).toBe(
+			'https://revolut.me/alicejones/7.50gbp',
+		)
+	})
+
+	it('omits the reference parameter when there is no reference', () => {
+		expect(buildPaymentLink({ provider: 'monzo', handle, amount: '10.00', reference: '  ' })).toBe(
+			'https://monzo.me/alicejones/10.00',
+		)
+	})
+
+	it('normalises a handle typed with an @ or provider.me prefix', () => {
+		expect(buildPaymentLink({ provider: 'monzo', handle: '@alicejones', amount: '10' })).toBe(
+			'https://monzo.me/alicejones/10.00',
+		)
+	})
+
+	it('returns no link when the provider is absent', () => {
+		expect(buildPaymentLink({ provider: null, handle, amount: '10.00' })).toBeNull()
+	})
+
+	it('returns no link when the handle is absent', () => {
+		expect(buildPaymentLink({ provider: 'monzo', handle: null, amount: '10.00' })).toBeNull()
+		expect(buildPaymentLink({ provider: 'monzo', handle: '   ', amount: '10.00' })).toBeNull()
+	})
+
+	it('returns no link when the handle is not a valid username', () => {
+		expect(
+			buildPaymentLink({ provider: 'monzo', handle: 'https://evil.example', amount: '10.00' }),
+		).toBeNull()
+	})
+
+	it('returns no link when the amount is absent, zero, negative or non-numeric', () => {
+		expect(buildPaymentLink({ provider: 'monzo', handle, amount: null })).toBeNull()
+		expect(buildPaymentLink({ provider: 'monzo', handle, amount: '0' })).toBeNull()
+		expect(buildPaymentLink({ provider: 'monzo', handle, amount: '-5' })).toBeNull()
+		expect(buildPaymentLink({ provider: 'monzo', handle, amount: 'abc' })).toBeNull()
+	})
+
+	it('returns no link for an unknown provider', () => {
+		expect(
+			buildPaymentLink({
+				provider: 'paypal' as unknown as PaymentProvider,
+				handle,
+				amount: '10.00',
+			}),
+		).toBeNull()
 	})
 })

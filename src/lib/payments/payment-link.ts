@@ -65,3 +65,55 @@ export function buildPaymentReference(gameName: string, playerName: string): str
 function collapseWhitespace(value: string): string {
 	return value.trim().replace(/\s+/g, ' ')
 }
+
+export interface PaymentLinkInput {
+	/** The creator's saved provider, or null if they've saved none. */
+	provider: PaymentProvider | null | undefined
+	/** The creator's saved handle, or null if they've saved none. */
+	handle: string | null | undefined
+	/** Amount owed, as the `numeric` string the payment row carries. */
+	amount: string | null | undefined
+	/** Optional note — pre-filled where the provider supports one. */
+	reference?: string | null
+}
+
+/**
+ * The pre-filled deep link a player taps to pay the creator, or null — the
+ * no-link sentinel every caller renders as today's manual fallback ("admin will
+ * collect payment separately").
+ *
+ * Verified formats (August 2026):
+ * - Monzo: `monzo.me/{handle}/{amount}?d={note}` — amount and note both
+ *   pre-fill. The `d` parameter is long-standing but undocumented, so the link
+ *   stays valid without it.
+ * - Revolut: `revolut.me/{handle}/{amount}gbp` — amount only. There's no
+ *   reference parameter, so the note is dropped rather than faked.
+ *
+ * Both are card-rail: any payer settles with an ordinary debit card, no
+ * matching app required.
+ */
+export function buildPaymentLink(input: PaymentLinkInput): string | null {
+	const handle = normalisePaymentHandle(input.handle)
+	if (!handle) return null
+
+	const amount = normaliseAmount(input.amount)
+	if (!amount) return null
+
+	if (input.provider === 'monzo') {
+		const reference = collapseWhitespace(input.reference ?? '')
+		const note = reference ? `?d=${encodeURIComponent(reference)}` : ''
+		return `https://monzo.me/${handle}/${amount}${note}`
+	}
+	if (input.provider === 'revolut') {
+		return `https://revolut.me/${handle}/${amount}gbp`
+	}
+	return null
+}
+
+/** Amounts arrive as `numeric` strings; only a positive money value links. */
+function normaliseAmount(amount: string | null | undefined): string | null {
+	if (typeof amount !== 'string') return null
+	const parsed = Number.parseFloat(amount.trim())
+	if (!Number.isFinite(parsed) || parsed <= 0) return null
+	return parsed.toFixed(2)
+}
