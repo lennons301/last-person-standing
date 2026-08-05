@@ -1,4 +1,9 @@
-import type { GameHeroDescriptor, GameViewStats, HeroRound } from '@/lib/game/game-view'
+import type {
+	GameHeroDescriptor,
+	GameViewStats,
+	HeroFixtureSnapshot,
+	HeroRound,
+} from '@/lib/game/game-view'
 
 /**
  * Hand-built descriptors for the game-hero gallery — one entry per state × mode.
@@ -49,6 +54,17 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 		longLabel: 'Round of 16',
 		deadlineIso: hours(now, 30),
 	}
+
+	const scoreboard = (overrides: Partial<HeroFixtureSnapshot> = {}): HeroFixtureSnapshot => ({
+		id: 'fixture-1',
+		status: 'live',
+		homeShort: 'ARS',
+		awayShort: 'EVE',
+		homeScore: 1,
+		awayScore: 0,
+		kickoffIso: hours(now, -1),
+		...overrides,
+	})
 
 	return [
 		{
@@ -229,6 +245,403 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				playerCount: 12,
 			},
 			notice: 'voided',
+		},
+
+		// ── Post-deadline: the round is in play ────────────────────────────────
+		{
+			id: 'classic-live-surviving',
+			title: 'Classic · live (surviving)',
+			note: 'The personal read only — the ticker above and the standings below cover the field.',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'ARS',
+					name: 'Arsenal',
+					opponentName: 'Everton',
+					side: 'home',
+					fixture: scoreboard(),
+				},
+				survival: 'surviving',
+				actingAsName: null,
+			},
+			stats: BASE_STATS,
+		},
+		{
+			id: 'classic-live-at-risk',
+			title: 'Classic · live (level, at risk)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'ARS',
+					name: 'Arsenal',
+					opponentName: 'Everton',
+					side: 'home',
+					fixture: scoreboard({ homeScore: 1, awayScore: 1 }),
+				},
+				survival: 'at-risk',
+				actingAsName: null,
+			},
+			stats: BASE_STATS,
+		},
+		{
+			id: 'classic-live-out',
+			title: 'Classic · live (pick lost at full time)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'BUR',
+					name: 'Burnley',
+					opponentName: 'Manchester City',
+					side: 'away',
+					fixture: scoreboard({
+						status: 'finished',
+						homeShort: 'MCI',
+						awayShort: 'BUR',
+						homeScore: 3,
+						awayScore: 0,
+					}),
+				},
+				survival: 'out',
+				actingAsName: null,
+			},
+			stats: BASE_STATS,
+		},
+		{
+			id: 'classic-live-no-pick',
+			title: 'Classic · live (deadline missed, no pick)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: { type: 'none' },
+				survival: 'out',
+				actingAsName: null,
+			},
+			stats: BASE_STATS,
+		},
+		{
+			id: 'classic-live-not-started',
+			title: 'Classic · live (pick kicks off later)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'LIV',
+					name: 'Liverpool',
+					opponentName: 'Brighton',
+					side: 'home',
+					fixture: scoreboard({
+						status: 'scheduled',
+						homeShort: 'LIV',
+						awayShort: 'BHA',
+						homeScore: null,
+						awayScore: null,
+						kickoffIso: hours(now, 4),
+					}),
+				},
+				survival: 'unknown',
+				actingAsName: null,
+			},
+			stats: BASE_STATS,
+		},
+		{
+			id: 'turbo-live',
+			title: 'Turbo · live',
+			note: 'No elimination in turbo, so no survival verdict — just the running count.',
+			hero: {
+				kind: 'live',
+				mode: 'turbo',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'ranked',
+					picksMade: 10,
+					picksRequired: 10,
+					correct: 6,
+					wrong: 2,
+					pending: 2,
+					livesRemaining: null,
+				},
+				survival: 'unknown',
+				actingAsName: null,
+			},
+			stats: { ...BASE_STATS, aliveCount: 4, playerCount: 4 },
+		},
+		{
+			id: 'cup-live-last-life',
+			title: 'Cup · live (out of lives, at risk)',
+			hero: {
+				kind: 'live',
+				mode: 'cup',
+				round: { ...cupRound, deadlineIso: hours(now, -2) },
+				entry: {
+					type: 'ranked',
+					picksMade: 6,
+					picksRequired: 6,
+					correct: 3,
+					wrong: 2,
+					pending: 1,
+					livesRemaining: 0,
+				},
+				survival: 'at-risk',
+				actingAsName: null,
+			},
+			stats: {
+				...BASE_STATS,
+				potConfirmed: '120.00',
+				potTotal: '120.00',
+				aliveCount: 5,
+				playerCount: 12,
+			},
+		},
+
+		// ── Post-deadline: the round has been settled ──────────────────────────
+		{
+			id: 'classic-round-result-survived',
+			title: 'Classic · round-result (survived)',
+			hero: {
+				kind: 'round-result',
+				mode: 'classic',
+				round: plRound(hours(now, -50)),
+				entry: {
+					type: 'team',
+					shortName: 'ARS',
+					name: 'Arsenal',
+					opponentName: 'Everton',
+					side: 'home',
+					fixture: scoreboard({ status: 'finished', homeScore: 2, awayScore: 1 }),
+				},
+				result: 'survived',
+				nextRound: {
+					number: 8,
+					label: 'GW8',
+					longLabel: 'Gameweek 8',
+					deadlineIso: hours(now, 100),
+				},
+				actingAsName: null,
+			},
+			stats: { ...BASE_STATS, aliveCount: 4 },
+		},
+		{
+			id: 'classic-round-result-eliminated',
+			title: 'Classic · round-result (eliminated)',
+			hero: {
+				kind: 'round-result',
+				mode: 'classic',
+				round: plRound(hours(now, -50)),
+				entry: {
+					type: 'team',
+					shortName: 'BUR',
+					name: 'Burnley',
+					opponentName: 'Manchester City',
+					side: 'away',
+					fixture: scoreboard({
+						status: 'finished',
+						homeShort: 'MCI',
+						awayShort: 'BUR',
+						homeScore: 3,
+						awayScore: 0,
+					}),
+				},
+				result: 'eliminated',
+				nextRound: {
+					number: 8,
+					label: 'GW8',
+					longLabel: 'Gameweek 8',
+					deadlineIso: hours(now, 100),
+				},
+				actingAsName: null,
+			},
+			stats: { ...BASE_STATS, aliveCount: 4 },
+		},
+		{
+			id: 'turbo-round-result',
+			title: 'Turbo · round-result',
+			note: 'Single-round mode: the round ending is not a survival verdict.',
+			hero: {
+				kind: 'round-result',
+				mode: 'turbo',
+				round: plRound(hours(now, -50)),
+				entry: {
+					type: 'ranked',
+					picksMade: 10,
+					picksRequired: 10,
+					correct: 7,
+					wrong: 3,
+					pending: 0,
+					livesRemaining: null,
+				},
+				result: 'played',
+				nextRound: null,
+				actingAsName: null,
+			},
+			stats: { ...BASE_STATS, aliveCount: 4, playerCount: 4 },
+		},
+		{
+			id: 'cup-round-result',
+			title: 'Cup · round-result',
+			hero: {
+				kind: 'round-result',
+				mode: 'cup',
+				round: { ...cupRound, deadlineIso: hours(now, -50) },
+				entry: {
+					type: 'ranked',
+					picksMade: 6,
+					picksRequired: 6,
+					correct: 4,
+					wrong: 2,
+					pending: 0,
+					livesRemaining: 1,
+				},
+				result: 'played',
+				nextRound: null,
+				actingAsName: null,
+			},
+			stats: {
+				...BASE_STATS,
+				potConfirmed: '120.00',
+				potTotal: '120.00',
+				aliveCount: 5,
+				playerCount: 12,
+			},
+		},
+
+		// ── Completed games ───────────────────────────────────────────────────
+		{
+			id: 'classic-winner-viewer',
+			title: 'Classic · winner (the viewer won)',
+			hero: {
+				kind: 'winner',
+				mode: 'classic',
+				round: plRound(hours(now, -200)),
+				winners: [
+					{
+						userId: 'user-1',
+						name: 'Sean',
+						potShare: '80.00',
+						stats: [{ iconKey: 'list-checks', value: 7, label: 'rounds' }],
+					},
+				],
+				runnerUpName: 'Dave',
+				viewerOutcome: 'won',
+			},
+			stats: { ...BASE_STATS, aliveCount: 1 },
+		},
+		{
+			id: 'turbo-winner-someone-else',
+			title: 'Turbo · winner (someone else won)',
+			hero: {
+				kind: 'winner',
+				mode: 'turbo',
+				round: plRound(hours(now, -200)),
+				winners: [
+					{
+						userId: 'user-2',
+						name: 'Rachel',
+						potShare: '50.00',
+						stats: [
+							{ iconKey: 'flame', value: 6, label: 'streak' },
+							{ iconKey: 'target', value: 14, label: 'goals' },
+						],
+					},
+				],
+				runnerUpName: 'Sean',
+				viewerOutcome: 'lost',
+			},
+			stats: { ...BASE_STATS, aliveCount: 1, playerCount: 5 },
+		},
+		{
+			id: 'cup-winner-split',
+			title: 'Cup · winner (split pot, viewer shares it)',
+			hero: {
+				kind: 'winner',
+				mode: 'cup',
+				round: { ...cupRound, deadlineIso: hours(now, -200) },
+				winners: [
+					{
+						userId: 'user-1',
+						name: 'Sean',
+						potShare: '60.00',
+						stats: [
+							{ iconKey: 'heart', value: 2, label: 'lives' },
+							{ iconKey: 'flame', value: 5, label: 'streak' },
+							{ iconKey: 'target', value: 9, label: 'goals' },
+						],
+					},
+					{
+						userId: 'user-2',
+						name: 'Dave',
+						potShare: '60.00',
+						stats: [
+							{ iconKey: 'heart', value: 2, label: 'lives' },
+							{ iconKey: 'flame', value: 5, label: 'streak' },
+							{ iconKey: 'target', value: 7, label: 'goals' },
+						],
+					},
+				],
+				runnerUpName: 'Rachel',
+				viewerOutcome: 'shared',
+			},
+			stats: {
+				...BASE_STATS,
+				potConfirmed: '120.00',
+				potTotal: '120.00',
+				aliveCount: 2,
+				playerCount: 12,
+			},
+		},
+
+		// ── Out of the game (classic only) ────────────────────────────────────
+		{
+			id: 'classic-rebuy',
+			title: 'Classic · rebuy (offer standing)',
+			note: 'The buttons come from the page, not the hero — see the action slot.',
+			hero: {
+				kind: 'rebuy',
+				mode: 'classic',
+				round: plRound(hours(now, 26)),
+				entryFee: '10.00',
+				closesAtIso: hours(now, 26),
+				pendingPayment: null,
+				eliminatedRoundLabel: 'GW1',
+			},
+			stats: { ...BASE_STATS, rebuyAvailable: true },
+		},
+		{
+			id: 'classic-rebuy-pending',
+			title: 'Classic · rebuy (payment pending)',
+			hero: {
+				kind: 'rebuy',
+				mode: 'classic',
+				round: plRound(hours(now, 26)),
+				entryFee: '10.00',
+				closesAtIso: hours(now, 26),
+				pendingPayment: { id: 'payment-1', amount: '10.00' },
+				eliminatedRoundLabel: 'GW1',
+			},
+			stats: { ...BASE_STATS, rebuyAvailable: true },
+		},
+		{
+			id: 'classic-spectator',
+			title: 'Classic · spectator (eliminated, no rebuy)',
+			note: 'Deliberately the quietest variant — standings and live scores are the page now.',
+			hero: {
+				kind: 'spectator',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				eliminatedRoundLabel: 'GW34',
+			},
+			stats: { ...BASE_STATS, aliveCount: 2 },
 		},
 	]
 }
