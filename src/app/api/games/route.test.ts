@@ -169,6 +169,23 @@ describe("POST /api/games — the creator's payment handle", () => {
 		expect((await res.json()).error).toBe('invalid-payment-handle')
 	})
 
+	it('leaves the stored handle untouched when game creation fails late', async () => {
+		// Every round's deadline has passed, so the handler 400s after the point
+		// the handle used to be written. A rejected create-game must not have
+		// re-pointed where the creator's existing games collect.
+		dbMock.query.round.findMany.mockResolvedValue([
+			{ id: 'r1', number: 1, status: 'upcoming', deadline: new Date(Date.now() - 86_400_000) },
+		] as never)
+
+		const res = await POST(
+			req({ ...createBody, paymentProvider: 'monzo', paymentHandle: 'alicejones' }),
+		)
+
+		expect(res.status).toBe(400)
+		expect((await res.json()).error).toBe('no-pickable-round')
+		expect(dbMock.update).not.toHaveBeenCalled()
+	})
+
 	it("writes the handle to the session's own user row, never to a userId in the body", async () => {
 		await POST(
 			req({

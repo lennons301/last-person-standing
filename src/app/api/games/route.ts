@@ -141,10 +141,6 @@ export async function POST(request: Request) {
 		}
 	}
 
-	if (handleUpdate) {
-		await db.update(user).set(handleUpdate).where(eq(user.id, session.user.id))
-	}
-
 	const inviteCode = generateInviteCode()
 
 	// Link to the competition's earliest still-pickable round. A round is
@@ -208,6 +204,13 @@ export async function POST(request: Request) {
 			userId: session.user.id,
 			amount: entryFee,
 		})
+	}
+
+	// Saved only once the game itself exists. A create-game that 400s later on
+	// (no pickable round, say) must not leave the creator's stored handle
+	// re-pointed when they have no new game to collect for.
+	if (handleUpdate) {
+		await db.update(user).set(handleUpdate).where(eq(user.id, session.user.id))
 	}
 
 	// Round status follows game lifecycle: starting a game on this round
