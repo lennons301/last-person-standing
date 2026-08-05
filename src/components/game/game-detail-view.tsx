@@ -102,7 +102,10 @@ export function GameDetailView({
 	// hero is describing, so they render inside it rather than as standalone
 	// banners above the page. When there's no hero at all they fall back to their
 	// original spot at the top. The pending-rebuy notice stands down when the
-	// hero is the rebuy variant — that already carries the claim CTA.
+	// hero is the rebuy variant — that already carries the claim CTA. Today that
+	// guard never fires (a pending rebuy means the player is alive again, so
+	// their hero is a pick state); it's here so the two can't both render if the
+	// eligibility rule ever changes.
 	const notices = (
 		<>
 			{game.myCurrentRoundPick?.isAuto && (

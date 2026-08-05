@@ -187,7 +187,17 @@ export type GameHeroDescriptor =
 			entryFee: string
 			/** Rebuys close at the round-2 deadline. */
 			closesAtIso: string | null
-			/** Set once a rebuy has been started and is waiting on payment. */
+			/**
+			 * Set once a rebuy has been started and is waiting on payment.
+			 *
+			 * Unreachable through today's `getGameDetail`, which only reports a
+			 * pending rebuy for a player it has already put back to `alive` — and
+			 * this variant is the eliminated branch, so that player's hero is a pick
+			 * state with the pending notice in its notice slot. Kept because the
+			 * deriver shouldn't depend on where that line is drawn: if the payment
+			 * ever gates re-entry, the offer hero already has the claim state
+			 * instead of silently showing "buy back in" to someone mid-rebuy.
+			 */
 			pendingPayment: { id: string; amount: string } | null
 			eliminatedRoundLabel: string | null
 	  }
@@ -404,14 +414,17 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 			round: heroRound,
 			entry,
 			result: gameMode === 'classic' ? (input.isAlive ? 'survived' : 'eliminated') : 'played',
-			nextRound: input.nextRound
-				? {
-						number: input.nextRound.number,
-						label: input.nextRound.label,
-						longLabel: input.nextRound.longLabel,
-						deadlineIso: input.nextRound.deadline ? input.nextRound.deadline.toISOString() : null,
-					}
-				: null,
+			// Classic is the only mode that advances round to round; turbo and cup
+			// are single-round, so there is never a "next up" for them.
+			nextRound:
+				gameMode === 'classic' && input.nextRound
+					? {
+							number: input.nextRound.number,
+							label: input.nextRound.label,
+							longLabel: input.nextRound.longLabel,
+							deadlineIso: input.nextRound.deadline ? input.nextRound.deadline.toISOString() : null,
+						}
+					: null,
 			actingAsName: input.actingAsName,
 		}
 	}

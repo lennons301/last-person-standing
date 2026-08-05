@@ -278,9 +278,10 @@ export default async function GameDetailPage({
 	}
 
 	// The round the game moves to next — the round-result hero points at it. Only
-	// needed once the current round has been settled.
+	// needed once the current round has been settled, and only in classic: turbo
+	// and cup are single-round, so they never advance to an N+1.
 	const nextRoundRow =
-		heroRound?.status === 'completed'
+		game.gameMode === 'classic' && heroRound?.status === 'completed'
 			? ((await db.query.round.findFirst({
 					where: and(
 						eq(roundTable.competitionId, game.competition.id),

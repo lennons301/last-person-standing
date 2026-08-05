@@ -428,6 +428,28 @@ describe('buildGameView — round result', () => {
 		}
 	})
 
+	it('never points a single-round mode at a next round', () => {
+		// Turbo and cup play one gameweek and stop — an N+1 round exists in the
+		// competition, but the game never advances to it.
+		for (const mode of ['turbo', 'cup'] as const) {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					picksRequired: 6,
+					round: COMPLETED_ROUND,
+					pick: { picksMade: 6, isAuto: false, team: null, results: ['win'] },
+					nextRound: {
+						number: 8,
+						label: 'GW8',
+						longLabel: 'Gameweek 8',
+						deadline: FUTURE_DEADLINE,
+					},
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'round-result', nextRound: null })
+		}
+	})
+
 	it('leaves the next round null when there is nothing after this one', () => {
 		const view = buildGameView(baseInput({ round: COMPLETED_ROUND, pick: classicPick }))
 		expect(view.hero).toMatchObject({ kind: 'round-result', nextRound: null })
