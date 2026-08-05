@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { LocalDateTime } from '@/components/local-datetime'
+import { PayLinkButton } from './pay-link-button'
 
 interface RebuyBannerProps {
 	gameId: string
@@ -11,6 +12,12 @@ interface RebuyBannerProps {
 	round2Deadline: Date
 	/** If set, the user has a pending rebuy payment awaiting claim. */
 	pendingPayment: { id: string; amount: string } | null
+	creatorName: string
+	/**
+	 * Pre-filled link to pay the creator the rebuy amount, or null when they've
+	 * saved no handle — then the rebuy is settled out-of-band as it is today.
+	 */
+	payUrl?: string | null
 }
 
 export function RebuyBanner({
@@ -18,6 +25,8 @@ export function RebuyBanner({
 	entryFee,
 	round2Deadline,
 	pendingPayment,
+	creatorName,
+	payUrl = null,
 }: RebuyBannerProps) {
 	const router = useRouter()
 	const [loading, setLoading] = useState(false)
@@ -68,14 +77,26 @@ export function RebuyBanner({
 					Mark as paid once you've transferred £{pendingPayment.amount}. You're back in as soon as
 					the payment is claimed.
 				</p>
-				<button
-					type="button"
-					onClick={() => claimPaid(pendingPayment.id)}
-					disabled={loading}
-					className="mt-2 rounded bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-				>
-					{loading ? 'Working…' : 'Claim paid'}
-				</button>
+				<div className="mt-2 flex flex-wrap items-center gap-2">
+					<PayLinkButton
+						url={payUrl}
+						creatorName={creatorName}
+						amount={pendingPayment.amount}
+						className="inline-flex items-center rounded bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+					/>
+					<button
+						type="button"
+						onClick={() => claimPaid(pendingPayment.id)}
+						disabled={loading}
+						className={
+							payUrl
+								? 'rounded border border-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-900 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+								: 'rounded bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+						}
+					>
+						{loading ? 'Working…' : 'Claim paid'}
+					</button>
+				</div>
 			</div>
 		)
 	}

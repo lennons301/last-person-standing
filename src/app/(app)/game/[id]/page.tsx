@@ -416,6 +416,8 @@ export default async function GameDetailPage({
 							entryFee={game.rebuyBanner.entryFee}
 							round2Deadline={game.rebuyBanner.round2Deadline}
 							pendingPayment={game.rebuyBanner.pendingPayment}
+							creatorName={game.creatorName}
+							payUrl={payLinkFor(game.rebuyBanner.pendingPayment?.amount)}
 						/>
 					)}
 					{actingAsTarget && (
