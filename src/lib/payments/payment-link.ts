@@ -117,3 +117,37 @@ function normaliseAmount(amount: string | null | undefined): string | null {
 	if (!Number.isFinite(parsed) || parsed <= 0) return null
 	return parsed.toFixed(2)
 }
+
+export interface PaymentHandleUpdate {
+	paymentProvider: PaymentProvider | null
+	paymentHandle: string | null
+}
+
+const PROVIDERS: PaymentProvider[] = ['monzo', 'revolut']
+
+export function isPaymentProvider(value: unknown): value is PaymentProvider {
+	return typeof value === 'string' && (PROVIDERS as string[]).includes(value)
+}
+
+/**
+ * Read a provider + handle pair off a request body into the pair of columns to
+ * store, or null if the pair is unusable.
+ *
+ * A link needs both halves, so both-empty (clear it) and both-valid (set it)
+ * are the only accepted shapes — half a handle would render as a manual
+ * fallback the creator thinks they've configured.
+ */
+export function parsePaymentHandleInput(
+	provider: unknown,
+	handle: unknown,
+): PaymentHandleUpdate | null {
+	const handleGiven = typeof handle === 'string' && handle.trim() !== ''
+	const providerGiven = provider !== null && provider !== undefined && provider !== ''
+
+	if (!handleGiven && !providerGiven) return { paymentProvider: null, paymentHandle: null }
+	if (!handleGiven || !isPaymentProvider(provider)) return null
+
+	const normalised = normalisePaymentHandle(handle as string)
+	if (!normalised) return null
+	return { paymentProvider: provider, paymentHandle: normalised }
+}

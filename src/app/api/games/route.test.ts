@@ -8,8 +8,10 @@ vi.mock('@/lib/game/round-lifecycle', () => ({
 	openRoundForGame: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { dbMock, insertReturning } = vi.hoisted(() => {
+const { dbMock, insertReturning, updateSet, updateWhere } = vi.hoisted(() => {
 	const insertReturning = vi.fn().mockResolvedValue([{ id: 'new-game' }])
+	const updateWhere = vi.fn().mockResolvedValue(undefined)
+	const updateSet = vi.fn(() => ({ where: updateWhere }))
 	// db.insert(...).values(...) is awaited directly for gamePlayer/payment rows
 	// and chained with .returning() for the game row — mirror drizzle's thenable
 	// builder shape.
@@ -22,6 +24,8 @@ const { dbMock, insertReturning } = vi.hoisted(() => {
 	})
 	return {
 		insertReturning,
+		updateSet,
+		updateWhere,
 		dbMock: {
 			query: {
 				competition: { findFirst: vi.fn() },
@@ -29,6 +33,7 @@ const { dbMock, insertReturning } = vi.hoisted(() => {
 				team: { findMany: vi.fn() },
 			},
 			insert: vi.fn(() => ({ values: insertValues })),
+			update: vi.fn(() => ({ set: updateSet })),
 		},
 	}
 })
@@ -93,5 +98,72 @@ describe('POST /api/games', () => {
 		expect(res.status).toBe(201)
 		expect((await res.json()).id).toBe('new-game')
 		expect(openRoundForGame).toHaveBeenCalledWith('r1')
+	})
+})
+
+describe("POST /api/games — the creator's payment handle", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		insertReturning.mockResolvedValue([{ id: 'new-game' }])
+		dbMock.query.competition.findFirst.mockResolvedValue({
+			id: 'c1',
+			type: 'league',
+			status: 'active',
+		} as never)
+		dbMock.query.round.findMany.mockResolvedValue([
+			{ id: 'r1', number: 1, status: 'upcoming', deadline: new Date(Date.now() + 86_400_000) },
+		] as never)
+	})
+
+	it('saves the handle to the creator, normalised', async () => {
+		const res = await POST(
+			req({ ...createBody, paymentProvider: 'monzo', paymentHandle: '@alicejones' }),
+		)
+
+		expect(res.status).toBe(201)
+		expect(updateSet).toHaveBeenCalledWith({
+			paymentProvider: 'monzo',
+			paymentHandle: 'alicejones',
+		})
+	})
+
+	it('clears the stored handle when the creator submits an empty one', async () => {
+		const res = await POST(req({ ...createBody, paymentProvider: null, paymentHandle: '' }))
+
+		expect(res.status).toBe(201)
+		expect(updateSet).toHaveBeenCalledWith({ paymentProvider: null, paymentHandle: null })
+	})
+
+	it('leaves the stored handle alone when the request says nothing about it', async () => {
+		const res = await POST(req(createBody))
+
+		expect(res.status).toBe(201)
+		expect(dbMock.update).not.toHaveBeenCalled()
+	})
+
+	it('rejects an unusable handle with 400 and creates nothing', async () => {
+		const res = await POST(
+			req({ ...createBody, paymentProvider: 'monzo', paymentHandle: 'https://evil.example' }),
+		)
+
+		expect(res.status).toBe(400)
+		expect((await res.json()).error).toBe('invalid-payment-handle')
+		expect(dbMock.insert).not.toHaveBeenCalled()
+	})
+
+	it('rejects an unknown provider with 400', async () => {
+		const res = await POST(
+			req({ ...createBody, paymentProvider: 'paypal', paymentHandle: 'alicejones' }),
+		)
+
+		expect(res.status).toBe(400)
+		expect((await res.json()).error).toBe('invalid-payment-handle')
+	})
+
+	it('rejects a handle with no provider chosen with 400', async () => {
+		const res = await POST(req({ ...createBody, paymentProvider: null, paymentHandle: 'alice' }))
+
+		expect(res.status).toBe(400)
+		expect((await res.json()).error).toBe('invalid-payment-handle')
 	})
 })

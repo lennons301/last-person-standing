@@ -4,6 +4,8 @@ import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { generateInviteCode } from '@/lib/game/invite-code'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
+import { parsePaymentHandleInput } from '@/lib/payments/payment-link'
+import { user } from '@/lib/schema/auth'
 import { competition, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
@@ -47,6 +49,26 @@ export async function POST(request: Request) {
 
 	if (!name || !competitionId || !gameMode) {
 		return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+	}
+
+	// "Where do players pay you?" rides along with create-game — the creator sets
+	// it once here and it's pre-filled on every later game. Absent keys mean the
+	// request says nothing about it, so the stored handle is left alone; a
+	// present-but-unusable pair is rejected rather than silently dropped, which
+	// would leave the creator believing they'd configured a link.
+	const mentionsHandle = 'paymentProvider' in body || 'paymentHandle' in body
+	const handleUpdate = mentionsHandle
+		? parsePaymentHandleInput(body.paymentProvider, body.paymentHandle)
+		: null
+	if (mentionsHandle && !handleUpdate) {
+		return NextResponse.json(
+			{
+				error: 'invalid-payment-handle',
+				message:
+					'Enter your Monzo or Revolut username (just the username, e.g. alicejones) and pick which one it is.',
+			},
+			{ status: 400 },
+		)
 	}
 
 	// Verify competition exists
@@ -117,6 +139,10 @@ export async function POST(request: Request) {
 				)
 			}
 		}
+	}
+
+	if (handleUpdate) {
+		await db.update(user).set(handleUpdate).where(eq(user.id, session.user.id))
 	}
 
 	const inviteCode = generateInviteCode()
