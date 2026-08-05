@@ -582,7 +582,7 @@ async function checkAndMaybeCompleteOrAdvance(
 		// healed by the all-rounds sweep) must land its elimination and stop —
 		// re-advancing from the old round would drag currentRoundId backwards.
 		if (g.currentRoundId === roundId) {
-			const advanced = await advanceGameToNextRound(gameId, g.competitionId, roundNumber)
+			const { advanced } = await advanceGameToNextRound(gameId, g.competitionId, roundNumber)
 			if (advanced) result.gamesAdvanced.push(gameId)
 		}
 	}
@@ -677,11 +677,31 @@ async function runWcClassicAutoElims(gameId: string, currentRoundId: string): Pr
 	}
 }
 
-async function advanceGameToNextRound(
+/**
+ * Advance the game's currentRoundId pointer to the next round in the
+ * competition. Round-state is per-game: each game advances independently
+ * based on when its rounds complete, not on a global competition timeline.
+ *
+ * Refuses to advance to a round with no fixtures or no deadline (e.g. WC
+ * knockout pre-bracket-publication). In that case the game stays pointed at
+ * the just-completed round; `advanceGameIfReady` (reconcile path) retries on
+ * subsequent cron ticks once the next round has been populated.
+ *
+ * On successful advance, marks the new currentRound as 'open' and schedules
+ * any auto-submit-flagged plans for it.
+ *
+ * THE single advancement implementation. Both paths that advance a game call
+ * it: the settle path (`checkAndMaybeCompleteOrAdvance` below) and the
+ * reconcile path (`advanceGameIfReady` in process-round.ts). They share the
+ * pending-pick gate (`gameHasPendingPicksInRound`) too — keep it that way;
+ * two divergent advancement bodies is how a game ends up advancing past an
+ * unresolved knockout tie on one path but not the other.
+ */
+export async function advanceGameToNextRound(
 	gameId: string,
 	competitionId: string,
 	completedRoundNumber: number,
-): Promise<boolean> {
+): Promise<{ advanced: boolean; reason?: 'no-next-round' | 'next-round-tbd' }> {
 	const nextRound = await db.query.round.findFirst({
 		where: and(eq(round.competitionId, competitionId), gt(round.number, completedRoundNumber)),
 		orderBy: [asc(round.number)],
@@ -689,16 +709,16 @@ async function advanceGameToNextRound(
 	})
 	if (!nextRound) {
 		await db.update(game).set({ currentRoundId: null }).where(eq(game.id, gameId))
-		return false
+		return { advanced: false, reason: 'no-next-round' }
 	}
 	if (nextRound.fixtures.length === 0 || nextRound.deadline == null) {
 		// Next round is TBD (e.g. WC bracket pre-publication). Game stays
 		// pointed at the just-completed round; reconcile retries on next tick.
-		return false
+		return { advanced: false, reason: 'next-round-tbd' }
 	}
 	await db.update(game).set({ currentRoundId: nextRound.id }).where(eq(game.id, gameId))
 	await openRoundForGame(nextRound.id)
-	return true
+	return { advanced: true }
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
