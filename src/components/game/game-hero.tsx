@@ -205,11 +205,12 @@ function deadlineModeFor(hero: GameHeroDescriptor): DeadlineMode {
 		case 'pick-made':
 			return 'countdown'
 		case 'live':
-		case 'rebuy':
-		case 'spectator':
 			return 'closed'
 		case 'round-result':
 			return 'complete'
+		// Rebuy and spectator can both sit on a round that's still open. Neither
+		// player is picking in it, so the round line names the round and stops
+		// there — the rebuy copy carries the only deadline that matters to them.
 		default:
 			return 'none'
 	}

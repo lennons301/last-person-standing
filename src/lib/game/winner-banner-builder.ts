@@ -3,7 +3,8 @@ import type { getProgressGridData, getTurboStandingsData } from '@/lib/game/deta
 import type { HeroWinnerEntry } from '@/lib/game/game-view'
 import { calculatePayouts } from '@/lib/game-logic/prizes'
 
-// The prop crosses the Server → Client Component boundary (page.tsx → GameDetailView).
+// Feeds the game hero's `winner` variant via `buildGameView`, so the payload
+// crosses the Server → Client Component boundary (page.tsx → GameDetailView).
 // Everything in here must be JSON-serializable. There is a unit test
 // (`winner-banner-builder.test.ts`) that round-trips the result via
 // `structuredClone` to enforce this — `structuredClone` throws on function
