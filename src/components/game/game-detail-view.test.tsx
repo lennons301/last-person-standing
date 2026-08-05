@@ -60,6 +60,8 @@ function game(overrides: Record<string, unknown> = {}) {
 		isAdmin: true,
 		myPayment: null,
 		myPaymentPayUrl: null,
+		creatorPaymentProvider: null,
+		creatorPaymentHandle: null,
 		adminPayments,
 		myCurrentRoundPick: null,
 		currentRound: null,

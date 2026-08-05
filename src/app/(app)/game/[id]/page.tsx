@@ -400,6 +400,8 @@ export default async function GameDetailPage({
 				isAdmin: game.isAdmin,
 				myPayment: game.myPayment,
 				myPaymentPayUrl: payLinkFor(game.myPayment?.amount),
+				creatorPaymentProvider: game.creatorPaymentProvider,
+				creatorPaymentHandle: game.creatorPaymentHandle,
 				adminPayments: game.adminPayments,
 				myCurrentRoundPick: game.myCurrentRoundPick,
 				currentRound: headerRoundInfo,

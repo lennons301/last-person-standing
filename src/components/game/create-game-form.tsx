@@ -91,7 +91,14 @@ export function CreateGameForm({
 				entryFee: hasEntryFee ? entryFee.toFixed(2) : null,
 				// Only sent when there's a fee to collect — creating a free game has
 				// no business touching the creator's stored handle.
-				...(hasEntryFee ? { paymentProvider, paymentHandle: paymentHandle.trim() } : {}),
+				// A blank username means "no link" whatever radio is selected, so an
+				// idle click on Monzo never blocks game creation.
+				...(hasEntryFee
+					? {
+							paymentProvider: paymentHandle.trim() ? paymentProvider : null,
+							paymentHandle: paymentHandle.trim(),
+						}
+					: {}),
 			}),
 		})
 		setLoading(false)

@@ -22,6 +22,7 @@ import { type TurboRoundSummary, TurboStandings } from '@/components/standings/t
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
 import type { GameViewDescriptor } from '@/lib/game/game-view'
 import type { PotBreakdown } from '@/lib/game-logic/prizes'
+import type { PaymentProvider } from '@/lib/payments/payment-link'
 
 interface GameDetailViewProps {
 	game: {
@@ -39,6 +40,9 @@ interface GameDetailViewProps {
 		myPayment: { id: string; status: PaymentStatus; amount: string } | null
 		/** Pre-filled link to pay the creator what the viewer owes, if any. */
 		myPaymentPayUrl: string | null
+		/** The creator's saved handle — only used by the admin's own editor. */
+		creatorPaymentProvider: PaymentProvider | null
+		creatorPaymentHandle: string | null
 		adminPayments: AdminPayment[] | undefined
 		myCurrentRoundPick: {
 			id: string
@@ -208,6 +212,8 @@ export function GameDetailView({
 						aliveCount={game.aliveCount}
 						pot={game.pot}
 						payments={game.adminPayments}
+						paymentProvider={game.creatorPaymentProvider}
+						paymentHandle={game.creatorPaymentHandle}
 						onChange={refresh}
 					/>
 				)}
