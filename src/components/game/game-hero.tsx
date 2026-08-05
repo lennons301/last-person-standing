@@ -77,7 +77,12 @@ function skinFor(hero: GameHeroDescriptor): { frame: string; label: string } {
 			}
 		case 'winner':
 			return {
-				frame: 'border border-amber-300 bg-gradient-to-br from-amber-50 via-amber-50 to-yellow-100',
+				// The one variant with its own palette rather than the alive/draw/out
+				// vars — a trophy needs gold. Carried over from the winner band it
+				// replaced, with the dark-mode half it never had: this is now the
+				// loudest thing on a completed game page, in either theme.
+				frame:
+					'border border-amber-300 bg-gradient-to-br from-amber-50 via-amber-50 to-yellow-100 dark:border-amber-500/40 dark:from-amber-950/50 dark:via-amber-950/50 dark:to-yellow-950/40',
 				label: 'Game result',
 			}
 		case 'rebuy':
@@ -628,34 +633,34 @@ function WinnerBody({
 					🏆
 				</span>
 				<div className="min-w-0">
-					<div className="text-[10px] uppercase tracking-wider font-bold text-amber-700">
+					<div className="text-[10px] uppercase tracking-wider font-bold text-amber-700 dark:text-amber-300">
 						{isSplit ? `Split pot · ${winners.length} way` : 'Winner'}
 					</div>
-					<h2 className="font-display text-xl md:text-2xl font-bold leading-tight text-amber-950">
+					<h2 className="font-display text-xl md:text-2xl font-bold leading-tight text-amber-950 dark:text-amber-50">
 						{heading}
 					</h2>
 				</div>
 			</div>
 
-			<ul className="divide-y divide-amber-200/70 rounded-lg border border-amber-200 bg-amber-50/70">
+			<ul className="divide-y divide-amber-200/70 rounded-lg border border-amber-200 bg-amber-50/70 dark:divide-amber-500/20 dark:border-amber-500/30 dark:bg-amber-950/30">
 				{winners.map((w) => (
 					<li key={w.userId} className="flex items-center gap-4 px-4 py-3">
 						<span className="text-xl shrink-0" aria-hidden>
 							🥇
 						</span>
 						<div className="min-w-0 flex-1">
-							<div className="font-display text-base font-bold text-amber-950 truncate">
+							<div className="font-display text-base font-bold text-amber-950 dark:text-amber-50 truncate">
 								{w.name}
 							</div>
 							{w.stats.length > 0 && (
-								<div className="mt-0.5 flex items-center gap-3 text-xs text-amber-800">
+								<div className="mt-0.5 flex items-center gap-3 text-xs text-amber-800 dark:text-amber-200">
 									{w.stats.map((s) => {
 										const Icon = WINNER_ICONS[s.iconKey]
 										return (
 											<span key={s.label} className="inline-flex items-center gap-1">
 												<Icon className="h-3 w-3" />
 												<span className="font-semibold">{s.value}</span>
-												<span className="text-amber-700/80">{s.label}</span>
+												<span className="text-amber-700/80 dark:text-amber-300/80">{s.label}</span>
 											</span>
 										)
 									})}
@@ -663,10 +668,10 @@ function WinnerBody({
 							)}
 						</div>
 						<div className="text-right shrink-0">
-							<div className="font-display text-xl font-bold leading-none text-amber-900">
+							<div className="font-display text-xl font-bold leading-none text-amber-900 dark:text-amber-100">
 								£{w.potShare}
 							</div>
-							<div className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+							<div className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
 								{isSplit ? 'share' : 'won'}
 							</div>
 						</div>
@@ -675,8 +680,9 @@ function WinnerBody({
 			</ul>
 
 			{runnerUpName && (
-				<p className="text-[11px] text-amber-800">
-					Runner-up: <span className="font-semibold text-amber-900">{runnerUpName}</span>
+				<p className="text-[11px] text-amber-800 dark:text-amber-200">
+					Runner-up:{' '}
+					<span className="font-semibold text-amber-900 dark:text-amber-100">{runnerUpName}</span>
 				</p>
 			)}
 		</div>
