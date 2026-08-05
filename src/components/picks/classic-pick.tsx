@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ChainRibbon, type ChainSlot } from '@/components/picks/chain-ribbon'
+import { useOnPickEditRequest } from '@/components/picks/edit-pick-event'
 import { PlannerRound } from '@/components/picks/planner-round'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
@@ -45,6 +46,12 @@ interface ClassicPickProps {
 	currentRoundClosed?: boolean
 	/** When set, the admin is picking on behalf of this player. */
 	actingAs?: { gamePlayerId: string; userName: string }
+	/**
+	 * True when the hero above already shows the locked-in pick. The collapsed
+	 * state then shrinks to a single "change your pick" bar instead of repeating
+	 * the same team, opponent and deadline a second time.
+	 */
+	summaryInHero?: boolean
 }
 
 interface PickSelection {
@@ -68,6 +75,7 @@ export function ClassicPick({
 	planHandlers,
 	currentRoundClosed = false,
 	actingAs,
+	summaryInHero = false,
 }: ClassicPickProps) {
 	const router = useRouter()
 	const initialSelection: PickSelection | null =
@@ -79,6 +87,10 @@ export function ClassicPick({
 	const [error, setError] = useState<string | null>(null)
 	// Collapse fixtures by default if a pick is already locked in
 	const [expanded, setExpanded] = useState(!existingPickTeamId)
+
+	// The hero above owns the pick confirmation; its "Change pick" button expands
+	// the fixtures here so changing a pick stays a one-click action.
+	useOnPickEditRequest(() => setExpanded(true))
 
 	function handlePick(fixture: ClassicPickFixture, side: 'home' | 'away') {
 		const teamId = side === 'home' ? fixture.home.id : fixture.away.id
@@ -147,8 +159,21 @@ export function ClassicPick({
 		: null
 	const lockedSide = lockedFixture && lockedFixture.home.id === existingPickTeamId ? 'H' : 'A'
 
-	const currentRoundCard =
-		!expanded && existingPickTeamId && lockedTeam && lockedOpponent ? (
+	const collapsedSummary = !expanded && existingPickTeamId && lockedTeam && lockedOpponent
+
+	const currentRoundCard = collapsedSummary ? (
+		summaryInHero ? (
+			// The hero above carries the pick confirmation; all this needs to be is
+			// the way back into the fixtures.
+			<button
+				type="button"
+				onClick={() => setExpanded(true)}
+				className="w-full flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+			>
+				<span className="text-sm font-semibold">Change your {roundName} pick</span>
+				<ChevronDown className="h-4 w-4" />
+			</button>
+		) : (
 			<div className="rounded-lg border border-[var(--alive)]/40 bg-[var(--alive-bg)] p-4">
 				<div className="flex items-center justify-between flex-wrap gap-3">
 					<div className="flex items-center gap-3">
@@ -181,95 +206,96 @@ export function ClassicPick({
 					</div>
 				</div>
 			</div>
-		) : (
-			<div className="space-y-2">
-				<div className="flex justify-between items-baseline mb-3">
-					<h2 className="font-display text-xl font-semibold">{roundName}</h2>
-					<div className="flex items-center gap-2">
-						{deadline && (
-							<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
-								⏱ {formatDeadline(deadline)}
-							</span>
-						)}
-						{existingPickTeamId && (
-							<button
-								type="button"
-								onClick={() => setExpanded(false)}
-								className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-							>
-								Collapse <ChevronUp className="h-3 w-3" />
-							</button>
-						)}
-					</div>
-				</div>
-
-				{fixtures.map((fixture) => {
-					const isSelectedFixture = fixture.id === selection?.fixtureId
-					// "Used in another fixture this round": the team has been clicked in a
-					// DIFFERENT fixture in this round. Treats Man City vs Brentford and Man
-					// City vs Crystal Palace as alternate slots for the same team, with one
-					// pick burning the team for the round (Option B + grey-out per UX call).
-					const homeUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.home.id
-					const awayUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.away.id
-					const homeUsedPriorRound = !!usedTeamsByRound[fixture.home.id]
-					const awayUsedPriorRound = !!usedTeamsByRound[fixture.away.id]
-
-					const homeUsed = homeUsedThisRound || homeUsedPriorRound
-					const awayUsed = awayUsedThisRound || awayUsedPriorRound
-
-					let usedSide: 'home' | 'away' | 'both' | null = null
-					if (homeUsed && awayUsed) usedSide = 'both'
-					else if (homeUsed) usedSide = 'home'
-					else if (awayUsed) usedSide = 'away'
-
-					const selected = isSelectedFixture
-						? fixture.home.id === selection?.teamId
-							? 'home'
-							: 'away'
-						: null
-
-					return (
-						<FixtureRow
-							key={fixture.id}
-							home={fixture.home}
-							away={fixture.away}
-							kickoff={fixture.kickoff ?? undefined}
-							selectedSide={selected}
-							usedSide={usedSide}
-							usedLabel={usedSide === 'both' ? `Both used` : undefined}
-							onPickHome={() => handlePick(fixture, 'home')}
-							onPickAway={() => handlePick(fixture, 'away')}
-							competitionId={competitionId}
-							roundNumber={roundNumber}
-						/>
-					)
-				})}
-
-				{error && <p className="text-sm text-[var(--eliminated)] px-2">{error}</p>}
-
-				{selectedTeam && selectedFixture && (
-					<PickConfirmBar
-						message={`Picking ${selectedTeam.name} vs ${
-							selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name
-						} (${selectedSide === 'home' ? 'H' : 'A'})`}
-						actionLabel={
-							existingPickFixtureId === selection?.fixtureId &&
-							existingPickTeamId === selection?.teamId
-								? 'Already locked'
-								: actingAs
-									? `Submit as ${actingAs.userName}`
-									: 'Lock in pick'
-						}
-						onConfirm={handleSubmit}
-						disabled={
-							existingPickFixtureId === selection?.fixtureId &&
-							existingPickTeamId === selection?.teamId
-						}
-						loading={loading}
-					/>
-				)}
-			</div>
 		)
+	) : (
+		<div className="space-y-2">
+			<div className="flex justify-between items-baseline mb-3">
+				<h2 className="font-display text-xl font-semibold">{roundName}</h2>
+				<div className="flex items-center gap-2">
+					{deadline && (
+						<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
+							⏱ {formatDeadline(deadline)}
+						</span>
+					)}
+					{existingPickTeamId && (
+						<button
+							type="button"
+							onClick={() => setExpanded(false)}
+							className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						>
+							Collapse <ChevronUp className="h-3 w-3" />
+						</button>
+					)}
+				</div>
+			</div>
+
+			{fixtures.map((fixture) => {
+				const isSelectedFixture = fixture.id === selection?.fixtureId
+				// "Used in another fixture this round": the team has been clicked in a
+				// DIFFERENT fixture in this round. Treats Man City vs Brentford and Man
+				// City vs Crystal Palace as alternate slots for the same team, with one
+				// pick burning the team for the round (Option B + grey-out per UX call).
+				const homeUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.home.id
+				const awayUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.away.id
+				const homeUsedPriorRound = !!usedTeamsByRound[fixture.home.id]
+				const awayUsedPriorRound = !!usedTeamsByRound[fixture.away.id]
+
+				const homeUsed = homeUsedThisRound || homeUsedPriorRound
+				const awayUsed = awayUsedThisRound || awayUsedPriorRound
+
+				let usedSide: 'home' | 'away' | 'both' | null = null
+				if (homeUsed && awayUsed) usedSide = 'both'
+				else if (homeUsed) usedSide = 'home'
+				else if (awayUsed) usedSide = 'away'
+
+				const selected = isSelectedFixture
+					? fixture.home.id === selection?.teamId
+						? 'home'
+						: 'away'
+					: null
+
+				return (
+					<FixtureRow
+						key={fixture.id}
+						home={fixture.home}
+						away={fixture.away}
+						kickoff={fixture.kickoff ?? undefined}
+						selectedSide={selected}
+						usedSide={usedSide}
+						usedLabel={usedSide === 'both' ? `Both used` : undefined}
+						onPickHome={() => handlePick(fixture, 'home')}
+						onPickAway={() => handlePick(fixture, 'away')}
+						competitionId={competitionId}
+						roundNumber={roundNumber}
+					/>
+				)
+			})}
+
+			{error && <p className="text-sm text-[var(--eliminated)] px-2">{error}</p>}
+
+			{selectedTeam && selectedFixture && (
+				<PickConfirmBar
+					message={`Picking ${selectedTeam.name} vs ${
+						selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name
+					} (${selectedSide === 'home' ? 'H' : 'A'})`}
+					actionLabel={
+						existingPickFixtureId === selection?.fixtureId &&
+						existingPickTeamId === selection?.teamId
+							? 'Already locked'
+							: actingAs
+								? `Submit as ${actingAs.userName}`
+								: 'Lock in pick'
+					}
+					onConfirm={handleSubmit}
+					disabled={
+						existingPickFixtureId === selection?.fixtureId &&
+						existingPickTeamId === selection?.teamId
+					}
+					loading={loading}
+				/>
+			)}
+		</div>
+	)
 
 	// Locking an upcoming pick commits a REAL pick against that round (editable
 	// by re-picking until that round's own deadline) — the same endpoint the

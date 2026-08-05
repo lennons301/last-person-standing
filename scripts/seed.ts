@@ -457,6 +457,10 @@ async function seed() {
 		// Turbo-specific: whether to seed picks for all players (completed game) or
 		// leave most of them unsubmitted so the pick interface is testable
 		turboState?: 'live' | 'completed'
+		// Turbo/cup-specific: seed a complete entry for the dev viewer too, so the
+		// pre-deadline "pick already made" hero is reachable locally in every mode.
+		// Default (false) leaves the viewer unsubmitted for the "make your pick" state.
+		viewerSubmittedCurrentPick?: boolean
 		// Missed deadline scenario: skip inserting a pick for this player in a specific round
 		missedDeadlinePlayer?: string
 		missedDeadlineRound?: number
@@ -532,6 +536,29 @@ async function seed() {
 			entryFee: '10.00',
 			turboRoundNumber: 7, // reuse the turbo seed's single-round model
 			turboState: 'live',
+		},
+		// The two games below exist purely so the pre-deadline "pick already made"
+		// hero is reachable in turbo and cup as well as classic ("Work Classic"
+		// covers that one). Same open round, but the dev viewer's entry is complete.
+		{
+			name: 'Turbo Tuesday (picks in)',
+			mode: 'turbo',
+			creatorEmail: 'dev@example.com',
+			players: ['dev@example.com', 'dave@example.com', 'sarah@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 7,
+			turboState: 'live',
+			viewerSubmittedCurrentPick: true,
+		},
+		{
+			name: 'Cup Tuesday (picks in)',
+			mode: 'cup',
+			creatorEmail: 'dev@example.com',
+			players: ['dev@example.com', 'mike@example.com', 'rachel@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 7,
+			turboState: 'live',
+			viewerSubmittedCurrentPick: true,
 		},
 	]
 
@@ -750,9 +777,14 @@ async function seed() {
 				const playerRow = playerRowsByEmail[email]
 				// For a live game, only some players have submitted picks yet —
 				// everyone else shows as "no pick" so we can see the nudge UX.
-				// Always skip the viewer (dev user) so they can actually make picks.
+				// The viewer (dev user) is unsubmitted unless the seed asks
+				// otherwise, so both pre-deadline pick states are reachable.
 				const isViewer = email === 'dev@example.com'
-				const shouldSubmit = isCompleted || (!isViewer && rng() < 0.65)
+				const shouldSubmit = isCompleted
+					? true
+					: isViewer
+						? !!seed.viewerSubmittedCurrentPick
+						: rng() < 0.65
 				if (!shouldSubmit) continue
 
 				for (let i = 0; i < Math.min(10, roundFixtures.length); i++) {
@@ -805,9 +837,14 @@ async function seed() {
 				const playerRow = playerRowsByEmail[email]
 				// For a live game, only some players have submitted picks yet —
 				// everyone else shows as "no pick" so we can see the nudge UX.
-				// Always skip the viewer (dev user) so they can actually make picks.
+				// The viewer (dev user) is unsubmitted unless the seed asks
+				// otherwise, so both pre-deadline pick states are reachable.
 				const isViewer = email === 'dev@example.com'
-				const shouldSubmit = isCompleted || (!isViewer && rng() < 0.65)
+				const shouldSubmit = isCompleted
+					? true
+					: isViewer
+						? !!seed.viewerSubmittedCurrentPick
+						: rng() < 0.65
 				if (!shouldSubmit) continue
 
 				for (let i = 0; i < Math.min(numberOfPicksToSeed, roundFixtures.length); i++) {

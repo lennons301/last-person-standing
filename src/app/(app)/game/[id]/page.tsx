@@ -18,6 +18,7 @@ import {
 	getTurboPickData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
+import { buildGameView, type GameViewPickInput } from '@/lib/game/game-view'
 import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
@@ -226,6 +227,72 @@ export default async function GameDetailPage({
 			}
 		: null
 
+	// Current-round picks for whoever's context we're rendering (viewer, or the
+	// acting-as target). Feeds the hero's pick state: how many slots are filled,
+	// whether any was auto-submitted, and — classic only — the team confirmation.
+	const heroRound = game.currentRound
+	const targetCurrentPicks =
+		heroRound && targetGamePlayerId
+			? game.picks.filter(
+					(p) => p.gamePlayerId === targetGamePlayerId && p.roundId === heroRound.id,
+				)
+			: []
+
+	let heroPick: GameViewPickInput | null = null
+	if (targetCurrentPicks.length > 0) {
+		const teamPick = game.gameMode === 'classic' ? targetCurrentPicks[0] : null
+		const teamFixture = teamPick?.fixture ?? null
+		const pickedHome = teamFixture ? teamFixture.homeTeamId === teamPick?.teamId : false
+		heroPick = {
+			picksMade: targetCurrentPicks.length,
+			isAuto: targetCurrentPicks.some((p) => p.isAuto),
+			team: teamPick?.team
+				? {
+						shortName: teamPick.team.shortName,
+						name: teamPick.team.name,
+						opponentName: teamFixture
+							? pickedHome
+								? teamFixture.awayTeam.name
+								: teamFixture.homeTeam.name
+							: null,
+						side: teamFixture ? (pickedHome ? 'home' : 'away') : null,
+						kickoffIso: teamFixture?.kickoff ? teamFixture.kickoff.toISOString() : null,
+					}
+				: null,
+		}
+	}
+
+	// Pure deriver — everything the top-of-page hero branches on, plus the flags
+	// that tell the old header which bands the hero has taken over. Takes `now`
+	// as an argument so it stays unit-testable.
+	const gameView = buildGameView({
+		gameMode: game.gameMode as 'classic' | 'turbo' | 'cup',
+		gameStatus: game.status,
+		round: heroRound
+			? {
+					id: heroRound.id,
+					number: heroRound.number,
+					status: heroRound.status,
+					deadline: heroRound.deadline,
+					label: roundLabel(competitionType, heroRound.number),
+					longLabel: roundLabelLong(competitionType, heroRound.number),
+				}
+			: null,
+		game: {
+			currentRoundId: heroRound?.id ?? null,
+			currentRoundNumber: heroRound?.number ?? null,
+		},
+		isAlive,
+		actingAsName: actingAsTarget?.userName ?? null,
+		pick: heroPick,
+		picksRequired: game.gameMode === 'classic' ? 1 : numberOfPicks,
+		rebuyAvailable: !!game.rebuyBanner,
+		pot: { confirmed: game.pot.confirmed, total: game.pot.total },
+		aliveCount,
+		playerCount: game.players.length,
+		now,
+	})
+
 	const pickSection =
 		game.currentRound && isAlive && game.gameMode === 'classic' && classicPickData ? (
 			// Classic stays interactive even after the current deadline passes: the
@@ -248,6 +315,7 @@ export default async function GameDetailPage({
 				// current round stays interactive for them; for everyone else it locks.
 				currentRoundClosed={roundDeadlinePassed && !actingAsTarget}
 				actingAs={actingAsForPickUI}
+				summaryInHero={gameView.hero.kind === 'pick-made'}
 			/>
 		) : game.currentRound && isAlive && (!roundDeadlinePassed || !!actingAsTarget) ? (
 			game.gameMode === 'turbo' && turboPickData ? (
@@ -320,6 +388,7 @@ export default async function GameDetailPage({
 				liveShareAvailable: game.liveShareAvailable,
 				winnerShareAvailable: game.winnerShareAvailable,
 			}}
+			view={gameView}
 			pickSection={
 				<>
 					{game.rebuyBanner && (

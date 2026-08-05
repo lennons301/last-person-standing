@@ -28,6 +28,18 @@ interface GameHeaderProps {
 	status: string
 	inviteCode: string
 	currentRound: GameHeaderRoundInfo | null
+	/**
+	 * False when the hero above owns the round label + deadline
+	 * (`GameViewDescriptor.demote.headerRoundStrip`).
+	 */
+	showRoundStrip?: boolean
+	/**
+	 * True when the hero's stat line owns the pot + player counts
+	 * (`GameViewDescriptor.demote.headerStats`). The figures stay reachable here
+	 * — target, unpaid, entry fee — but drop to one quiet line instead of the
+	 * page's biggest number.
+	 */
+	compactStats?: boolean
 	onShare: () => void
 }
 
@@ -44,6 +56,8 @@ export function GameHeader({
 	status,
 	inviteCode,
 	currentRound,
+	showRoundStrip = true,
+	compactStats = false,
 	onShare,
 }: GameHeaderProps) {
 	const hasPending = potBreakdown.pending !== '0.00'
@@ -67,35 +81,47 @@ export function GameHeader({
 						</button>
 						<span className="truncate">· {competition}</span>
 					</p>
-					<div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
-						<Users className="h-3.5 w-3.5" />
-						<span>
-							{aliveCount} alive / {playerCount} players
-						</span>
-					</div>
-				</div>
-
-				<div className="flex items-center gap-3 shrink-0">
-					<div className="text-right">
-						<div className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold">
-							Pot (confirmed)
+					{!compactStats && (
+						<div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
+							<Users className="h-3.5 w-3.5" />
+							<span>
+								{aliveCount} alive / {playerCount} players
+							</span>
 						</div>
-						<div className="font-display text-2xl md:text-4xl font-bold leading-none">
-							£{potBreakdown.confirmed}
-						</div>
-						<div className="text-[0.7rem] text-muted-foreground mt-1 max-w-[150px] md:max-w-[200px] leading-relaxed">
+					)}
+					{compactStats && (
+						<div className="text-[0.7rem] text-muted-foreground mt-2 leading-relaxed">
 							{hasPending && <span>£{potBreakdown.pending} pending · </span>}
 							{hasUnpaid && <span>£{unpaid} unpaid · </span>}
 							<span>£{target} target</span>
+							{entryFee && <span> · £{entryFee} entry</span>}
 						</div>
-						{entryFee && (
-							<div className="text-[0.65rem] text-muted-foreground mt-0.5">£{entryFee} entry</div>
-						)}
-					</div>
+					)}
 				</div>
+
+				{!compactStats && (
+					<div className="flex items-center gap-3 shrink-0">
+						<div className="text-right">
+							<div className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold">
+								Pot (confirmed)
+							</div>
+							<div className="font-display text-2xl md:text-4xl font-bold leading-none">
+								£{potBreakdown.confirmed}
+							</div>
+							<div className="text-[0.7rem] text-muted-foreground mt-1 max-w-[150px] md:max-w-[200px] leading-relaxed">
+								{hasPending && <span>£{potBreakdown.pending} pending · </span>}
+								{hasUnpaid && <span>£{unpaid} unpaid · </span>}
+								<span>£{target} target</span>
+							</div>
+							{entryFee && (
+								<div className="text-[0.65rem] text-muted-foreground mt-0.5">£{entryFee} entry</div>
+							)}
+						</div>
+					</div>
+				)}
 			</div>
 
-			{currentRound && status !== 'completed' && (
+			{showRoundStrip && currentRound && status !== 'completed' && (
 				<div className="border-t border-border bg-muted/20 px-4 md:px-5 py-2.5 md:py-3 flex items-center justify-between gap-3 flex-wrap">
 					<div className="flex items-center gap-3 min-w-0">
 						<RoundStatusPill

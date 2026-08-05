@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { AdminPanel } from '@/components/game/admin-panel'
 import { AutoPickBanner } from '@/components/game/auto-pick-banner'
 import { GameHeader, type GameHeaderRoundInfo } from '@/components/game/game-header'
+import { GameHero } from '@/components/game/game-hero'
 import { MyPaymentStrip } from '@/components/game/my-payment-strip'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import { type AdminPayment, PaymentsPanel } from '@/components/game/payments-panel'
@@ -17,6 +18,7 @@ import { CupStandings } from '@/components/standings/cup-standings'
 import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/standings/progress-grid'
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
+import type { GameViewDescriptor } from '@/lib/game/game-view'
 import type { PotBreakdown } from '@/lib/game-logic/prizes'
 
 interface GameDetailViewProps {
@@ -48,6 +50,8 @@ interface GameDetailViewProps {
 		liveShareAvailable: boolean
 		winnerShareAvailable: boolean
 	}
+	/** State-driven top-of-page descriptor from `buildGameView`. */
+	view: GameViewDescriptor
 	pickSection: React.ReactNode
 	classicGrid?: {
 		rounds: GridRound[]
@@ -69,6 +73,7 @@ interface GameDetailViewProps {
 
 export function GameDetailView({
 	game,
+	view,
 	pickSection,
 	classicGrid,
 	turboStandings,
@@ -88,23 +93,37 @@ export function GameDetailView({
 	const inviteUrl =
 		typeof window !== 'undefined' ? `${window.location.origin}/join/${game.inviteCode}` : ''
 
+	// Auto-pick + voided-pick notices belong to the pick state, so they render
+	// inside the hero rather than as standalone banners above the page. When
+	// there's no hero (post-deadline and other not-yet-migrated states) they fall
+	// back to their original spot at the top.
+	const notices = (
+		<>
+			{game.myCurrentRoundPick?.isAuto && (
+				<AutoPickBanner
+					pickId={game.myCurrentRoundPick.id}
+					teamShortName={game.myCurrentRoundPick.teamShortName}
+					kickoffLabel={game.myCurrentRoundPick.kickoffLabel}
+				/>
+			)}
+			<VoidedPickBanner gameId={game.id} gameMode={game.gameMode as 'classic' | 'turbo' | 'cup'} />
+		</>
+	)
+
 	return (
 		<LiveProvider gameId={game.id}>
 			<div>
 				<LiveScoreTicker />
 
-				{game.myCurrentRoundPick?.isAuto && (
-					<AutoPickBanner
-						pickId={game.myCurrentRoundPick.id}
-						teamShortName={game.myCurrentRoundPick.teamShortName}
-						kickoffLabel={game.myCurrentRoundPick.kickoffLabel}
+				{view.hero.kind === 'none' ? (
+					<div className="mb-4 space-y-2">{notices}</div>
+				) : (
+					<GameHero
+						hero={view.hero}
+						stats={view.stats}
+						notices={<div className="mt-4 space-y-2">{notices}</div>}
 					/>
 				)}
-
-				<VoidedPickBanner
-					gameId={game.id}
-					gameMode={game.gameMode as 'classic' | 'turbo' | 'cup'}
-				/>
 
 				<GameHeader
 					name={game.name}
@@ -119,6 +138,8 @@ export function GameDetailView({
 					status={game.status}
 					inviteCode={game.inviteCode}
 					currentRound={game.currentRound}
+					showRoundStrip={!view.demote.headerRoundStrip}
+					compactStats={view.demote.headerStats}
 					onShare={() => openShare()}
 				/>
 
@@ -137,7 +158,10 @@ export function GameDetailView({
 						</div>
 					)}
 
-				<div className="mb-6">{pickSection}</div>
+				{/* `id` is the target of the hero's CTA / "Change pick" affordance. */}
+				<div id="pick" className="mb-6 scroll-mt-4">
+					{pickSection}
+				</div>
 
 				{winnerBanner && winnerBanner.winners.length > 0 && (
 					<WinnerBanner winners={winnerBanner.winners} runnerUpName={winnerBanner.runnerUpName} />
