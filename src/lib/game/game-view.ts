@@ -179,6 +179,12 @@ export type GameHeroDescriptor =
 			runnerUpName: string | null
 			/** The viewer's own relationship to that result. */
 			viewerOutcome: 'won' | 'shared' | 'lost'
+			/**
+			 * The viewer's own cut, when they're one of the winners. Never read off
+			 * `winners[0]` — `calculatePayouts` hands the rounding remainder to the
+			 * earliest winners, so a split pot's shares can differ by a penny.
+			 */
+			viewerPotShare: string | null
 	  }
 	| {
 			kind: 'rebuy'
@@ -337,36 +343,47 @@ export function buildGameView(input: BuildGameViewInput): GameViewDescriptor {
 	}
 }
 
-function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
-	const { gameMode, round } = input
-
-	if (!round) return { kind: 'none', mode: gameMode, round: null, reason: 'no-round' }
-
-	const heroRound: HeroRound = {
+function toHeroRound(round: NonNullable<BuildGameViewInput['round']>): HeroRound {
+	return {
 		number: round.number,
 		label: round.label,
 		longLabel: round.longLabel,
 		deadlineIso: round.deadline ? round.deadline.toISOString() : null,
 	}
+}
 
-	// A finished game leads with its outcome, whoever's looking.
+function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
+	const { gameMode, round } = input
+
+	// A finished game leads with its outcome, whoever's looking. This runs BEFORE
+	// the no-round bail-out on purpose: `applyAutoCompletion` nulls out
+	// `game.currentRoundId` when it crowns a winner, so a completed game always
+	// arrives here with `round === null` — checking for a round first would hide
+	// the result on every game that has actually finished. (`getTurboStandingsData`
+	// and `getCupStandingsData` carry their own fallbacks for the same reason.)
 	if (input.gameStatus === 'completed') {
+		const completedRound = round ? toHeroRound(round) : null
 		const winners = input.winner?.winners ?? []
 		if (winners.length === 0) {
-			return { kind: 'none', mode: gameMode, round: heroRound, reason: 'game-completed' }
+			return { kind: 'none', mode: gameMode, round: completedRound, reason: 'game-completed' }
 		}
-		const viewerWon = input.viewerUserId
-			? winners.some((w) => w.userId === input.viewerUserId)
-			: false
+		const viewerEntry = input.viewerUserId
+			? (winners.find((w) => w.userId === input.viewerUserId) ?? null)
+			: null
 		return {
 			kind: 'winner',
 			mode: gameMode,
-			round: heroRound,
+			round: completedRound,
 			winners,
 			runnerUpName: input.winner?.runnerUpName ?? null,
-			viewerOutcome: viewerWon ? (winners.length > 1 ? 'shared' : 'won') : 'lost',
+			viewerOutcome: viewerEntry ? (winners.length > 1 ? 'shared' : 'won') : 'lost',
+			viewerPotShare: viewerEntry?.potShare ?? null,
 		}
 	}
+
+	if (!round) return { kind: 'none', mode: gameMode, round: null, reason: 'no-round' }
+
+	const heroRound: HeroRound = toHeroRound(round)
 
 	// A standing rebuy offer outranks everything else: it's the one thing an
 	// eliminated player can still act on, and it expires at the round-2 deadline.

@@ -163,6 +163,7 @@ export function GameHero({
 						winners={hero.winners}
 						runnerUpName={hero.runnerUpName}
 						viewerOutcome={hero.viewerOutcome}
+						viewerPotShare={hero.viewerPotShare}
 					/>
 				)}
 				{hero.kind === 'rebuy' && (
@@ -551,18 +552,22 @@ function WinnerBody({
 	winners,
 	runnerUpName,
 	viewerOutcome,
+	viewerPotShare,
 }: {
 	winners: HeroWinnerEntry[]
 	runnerUpName: string | null
 	viewerOutcome: 'won' | 'shared' | 'lost'
+	viewerPotShare: string | null
 }) {
 	const isSplit = winners.length > 1
-	const viewerShare = winners[0]?.potShare
+	// The viewer's own cut, not the first winner's: a split pot's shares differ by
+	// a penny when the total doesn't divide evenly.
+	const share = viewerPotShare ?? '0.00'
 	const heading =
 		viewerOutcome === 'won'
-			? `You won £${viewerShare}`
+			? `You won £${share}`
 			: viewerOutcome === 'shared'
-				? `You share the pot — £${viewerShare} each`
+				? `You share the pot — your cut is £${share}`
 				: isSplit
 					? `${winners.map((w) => w.name).join(' & ')} share the pot`
 					: `${winners[0]?.name ?? 'Nobody'} wins`

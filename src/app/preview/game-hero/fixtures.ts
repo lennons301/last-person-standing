@@ -517,13 +517,18 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 		},
 
 		// ── Completed games ───────────────────────────────────────────────────
+		// All three carry `round: null` because that's the only shape production
+		// produces: `applyAutoCompletion` nulls out `game.currentRoundId` when it
+		// crowns a winner, so the page has no round to hand the deriver. The hero
+		// drops its round line and leads with the outcome.
 		{
 			id: 'classic-winner-viewer',
 			title: 'Classic · winner (the viewer won)',
+			note: 'No round line — a completed game has no current round.',
 			hero: {
 				kind: 'winner',
 				mode: 'classic',
-				round: plRound(hours(now, -200)),
+				round: null,
 				winners: [
 					{
 						userId: 'user-1',
@@ -534,6 +539,7 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				],
 				runnerUpName: 'Dave',
 				viewerOutcome: 'won',
+				viewerPotShare: '80.00',
 			},
 			stats: { ...BASE_STATS, aliveCount: 1 },
 		},
@@ -543,7 +549,7 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 			hero: {
 				kind: 'winner',
 				mode: 'turbo',
-				round: plRound(hours(now, -200)),
+				round: null,
 				winners: [
 					{
 						userId: 'user-2',
@@ -557,21 +563,23 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				],
 				runnerUpName: 'Sean',
 				viewerOutcome: 'lost',
+				viewerPotShare: null,
 			},
 			stats: { ...BASE_STATS, aliveCount: 1, playerCount: 5 },
 		},
 		{
 			id: 'cup-winner-split',
 			title: 'Cup · winner (split pot, viewer shares it)',
+			note: 'An odd pot splits unevenly — the heading quotes the viewer their own cut.',
 			hero: {
 				kind: 'winner',
 				mode: 'cup',
-				round: { ...cupRound, deadlineIso: hours(now, -200) },
+				round: null,
 				winners: [
 					{
 						userId: 'user-1',
 						name: 'Sean',
-						potShare: '60.00',
+						potShare: '60.01',
 						stats: [
 							{ iconKey: 'heart', value: 2, label: 'lives' },
 							{ iconKey: 'flame', value: 5, label: 'streak' },
@@ -591,11 +599,13 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				],
 				runnerUpName: 'Rachel',
 				viewerOutcome: 'shared',
+				// Dave's cut, not Sean's — the pot didn't divide evenly.
+				viewerPotShare: '60.00',
 			},
 			stats: {
 				...BASE_STATS,
-				potConfirmed: '120.00',
-				potTotal: '120.00',
+				potConfirmed: '120.01',
+				potTotal: '120.01',
 				aliveCount: 2,
 				playerCount: 12,
 			},

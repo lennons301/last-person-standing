@@ -267,11 +267,49 @@ describe('GameHero', () => {
 			],
 			runnerUpName: 'Dave',
 			viewerOutcome: 'won',
+			viewerPotShare: '80.00',
 		}
 		render(<GameHero hero={hero} stats={stats} />)
 		expect(screen.getByRole('heading', { name: 'You won £80.00' })).toBeTruthy()
 		expect(screen.getByText('Sean')).toBeTruthy()
 		expect(screen.getByText(/Runner-up:/)).toBeTruthy()
+	})
+
+	// Completed games have no current round (applyAutoCompletion nulls it out), so
+	// the winner hero has to stand up without a round line.
+	it('renders the winner hero with no round to name', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'winner',
+			mode: 'classic',
+			round: null,
+			winners: [{ userId: 'user-1', name: 'Sean', potShare: '80.00', stats: [] }],
+			runnerUpName: null,
+			viewerOutcome: 'lost',
+			viewerPotShare: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: 'Sean wins' })).toBeTruthy()
+		expect(screen.queryByText('Gameweek 7')).toBeNull()
+	})
+
+	it('quotes the viewer their own share of a split pot', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'winner',
+			mode: 'turbo',
+			round: null,
+			winners: [
+				{ userId: 'user-1', name: 'Sean', potShare: '16.67', stats: [] },
+				{ userId: 'user-2', name: 'Dave', potShare: '16.66', stats: [] },
+				{ userId: 'user-3', name: 'Rich', potShare: '16.66', stats: [] },
+			],
+			runnerUpName: null,
+			viewerOutcome: 'shared',
+			viewerPotShare: '16.66',
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(
+			screen.getByRole('heading', { name: 'You share the pot — your cut is £16.66' }),
+		).toBeTruthy()
 	})
 
 	it('names the winner when someone else took it', () => {
@@ -285,6 +323,7 @@ describe('GameHero', () => {
 			],
 			runnerUpName: null,
 			viewerOutcome: 'lost',
+			viewerPotShare: null,
 		}
 		render(<GameHero hero={hero} stats={stats} />)
 		expect(screen.getByRole('heading', { name: 'Sean & Dave share the pot' })).toBeTruthy()

@@ -478,9 +478,31 @@ describe('buildGameView — winner', () => {
 				kind: 'winner',
 				mode,
 				viewerOutcome: 'won',
+				viewerPotShare: '80.00',
 				runnerUpName: 'Dave',
 				winners: [{ name: 'Sean', potShare: '80.00' }],
 			})
+		})
+
+		// The shape every game that has really finished arrives in:
+		// `applyAutoCompletion` nulls out `game.currentRoundId` when it crowns a
+		// winner, so `page.tsx` has no round to hand the deriver. The outcome must
+		// still lead the page — this is the only place the winner is shown now that
+		// the standalone banner is gone.
+		it(`leads a completed ${mode} game with no current round`, () => {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					gameStatus: 'completed',
+					round: null,
+					game: { currentRoundId: null, currentRoundNumber: null },
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'winner', mode, round: null, viewerOutcome: 'won' })
+			// The hero owns the header's pot block even without a round to name.
+			expect(view.demote).toEqual({ headerRoundStrip: true, headerStats: true })
 		})
 	}
 
@@ -500,16 +522,51 @@ describe('buildGameView — winner', () => {
 		expect(view.hero).toMatchObject({ kind: 'winner', viewerOutcome: 'shared', runnerUpName: null })
 	})
 
+	// `calculatePayouts` gives the rounding remainder to the earliest winners, so
+	// an odd pot splits unevenly. The hero must quote the viewer their own cut.
+	it('quotes the viewer their own share of an unevenly split pot', () => {
+		const view = buildGameView(
+			baseInput({
+				gameStatus: 'completed',
+				viewerUserId: 'user-2',
+				winner: {
+					winners: [
+						{ userId: 'user-1', name: 'Sean', potShare: '16.67', stats: [] },
+						{ userId: 'user-2', name: 'Dave', potShare: '16.66', stats: [] },
+						{ userId: 'user-3', name: 'Rich', potShare: '16.66', stats: [] },
+					],
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({ viewerOutcome: 'shared', viewerPotShare: '16.66' })
+	})
+
 	it('reads as a loss for everyone else', () => {
 		const view = buildGameView(
 			baseInput({ gameStatus: 'completed', winner: WINNER, viewerUserId: 'user-9' }),
 		)
-		expect(view.hero).toMatchObject({ kind: 'winner', viewerOutcome: 'lost' })
+		expect(view.hero).toMatchObject({ kind: 'winner', viewerOutcome: 'lost', viewerPotShare: null })
 	})
 
 	it('falls back to no hero on a completed game with no winner recorded', () => {
 		const view = buildGameView(baseInput({ gameStatus: 'completed', pick: classicPick }))
 		expect(view.hero).toMatchObject({ kind: 'none', reason: 'game-completed' })
+	})
+
+	it('has no hero on a completed game with neither a winner nor a round', () => {
+		const view = buildGameView(
+			baseInput({
+				gameStatus: 'completed',
+				round: null,
+				game: { currentRoundId: null, currentRoundNumber: null },
+			}),
+		)
+		expect(view.hero).toEqual({
+			kind: 'none',
+			mode: 'classic',
+			round: null,
+			reason: 'game-completed',
+		})
 	})
 })
 
@@ -644,6 +701,15 @@ describe('buildGameView — purity', () => {
 				baseInput({
 					gameMode: mode,
 					gameStatus: 'completed',
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
+				// The real completed-game shape: no current round left to name.
+				baseInput({
+					gameMode: mode,
+					gameStatus: 'completed',
+					round: null,
+					game: { currentRoundId: null, currentRoundNumber: null },
 					winner: WINNER,
 					viewerUserId: 'user-1',
 				}),
