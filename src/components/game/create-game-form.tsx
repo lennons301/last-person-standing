@@ -15,10 +15,15 @@ import {
 	SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import type { PaymentProvider } from '@/lib/payments/payment-link'
 import { cn } from '@/lib/utils'
+import { PaymentHandleField } from './payment-handle-field'
 
 interface CreateGameFormProps {
 	competitions: Array<{ id: string; name: string; type: string }>
+	/** The creator's saved pay-me handle, pre-filled so it's a set-once field. */
+	savedPaymentProvider?: PaymentProvider | null
+	savedPaymentHandle?: string | null
 }
 
 type GameMode = 'classic' | 'turbo' | 'cup'
@@ -29,7 +34,11 @@ const MODE_DESCRIPTIONS: Record<GameMode, string> = {
 	cup: 'Predict cup fixtures. Lives system with tier handicaps.',
 }
 
-export function CreateGameForm({ competitions }: CreateGameFormProps) {
+export function CreateGameForm({
+	competitions,
+	savedPaymentProvider = null,
+	savedPaymentHandle = null,
+}: CreateGameFormProps) {
 	const router = useRouter()
 	const [name, setName] = useState('')
 	const [competitionId, setCompetitionId] = useState('')
@@ -42,6 +51,12 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 	const [startingLives, setStartingLives] = useState(0)
 	const [numberOfPicks, setNumberOfPicks] = useState(10)
 	const [allowRebuys, setAllowRebuys] = useState(true)
+	// Pre-filled from the creator's user record — set it once and every future
+	// game they create starts with it already in place.
+	const [paymentProvider, setPaymentProvider] = useState<PaymentProvider | null>(
+		savedPaymentProvider,
+	)
+	const [paymentHandle, setPaymentHandle] = useState(savedPaymentHandle ?? '')
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
@@ -74,6 +89,9 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 				gameMode: mode,
 				modeConfig,
 				entryFee: hasEntryFee ? entryFee.toFixed(2) : null,
+				// Only sent when there's a fee to collect — creating a free game has
+				// no business touching the creator's stored handle.
+				...(hasEntryFee ? { paymentProvider, paymentHandle: paymentHandle.trim() } : {}),
 			}),
 		})
 		setLoading(false)
@@ -198,6 +216,15 @@ export function CreateGameForm({ competitions }: CreateGameFormProps) {
 									</Button>
 									<span className="text-xs text-muted-foreground ml-2">Steps of £10</span>
 								</div>
+							)}
+							{hasEntryFee && (
+								<PaymentHandleField
+									provider={paymentProvider}
+									handle={paymentHandle}
+									onProviderChange={setPaymentProvider}
+									onHandleChange={setPaymentHandle}
+									idPrefix="create-pay"
+								/>
 							)}
 						</div>
 
