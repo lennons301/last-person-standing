@@ -157,4 +157,24 @@ describe('buildPaymentLink', () => {
 			}),
 		).toBeNull()
 	})
+
+	// Mirrors the buildGameView / buildWinnerBanner serializability guards: this
+	// value is derived in a Server Component and handed to a Client Component as
+	// a prop, so it has to survive the RSC boundary. A plain string or null does;
+	// a URL instance or a descriptor object with a method on it would not.
+	it('returns a structuredClone-safe value for every variant', () => {
+		const variants = [
+			{ provider: 'monzo' as PaymentProvider, handle, amount: '10.00', reference: 'Lads LPS Bob' },
+			{ provider: 'revolut' as PaymentProvider, handle, amount: '7.50' },
+			{ provider: 'monzo' as PaymentProvider, handle, amount: '10.00' },
+			{ provider: null, handle, amount: '10.00' },
+			{ provider: 'monzo' as PaymentProvider, handle: null, amount: '10.00' },
+		]
+		for (const variant of variants) {
+			const url = buildPaymentLink(variant)
+			expect(url === null || typeof url === 'string').toBe(true)
+			expect(structuredClone(url)).toEqual(url)
+			expect(JSON.parse(JSON.stringify({ url }))).toEqual({ url })
+		}
+	})
 })
