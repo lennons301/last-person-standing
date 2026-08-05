@@ -2,7 +2,6 @@ import { and, eq } from 'drizzle-orm'
 import { notFound, redirect } from 'next/navigation'
 import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
-import { RebuyBanner } from '@/components/game/rebuy-banner'
 import { ClassicPick } from '@/components/picks/classic-pick'
 import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
@@ -24,6 +23,7 @@ import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { user } from '@/lib/schema/auth'
+import { round as roundTable } from '@/lib/schema/competition'
 import { gamePlayer } from '@/lib/schema/game'
 
 function initialsFromName(name: string): string {
@@ -259,8 +259,46 @@ export default async function GameDetailPage({
 						kickoffIso: teamFixture?.kickoff ? teamFixture.kickoff.toISOString() : null,
 					}
 				: null,
+			// The scoreboard the hero's post-deadline live read runs off. The
+			// current scores come straight from the fixture row the poller writes;
+			// the client-side live ticker above the hero keeps the fuller picture.
+			fixture: teamFixture
+				? {
+						id: teamFixture.id,
+						status: teamFixture.status,
+						homeShort: teamFixture.homeTeam.shortName,
+						awayShort: teamFixture.awayTeam.shortName,
+						homeScore: teamFixture.homeScore,
+						awayScore: teamFixture.awayScore,
+						kickoffIso: teamFixture.kickoff ? teamFixture.kickoff.toISOString() : null,
+					}
+				: null,
+			results: targetCurrentPicks.map((p) => p.result),
 		}
 	}
+
+	// The round the game moves to next — the round-result hero points at it. Only
+	// needed once the current round has been settled.
+	const nextRoundRow =
+		heroRound?.status === 'completed'
+			? ((await db.query.round.findFirst({
+					where: and(
+						eq(roundTable.competitionId, game.competition.id),
+						eq(roundTable.number, heroRound.number + 1),
+					),
+				})) ?? null)
+			: null
+
+	// The round the target player went out in — the quiet note on the rebuy and
+	// spectator heroes.
+	const targetPlayer = actingAsTarget
+		? game.players.find((p) => p.id === actingAsTarget.gamePlayerId)
+		: game.myMembership
+	const eliminatedRoundRow = targetPlayer?.eliminatedRoundId
+		? ((await db.query.round.findFirst({
+				where: eq(roundTable.id, targetPlayer.eliminatedRoundId),
+			})) ?? null)
+		: null
 
 	// Pure deriver — everything the top-of-page hero branches on, plus the flags
 	// that tell the old header which bands the hero has taken over. Takes `now`
@@ -287,6 +325,27 @@ export default async function GameDetailPage({
 		pick: heroPick,
 		picksRequired: game.gameMode === 'classic' ? 1 : numberOfPicks,
 		rebuyAvailable: !!game.rebuyBanner,
+		livesRemaining: targetLivesRemaining,
+		nextRound: nextRoundRow
+			? {
+					number: nextRoundRow.number,
+					label: roundLabel(competitionType, nextRoundRow.number),
+					longLabel: roundLabelLong(competitionType, nextRoundRow.number),
+					deadline: nextRoundRow.deadline,
+				}
+			: null,
+		rebuy: game.rebuyBanner
+			? {
+					entryFee: game.rebuyBanner.entryFee,
+					closesAt: game.rebuyBanner.round2Deadline,
+					pendingPayment: game.rebuyBanner.pendingPayment,
+				}
+			: null,
+		eliminatedRoundLabel: eliminatedRoundRow
+			? roundLabel(competitionType, eliminatedRoundRow.number)
+			: null,
+		winner: winnerBanner,
+		viewerUserId: session.user.id,
 		pot: { confirmed: game.pot.confirmed, total: game.pot.total },
 		aliveCount,
 		playerCount: game.players.length,
@@ -391,14 +450,6 @@ export default async function GameDetailPage({
 			view={gameView}
 			pickSection={
 				<>
-					{game.rebuyBanner && (
-						<RebuyBanner
-							gameId={game.id}
-							entryFee={game.rebuyBanner.entryFee}
-							round2Deadline={game.rebuyBanner.round2Deadline}
-							pendingPayment={game.rebuyBanner.pendingPayment}
-						/>
-					)}
 					{actingAsTarget && (
 						<ActingAsBanner
 							gameId={game.id}
@@ -413,7 +464,14 @@ export default async function GameDetailPage({
 			turboStandings={
 				turboStandingsData ? { rounds: turboStandingsData.rounds, numberOfPicks } : null
 			}
-			winnerBanner={winnerBanner}
+			rebuy={
+				game.rebuyBanner
+					? {
+							entryFee: game.rebuyBanner.entryFee,
+							pendingPayment: game.rebuyBanner.pendingPayment,
+						}
+					: null
+			}
 			cupStandings={cupStandingsData}
 		/>
 	)

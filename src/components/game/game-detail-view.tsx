@@ -9,9 +9,9 @@ import { ManageGameFold } from '@/components/game/manage-game-fold'
 import { MyPaymentStrip } from '@/components/game/my-payment-strip'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import type { AdminPayment } from '@/components/game/payments-panel'
+import { RebuyActions, RebuyPendingNotice } from '@/components/game/rebuy-actions'
 import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
-import { WinnerBanner, type WinnerBannerEntry } from '@/components/game/winner-banner'
 import { LiveProvider } from '@/components/live/live-provider'
 import { LiveScoreTicker } from '@/components/live/live-score-ticker'
 import { CupStandings } from '@/components/standings/cup-standings'
@@ -64,9 +64,14 @@ interface GameDetailViewProps {
 		rounds: TurboRoundSummary[]
 		numberOfPicks: number
 	} | null
-	winnerBanner?: {
-		winners: WinnerBannerEntry[]
-		runnerUpName?: string
+	/**
+	 * The standing rebuy offer, when there is one. The hero owns the offer itself
+	 * (`view.hero.kind === 'rebuy'`); this supplies the buttons behind it, and the
+	 * pending-payment notice for a player who has already bought back in.
+	 */
+	rebuy?: {
+		entryFee: string
+		pendingPayment: { id: string; amount: string } | null
 	} | null
 	cupStandings?: CupLadderData | null
 }
@@ -77,7 +82,7 @@ export function GameDetailView({
 	pickSection,
 	classicGrid,
 	turboStandings,
-	winnerBanner,
+	rebuy,
 	cupStandings,
 }: GameDetailViewProps) {
 	const [shareOpen, setShareOpen] = useState(false)
@@ -93,10 +98,11 @@ export function GameDetailView({
 	const inviteUrl =
 		typeof window !== 'undefined' ? `${window.location.origin}/join/${game.inviteCode}` : ''
 
-	// Auto-pick + voided-pick notices belong to the pick state, so they render
-	// inside the hero rather than as standalone banners above the page. When
-	// there's no hero (post-deadline and other not-yet-migrated states) they fall
-	// back to their original spot at the top.
+	// Auto-pick, voided-pick and pending-rebuy notices belong to the state the
+	// hero is describing, so they render inside it rather than as standalone
+	// banners above the page. When there's no hero at all they fall back to their
+	// original spot at the top. The pending-rebuy notice stands down when the
+	// hero is the rebuy variant — that already carries the claim CTA.
 	const notices = (
 		<>
 			{game.myCurrentRoundPick?.isAuto && (
@@ -104,6 +110,13 @@ export function GameDetailView({
 					pickId={game.myCurrentRoundPick.id}
 					teamShortName={game.myCurrentRoundPick.teamShortName}
 					kickoffLabel={game.myCurrentRoundPick.kickoffLabel}
+				/>
+			)}
+			{rebuy?.pendingPayment && view.hero.kind !== 'rebuy' && (
+				<RebuyPendingNotice
+					gameId={game.id}
+					entryFee={rebuy.entryFee}
+					pendingPayment={rebuy.pendingPayment}
 				/>
 			)}
 			<VoidedPickBanner gameId={game.id} gameMode={game.gameMode as 'classic' | 'turbo' | 'cup'} />
@@ -122,6 +135,16 @@ export function GameDetailView({
 						hero={view.hero}
 						stats={view.stats}
 						notices={<div className="mt-4 space-y-2">{notices}</div>}
+						rebuyAction={
+							rebuy ? (
+								<RebuyActions
+									gameId={game.id}
+									entryFee={rebuy.entryFee}
+									pendingPayment={rebuy.pendingPayment}
+									size="lg"
+								/>
+							) : null
+						}
 					/>
 				)}
 
@@ -162,10 +185,6 @@ export function GameDetailView({
 				<div id="pick" className="mb-6 scroll-mt-4">
 					{pickSection}
 				</div>
-
-				{winnerBanner && winnerBanner.winners.length > 0 && (
-					<WinnerBanner winners={winnerBanner.winners} runnerUpName={winnerBanner.runnerUpName} />
-				)}
 
 				{classicGrid && (
 					<ProgressGrid

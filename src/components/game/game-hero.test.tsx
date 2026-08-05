@@ -119,6 +119,226 @@ describe('GameHero', () => {
 		expect(screen.getByText('Rebuy available')).toBeTruthy()
 	})
 
+	it('gives a classic live pick its scoreboard and survival read', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'live',
+			mode: 'classic',
+			round,
+			entry: {
+				type: 'team',
+				shortName: 'ARS',
+				name: 'Arsenal',
+				opponentName: 'Everton',
+				side: 'home',
+				fixture: {
+					id: 'fixture-1',
+					status: 'live',
+					homeShort: 'ARS',
+					awayShort: 'EVE',
+					homeScore: 1,
+					awayScore: 0,
+					kickoffIso: '2099-08-08T14:00:00.000Z',
+				},
+			},
+			survival: 'surviving',
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByText('Your pick')).toBeTruthy()
+		expect(screen.getByText('Arsenal')).toBeTruthy()
+		expect(screen.getByText('1–0')).toBeTruthy()
+		expect(screen.getByText(/ARS v EVE · Live/)).toBeTruthy()
+		expect(screen.getByText('Surviving')).toBeTruthy()
+		// The picks are locked — no change affordance, no countdown.
+		expect(screen.queryByRole('link', { name: /Change pick/ })).toBeNull()
+		expect(screen.getByText('Picks locked')).toBeTruthy()
+	})
+
+	it('summarises a live ranked slate with lives left', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'live',
+			mode: 'cup',
+			round,
+			entry: {
+				type: 'ranked',
+				picksMade: 6,
+				picksRequired: 6,
+				correct: 3,
+				wrong: 1,
+				pending: 2,
+				livesRemaining: 1,
+			},
+			survival: 'surviving',
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByText('3 of 6 correct')).toBeTruthy()
+		expect(screen.getByText('1 wrong · 2 still to play · 1 life left')).toBeTruthy()
+	})
+
+	it('calls out a missed deadline in the live hero', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'live',
+			mode: 'classic',
+			round,
+			entry: { type: 'none' },
+			survival: 'out',
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByText('No pick in')).toBeTruthy()
+		expect(screen.getByText('You missed the deadline')).toBeTruthy()
+		expect(screen.getByText('Out')).toBeTruthy()
+	})
+
+	it('reports the round result and points at the next round', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'round-result',
+			mode: 'classic',
+			round,
+			entry: {
+				type: 'team',
+				shortName: 'ARS',
+				name: 'Arsenal',
+				opponentName: 'Everton',
+				side: 'home',
+				fixture: {
+					id: 'fixture-1',
+					status: 'finished',
+					homeShort: 'ARS',
+					awayShort: 'EVE',
+					homeScore: 2,
+					awayScore: 1,
+					kickoffIso: '2099-08-08T14:00:00.000Z',
+				},
+			},
+			result: 'survived',
+			nextRound: {
+				number: 8,
+				label: 'GW8',
+				longLabel: 'Gameweek 8',
+				deadlineIso: '2099-08-15T17:30:00.000Z',
+			},
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: 'You survived Gameweek 7' })).toBeTruthy()
+		expect(screen.getByText('2–1')).toBeTruthy()
+		expect(screen.getByText(/Next up:/)).toBeTruthy()
+		expect(screen.getByText('Gameweek 8')).toBeTruthy()
+	})
+
+	it('says the round is done for the single-round modes', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'round-result',
+			mode: 'turbo',
+			round,
+			entry: {
+				type: 'ranked',
+				picksMade: 10,
+				picksRequired: 10,
+				correct: 7,
+				wrong: 3,
+				pending: 0,
+				livesRemaining: null,
+			},
+			result: 'played',
+			nextRound: null,
+			actingAsName: null,
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: 'Gameweek 7 is done' })).toBeTruthy()
+		expect(screen.getByText('7 of 10 correct')).toBeTruthy()
+		expect(screen.queryByText(/Next up:/)).toBeNull()
+	})
+
+	it('leads a completed game with the viewer’s own win', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'winner',
+			mode: 'classic',
+			round,
+			winners: [
+				{
+					userId: 'user-1',
+					name: 'Sean',
+					potShare: '80.00',
+					stats: [{ iconKey: 'list-checks', value: 7, label: 'rounds' }],
+				},
+			],
+			runnerUpName: 'Dave',
+			viewerOutcome: 'won',
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: 'You won £80.00' })).toBeTruthy()
+		expect(screen.getByText('Sean')).toBeTruthy()
+		expect(screen.getByText(/Runner-up:/)).toBeTruthy()
+	})
+
+	it('names the winner when someone else took it', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'winner',
+			mode: 'cup',
+			round,
+			winners: [
+				{ userId: 'user-1', name: 'Sean', potShare: '50.00', stats: [] },
+				{ userId: 'user-2', name: 'Dave', potShare: '50.00', stats: [] },
+			],
+			runnerUpName: null,
+			viewerOutcome: 'lost',
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: 'Sean & Dave share the pot' })).toBeTruthy()
+		expect(screen.getByText('Split pot · 2 way')).toBeTruthy()
+	})
+
+	it('puts the rebuy call to action in the hero, with its action slot', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'rebuy',
+			mode: 'classic',
+			round,
+			entryFee: '10.00',
+			closesAtIso: '2099-08-15T17:30:00.000Z',
+			pendingPayment: null,
+			eliminatedRoundLabel: 'GW1',
+		}
+		render(
+			<GameHero hero={hero} stats={stats} rebuyAction={<button type="button">Rebuy</button>} />,
+		)
+		expect(screen.getByRole('heading', { name: 'Buy back in for £10.00' })).toBeTruthy()
+		expect(screen.getByText(/You went out in GW1\./)).toBeTruthy()
+		expect(screen.getByRole('button', { name: 'Rebuy' })).toBeTruthy()
+	})
+
+	it('switches the rebuy hero to the pending-payment state', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'rebuy',
+			mode: 'classic',
+			round,
+			entryFee: '10.00',
+			closesAtIso: null,
+			pendingPayment: { id: 'pay-1', amount: '10.00' },
+			eliminatedRoundLabel: 'GW1',
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('heading', { name: 'Rebuy payment pending' })).toBeTruthy()
+	})
+
+	it('goes quiet for a spectator', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'spectator',
+			mode: 'classic',
+			round,
+			eliminatedRoundLabel: 'GW34',
+		}
+		render(<GameHero hero={hero} stats={stats} />)
+		expect(screen.getByRole('region', { name: 'Spectating' })).toBeTruthy()
+		expect(screen.getByText(/Eliminated in/)).toBeTruthy()
+		expect(screen.getByText('GW34')).toBeTruthy()
+		// Nothing to do here — no buttons, no call to action.
+		expect(screen.queryByRole('link')).toBeNull()
+		expect(screen.queryByRole('button')).toBeNull()
+	})
+
 	it('renders nothing when there is no hero state yet', () => {
 		const { container } = render(
 			<GameHero
