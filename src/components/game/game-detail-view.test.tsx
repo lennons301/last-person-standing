@@ -97,6 +97,34 @@ describe('GameDetailView management fold', () => {
 		expect(screen.queryByText('Payments')).toBeNull()
 	})
 
+	it('tops the page with the identity bar and the stat line, and nothing else', () => {
+		render(<GameDetailView game={game()} view={view} pickSection={null} />)
+
+		expect(screen.getByRole('heading', { name: 'Cup Tuesday' })).toBeTruthy()
+		expect(screen.getByRole('button', { name: 'How classic mode works' })).toBeTruthy()
+		expect(screen.getByRole('button', { name: /£30\.00 pot/ })).toBeTruthy()
+		expect(screen.getByText(/of\s+4 in/)).toBeTruthy()
+		// Invite code and entry fee left the persistent page for the share flow
+		// and the rules dialog; the pot breakdown is behind the disclosure.
+		expect(screen.queryByText('ABC123')).toBeNull()
+		expect(screen.queryByText(/entry/i)).toBeNull()
+		expect(screen.queryByText('Target')).toBeNull()
+	})
+
+	it('hangs an unpaid balance off the stat line instead of a band', () => {
+		render(
+			<GameDetailView
+				game={game({ myPayment: { id: 'pay1', status: 'pending', amount: '10.00' } })}
+				view={view}
+				pickSection={null}
+			/>,
+		)
+
+		const notice = screen.getByRole('button', { name: /£10\.00 unpaid — settle up/ })
+		const statLine = screen.getByRole('button', { name: /£30\.00 pot/ }).parentElement
+		expect(statLine?.contains(notice)).toBe(true)
+	})
+
 	it('never renders the fold for non-admins', () => {
 		render(
 			<GameDetailView

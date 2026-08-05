@@ -118,7 +118,7 @@ export function UnpaidNotice({
 			>
 				<span className="font-semibold">
 					£{amount} {status === 'claimed' ? 'awaiting confirmation' : 'unpaid'}
-				</span>
+				</span>{' '}
 				<span>— settle up</span>
 			</button>
 		</>
