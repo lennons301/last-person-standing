@@ -457,6 +457,11 @@ async function seed() {
 		// Turbo-specific: whether to seed picks for all players (completed game) or
 		// leave most of them unsubmitted so the pick interface is testable
 		turboState?: 'live' | 'completed'
+		// Turbo/cup-specific, completed games only: who lifted it. Crowning a winner
+		// is what makes the winner hero reachable — `buildWinnerBanner` needs a
+		// player with status 'winner', and without one a finished game has nothing
+		// to lead with.
+		winnerEmail?: string
 		// Turbo/cup-specific: seed a complete entry for the dev viewer too, so the
 		// pre-deadline "pick already made" hero is reachable locally in every mode.
 		// Default (false) leaves the viewer unsubmitted for the "make your pick" state.
@@ -529,6 +534,20 @@ async function seed() {
 			entryFee: '10.00',
 			turboRoundNumber: 6, // completed round — full standings
 			turboState: 'completed',
+			winnerEmail: 'dev@example.com',
+		},
+		{
+			// The cup counterpart of "Turbo Last Week": a finished game with a
+			// trophy, so the winner hero is reachable in all three modes.
+			// "Champion's Cup (4c5 smoke)" covers classic.
+			name: 'Cup Last Week',
+			mode: 'cup',
+			creatorEmail: 'dave@example.com',
+			players: ['dev@example.com', 'dave@example.com', 'mike@example.com', 'sarah@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 6,
+			turboState: 'completed',
+			winnerEmail: 'dev@example.com',
 		},
 		{
 			name: 'Cup Tuesday (GW7)',
@@ -909,6 +928,29 @@ async function seed() {
 			}
 		}
 
+		// Crown the winner of a finished single-round game, and null out the round
+		// pointer the way `applyAutoCompletion` does. Both matter for the hero: the
+		// winner variant needs a player with status 'winner', and it has to hold up
+		// with no current round, because that's the only shape production leaves
+		// behind. Runs after the picks above so the standings still have a round to
+		// fall back to.
+		if (gameStatus === 'completed' && seed.winnerEmail) {
+			for (const email of seed.players) {
+				const playerRow = playerRowsByEmail[email]
+				if (!playerRow) continue
+				const isWinner = email === seed.winnerEmail
+				await db
+					.update(gamePlayer)
+					.set({
+						status: isWinner ? 'winner' : 'eliminated',
+						eliminatedRoundId: isWinner ? null : gameRoundId,
+						eliminatedReason: isWinner ? null : 'loss',
+					})
+					.where(eq(gamePlayer.id, playerRow.id))
+			}
+			await db.update(game).set({ currentRoundId: null }).where(eq(game.id, newGame.id))
+		}
+
 		console.log(`Created "${seed.name}" (${seed.mode}) — ${seed.players.length} players`)
 	}
 
@@ -1186,7 +1228,14 @@ async function seed() {
 	// ─── 5b: Champion's Cup (solo winner) ────────────────────────────────────
 	// Completed classic game: 1 winner, 3 eliminated. Pot = 4 × £20 = £80.
 	// defaultShareVariant === 'winner', single-winner block.
+	//
+	// `currentRoundId` is null and every player has picks, both on purpose: that's
+	// the shape `applyAutoCompletion` leaves behind, and it's the only shape the
+	// winner hero ever renders in for real. Without picks, `getProgressGridData`
+	// has no touched rounds to draw and the standings grid vanishes with the
+	// round pointer.
 	{
+		const gw4_4c5 = rounds.find((r) => r.number === 4)
 		const [champGame] = await db
 			.insert(game)
 			.values({
@@ -1198,51 +1247,38 @@ async function seed() {
 				entryFee: '20.00',
 				inviteCode: generateInviteCode(),
 				status: 'completed',
-				currentRoundId: gw6_4c5.id,
+				currentRoundId: null,
 			})
 			.returning()
 
-		// Winner: dev
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['dev@example.com'],
-			status: 'winner',
-			livesRemaining: 0,
-		})
-		// Eliminated: dave (round 2), mike (round 3), rich (round 4)
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['dave@example.com'],
-			status: 'eliminated',
-			eliminatedRoundId: gw2_4c5.id,
-			eliminatedReason: 'loss',
-			livesRemaining: 0,
-		})
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['mike@example.com'],
-			status: 'eliminated',
-			eliminatedRoundId: gw3_4c5.id,
-			eliminatedReason: 'loss',
-			livesRemaining: 0,
-		})
-		const gw4_4c5 = rounds.find((r) => r.number === 4)
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['rich@example.com'],
-			status: 'eliminated',
-			eliminatedRoundId: gw4_4c5?.id ?? gw3_4c5.id,
-			eliminatedReason: 'loss',
-			livesRemaining: 0,
-		})
+		// dev won it; dave went out in round 2, mike in round 3, rich in round 4.
+		const champPlayers: Array<{ email: string; eliminatedRound: number | null }> = [
+			{ email: 'dev@example.com', eliminatedRound: null },
+			{ email: 'dave@example.com', eliminatedRound: 2 },
+			{ email: 'mike@example.com', eliminatedRound: 3 },
+			{ email: 'rich@example.com', eliminatedRound: 4 },
+		]
+		const champRoundByNumber = new Map(
+			[gw1_4c5, gw2_4c5, gw3_4c5, gw4_4c5]
+				.filter((r): r is RoundRow => !!r)
+				.map((r) => [r.number, r]),
+		)
 
-		// Payments for all 4 players → pot = £80
-		for (const email of [
-			'dev@example.com',
-			'dave@example.com',
-			'mike@example.com',
-			'rich@example.com',
-		]) {
+		for (const { email, eliminatedRound } of champPlayers) {
+			const eliminatedRoundRow =
+				eliminatedRound != null ? champRoundByNumber.get(eliminatedRound) : null
+			const [gp] = await db
+				.insert(gamePlayer)
+				.values({
+					gameId: champGame.id,
+					userId: userIds[email],
+					status: eliminatedRound == null ? 'winner' : 'eliminated',
+					eliminatedRoundId: eliminatedRoundRow?.id ?? null,
+					eliminatedReason: eliminatedRound == null ? null : 'loss',
+					livesRemaining: 0,
+				})
+				.returning()
+
 			await db.insert(payment).values({
 				gameId: champGame.id,
 				userId: userIds[email],
@@ -1250,6 +1286,31 @@ async function seed() {
 				status: 'paid',
 				paidAt: new Date(),
 			})
+
+			// One pick per round they survived into, a loss on the round they went
+			// out. Teams are never reused — the classic rule.
+			const usedTeamIds = new Set<string>()
+			const lastRound = eliminatedRound ?? Math.max(...champRoundByNumber.keys())
+			for (const [number, r] of [...champRoundByNumber].sort((a, b) => a[0] - b[0])) {
+				if (number > lastRound) break
+				const wantLoss = number === eliminatedRound
+				for (const f of fixturesByRound.get(r.id) ?? []) {
+					const team = wantLoss ? fixtureLoserTeam(f) : fixtureWinnerTeam(f)
+					if (!team || usedTeamIds.has(team.id)) continue
+					usedTeamIds.add(team.id)
+					const scored = team.id === f.homeTeamId ? f.homeScore : f.awayScore
+					await db.insert(pick).values({
+						gameId: champGame.id,
+						gamePlayerId: gp.id,
+						roundId: r.id,
+						teamId: team.id,
+						fixtureId: f.id,
+						result: wantLoss ? 'loss' : 'win',
+						goalsScored: scored ?? 0,
+					})
+					break
+				}
+			}
 		}
 
 		console.log(`Created "Champion's Cup (4c5 smoke)" — 1 winner + 3 eliminated, pot £80`)
@@ -1258,6 +1319,13 @@ async function seed() {
 	// ─── 5c: Split Cup (two co-winners) ───────────────────────────────────────
 	// Completed cup game: 2 winners, 3 eliminated. Pot = 5 × £20 = £100, split = £50 each.
 	// defaultShareVariant === 'winner', split-pot 2-way block.
+	//
+	// This one keeps its `currentRoundId` even though a real completed game has
+	// none: it seeds no picks, and `getCupStandingsData`'s completed-game fallback
+	// picks the latest round *with picks* — so nulling the pointer here would empty
+	// the ladder and with it the winner payload. "Cup Last Week" (in the game-seed
+	// loop above) is the faithful completed-cup shape; this block exists for the
+	// split-pot rendering.
 	{
 		const [splitGame] = await db
 			.insert(game)
