@@ -1,4 +1,6 @@
+import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { user } from '@/lib/schema/auth'
 
 vi.mock('@/lib/auth-helpers', () => ({
 	requireSession: vi.fn().mockResolvedValue({ user: { id: 'creator' } }),
@@ -165,5 +167,22 @@ describe("POST /api/games — the creator's payment handle", () => {
 
 		expect(res.status).toBe(400)
 		expect((await res.json()).error).toBe('invalid-payment-handle')
+	})
+
+	it("writes the handle to the session's own user row, never to a userId in the body", async () => {
+		await POST(
+			req({
+				...createBody,
+				paymentProvider: 'monzo',
+				paymentHandle: 'alicejones',
+				userId: 'someone-else',
+			}),
+		)
+
+		// Same guarantee as the edit endpoint: the row is chosen by session id
+		// alone, so create-game can't be used to point someone else's pot
+		// somewhere new.
+		expect(updateWhere).toHaveBeenCalledTimes(1)
+		expect(updateWhere).toHaveBeenCalledWith(eq(user.id, 'creator'))
 	})
 })
