@@ -59,6 +59,7 @@ function game(overrides: Record<string, unknown> = {}) {
 		creatorName: 'Alice',
 		isAdmin: true,
 		myPayment: null,
+		myPaymentPayUrl: null,
 		adminPayments,
 		myCurrentRoundPick: null,
 		currentRound: null,

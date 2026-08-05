@@ -37,6 +37,8 @@ interface GameDetailViewProps {
 		creatorName: string
 		isAdmin: boolean
 		myPayment: { id: string; status: PaymentStatus; amount: string } | null
+		/** Pre-filled link to pay the creator what the viewer owes, if any. */
+		myPaymentPayUrl: string | null
 		adminPayments: AdminPayment[] | undefined
 		myCurrentRoundPick: {
 			id: string
@@ -139,6 +141,7 @@ export function GameDetailView({
 								status={owed.status}
 								amount={owed.amount}
 								creatorName={game.creatorName}
+								payUrl={game.myPaymentPayUrl}
 								onClaimed={refresh}
 							/>
 						)

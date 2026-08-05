@@ -10,6 +10,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '@/components/ui/dialog'
+import { PayLinkButton } from './pay-link-button'
 import { type PaymentStatus, PaymentStatusChip } from './payment-status-chip'
 
 interface SettleUpNoticeProps {
@@ -18,6 +19,11 @@ interface SettleUpNoticeProps {
 	status: PaymentStatus
 	amount: string
 	creatorName: string
+	/**
+	 * Pre-filled pay link for the creator, or null when they've saved no handle
+	 * — then settling up stays the out-of-band conversation it is today.
+	 */
+	payUrl?: string | null
 	onClaimed?: () => void
 }
 
@@ -33,6 +39,7 @@ export function SettleUpNotice({
 	status,
 	amount,
 	creatorName,
+	payUrl = null,
 	onClaimed,
 }: SettleUpNoticeProps) {
 	const [open, setOpen] = useState(false)
@@ -79,9 +86,24 @@ export function SettleUpNotice({
 							<PaymentStatusChip status={status} />
 						</div>
 						{status === 'pending' && (
-							<Button className="w-full" disabled={pending} onClick={handleClaim}>
-								{pending ? 'Saving…' : "I've paid — mark as paid"}
-							</Button>
+							<>
+								{/* Pay first, then self-declare. The link is a pointer only —
+								    tapping it tells the app nothing. */}
+								<PayLinkButton
+									url={payUrl}
+									creatorName={creatorName}
+									amount={amount}
+									className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+								/>
+								<Button
+									className="w-full"
+									variant={payUrl ? 'outline' : 'default'}
+									disabled={pending}
+									onClick={handleClaim}
+								>
+									{pending ? 'Saving…' : "I've paid — mark as paid"}
+								</Button>
+							</>
 						)}
 						{status === 'claimed' && (
 							<p className="text-xs text-muted-foreground">
