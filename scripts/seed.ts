@@ -1126,6 +1126,11 @@ async function seed() {
 		// Promote GW9 from 'upcoming' to 'active' and pull its deadline into the
 		// past: a round only counts as in play once picks have locked, and that's
 		// what the hero's live variant keys off (deriveGameRoundStatus).
+		//
+		// NB this mutates the shared PL round, so GW9 is no longer pickable in ANY
+		// seeded game — a future scenario that wants an open deadline needs a
+		// different round (GW10+ are still 'upcoming') or its own competition, the
+		// way "Starting Round Live (dev)" does.
 		await db
 			.update(roundTable)
 			.set({ status: 'active', deadline: addHours(now, -2) })

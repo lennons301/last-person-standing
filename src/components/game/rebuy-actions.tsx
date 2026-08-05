@@ -73,6 +73,27 @@ export function RebuyActions({ gameId, entryFee, pendingPayment, size = 'sm' }: 
 }
 
 /**
+ * Fallback for the viewer's own standing rebuy offer when the hero isn't theirs
+ * to speak for — an admin acting as another player sees the target's lens, and
+ * `game.rebuyBanner` is derived from their *own* membership. Without this the
+ * offer would silently vanish from the page for as long as `?actingAs=` is set.
+ */
+export function RebuyOfferNotice({ gameId, entryFee }: { gameId: string; entryFee: string }) {
+	return (
+		<div className="flex items-start gap-3 rounded-lg border border-[var(--draw)]/50 bg-card p-3">
+			<span className="text-lg text-[var(--draw)]">↺</span>
+			<div className="flex-1">
+				<h4 className="text-xs font-bold">You can buy back in</h4>
+				<p className="mt-0.5 text-[11px] text-muted-foreground">
+					You went out in round 1. One rebuy is on offer — it closes at the round 2 deadline.
+				</p>
+			</div>
+			<RebuyActions gameId={gameId} entryFee={entryFee} pendingPayment={null} />
+		</div>
+	)
+}
+
+/**
  * Quiet in-hero notice for a rebuy that's been started and is waiting on
  * payment. The player is alive again at this point, so their hero is a pick
  * state — this rides in the hero's notice slot rather than owning it.

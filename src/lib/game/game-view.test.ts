@@ -800,6 +800,43 @@ describe('buildGameView — eliminated classic players', () => {
 		const view = buildGameView(baseInput({ actingAsName: 'Dave', rebuyAvailable: true, rebuy }))
 		expect(view.hero).toMatchObject({ kind: 'pick-open', actingAsName: 'Dave' })
 	})
+
+	// `isAlive` gates the pick UI; it is not a claim about the player. On a
+	// settled round the round-result hero states one, so it reads the real
+	// membership status — otherwise the admin is told their eliminated target
+	// "survived", directly above standings showing them out.
+	it('does not tell an admin their eliminated target survived the settled round', () => {
+		const view = buildGameView(
+			baseInput({
+				actingAsName: 'Dave',
+				isAlive: true,
+				targetEliminated: true,
+				round: COMPLETED_ROUND,
+				pick: null,
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'round-result',
+			result: 'eliminated',
+			actingAsName: 'Dave',
+		})
+	})
+
+	it('reads an eliminated acting-as target as out on a ranked live round', () => {
+		const view = buildGameView(
+			baseInput({
+				gameMode: 'cup',
+				picksRequired: 6,
+				actingAsName: 'Dave',
+				isAlive: true,
+				targetEliminated: true,
+				livesRemaining: 2,
+				round: ACTIVE_ROUND,
+				pick: { picksMade: 6, isAuto: false, team: null, results: ['win'] },
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'live', survival: 'out' })
+	})
 })
 
 describe('buildGameView — no hero', () => {

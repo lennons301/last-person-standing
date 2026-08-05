@@ -9,7 +9,7 @@ import { GameStatLine } from '@/components/game/game-stat-line'
 import { ManageGameFold } from '@/components/game/manage-game-fold'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import type { AdminPayment } from '@/components/game/payments-panel'
-import { RebuyActions, RebuyPendingNotice } from '@/components/game/rebuy-actions'
+import { RebuyActions, RebuyOfferNotice, RebuyPendingNotice } from '@/components/game/rebuy-actions'
 import { RoundStrip, type RoundStripInfo } from '@/components/game/round-strip'
 import { SettleUpNotice } from '@/components/game/settle-up-notice'
 import { ShareDialog } from '@/components/game/share-dialog'
@@ -63,9 +63,11 @@ interface GameDetailViewProps {
 		numberOfPicks: number
 	} | null
 	/**
-	 * The standing rebuy offer, when there is one. The hero owns the offer itself
-	 * (`view.hero.kind === 'rebuy'`); this supplies the buttons behind it, and the
-	 * pending-payment notice for a player who has already bought back in.
+	 * The standing rebuy offer, when there is one. Derived from the *viewer's* own
+	 * membership, not the acting-as target's. The hero owns the offer whenever it
+	 * is the viewer's own lens (`view.hero.kind === 'rebuy'`) and this supplies
+	 * its buttons; otherwise the notice slot carries it, so the offer and the
+	 * pending-payment claim are reachable from every state.
 	 */
 	rebuy?: {
 		entryFee: string
@@ -99,11 +101,13 @@ export function GameDetailView({
 	// Auto-pick, voided-pick and pending-rebuy notices belong to the state the
 	// hero is describing, so they render inside it rather than as standalone
 	// banners above the page. When there's no hero at all they fall back to their
-	// original spot at the top. The pending-rebuy notice stands down when the
-	// hero is the rebuy variant — that already carries the claim CTA. Today that
-	// guard never fires (a pending rebuy means the player is alive again, so
-	// their hero is a pick state); it's here so the two can't both render if the
-	// eligibility rule ever changes.
+	// original spot at the top. The rebuy notices stand down when the hero is the
+	// rebuy variant — that already carries the offer and its CTA.
+	//
+	// The offer half is the fallback for the one case the hero can't cover: the
+	// hero renders the *target's* lens, while `rebuy` comes from the viewer's own
+	// membership, so an admin who is themselves eliminated would otherwise lose
+	// their own rebuy button for as long as `?actingAs=` is set.
 	const notices = (
 		<>
 			{game.myCurrentRoundPick?.isAuto && (
@@ -113,13 +117,17 @@ export function GameDetailView({
 					kickoffLabel={game.myCurrentRoundPick.kickoffLabel}
 				/>
 			)}
-			{rebuy?.pendingPayment && view.hero.kind !== 'rebuy' && (
-				<RebuyPendingNotice
-					gameId={game.id}
-					entryFee={rebuy.entryFee}
-					pendingPayment={rebuy.pendingPayment}
-				/>
-			)}
+			{rebuy &&
+				view.hero.kind !== 'rebuy' &&
+				(rebuy.pendingPayment ? (
+					<RebuyPendingNotice
+						gameId={game.id}
+						entryFee={rebuy.entryFee}
+						pendingPayment={rebuy.pendingPayment}
+					/>
+				) : (
+					<RebuyOfferNotice gameId={game.id} entryFee={rebuy.entryFee} />
+				))}
 			<VoidedPickBanner gameId={game.id} gameMode={game.gameMode as 'classic' | 'turbo' | 'cup'} />
 		</>
 	)

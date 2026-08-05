@@ -307,8 +307,20 @@ export interface BuildGameViewInput {
 		currentRoundId: string | null
 		currentRoundNumber: number | null
 	}
-	/** Is the viewer — or the acting-as target — still in the game? */
+	/**
+	 * Is the viewer — or the acting-as target — still picking in this game?
+	 *
+	 * This is the *gating* flag, not a statement of fact: acting-as forces it true
+	 * even for an eliminated target, because an admin can rebuy-via-pick on their
+	 * behalf. Anything that asserts survival reads `targetEliminated` instead.
+	 */
 	isAlive: boolean
+	/**
+	 * The target player's real membership status — `gamePlayer.status ===
+	 * 'eliminated'`. Defaults to `!isAlive`, which is the same thing outside
+	 * acting-as mode.
+	 */
+	targetEliminated?: boolean
 	/** Set when an admin is acting as another player. */
 	actingAsName: string | null
 	/** Null when the player has no pick at all for the current round. */
@@ -497,7 +509,12 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 			mode: gameMode,
 			round: heroRound,
 			entry,
-			result: gameMode === 'classic' ? (input.isAlive ? 'survived' : 'eliminated') : 'played',
+			// The real status, not the pick gate: an admin acting as an eliminated
+			// player has isAlive forced true, and "You survived Gameweek 6" above
+			// standings showing that player out is the contradiction this hero exists
+			// to avoid.
+			result:
+				gameMode === 'classic' ? (isTargetEliminated(input) ? 'eliminated' : 'survived') : 'played',
 			// Classic is the only mode that advances round to round; turbo and cup
 			// are single-round, so there is never a "next up" for them.
 			nextRound:
@@ -617,6 +634,15 @@ function buildEntry(input: BuildGameViewInput, picksRequired: number): HeroEntry
  * standings, so without this it would announce "Out" directly above a table
  * showing the same player alive.
  */
+/**
+ * Did the player being rendered actually go out? `isAlive` can't answer that —
+ * acting-as forces it true so the admin keeps the pick hero — so every
+ * statement of fact ("you survived", "out") goes through here instead.
+ */
+function isTargetEliminated(input: BuildGameViewInput): boolean {
+	return input.targetEliminated ?? !input.isAlive
+}
+
 function isStartingRoundExempt(input: BuildGameViewInput): boolean {
 	return input.gameMode === 'classic' && input.round?.number === 1 && input.allowRebuys !== true
 }
@@ -651,7 +677,7 @@ function deriveSurvival(input: BuildGameViewInput, entry: HeroEntry): HeroSurviv
 		return fx.status === 'finished' ? 'out' : 'at-risk'
 	}
 
-	if (!input.isAlive) return 'out'
+	if (isTargetEliminated(input)) return 'out'
 	// Turbo never eliminates mid-round — the standings, not the hero, tell that
 	// story. Cup does, once the lives run out.
 	if (input.gameMode !== 'cup') return 'unknown'

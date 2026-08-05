@@ -142,6 +142,46 @@ describe('GameDetailView management fold', () => {
 		expect(screen.queryByText('Gameweek 7')).toBeNull()
 	})
 
+	// The hero renders the acting-as target's lens, but the rebuy offer belongs to
+	// the viewer's own membership — without a fallback the admin loses their own
+	// buy-back-in button for as long as `?actingAs=` is set.
+	it('keeps the viewer’s rebuy offer reachable when the hero is not theirs', () => {
+		render(
+			<GameDetailView
+				game={game()}
+				view={view}
+				pickSection={null}
+				rebuy={{ entryFee: '10.00', pendingPayment: null }}
+			/>,
+		)
+		expect(screen.getByRole('button', { name: 'Rebuy £10.00' })).toBeTruthy()
+	})
+
+	it('leaves the offer to the rebuy hero when that is the state', () => {
+		render(
+			<GameDetailView
+				game={game()}
+				view={{
+					...view,
+					hero: {
+						kind: 'rebuy',
+						mode: 'classic',
+						round: { number: 1, label: 'GW1', longLabel: 'Gameweek 1', deadlineIso: null },
+						entryFee: '10.00',
+						closesAtIso: null,
+						pendingPayment: null,
+						eliminatedRoundLabel: 'GW1',
+					},
+				}}
+				pickSection={null}
+				rebuy={{ entryFee: '10.00', pendingPayment: null }}
+			/>,
+		)
+		// One button, from the hero itself — not two.
+		expect(screen.getAllByRole('button', { name: 'Rebuy £10.00' })).toHaveLength(1)
+		expect(screen.queryByText('You can buy back in')).toBeNull()
+	})
+
 	it('hangs an unpaid balance off the stat line instead of a band', () => {
 		render(
 			<GameDetailView

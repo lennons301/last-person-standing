@@ -326,6 +326,9 @@ export default async function GameDetailPage({
 			currentRoundNumber: heroRound?.number ?? null,
 		},
 		isAlive,
+		// `isAlive` is forced true for an acting-as target so the admin gets the
+		// pick hero; the hero still has to know they're actually out.
+		targetEliminated: targetPlayerStatus === 'eliminated',
 		actingAsName: actingAsTarget?.userName ?? null,
 		pick: heroPick,
 		picksRequired: game.gameMode === 'classic' ? 1 : numberOfPicks,
