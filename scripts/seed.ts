@@ -1552,6 +1552,173 @@ async function seed() {
 		console.log(
 			'Created "Rebuy Window (dev)" — dev eliminated in round 1 with the rebuy offer open',
 		)
+
+		// --- The same round 1, played with rebuys OFF: the starting-round exemption ---
+		// Round 1 of a no-rebuys classic game can't eliminate anyone, so the same
+		// losing pick that put dev out of "Rebuy Window (dev)" leaves them alive
+		// here. Shares this competition's settled round 1, so the hero is the
+		// round-result variant with the exemption note; the live half of the same
+		// state is "Starting Round Live (dev)" below.
+		if (rwLossFixture) {
+			const [exemptGame] = await db
+				.insert(game)
+				.values({
+					name: 'Starting Round (dev)',
+					createdBy: userIds['dev@example.com'],
+					competitionId: rebuyComp.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: rwRound1.id,
+				})
+				.returning()
+
+			for (const email of ['dev@example.com', 'dave@example.com']) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: exemptGame.id,
+						userId: userIds[email],
+						status: 'alive',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: exemptGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				// dev backed the losing away team and is still in; dave backed the
+				// home team and won it, for the ordinary read alongside.
+				const backedLoser = email === 'dev@example.com'
+				await db.insert(pick).values({
+					gameId: exemptGame.id,
+					gamePlayerId: gp.id,
+					roundId: rwRound1.id,
+					teamId: backedLoser ? rwLossFixture.awayTeamId : rwLossFixture.homeTeamId,
+					fixtureId: rwLossFixture.id,
+					result: backedLoser ? 'loss' : 'win',
+					goalsScored: backedLoser ? 0 : 2,
+				})
+			}
+
+			console.log(
+				'Created "Starting Round (dev)" — dev lost round 1 and stayed in (no-rebuys exemption)',
+			)
+		}
+	}
+
+	// --- Starting round in play: the live hero under the exemption ---
+	// The state that reads wrong if the hero forgets the exemption: dev is 0–2
+	// down in round 1 of a no-rebuys game, which the standings project as alive.
+	// Needs its own competition because round status is competition-scoped — the
+	// "Rebuy Window (dev)" round 1 is already settled.
+	{
+		const [startComp] = await db
+			.insert(competition)
+			.values({
+				name: 'Starting Round Live (dev)',
+				type: 'league',
+				dataSource: 'manual',
+				season: '2025/26',
+			})
+			.returning()
+
+		const [srRound1] = await db
+			.insert(roundTable)
+			.values({
+				competitionId: startComp.id,
+				number: 1,
+				name: 'Gameweek 1',
+				status: 'active',
+				deadline: addHours(now, -2),
+			})
+			.returning()
+		await db.insert(roundTable).values({
+			competitionId: startComp.id,
+			number: 2,
+			name: 'Gameweek 2',
+			status: 'upcoming',
+			deadline: addDays(now, 7),
+		})
+
+		const srFixtures: FixtureRow[] = []
+		for (let i = 0; i + 1 < 6; i += 2) {
+			const home = teams[i]
+			const away = teams[i + 1]
+			if (!home || !away) continue
+			const [f] = await db
+				.insert(fixture)
+				.values({
+					roundId: srRound1.id,
+					homeTeamId: home.id,
+					awayTeamId: away.id,
+					kickoff: addHours(now, -1),
+					// The first match is in flight with the home side two up; the rest
+					// are still to come, so the round can't settle out from under it.
+					status: i === 0 ? 'live' : 'scheduled',
+					homeScore: i === 0 ? 2 : null,
+					awayScore: i === 0 ? 0 : null,
+				})
+				.returning()
+			srFixtures.push(f)
+		}
+
+		const srLive = srFixtures[0]
+		if (srLive) {
+			const [startGame] = await db
+				.insert(game)
+				.values({
+					name: 'Starting Round Live (dev)',
+					createdBy: userIds['dev@example.com'],
+					competitionId: startComp.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: srRound1.id,
+				})
+				.returning()
+
+			for (const email of ['dev@example.com', 'dave@example.com']) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: startGame.id,
+						userId: userIds[email],
+						status: 'alive',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: startGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				const backedLoser = email === 'dev@example.com'
+				await db.insert(pick).values({
+					gameId: startGame.id,
+					gamePlayerId: gp.id,
+					roundId: srRound1.id,
+					teamId: backedLoser ? srLive.awayTeamId : srLive.homeTeamId,
+					fixtureId: srLive.id,
+					result: 'pending',
+				})
+			}
+
+			console.log('Created "Starting Round Live (dev)" — dev 0–2 down in round 1, still surviving')
+		}
 	}
 
 	// --- Round settled, game not advanced: the round-result hero ---
@@ -1628,6 +1795,88 @@ async function seed() {
 			}
 
 			console.log('Created "Round Settled (GW6)" — GW6 complete, the game has not advanced yet')
+		}
+	}
+
+	// --- Out three rounds ago, game parked on a settled round: the spectator hero ---
+	// The distinction the round-result hero must not swallow. dev went out in GW4;
+	// the game is still pointed at GW6, which has settled. Production reaches this
+	// whenever the next round is TBD (advanceGameToNextRound leaves the pointer
+	// where it is) or when the competition round settles before this game advances
+	// — so the hero has to name GW4, not re-announce an exit on GW6.
+	{
+		const spectatorRound = rounds.find((r) => r.number === 6)
+		const wentOutRound = rounds.find((r) => r.number === 4)
+		const spectatorFixtures = spectatorRound ? (fixturesByRound.get(spectatorRound.id) ?? []) : []
+		if (spectatorRound && wentOutRound && spectatorFixtures.length > 0) {
+			const [spectatorGame] = await db
+				.insert(game)
+				.values({
+					name: 'Spectating (GW6)',
+					createdBy: userIds['dave@example.com'],
+					competitionId: pl.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: spectatorRound.id,
+				})
+				.returning()
+
+			// dev is out (GW4, no rebuy — this competition's round 2 deadline is long
+			// past, so `isRebuyEligible` says no); dave and mike play on.
+			const spectatorPlayers: Array<{ email: string; alive: boolean }> = [
+				{ email: 'dev@example.com', alive: false },
+				{ email: 'dave@example.com', alive: true },
+				{ email: 'mike@example.com', alive: true },
+			]
+			const spectatorUsedTeamIds = new Set<string>()
+			for (const { email, alive } of spectatorPlayers) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: spectatorGame.id,
+						userId: userIds[email],
+						status: alive ? 'alive' : 'eliminated',
+						eliminatedRoundId: alive ? null : wentOutRound.id,
+						eliminatedReason: alive ? null : 'loss',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: spectatorGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				// The eliminated player has no GW6 pick at all — which is exactly the
+				// input that made the round-result hero cry "you missed the deadline".
+				if (!alive) continue
+				for (const f of spectatorFixtures) {
+					const team = fixtureWinnerTeam(f)
+					if (!team || spectatorUsedTeamIds.has(team.id)) continue
+					spectatorUsedTeamIds.add(team.id)
+					const scored = team.id === f.homeTeamId ? f.homeScore : f.awayScore
+					await db.insert(pick).values({
+						gameId: spectatorGame.id,
+						gamePlayerId: gp.id,
+						roundId: spectatorRound.id,
+						teamId: team.id,
+						fixtureId: f.id,
+						result: 'win',
+						goalsScored: scored ?? 0,
+					})
+					break
+				}
+			}
+
+			console.log(
+				'Created "Spectating (GW6)" — dev went out in GW4, the game sits on a settled GW6',
+			)
 		}
 	}
 
