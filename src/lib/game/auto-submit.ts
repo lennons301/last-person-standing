@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { fixture } from '@/lib/schema/competition'
 import { gamePlayer, pick, plannedPick } from '@/lib/schema/game'
@@ -33,15 +33,29 @@ export async function submitPlannedPick(
 	const fx = fixturesInRound.find((f) => f.homeTeamId === teamId || f.awayTeamId === teamId)
 	if (!fx) return { submitted: false, reason: 'team-not-in-round' }
 
-	// Write the pick with auto_submitted = true, then clear the plan
-	await db.insert(pick).values({
-		gameId: gp.gameId,
-		gamePlayerId,
-		roundId,
-		teamId,
-		fixtureId: fx.id,
-		autoSubmitted: true,
-	})
+	// Write the pick with auto_submitted = true, then clear the plan.
+	// The existing-pick read above can be raced by the deadline no-pick lock's
+	// auto-pick, so the partial unique index `pick_player_round_classic_idx`
+	// settles it: on conflict the insert is a no-op and this reports
+	// 'already-picked' exactly as the sequential path does, leaving the plan
+	// alone rather than crashing the QStash handler with a unique violation.
+	const inserted = await db
+		.insert(pick)
+		.values({
+			gameId: gp.gameId,
+			gamePlayerId,
+			roundId,
+			teamId,
+			fixtureId: fx.id,
+			autoSubmitted: true,
+		})
+		.onConflictDoNothing({
+			target: [pick.gamePlayerId, pick.roundId],
+			where: sql`${pick.confidenceRank} is null`,
+		})
+		.returning({ id: pick.id })
+	if (inserted.length === 0) return { submitted: false, reason: 'already-picked' }
+
 	await db.delete(plannedPick).where(eq(plannedPick.id, plan.id))
 	return { submitted: true }
 }

@@ -13,7 +13,13 @@ vi.mock('@/lib/db', () => ({
 			payment: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
 			gamePlayer: { findFirst: vi.fn() },
 		},
-		insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
+		insert: vi.fn(() => ({
+			values: vi.fn(() => ({
+				onConflictDoNothing: vi.fn(() => ({
+					returning: vi.fn().mockResolvedValue([{ id: 'new-pick' }]),
+				})),
+			})),
+		})),
 		update: vi.fn(() => ({
 			set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
 		})),
@@ -140,5 +146,60 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 			eliminatedReason: 'no_pick_no_fallback',
 			eliminatedRoundId: 'r2',
 		})
+	})
+})
+
+describe('processDeadlineLock — classic auto-pick concurrency (#127)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'r3',
+			number: 3,
+			deadline: new Date(Date.now() - 60_000),
+		} as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(false, [makeClassicPlayer()]),
+		])
+		// No pick yet — both racing invocations get past this read.
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+		vi.mocked(db.query.fixture.findMany).mockResolvedValue([
+			{ id: 'fx1', homeTeamId: 't-home', awayTeamId: 't-away', kickoff: new Date() },
+		] as never)
+		vi.mocked(db.query.team.findMany).mockResolvedValue([
+			{ id: 't-home', leaguePosition: 1 },
+			{ id: 't-away', leaguePosition: 20 },
+		] as never)
+	})
+
+	function mockAutoPickInsert(returned: unknown[]) {
+		const returning = vi.fn().mockResolvedValue(returned)
+		const onConflictDoNothing = vi.fn(() => ({ returning }))
+		const values = vi.fn(() => ({ onConflictDoNothing }))
+		vi.mocked(db.insert).mockReturnValue({ values } as never)
+		return { values, onConflictDoNothing }
+	}
+
+	it('lets the database arbitrate the insert instead of trusting the read', async () => {
+		const { values, onConflictDoNothing } = mockAutoPickInsert([{ id: 'pick-1' }])
+
+		const result = await processDeadlineLock(['r3'])
+
+		expect(result.autoPicksInserted).toBe(1)
+		expect(values).toHaveBeenCalledWith(
+			expect.objectContaining({ gamePlayerId: 'p1', roundId: 'r3', isAuto: true }),
+		)
+		expect(onConflictDoNothing).toHaveBeenCalledTimes(1)
+	})
+
+	it('does not count an auto-pick a concurrent writer already inserted', async () => {
+		// The conflicting insert is a no-op, so nothing comes back from returning().
+		mockAutoPickInsert([])
+
+		const result = await processDeadlineLock(['r3'])
+
+		expect(result).toEqual({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 })
+		// The loser must not fall through to an elimination either.
+		expect(db.update).not.toHaveBeenCalled()
 	})
 })
