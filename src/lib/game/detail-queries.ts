@@ -107,12 +107,21 @@ export async function getGameDetail(gameId: string, userId: string) {
 	const userRows =
 		relevantUserIds.length > 0
 			? await db
-					.select({ id: user.id, name: user.name })
+					.select({
+						id: user.id,
+						name: user.name,
+						paymentProvider: user.paymentProvider,
+						paymentHandle: user.paymentHandle,
+					})
 					.from(user)
 					.where(inArray(user.id, relevantUserIds))
 			: []
 	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
 	const creatorName = userNames.get(gameData.createdBy) ?? 'the admin'
+	// The creator's saved pay-me handle, so the surfaces that show an amount
+	// owed can render a pre-filled link. Only reachable by viewers who can
+	// already see the game.
+	const creatorRow = userRows.find((u) => u.id === gameData.createdBy)
 
 	// Group payments by userId so we can mark duplicates (rebuys) for UI.
 	const paymentsByUser = new Map<string, typeof payments>()
@@ -309,6 +318,8 @@ export async function getGameDetail(gameId: string, userId: string) {
 		isAdmin,
 		isMember,
 		creatorName,
+		creatorPaymentProvider: creatorRow?.paymentProvider ?? null,
+		creatorPaymentHandle: creatorRow?.paymentHandle ?? null,
 		myPayment,
 		adminPayments,
 		myCurrentRoundPick,

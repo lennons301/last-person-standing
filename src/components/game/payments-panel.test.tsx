@@ -113,3 +113,88 @@ describe('PaymentsPanel entry-fee editor', () => {
 		expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
 	})
 })
+
+describe('PaymentsPanel pay-me handle editor', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks()
+	})
+	afterEach(() => {
+		vi.restoreAllMocks()
+	})
+
+	it('shows the saved handle players are pointed at', () => {
+		render(
+			<PaymentsPanel
+				{...baseProps}
+				paymentProvider="monzo"
+				paymentHandle="alicejones"
+				payments={[]}
+			/>,
+		)
+		expect(screen.getByText('monzo.me/alicejones')).toBeTruthy()
+	})
+
+	it('says no link is set up when the creator has saved no handle', () => {
+		render(
+			<PaymentsPanel {...baseProps} paymentProvider={null} paymentHandle={null} payments={[]} />,
+		)
+		expect(screen.getByText(/no payment link/i)).toBeTruthy()
+	})
+
+	it('saves an edited handle to the owner-only endpoint', async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, 'fetch')
+			.mockResolvedValue(
+				new Response(JSON.stringify({ provider: 'revolut', handle: 'bobsmith' }), { status: 200 }),
+			)
+		render(
+			<PaymentsPanel
+				{...baseProps}
+				paymentProvider="monzo"
+				paymentHandle="alicejones"
+				payments={[]}
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Edit payment link' }))
+		fireEvent.click(screen.getByLabelText('Revolut'))
+		fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'bobsmith' } })
+		fireEvent.click(screen.getByRole('button', { name: 'Save payment link' }))
+
+		await waitFor(() =>
+			expect(fetchMock).toHaveBeenCalledWith('/api/me/payment-handle', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ provider: 'revolut', handle: 'bobsmith' }),
+			}),
+		)
+	})
+
+	it('clears the handle when the creator empties the field', async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, 'fetch')
+			.mockResolvedValue(
+				new Response(JSON.stringify({ provider: null, handle: null }), { status: 200 }),
+			)
+		render(
+			<PaymentsPanel
+				{...baseProps}
+				paymentProvider="monzo"
+				paymentHandle="alicejones"
+				payments={[]}
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Edit payment link' }))
+		fireEvent.change(screen.getByLabelText(/username/i), { target: { value: '' } })
+		fireEvent.click(screen.getByRole('button', { name: 'Save payment link' }))
+
+		await waitFor(() =>
+			expect(fetchMock).toHaveBeenCalledWith('/api/me/payment-handle', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ provider: null, handle: '' }),
+			}),
+		)
+	})
+})

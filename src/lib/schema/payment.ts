@@ -11,7 +11,9 @@ export const paymentStatusEnum = pgEnum('payment_status', [
 	'refunded',
 ])
 
-export const paymentMethodEnum = pgEnum('payment_method', ['manual', 'mangopay'])
+// `manual` is the only method: the app points at a payment link, it never moves
+// money. (`mangopay` was a never-used PSP placeholder, removed in 0009.)
+export const paymentMethodEnum = pgEnum('payment_method', ['manual'])
 
 export const payoutStatusEnum = pgEnum('payout_status', ['pending', 'completed'])
 
