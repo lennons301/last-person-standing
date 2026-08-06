@@ -1,8 +1,7 @@
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq, gt } from 'drizzle-orm'
 import { notFound, redirect } from 'next/navigation'
 import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
-import { RebuyBanner } from '@/components/game/rebuy-banner'
 import { ClassicPick } from '@/components/picks/classic-pick'
 import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
@@ -25,6 +24,7 @@ import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { buildPaymentLink, buildPaymentReference } from '@/lib/payments/payment-link'
 import { user } from '@/lib/schema/auth'
+import { round as roundTable } from '@/lib/schema/competition'
 import { gamePlayer } from '@/lib/schema/game'
 
 function initialsFromName(name: string): string {
@@ -260,8 +260,51 @@ export default async function GameDetailPage({
 						kickoffIso: teamFixture?.kickoff ? teamFixture.kickoff.toISOString() : null,
 					}
 				: null,
+			// The scoreboard the hero's post-deadline live read runs off. The
+			// current scores come straight from the fixture row the poller writes;
+			// the client-side live ticker above the hero keeps the fuller picture.
+			fixture: teamFixture
+				? {
+						id: teamFixture.id,
+						status: teamFixture.status,
+						homeShort: teamFixture.homeTeam.shortName,
+						awayShort: teamFixture.awayTeam.shortName,
+						homeScore: teamFixture.homeScore,
+						awayScore: teamFixture.awayScore,
+						kickoffIso: teamFixture.kickoff ? teamFixture.kickoff.toISOString() : null,
+					}
+				: null,
+			results: targetCurrentPicks.map((p) => p.result),
 		}
 	}
+
+	// The round the game moves to next — the round-result hero points at it. Only
+	// needed once the current round has been settled, and only in classic: turbo
+	// and cup are single-round, so they never advance to an N+1. Queried the same
+	// way `advanceGameToNextRound` picks its target (lowest number above this one,
+	// not number + 1) so the hero can't disagree with the engine on a competition
+	// whose round numbers aren't contiguous.
+	const nextRoundRow =
+		game.gameMode === 'classic' && heroRound?.status === 'completed'
+			? ((await db.query.round.findFirst({
+					where: and(
+						eq(roundTable.competitionId, game.competition.id),
+						gt(roundTable.number, heroRound.number),
+					),
+					orderBy: [asc(roundTable.number)],
+				})) ?? null)
+			: null
+
+	// The round the target player went out in — the quiet note on the rebuy and
+	// spectator heroes.
+	const targetPlayer = actingAsTarget
+		? game.players.find((p) => p.id === actingAsTarget.gamePlayerId)
+		: game.myMembership
+	const eliminatedRoundRow = targetPlayer?.eliminatedRoundId
+		? ((await db.query.round.findFirst({
+				where: eq(roundTable.id, targetPlayer.eliminatedRoundId),
+			})) ?? null)
+		: null
 
 	// Pure deriver — everything the top-of-page hero branches on, plus the flags
 	// that tell the old header which bands the hero has taken over. Takes `now`
@@ -284,10 +327,36 @@ export default async function GameDetailPage({
 			currentRoundNumber: heroRound?.number ?? null,
 		},
 		isAlive,
+		// `isAlive` is forced true for an acting-as target so the admin gets the
+		// pick hero; the hero still has to know they're actually out.
+		targetEliminated: targetPlayerStatus === 'eliminated',
 		actingAsName: actingAsTarget?.userName ?? null,
 		pick: heroPick,
 		picksRequired: game.gameMode === 'classic' ? 1 : numberOfPicks,
 		rebuyAvailable: !!game.rebuyBanner,
+		livesRemaining: targetLivesRemaining,
+		nextRound: nextRoundRow
+			? {
+					number: nextRoundRow.number,
+					label: roundLabel(competitionType, nextRoundRow.number),
+					longLabel: roundLabelLong(competitionType, nextRoundRow.number),
+					deadline: nextRoundRow.deadline,
+				}
+			: null,
+		rebuy: game.rebuyBanner
+			? {
+					entryFee: game.rebuyBanner.entryFee,
+					closesAt: game.rebuyBanner.round2Deadline,
+					pendingPayment: game.rebuyBanner.pendingPayment,
+				}
+			: null,
+		eliminatedRoundLabel: eliminatedRoundRow
+			? roundLabel(competitionType, eliminatedRoundRow.number)
+			: null,
+		eliminatedRoundId: targetPlayer?.eliminatedRoundId ?? null,
+		allowRebuys: game.modeConfig?.allowRebuys === true,
+		winner: winnerBanner,
+		viewerUserId: session.user.id,
 		pot: {
 			confirmed: game.pot.confirmed,
 			pending: game.pot.pending,
@@ -299,6 +368,22 @@ export default async function GameDetailPage({
 		playerCount: game.players.length,
 		now,
 	})
+
+	// The stand-in for a player with no pick interface to show. Suppressed once a
+	// hero owns the state: "You have been eliminated from this game." under the
+	// spectator hero, or "Round closed — picks locked" under the live one, is the
+	// same duplication the standalone rebuy and winner bands were.
+	const pickPlaceholder = gameView.demote.pickPlaceholder ? null : (
+		<div className="p-4 rounded-lg border border-border bg-card text-sm text-muted-foreground text-center">
+			{game.myMembership?.status === 'eliminated'
+				? 'You have been eliminated from this game.'
+				: game.status === 'completed'
+					? 'This game has ended.'
+					: roundDeadlinePassed
+						? 'Round closed — picks locked. Live scores and standings update below.'
+						: 'Waiting for the next round.'}
+		</div>
+	)
 
 	const pickSection =
 		game.currentRound && isAlive && game.gameMode === 'classic' && classicPickData ? (
@@ -322,7 +407,13 @@ export default async function GameDetailPage({
 				// current round stays interactive for them; for everyone else it locks.
 				currentRoundClosed={roundDeadlinePassed && !actingAsTarget}
 				actingAs={actingAsForPickUI}
-				summaryInHero={gameView.hero.kind === 'pick-made'}
+				// Every hero variant that already carries the locked-in pick — before
+				// the deadline and after it.
+				summaryInHero={
+					gameView.hero.kind === 'pick-made' ||
+					gameView.hero.kind === 'live' ||
+					gameView.hero.kind === 'round-result'
+				}
 			/>
 		) : game.currentRound && isAlive && (!roundDeadlinePassed || !!actingAsTarget) ? (
 			game.gameMode === 'turbo' && turboPickData ? (
@@ -359,15 +450,7 @@ export default async function GameDetailPage({
 				</div>
 			)
 		) : (
-			<div className="p-4 rounded-lg border border-border bg-card text-sm text-muted-foreground text-center">
-				{game.myMembership?.status === 'eliminated'
-					? 'You have been eliminated from this game.'
-					: game.status === 'completed'
-						? 'This game has ended.'
-						: roundDeadlinePassed
-							? 'Round closed — picks locked. Live scores and standings update below.'
-							: 'Waiting for the next round.'}
-			</div>
+			pickPlaceholder
 		)
 
 	// Pre-filled pay links for whatever this viewer owes. Derived server-side and
@@ -412,16 +495,6 @@ export default async function GameDetailPage({
 			view={gameView}
 			pickSection={
 				<>
-					{game.rebuyBanner && (
-						<RebuyBanner
-							gameId={game.id}
-							entryFee={game.rebuyBanner.entryFee}
-							round2Deadline={game.rebuyBanner.round2Deadline}
-							pendingPayment={game.rebuyBanner.pendingPayment}
-							creatorName={game.creatorName}
-							payUrl={payLinkFor(game.rebuyBanner.pendingPayment?.amount)}
-						/>
-					)}
 					{actingAsTarget && (
 						<ActingAsBanner
 							gameId={game.id}
@@ -436,7 +509,17 @@ export default async function GameDetailPage({
 			turboStandings={
 				turboStandingsData ? { rounds: turboStandingsData.rounds, numberOfPicks } : null
 			}
-			winnerBanner={winnerBanner}
+			rebuy={
+				game.rebuyBanner
+					? {
+							entryFee: game.rebuyBanner.entryFee,
+							round2Deadline: game.rebuyBanner.round2Deadline,
+							pendingPayment: game.rebuyBanner.pendingPayment,
+							creatorName: game.creatorName,
+							payUrl: payLinkFor(game.rebuyBanner.pendingPayment?.amount),
+						}
+					: null
+			}
 			cupStandings={cupStandingsData}
 		/>
 	)

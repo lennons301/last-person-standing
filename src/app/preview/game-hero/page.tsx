@@ -6,6 +6,7 @@ import {
 import { AutoPickNotice } from '@/components/game/auto-pick-banner'
 import { GameHero } from '@/components/game/game-hero'
 import { GameStatLine } from '@/components/game/game-stat-line'
+import { RebuyActions } from '@/components/game/rebuy-actions'
 import { UnpaidNotice } from '@/components/game/settle-up-notice'
 import { VoidedPickNotice } from '@/components/game/voided-pick-banner'
 import { voidedPickMessage } from '@/components/game/voided-pick-message'
@@ -22,7 +23,8 @@ export default function GameHeroPreviewPage() {
 			<p className="text-sm text-muted-foreground">
 				The game page's top-of-page chrome — identity bar, stat line and every <code>GameHero</code>{' '}
 				variant — rendered from hand-built descriptors, the same shape <code>buildGameView</code>{' '}
-				returns. Pre-deadline hero states only for now; later tickets add their variants here.
+				returns: the pre-deadline pick states, then the post-deadline live / round-result / winner /
+				rebuy / spectator states across all three modes.
 			</p>
 
 			<section className="space-y-2">
@@ -85,7 +87,7 @@ export default function GameHeroPreviewPage() {
 						<h2 className="font-display text-sm font-semibold">{f.title}</h2>
 						{f.note && <p className="text-xs text-muted-foreground">{f.note}</p>}
 					</header>
-					<GameHero hero={f.hero} notices={noticeFor(f)} />
+					<GameHero hero={f.hero} notices={noticeFor(f)} rebuyAction={rebuyActionFor(f)} />
 				</section>
 			))}
 		</div>
@@ -103,4 +105,19 @@ function noticeFor(fixture: HeroFixture): React.ReactNode {
 			<VoidedPickNotice message={voidedPickMessage(fixture.hero.mode)} />
 		)
 	return <div className="mt-4">{notice}</div>
+}
+
+function rebuyActionFor(fixture: HeroFixture): React.ReactNode {
+	if (fixture.hero.kind !== 'rebuy') return null
+	// The real buttons, pointed at a game that doesn't exist — the gallery is
+	// database-free, so clicking one just toasts a failure.
+	return (
+		<RebuyActions
+			gameId="preview"
+			entryFee={fixture.hero.entryFee}
+			pendingPayment={fixture.hero.pendingPayment}
+			creatorName="Alice"
+			size="lg"
+		/>
+	)
 }

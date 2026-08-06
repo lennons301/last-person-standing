@@ -457,6 +457,11 @@ async function seed() {
 		// Turbo-specific: whether to seed picks for all players (completed game) or
 		// leave most of them unsubmitted so the pick interface is testable
 		turboState?: 'live' | 'completed'
+		// Turbo/cup-specific, completed games only: who lifted it. Crowning a winner
+		// is what makes the winner hero reachable — `buildWinnerBanner` needs a
+		// player with status 'winner', and without one a finished game has nothing
+		// to lead with.
+		winnerEmail?: string
 		// Turbo/cup-specific: seed a complete entry for the dev viewer too, so the
 		// pre-deadline "pick already made" hero is reachable locally in every mode.
 		// Default (false) leaves the viewer unsubmitted for the "make your pick" state.
@@ -496,6 +501,8 @@ async function seed() {
 			creatorSubmittedCurrentPick: true,
 		},
 		{
+			// The dev viewer goes out in round 5 with no rebuys configured, which is
+			// what makes the quiet spectator hero reachable locally.
 			name: 'Family LPS',
 			mode: 'classic',
 			creatorEmail: 'mike@example.com',
@@ -527,6 +534,20 @@ async function seed() {
 			entryFee: '10.00',
 			turboRoundNumber: 6, // completed round — full standings
 			turboState: 'completed',
+			winnerEmail: 'dev@example.com',
+		},
+		{
+			// The cup counterpart of "Turbo Last Week": a finished game with a
+			// trophy, so the winner hero is reachable in all three modes.
+			// "Champion's Cup (4c5 smoke)" covers classic.
+			name: 'Cup Last Week',
+			mode: 'cup',
+			creatorEmail: 'dave@example.com',
+			players: ['dev@example.com', 'dave@example.com', 'mike@example.com', 'sarah@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 6,
+			turboState: 'completed',
+			winnerEmail: 'dev@example.com',
 		},
 		{
 			name: 'Cup Tuesday (GW7)',
@@ -557,6 +578,29 @@ async function seed() {
 			players: ['dev@example.com', 'mike@example.com', 'rachel@example.com'],
 			entryFee: '10.00',
 			turboRoundNumber: 7,
+			turboState: 'live',
+			viewerSubmittedCurrentPick: true,
+		},
+		// GW9's deadline is pulled into the past below (see "Live Lads"), so these
+		// two sit past their deadline with matches in flight — the post-deadline
+		// live hero in turbo and cup. "Live Lads" covers classic.
+		{
+			name: 'Turbo Live (GW9)',
+			mode: 'turbo',
+			creatorEmail: 'dev@example.com',
+			players: ['dev@example.com', 'dave@example.com', 'rich@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 9,
+			turboState: 'live',
+			viewerSubmittedCurrentPick: true,
+		},
+		{
+			name: 'Cup Live (GW9)',
+			mode: 'cup',
+			creatorEmail: 'dev@example.com',
+			players: ['dev@example.com', 'sarah@example.com', 'tom@example.com'],
+			entryFee: '10.00',
+			turboRoundNumber: 9,
 			turboState: 'live',
 			viewerSubmittedCurrentPick: true,
 		},
@@ -884,6 +928,29 @@ async function seed() {
 			}
 		}
 
+		// Crown the winner of a finished single-round game, and null out the round
+		// pointer the way `applyAutoCompletion` does. Both matter for the hero: the
+		// winner variant needs a player with status 'winner', and it has to hold up
+		// with no current round, because that's the only shape production leaves
+		// behind. Runs after the picks above so the standings still have a round to
+		// fall back to.
+		if (gameStatus === 'completed' && seed.winnerEmail) {
+			for (const email of seed.players) {
+				const playerRow = playerRowsByEmail[email]
+				if (!playerRow) continue
+				const isWinner = email === seed.winnerEmail
+				await db
+					.update(gamePlayer)
+					.set({
+						status: isWinner ? 'winner' : 'eliminated',
+						eliminatedRoundId: isWinner ? null : gameRoundId,
+						eliminatedReason: isWinner ? null : 'loss',
+					})
+					.where(eq(gamePlayer.id, playerRow.id))
+			}
+			await db.update(game).set({ currentRoundId: null }).where(eq(game.id, newGame.id))
+		}
+
 		console.log(`Created "${seed.name}" (${seed.mode}) — ${seed.players.length} players`)
 	}
 
@@ -1056,8 +1123,18 @@ async function seed() {
 	// Active game whose current round (GW9) is 'active' and has a live fixture.
 	// This makes defaultShareVariant === 'live'.
 	{
-		// Promote GW9 from 'upcoming' to 'active'
-		await db.update(roundTable).set({ status: 'active' }).where(eq(roundTable.id, gw9_4c5.id))
+		// Promote GW9 from 'upcoming' to 'active' and pull its deadline into the
+		// past: a round only counts as in play once picks have locked, and that's
+		// what the hero's live variant keys off (deriveGameRoundStatus).
+		//
+		// NB this mutates the shared PL round, so GW9 is no longer pickable in ANY
+		// seeded game — a future scenario that wants an open deadline needs a
+		// different round (GW10+ are still 'upcoming') or its own competition, the
+		// way "Starting Round Live (dev)" does.
+		await db
+			.update(roundTable)
+			.set({ status: 'active', deadline: addHours(now, -2) })
+			.where(eq(roundTable.id, gw9_4c5.id))
 
 		// Update the first GW9 fixture to live status with a score
 		const gw9Fixtures = fixturesByRound.get(gw9_4c5.id) ?? []
@@ -1156,7 +1233,14 @@ async function seed() {
 	// ─── 5b: Champion's Cup (solo winner) ────────────────────────────────────
 	// Completed classic game: 1 winner, 3 eliminated. Pot = 4 × £20 = £80.
 	// defaultShareVariant === 'winner', single-winner block.
+	//
+	// `currentRoundId` is null and every player has picks, both on purpose: that's
+	// the shape `applyAutoCompletion` leaves behind, and it's the only shape the
+	// winner hero ever renders in for real. Without picks, `getProgressGridData`
+	// has no touched rounds to draw and the standings grid vanishes with the
+	// round pointer.
 	{
+		const gw4_4c5 = rounds.find((r) => r.number === 4)
 		const [champGame] = await db
 			.insert(game)
 			.values({
@@ -1168,51 +1252,38 @@ async function seed() {
 				entryFee: '20.00',
 				inviteCode: generateInviteCode(),
 				status: 'completed',
-				currentRoundId: gw6_4c5.id,
+				currentRoundId: null,
 			})
 			.returning()
 
-		// Winner: dev
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['dev@example.com'],
-			status: 'winner',
-			livesRemaining: 0,
-		})
-		// Eliminated: dave (round 2), mike (round 3), rich (round 4)
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['dave@example.com'],
-			status: 'eliminated',
-			eliminatedRoundId: gw2_4c5.id,
-			eliminatedReason: 'loss',
-			livesRemaining: 0,
-		})
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['mike@example.com'],
-			status: 'eliminated',
-			eliminatedRoundId: gw3_4c5.id,
-			eliminatedReason: 'loss',
-			livesRemaining: 0,
-		})
-		const gw4_4c5 = rounds.find((r) => r.number === 4)
-		await db.insert(gamePlayer).values({
-			gameId: champGame.id,
-			userId: userIds['rich@example.com'],
-			status: 'eliminated',
-			eliminatedRoundId: gw4_4c5?.id ?? gw3_4c5.id,
-			eliminatedReason: 'loss',
-			livesRemaining: 0,
-		})
+		// dev won it; dave went out in round 2, mike in round 3, rich in round 4.
+		const champPlayers: Array<{ email: string; eliminatedRound: number | null }> = [
+			{ email: 'dev@example.com', eliminatedRound: null },
+			{ email: 'dave@example.com', eliminatedRound: 2 },
+			{ email: 'mike@example.com', eliminatedRound: 3 },
+			{ email: 'rich@example.com', eliminatedRound: 4 },
+		]
+		const champRoundByNumber = new Map(
+			[gw1_4c5, gw2_4c5, gw3_4c5, gw4_4c5]
+				.filter((r): r is RoundRow => !!r)
+				.map((r) => [r.number, r]),
+		)
 
-		// Payments for all 4 players → pot = £80
-		for (const email of [
-			'dev@example.com',
-			'dave@example.com',
-			'mike@example.com',
-			'rich@example.com',
-		]) {
+		for (const { email, eliminatedRound } of champPlayers) {
+			const eliminatedRoundRow =
+				eliminatedRound != null ? champRoundByNumber.get(eliminatedRound) : null
+			const [gp] = await db
+				.insert(gamePlayer)
+				.values({
+					gameId: champGame.id,
+					userId: userIds[email],
+					status: eliminatedRound == null ? 'winner' : 'eliminated',
+					eliminatedRoundId: eliminatedRoundRow?.id ?? null,
+					eliminatedReason: eliminatedRound == null ? null : 'loss',
+					livesRemaining: 0,
+				})
+				.returning()
+
 			await db.insert(payment).values({
 				gameId: champGame.id,
 				userId: userIds[email],
@@ -1220,6 +1291,31 @@ async function seed() {
 				status: 'paid',
 				paidAt: new Date(),
 			})
+
+			// One pick per round they survived into, a loss on the round they went
+			// out. Teams are never reused — the classic rule.
+			const usedTeamIds = new Set<string>()
+			const lastRound = eliminatedRound ?? Math.max(...champRoundByNumber.keys())
+			for (const [number, r] of [...champRoundByNumber].sort((a, b) => a[0] - b[0])) {
+				if (number > lastRound) break
+				const wantLoss = number === eliminatedRound
+				for (const f of fixturesByRound.get(r.id) ?? []) {
+					const team = wantLoss ? fixtureLoserTeam(f) : fixtureWinnerTeam(f)
+					if (!team || usedTeamIds.has(team.id)) continue
+					usedTeamIds.add(team.id)
+					const scored = team.id === f.homeTeamId ? f.homeScore : f.awayScore
+					await db.insert(pick).values({
+						gameId: champGame.id,
+						gamePlayerId: gp.id,
+						roundId: r.id,
+						teamId: team.id,
+						fixtureId: f.id,
+						result: wantLoss ? 'loss' : 'win',
+						goalsScored: scored ?? 0,
+					})
+					break
+				}
+			}
 		}
 
 		console.log(`Created "Champion's Cup (4c5 smoke)" — 1 winner + 3 eliminated, pot £80`)
@@ -1228,6 +1324,13 @@ async function seed() {
 	// ─── 5c: Split Cup (two co-winners) ───────────────────────────────────────
 	// Completed cup game: 2 winners, 3 eliminated. Pot = 5 × £20 = £100, split = £50 each.
 	// defaultShareVariant === 'winner', split-pot 2-way block.
+	//
+	// This one keeps its `currentRoundId` even though a real completed game has
+	// none: it seeds no picks, and `getCupStandingsData`'s completed-game fallback
+	// picks the latest round *with picks* — so nulling the pointer here would empty
+	// the ladder and with it the winner payload. "Cup Last Week" (in the game-seed
+	// loop above) is the faithful completed-cup shape; this block exists for the
+	// split-pot rendering.
 	{
 		const [splitGame] = await db
 			.insert(game)
@@ -1301,6 +1404,485 @@ async function seed() {
 		}
 
 		console.log(`Created "Split Cup (4c5 smoke)" — 2 winners + 3 eliminated, pot £100`)
+	}
+
+	// --- Rebuy window: the eliminated-with-rebuy hero, for the dev viewer ---
+	// `isRebuyEligible` gates the offer on the *competition's* round-2 deadline
+	// still being in the future, and the main PL seed puts rounds 1–6 in the past
+	// — so no game on it can ever show the offer. This second competition exists
+	// purely to make that hero (and the rebuy → claim flow behind it) reachable
+	// locally: round 1 was played two days ago, round 2 is still open.
+	//
+	// dev  — eliminated in round 1 (loss), one payment  <- the rebuy hero
+	// dave — alive, paid
+	// mike — alive, paid
+	{
+		const [rebuyComp] = await db
+			.insert(competition)
+			.values({
+				name: 'Rebuy Window (dev)',
+				type: 'league',
+				dataSource: 'manual',
+				season: '2025/26',
+			})
+			.returning()
+
+		const [rwRound1] = await db
+			.insert(roundTable)
+			.values({
+				competitionId: rebuyComp.id,
+				number: 1,
+				name: 'Gameweek 1',
+				status: 'completed',
+				deadline: addDays(now, -2),
+			})
+			.returning()
+		const [rwRound2] = await db
+			.insert(roundTable)
+			.values({
+				competitionId: rebuyComp.id,
+				number: 2,
+				name: 'Gameweek 2',
+				status: 'open',
+				deadline: addDays(now, 2),
+			})
+			.returning()
+
+		// Five fixtures per round off the top of the team list — round 1 finished
+		// (so there's a winner and a loser to pick), round 2 still to play.
+		const rwPairs: Array<[TeamRow, TeamRow]> = []
+		for (let i = 0; i < 10; i += 2) {
+			const home = teams[i]
+			const away = teams[i + 1]
+			if (home && away) rwPairs.push([home, away])
+		}
+
+		const rwRound1Fixtures: FixtureRow[] = []
+		for (let i = 0; i < rwPairs.length; i++) {
+			const [home, away] = rwPairs[i]
+			const [f] = await db
+				.insert(fixture)
+				.values({
+					roundId: rwRound1.id,
+					homeTeamId: home.id,
+					awayTeamId: away.id,
+					kickoff: addHours(addDays(now, -2), 20),
+					homeScore: 2,
+					awayScore: 0,
+					status: 'finished',
+				})
+				.returning()
+			rwRound1Fixtures.push(f)
+		}
+		for (const [home, away] of rwPairs) {
+			await db.insert(fixture).values({
+				roundId: rwRound2.id,
+				homeTeamId: away.id,
+				awayTeamId: home.id,
+				kickoff: addHours(addDays(now, 2), 20),
+				status: 'scheduled',
+			})
+		}
+
+		const [rebuyWindowGame] = await db
+			.insert(game)
+			.values({
+				name: 'Rebuy Window (dev)',
+				createdBy: userIds['dave@example.com'],
+				competitionId: rebuyComp.id,
+				gameMode: 'classic',
+				modeConfig: { allowRebuys: true },
+				entryFee: '10.00',
+				inviteCode: generateInviteCode(),
+				status: 'active',
+				currentRoundId: rwRound2.id,
+			})
+			.returning()
+
+		const rwPlayers: Array<{ email: string; status: 'alive' | 'eliminated' }> = [
+			{ email: 'dev@example.com', status: 'eliminated' },
+			{ email: 'dave@example.com', status: 'alive' },
+			{ email: 'mike@example.com', status: 'alive' },
+		]
+		const rwPlayerRows: Record<string, { id: string }> = {}
+		for (const { email, status } of rwPlayers) {
+			const [gp] = await db
+				.insert(gamePlayer)
+				.values({
+					gameId: rebuyWindowGame.id,
+					userId: userIds[email],
+					status,
+					eliminatedRoundId: status === 'eliminated' ? rwRound1.id : null,
+					eliminatedReason: status === 'eliminated' ? 'loss' : null,
+					livesRemaining: 0,
+				})
+				.returning()
+			rwPlayerRows[email] = { id: gp.id }
+
+			await db.insert(payment).values({
+				gameId: rebuyWindowGame.id,
+				userId: userIds[email],
+				amount: '10.00',
+				status: 'paid',
+				paidAt: new Date(),
+			})
+		}
+
+		// Round 1: dev backed the away team (lost), the others backed the home team.
+		const rwLossFixture = rwRound1Fixtures[0]
+		const rwWinFixture = rwRound1Fixtures[1]
+		if (rwLossFixture && rwWinFixture) {
+			await db.insert(pick).values({
+				gameId: rebuyWindowGame.id,
+				gamePlayerId: rwPlayerRows['dev@example.com'].id,
+				roundId: rwRound1.id,
+				teamId: rwLossFixture.awayTeamId,
+				fixtureId: rwLossFixture.id,
+				result: 'loss',
+				goalsScored: 0,
+			})
+			for (const email of ['dave@example.com', 'mike@example.com']) {
+				await db.insert(pick).values({
+					gameId: rebuyWindowGame.id,
+					gamePlayerId: rwPlayerRows[email].id,
+					roundId: rwRound1.id,
+					teamId: rwWinFixture.homeTeamId,
+					fixtureId: rwWinFixture.id,
+					result: 'win',
+					goalsScored: 2,
+				})
+			}
+		}
+
+		console.log(
+			'Created "Rebuy Window (dev)" — dev eliminated in round 1 with the rebuy offer open',
+		)
+
+		// --- The same round 1, played with rebuys OFF: the starting-round exemption ---
+		// Round 1 of a no-rebuys classic game can't eliminate anyone, so the same
+		// losing pick that put dev out of "Rebuy Window (dev)" leaves them alive
+		// here. Shares this competition's settled round 1, so the hero is the
+		// round-result variant with the exemption note; the live half of the same
+		// state is "Starting Round Live (dev)" below.
+		if (rwLossFixture) {
+			const [exemptGame] = await db
+				.insert(game)
+				.values({
+					name: 'Starting Round (dev)',
+					createdBy: userIds['dev@example.com'],
+					competitionId: rebuyComp.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: rwRound1.id,
+				})
+				.returning()
+
+			for (const email of ['dev@example.com', 'dave@example.com']) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: exemptGame.id,
+						userId: userIds[email],
+						status: 'alive',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: exemptGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				// dev backed the losing away team and is still in; dave backed the
+				// home team and won it, for the ordinary read alongside.
+				const backedLoser = email === 'dev@example.com'
+				await db.insert(pick).values({
+					gameId: exemptGame.id,
+					gamePlayerId: gp.id,
+					roundId: rwRound1.id,
+					teamId: backedLoser ? rwLossFixture.awayTeamId : rwLossFixture.homeTeamId,
+					fixtureId: rwLossFixture.id,
+					result: backedLoser ? 'loss' : 'win',
+					goalsScored: backedLoser ? 0 : 2,
+				})
+			}
+
+			console.log(
+				'Created "Starting Round (dev)" — dev lost round 1 and stayed in (no-rebuys exemption)',
+			)
+		}
+	}
+
+	// --- Starting round in play: the live hero under the exemption ---
+	// The state that reads wrong if the hero forgets the exemption: dev is 0–2
+	// down in round 1 of a no-rebuys game, which the standings project as alive.
+	// Needs its own competition because round status is competition-scoped — the
+	// "Rebuy Window (dev)" round 1 is already settled.
+	{
+		const [startComp] = await db
+			.insert(competition)
+			.values({
+				name: 'Starting Round Live (dev)',
+				type: 'league',
+				dataSource: 'manual',
+				season: '2025/26',
+			})
+			.returning()
+
+		const [srRound1] = await db
+			.insert(roundTable)
+			.values({
+				competitionId: startComp.id,
+				number: 1,
+				name: 'Gameweek 1',
+				status: 'active',
+				deadline: addHours(now, -2),
+			})
+			.returning()
+		await db.insert(roundTable).values({
+			competitionId: startComp.id,
+			number: 2,
+			name: 'Gameweek 2',
+			status: 'upcoming',
+			deadline: addDays(now, 7),
+		})
+
+		const srFixtures: FixtureRow[] = []
+		for (let i = 0; i + 1 < 6; i += 2) {
+			const home = teams[i]
+			const away = teams[i + 1]
+			if (!home || !away) continue
+			const [f] = await db
+				.insert(fixture)
+				.values({
+					roundId: srRound1.id,
+					homeTeamId: home.id,
+					awayTeamId: away.id,
+					kickoff: addHours(now, -1),
+					// The first match is in flight with the home side two up; the rest
+					// are still to come, so the round can't settle out from under it.
+					status: i === 0 ? 'live' : 'scheduled',
+					homeScore: i === 0 ? 2 : null,
+					awayScore: i === 0 ? 0 : null,
+				})
+				.returning()
+			srFixtures.push(f)
+		}
+
+		const srLive = srFixtures[0]
+		if (srLive) {
+			const [startGame] = await db
+				.insert(game)
+				.values({
+					name: 'Starting Round Live (dev)',
+					createdBy: userIds['dev@example.com'],
+					competitionId: startComp.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: srRound1.id,
+				})
+				.returning()
+
+			for (const email of ['dev@example.com', 'dave@example.com']) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: startGame.id,
+						userId: userIds[email],
+						status: 'alive',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: startGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				const backedLoser = email === 'dev@example.com'
+				await db.insert(pick).values({
+					gameId: startGame.id,
+					gamePlayerId: gp.id,
+					roundId: srRound1.id,
+					teamId: backedLoser ? srLive.awayTeamId : srLive.homeTeamId,
+					fixtureId: srLive.id,
+					result: 'pending',
+				})
+			}
+
+			console.log('Created "Starting Round Live (dev)" — dev 0–2 down in round 1, still surviving')
+		}
+	}
+
+	// --- Round settled, game not advanced: the round-result hero ---
+	// The one post-deadline state with no other route into a dev server. In
+	// production it's the window between `settleFixture` marking the round
+	// complete and `advanceGame` moving the pointer on, so it's real but brief:
+	// currentRoundId still points at GW6, which is already 'completed'.
+	//
+	// dev  — survived GW6 (picked a winner)   <- round-result / survived
+	// dave — went out in GW6 (picked a loser) <- round-result / eliminated
+	// mike — survived GW6
+	{
+		const settledRound = rounds.find((r) => r.number === 6)
+		const settledFixtures = settledRound ? (fixturesByRound.get(settledRound.id) ?? []) : []
+		if (settledRound && settledFixtures.length > 0) {
+			const [settledGame] = await db
+				.insert(game)
+				.values({
+					name: 'Round Settled (GW6)',
+					createdBy: userIds['dev@example.com'],
+					competitionId: pl.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: settledRound.id,
+				})
+				.returning()
+
+			const settledPlayers: Array<{ email: string; survived: boolean }> = [
+				{ email: 'dev@example.com', survived: true },
+				{ email: 'dave@example.com', survived: false },
+				{ email: 'mike@example.com', survived: true },
+			]
+			const settledUsedTeamIds = new Set<string>()
+			for (const { email, survived } of settledPlayers) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: settledGame.id,
+						userId: userIds[email],
+						status: survived ? 'alive' : 'eliminated',
+						eliminatedRoundId: survived ? null : settledRound.id,
+						eliminatedReason: survived ? null : 'loss',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: settledGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				for (const f of settledFixtures) {
+					const team = survived ? fixtureWinnerTeam(f) : fixtureLoserTeam(f)
+					if (!team || settledUsedTeamIds.has(team.id)) continue
+					settledUsedTeamIds.add(team.id)
+					const scored = team.id === f.homeTeamId ? f.homeScore : f.awayScore
+					await db.insert(pick).values({
+						gameId: settledGame.id,
+						gamePlayerId: gp.id,
+						roundId: settledRound.id,
+						teamId: team.id,
+						fixtureId: f.id,
+						result: survived ? 'win' : 'loss',
+						goalsScored: scored ?? 0,
+					})
+					break
+				}
+			}
+
+			console.log('Created "Round Settled (GW6)" — GW6 complete, the game has not advanced yet')
+		}
+	}
+
+	// --- Out three rounds ago, game parked on a settled round: the spectator hero ---
+	// The distinction the round-result hero must not swallow. dev went out in GW4;
+	// the game is still pointed at GW6, which has settled. Production reaches this
+	// whenever the next round is TBD (advanceGameToNextRound leaves the pointer
+	// where it is) or when the competition round settles before this game advances
+	// — so the hero has to name GW4, not re-announce an exit on GW6.
+	{
+		const spectatorRound = rounds.find((r) => r.number === 6)
+		const wentOutRound = rounds.find((r) => r.number === 4)
+		const spectatorFixtures = spectatorRound ? (fixturesByRound.get(spectatorRound.id) ?? []) : []
+		if (spectatorRound && wentOutRound && spectatorFixtures.length > 0) {
+			const [spectatorGame] = await db
+				.insert(game)
+				.values({
+					name: 'Spectating (GW6)',
+					createdBy: userIds['dave@example.com'],
+					competitionId: pl.id,
+					gameMode: 'classic',
+					modeConfig: {},
+					entryFee: '10.00',
+					inviteCode: generateInviteCode(),
+					status: 'active',
+					currentRoundId: spectatorRound.id,
+				})
+				.returning()
+
+			// dev is out (GW4, no rebuy — this competition's round 2 deadline is long
+			// past, so `isRebuyEligible` says no); dave and mike play on.
+			const spectatorPlayers: Array<{ email: string; alive: boolean }> = [
+				{ email: 'dev@example.com', alive: false },
+				{ email: 'dave@example.com', alive: true },
+				{ email: 'mike@example.com', alive: true },
+			]
+			const spectatorUsedTeamIds = new Set<string>()
+			for (const { email, alive } of spectatorPlayers) {
+				const [gp] = await db
+					.insert(gamePlayer)
+					.values({
+						gameId: spectatorGame.id,
+						userId: userIds[email],
+						status: alive ? 'alive' : 'eliminated',
+						eliminatedRoundId: alive ? null : wentOutRound.id,
+						eliminatedReason: alive ? null : 'loss',
+						livesRemaining: 0,
+					})
+					.returning()
+
+				await db.insert(payment).values({
+					gameId: spectatorGame.id,
+					userId: userIds[email],
+					amount: '10.00',
+					status: 'paid',
+					paidAt: new Date(),
+				})
+
+				// The eliminated player has no GW6 pick at all — which is exactly the
+				// input that made the round-result hero cry "you missed the deadline".
+				if (!alive) continue
+				for (const f of spectatorFixtures) {
+					const team = fixtureWinnerTeam(f)
+					if (!team || spectatorUsedTeamIds.has(team.id)) continue
+					spectatorUsedTeamIds.add(team.id)
+					const scored = team.id === f.homeTeamId ? f.homeScore : f.awayScore
+					await db.insert(pick).values({
+						gameId: spectatorGame.id,
+						gamePlayerId: gp.id,
+						roundId: spectatorRound.id,
+						teamId: team.id,
+						fixtureId: f.id,
+						result: 'win',
+						goalsScored: scored ?? 0,
+					})
+					break
+				}
+			}
+
+			console.log(
+				'Created "Spectating (GW6)" — dev went out in GW4, the game sits on a settled GW6',
+			)
+		}
 	}
 
 	console.log('\nSeed complete!')

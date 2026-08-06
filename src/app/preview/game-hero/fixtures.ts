@@ -1,4 +1,9 @@
-import type { GameHeroDescriptor, GameViewStats, HeroRound } from '@/lib/game/game-view'
+import type {
+	GameHeroDescriptor,
+	GameViewStats,
+	HeroFixtureSnapshot,
+	HeroRound,
+} from '@/lib/game/game-view'
 
 /**
  * Hand-built descriptors for the game-hero gallery — one entry per state × mode.
@@ -98,12 +103,30 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 		longLabel: 'Gameweek 7',
 		deadlineIso,
 	})
+	/** Round 1 — the only round the classic starting-round exemption applies to. */
+	const startingRound = (deadlineIso: string | null): HeroRound => ({
+		number: 1,
+		label: 'GW1',
+		longLabel: 'Gameweek 1',
+		deadlineIso,
+	})
 	const cupRound: HeroRound = {
 		number: 3,
 		label: 'R16',
 		longLabel: 'Round of 16',
 		deadlineIso: hours(now, 30),
 	}
+
+	const scoreboard = (overrides: Partial<HeroFixtureSnapshot> = {}): HeroFixtureSnapshot => ({
+		id: 'fixture-1',
+		status: 'live',
+		homeShort: 'ARS',
+		awayShort: 'EVE',
+		homeScore: 1,
+		awayScore: 0,
+		kickoffIso: hours(now, -1),
+		...overrides,
+	})
 
 	return [
 		{
@@ -261,6 +284,442 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 				actingAsName: 'Rachel',
 			},
 			notice: 'voided',
+		},
+
+		// ── Post-deadline: the round is in play ────────────────────────────────
+		{
+			id: 'classic-live-surviving',
+			title: 'Classic · live (surviving)',
+			note: 'The personal read only — the ticker above and the standings below cover the field.',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'ARS',
+					name: 'Arsenal',
+					opponentName: 'Everton',
+					side: 'home',
+					fixture: scoreboard(),
+				},
+				survival: 'surviving',
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'classic-live-at-risk',
+			title: 'Classic · live (level, at risk)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'ARS',
+					name: 'Arsenal',
+					opponentName: 'Everton',
+					side: 'home',
+					fixture: scoreboard({ homeScore: 1, awayScore: 1 }),
+				},
+				survival: 'at-risk',
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'classic-live-out',
+			title: 'Classic · live (pick lost at full time)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'BUR',
+					name: 'Burnley',
+					opponentName: 'Manchester City',
+					side: 'away',
+					fixture: scoreboard({
+						status: 'finished',
+						homeShort: 'MCI',
+						awayShort: 'BUR',
+						homeScore: 3,
+						awayScore: 0,
+					}),
+				},
+				survival: 'out',
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'classic-live-starting-round-exempt',
+			title: 'Classic · live (starting round — losing, but exempt)',
+			note: "Round 1 of a no-rebuys game: a non-win doesn't eliminate, so the same scoreline that would read 'Out' in GW7 reads 'Surviving' here — matching the standings below.",
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: startingRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'BUR',
+					name: 'Burnley',
+					opponentName: 'Manchester City',
+					side: 'away',
+					fixture: scoreboard({
+						homeShort: 'MCI',
+						awayShort: 'BUR',
+						homeScore: 2,
+						awayScore: 0,
+					}),
+				},
+				survival: 'surviving',
+				startingRoundExemption: true,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'classic-live-no-pick',
+			title: 'Classic · live (deadline missed, no pick)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: { type: 'none' },
+				survival: 'out',
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'classic-live-not-started',
+			title: 'Classic · live (pick kicks off later)',
+			hero: {
+				kind: 'live',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'team',
+					shortName: 'LIV',
+					name: 'Liverpool',
+					opponentName: 'Brighton',
+					side: 'home',
+					fixture: scoreboard({
+						status: 'scheduled',
+						homeShort: 'LIV',
+						awayShort: 'BHA',
+						homeScore: null,
+						awayScore: null,
+						kickoffIso: hours(now, 4),
+					}),
+				},
+				survival: 'unknown',
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'turbo-live',
+			title: 'Turbo · live',
+			note: 'No elimination in turbo, so no survival verdict — just the running count.',
+			hero: {
+				kind: 'live',
+				mode: 'turbo',
+				round: plRound(hours(now, -3)),
+				entry: {
+					type: 'ranked',
+					picksMade: 10,
+					picksRequired: 10,
+					correct: 6,
+					wrong: 2,
+					pending: 2,
+					livesRemaining: null,
+				},
+				survival: 'unknown',
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'cup-live-last-life',
+			title: 'Cup · live (out of lives, at risk)',
+			hero: {
+				kind: 'live',
+				mode: 'cup',
+				round: { ...cupRound, deadlineIso: hours(now, -2) },
+				entry: {
+					type: 'ranked',
+					picksMade: 6,
+					picksRequired: 6,
+					correct: 3,
+					wrong: 2,
+					pending: 1,
+					livesRemaining: 0,
+				},
+				survival: 'at-risk',
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+
+		// ── Post-deadline: the round has been settled ──────────────────────────
+		{
+			id: 'classic-round-result-survived',
+			title: 'Classic · round-result (survived)',
+			hero: {
+				kind: 'round-result',
+				mode: 'classic',
+				round: plRound(hours(now, -50)),
+				entry: {
+					type: 'team',
+					shortName: 'ARS',
+					name: 'Arsenal',
+					opponentName: 'Everton',
+					side: 'home',
+					fixture: scoreboard({ status: 'finished', homeScore: 2, awayScore: 1 }),
+				},
+				result: 'survived',
+				nextRound: {
+					number: 8,
+					label: 'GW8',
+					longLabel: 'Gameweek 8',
+					deadlineIso: hours(now, 100),
+				},
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'classic-round-result-eliminated',
+			title: 'Classic · round-result (eliminated)',
+			hero: {
+				kind: 'round-result',
+				mode: 'classic',
+				round: plRound(hours(now, -50)),
+				entry: {
+					type: 'team',
+					shortName: 'BUR',
+					name: 'Burnley',
+					opponentName: 'Manchester City',
+					side: 'away',
+					fixture: scoreboard({
+						status: 'finished',
+						homeShort: 'MCI',
+						awayShort: 'BUR',
+						homeScore: 3,
+						awayScore: 0,
+					}),
+				},
+				result: 'eliminated',
+				nextRound: {
+					number: 8,
+					label: 'GW8',
+					longLabel: 'Gameweek 8',
+					deadlineIso: hours(now, 100),
+				},
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'classic-round-result-starting-round-exempt',
+			title: 'Classic · round-result (starting round — drew and stayed in)',
+			note: 'The settled half of the exemption: the pick was a draw, the player is still in.',
+			hero: {
+				kind: 'round-result',
+				mode: 'classic',
+				round: startingRound(hours(now, -50)),
+				entry: {
+					type: 'team',
+					shortName: 'ARS',
+					name: 'Arsenal',
+					opponentName: 'Everton',
+					side: 'home',
+					fixture: scoreboard({ status: 'finished', homeScore: 1, awayScore: 1 }),
+				},
+				result: 'survived',
+				nextRound: {
+					number: 2,
+					label: 'GW2',
+					longLabel: 'Gameweek 2',
+					deadlineIso: hours(now, 100),
+				},
+				startingRoundExemption: true,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'turbo-round-result',
+			title: 'Turbo · round-result',
+			note: 'Single-round mode: the round ending is not a survival verdict.',
+			hero: {
+				kind: 'round-result',
+				mode: 'turbo',
+				round: plRound(hours(now, -50)),
+				entry: {
+					type: 'ranked',
+					picksMade: 10,
+					picksRequired: 10,
+					correct: 7,
+					wrong: 3,
+					pending: 0,
+					livesRemaining: null,
+				},
+				result: 'played',
+				nextRound: null,
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+		{
+			id: 'cup-round-result',
+			title: 'Cup · round-result',
+			hero: {
+				kind: 'round-result',
+				mode: 'cup',
+				round: { ...cupRound, deadlineIso: hours(now, -50) },
+				entry: {
+					type: 'ranked',
+					picksMade: 6,
+					picksRequired: 6,
+					correct: 4,
+					wrong: 2,
+					pending: 0,
+					livesRemaining: 1,
+				},
+				result: 'played',
+				nextRound: null,
+				startingRoundExemption: false,
+				actingAsName: null,
+			},
+		},
+
+		// ── Completed games ───────────────────────────────────────────────────
+		// All three carry `round: null` because that's the only shape production
+		// produces: `applyAutoCompletion` nulls out `game.currentRoundId` when it
+		// crowns a winner, so the page has no round to hand the deriver. The hero
+		// drops its round line and leads with the outcome.
+		{
+			id: 'classic-winner-viewer',
+			title: 'Classic · winner (the viewer won)',
+			note: 'No round line — a completed game has no current round.',
+			hero: {
+				kind: 'winner',
+				mode: 'classic',
+				round: null,
+				winners: [
+					{
+						userId: 'user-1',
+						name: 'Sean',
+						potShare: '80.00',
+						stats: [{ iconKey: 'list-checks', value: 7, label: 'rounds' }],
+					},
+				],
+				runnerUpName: 'Dave',
+				viewerOutcome: 'won',
+				viewerPotShare: '80.00',
+			},
+		},
+		{
+			id: 'turbo-winner-someone-else',
+			title: 'Turbo · winner (someone else won)',
+			hero: {
+				kind: 'winner',
+				mode: 'turbo',
+				round: null,
+				winners: [
+					{
+						userId: 'user-2',
+						name: 'Rachel',
+						potShare: '50.00',
+						stats: [
+							{ iconKey: 'flame', value: 6, label: 'streak' },
+							{ iconKey: 'target', value: 14, label: 'goals' },
+						],
+					},
+				],
+				runnerUpName: 'Sean',
+				viewerOutcome: 'lost',
+				viewerPotShare: null,
+			},
+		},
+		{
+			id: 'cup-winner-split',
+			title: 'Cup · winner (split pot, viewer shares it)',
+			note: 'An odd pot splits unevenly — the heading quotes the viewer their own cut.',
+			hero: {
+				kind: 'winner',
+				mode: 'cup',
+				round: null,
+				winners: [
+					{
+						userId: 'user-1',
+						name: 'Sean',
+						potShare: '60.01',
+						stats: [
+							{ iconKey: 'heart', value: 2, label: 'lives' },
+							{ iconKey: 'flame', value: 5, label: 'streak' },
+							{ iconKey: 'target', value: 9, label: 'goals' },
+						],
+					},
+					{
+						userId: 'user-2',
+						name: 'Dave',
+						potShare: '60.00',
+						stats: [
+							{ iconKey: 'heart', value: 2, label: 'lives' },
+							{ iconKey: 'flame', value: 5, label: 'streak' },
+							{ iconKey: 'target', value: 7, label: 'goals' },
+						],
+					},
+				],
+				runnerUpName: 'Rachel',
+				viewerOutcome: 'shared',
+				// Dave's cut, not Sean's — the pot didn't divide evenly.
+				viewerPotShare: '60.00',
+			},
+		},
+
+		// ── Out of the game (classic only) ────────────────────────────────────
+		{
+			id: 'classic-rebuy',
+			title: 'Classic · rebuy (offer standing)',
+			note: 'The buttons come from the page, not the hero — see the action slot.',
+			hero: {
+				kind: 'rebuy',
+				mode: 'classic',
+				round: plRound(hours(now, 26)),
+				entryFee: '10.00',
+				closesAtIso: hours(now, 26),
+				pendingPayment: null,
+				eliminatedRoundLabel: 'GW1',
+			},
+		},
+		{
+			id: 'classic-rebuy-pending',
+			title: 'Classic · rebuy (payment pending)',
+			hero: {
+				kind: 'rebuy',
+				mode: 'classic',
+				round: plRound(hours(now, 26)),
+				entryFee: '10.00',
+				closesAtIso: hours(now, 26),
+				pendingPayment: { id: 'payment-1', amount: '10.00' },
+				eliminatedRoundLabel: 'GW1',
+			},
+		},
+		{
+			id: 'classic-spectator',
+			title: 'Classic · spectator (eliminated, no rebuy)',
+			note: 'Deliberately the quietest variant — standings and live scores are the page now.',
+			hero: {
+				kind: 'spectator',
+				mode: 'classic',
+				round: plRound(hours(now, -3)),
+				eliminatedRoundLabel: 'GW34',
+			},
 		},
 	]
 }

@@ -9,11 +9,11 @@ import { GameStatLine } from '@/components/game/game-stat-line'
 import { ManageGameFold } from '@/components/game/manage-game-fold'
 import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import type { AdminPayment } from '@/components/game/payments-panel'
+import { RebuyActions, RebuyOfferNotice, RebuyPendingNotice } from '@/components/game/rebuy-actions'
 import { RoundStrip, type RoundStripInfo } from '@/components/game/round-strip'
 import { SettleUpNotice } from '@/components/game/settle-up-notice'
 import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
-import { WinnerBanner, type WinnerBannerEntry } from '@/components/game/winner-banner'
 import { LiveProvider } from '@/components/live/live-provider'
 import { LiveScoresSheet } from '@/components/live/live-scores-sheet'
 import { CupStandings } from '@/components/standings/cup-standings'
@@ -68,9 +68,20 @@ interface GameDetailViewProps {
 		rounds: TurboRoundSummary[]
 		numberOfPicks: number
 	} | null
-	winnerBanner?: {
-		winners: WinnerBannerEntry[]
-		runnerUpName?: string
+	/**
+	 * The standing rebuy offer, when there is one. Derived from the *viewer's* own
+	 * membership, not the acting-as target's. The hero owns the offer whenever it
+	 * is the viewer's own lens (`view.hero.kind === 'rebuy'`) and this supplies
+	 * its buttons; otherwise the notice slot carries it, so the offer and the
+	 * pending-payment claim are reachable from every state.
+	 */
+	rebuy?: {
+		entryFee: string
+		round2Deadline: Date
+		pendingPayment: { id: string; amount: string } | null
+		creatorName: string
+		/** Pre-filled pay-the-creator link for the rebuy amount (null: no handle). */
+		payUrl?: string | null
 	} | null
 	cupStandings?: CupLadderData | null
 }
@@ -81,7 +92,7 @@ export function GameDetailView({
 	pickSection,
 	classicGrid,
 	turboStandings,
-	winnerBanner,
+	rebuy,
 	cupStandings,
 }: GameDetailViewProps) {
 	const [shareOpen, setShareOpen] = useState(false)
@@ -97,10 +108,16 @@ export function GameDetailView({
 	const inviteUrl =
 		typeof window !== 'undefined' ? `${window.location.origin}/join/${game.inviteCode}` : ''
 
-	// Auto-pick + voided-pick notices belong to the pick state, so they render
-	// inside the hero rather than as standalone banners above the page. When
-	// there's no hero (post-deadline and other not-yet-migrated states) they fall
-	// back to their original spot at the top.
+	// Auto-pick, voided-pick and pending-rebuy notices belong to the state the
+	// hero is describing, so they render inside it rather than as standalone
+	// banners above the page. When there's no hero at all they fall back to their
+	// original spot at the top. The rebuy notices stand down when the hero is the
+	// rebuy variant — that already carries the offer and its CTA.
+	//
+	// The offer half is the fallback for the one case the hero can't cover: the
+	// hero renders the *target's* lens, while `rebuy` comes from the viewer's own
+	// membership, so an admin who is themselves eliminated would otherwise lose
+	// their own rebuy button for as long as `?actingAs=` is set.
 	const notices = (
 		<>
 			{game.myCurrentRoundPick?.isAuto && (
@@ -110,6 +127,24 @@ export function GameDetailView({
 					kickoffLabel={game.myCurrentRoundPick.kickoffLabel}
 				/>
 			)}
+			{rebuy &&
+				view.hero.kind !== 'rebuy' &&
+				(rebuy.pendingPayment ? (
+					<RebuyPendingNotice
+						gameId={game.id}
+						entryFee={rebuy.entryFee}
+						pendingPayment={rebuy.pendingPayment}
+						creatorName={rebuy.creatorName}
+						payUrl={rebuy.payUrl}
+					/>
+				) : (
+					<RebuyOfferNotice
+						gameId={game.id}
+						entryFee={rebuy.entryFee}
+						round2Deadline={rebuy.round2Deadline}
+						creatorName={rebuy.creatorName}
+					/>
+				))}
 			<VoidedPickBanner gameId={game.id} gameMode={game.gameMode as 'classic' | 'turbo' | 'cup'} />
 		</>
 	)
@@ -161,17 +196,28 @@ export function GameDetailView({
 				{view.hero.kind === 'none' ? (
 					<div className="mb-4 space-y-2">{notices}</div>
 				) : (
-					<GameHero hero={view.hero} notices={<div className="mt-4 space-y-2">{notices}</div>} />
+					<GameHero
+						hero={view.hero}
+						notices={<div className="mt-4 space-y-2">{notices}</div>}
+						rebuyAction={
+							rebuy ? (
+								<RebuyActions
+									gameId={game.id}
+									entryFee={rebuy.entryFee}
+									pendingPayment={rebuy.pendingPayment}
+									creatorName={rebuy.creatorName}
+									payUrl={rebuy.payUrl}
+									size="lg"
+								/>
+							) : null
+						}
+					/>
 				)}
 
 				{/* `id` is the target of the hero's CTA / "Change pick" affordance. */}
 				<div id="pick" className="mb-6 scroll-mt-4">
 					{pickSection}
 				</div>
-
-				{winnerBanner && winnerBanner.winners.length > 0 && (
-					<WinnerBanner winners={winnerBanner.winners} runnerUpName={winnerBanner.runnerUpName} />
-				)}
 
 				{classicGrid && (
 					<ProgressGrid

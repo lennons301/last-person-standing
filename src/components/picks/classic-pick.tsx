@@ -320,8 +320,10 @@ export function ClassicPick({
 
 	// When the current round's deadline has passed (game not yet advanced) the
 	// current-round fixtures lock — show a read-only summary, not the editable
-	// picker. Upcoming-round locking below stays available.
-	const closedRoundCard = (
+	// picker. Upcoming-round locking below stays available. With the hero above
+	// carrying the locked pick (and its live score), this card would be a second
+	// copy of it, so it stands down entirely and the planner becomes the section.
+	const closedRoundCard = summaryInHero ? null : (
 		<div className="rounded-lg border border-border bg-card p-4">
 			{existingPickTeamId && lockedTeam && lockedOpponent ? (
 				<div className="flex items-center gap-3">
@@ -346,18 +348,25 @@ export function ClassicPick({
 		</div>
 	)
 
+	const planner = futureRounds && futureRounds.length > 0 && (
+		<PlannerSection
+			gameId={gameId}
+			rounds={futureRounds}
+			handlers={resolvedHandlers}
+			defaultOpen={currentRoundClosed}
+		/>
+	)
+
+	// A closed round whose card has stood down, with no chain and nothing to plan,
+	// has nothing left to render — and an empty wrapper would still take the
+	// section's bottom margin.
+	if (currentRoundClosed && !closedRoundCard && !chain && !planner) return null
+
 	return (
 		<div className="space-y-4">
 			{chain && <ChainRibbon slots={chain.slots} summary={chain.summary} />}
-			<div>{currentRoundClosed ? closedRoundCard : currentRoundCard}</div>
-			{futureRounds && futureRounds.length > 0 && (
-				<PlannerSection
-					gameId={gameId}
-					rounds={futureRounds}
-					handlers={resolvedHandlers}
-					defaultOpen={currentRoundClosed}
-				/>
-			)}
+			{currentRoundClosed ? closedRoundCard : <div>{currentRoundCard}</div>}
+			{planner}
 		</div>
 	)
 }

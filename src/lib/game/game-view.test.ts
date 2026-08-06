@@ -44,20 +44,62 @@ function baseInput(overrides: Partial<BuildGameViewInput> = {}): BuildGameViewIn
 	}
 }
 
+const classicTeam = {
+	shortName: 'ARS',
+	name: 'Arsenal',
+	opponentName: 'Everton',
+	side: 'home' as const,
+	kickoffIso: '2026-08-08T14:00:00.000Z',
+}
+
 const classicPick: GameViewPickInput = {
 	picksMade: 1,
 	isAuto: false,
-	team: {
-		shortName: 'ARS',
-		name: 'Arsenal',
-		opponentName: 'Everton',
-		side: 'home',
-		kickoffIso: '2026-08-08T14:00:00.000Z',
-	},
+	team: classicTeam,
 }
 
 function rankedPick(picksMade: number, isAuto = false): GameViewPickInput {
 	return { picksMade, isAuto, team: null }
+}
+
+/** The current round, deadline gone and matches in flight. */
+const ACTIVE_ROUND: BuildGameViewInput['round'] = {
+	id: ROUND_ID,
+	number: 7,
+	status: 'active',
+	deadline: PAST_DEADLINE,
+	label: 'GW7',
+	longLabel: 'Gameweek 7',
+}
+
+/** The current round, settled — the game hasn't advanced off it yet. */
+const COMPLETED_ROUND: BuildGameViewInput['round'] = { ...ACTIVE_ROUND, status: 'completed' }
+
+function liveFixture(
+	overrides: Partial<NonNullable<GameViewPickInput['fixture']>> = {},
+): NonNullable<GameViewPickInput['fixture']> {
+	return {
+		id: 'fixture-1',
+		status: 'live',
+		homeShort: 'ARS',
+		awayShort: 'EVE',
+		homeScore: 1,
+		awayScore: 0,
+		kickoffIso: '2026-08-01T14:00:00.000Z',
+		...overrides,
+	}
+}
+
+const WINNER: BuildGameViewInput['winner'] = {
+	winners: [
+		{
+			userId: 'user-1',
+			name: 'Sean',
+			potShare: '80.00',
+			stats: [{ iconKey: 'list-checks', value: 7, label: 'rounds' }],
+		},
+	],
+	runnerUpName: 'Dave',
 }
 
 /** Per-mode pre-deadline inputs: how many slots a complete entry needs. */
@@ -94,27 +136,16 @@ describe('buildGameView — pre-deadline pick states', () => {
 
 			it('demotes the standalone round strip while a hero renders', () => {
 				const view = buildGameView(baseInput({ gameMode: mode, picksRequired, pick: complete }))
-				expect(view.demote).toEqual({ roundStrip: true })
+				expect(view.demote).toEqual({ roundStrip: true, pickPlaceholder: false })
 			})
 
-			it('hands the round strip back once the deadline passes', () => {
+			it('flips to the live hero once the deadline passes', () => {
 				const view = buildGameView(
-					baseInput({
-						gameMode: mode,
-						picksRequired,
-						pick: complete,
-						round: {
-							id: ROUND_ID,
-							number: 7,
-							status: 'open',
-							deadline: PAST_DEADLINE,
-							label: 'GW7',
-							longLabel: 'Gameweek 7',
-						},
-					}),
+					baseInput({ gameMode: mode, picksRequired, pick: complete, round: ACTIVE_ROUND }),
 				)
-				expect(view.hero).toMatchObject({ kind: 'none', reason: 'round-locked' })
-				expect(view.demote).toEqual({ roundStrip: false })
+				expect(view.hero.kind).toBe('live')
+				// The live hero names the round, so the strip stays demoted.
+				expect(view.demote).toEqual({ roundStrip: true, pickPlaceholder: true })
 			})
 		})
 	}
@@ -212,7 +243,623 @@ describe('buildGameView — pre-deadline pick states', () => {
 	})
 })
 
-describe('buildGameView — no hero yet', () => {
+describe('buildGameView — live hero', () => {
+	it('reads the classic pick off its scoreboard while the match runs', () => {
+		const view = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				pick: { ...classicPick, fixture: liveFixture() },
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			mode: 'classic',
+			survival: 'surviving',
+			entry: {
+				type: 'team',
+				name: 'Arsenal',
+				opponentName: 'Everton',
+				side: 'home',
+				fixture: { homeScore: 1, awayScore: 0, status: 'live' },
+			},
+		})
+	})
+
+	it('calls a level or losing classic pick at risk, not out', () => {
+		const level = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				pick: { ...classicPick, fixture: liveFixture({ homeScore: 1, awayScore: 1 }) },
+			}),
+		)
+		const behind = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				pick: { ...classicPick, fixture: liveFixture({ homeScore: 0, awayScore: 2 }) },
+			}),
+		)
+		expect(level.hero).toMatchObject({ kind: 'live', survival: 'at-risk' })
+		expect(behind.hero).toMatchObject({ kind: 'live', survival: 'at-risk' })
+	})
+
+	it('reads the away side of the fixture from the pick, not the home score', () => {
+		const view = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				pick: {
+					...classicPick,
+					team: { ...classicTeam, side: 'away' },
+					fixture: liveFixture({ homeScore: 0, awayScore: 1 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'live', survival: 'surviving' })
+	})
+
+	it('trusts a settled result over the scoreboard', () => {
+		const view = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				pick: {
+					...classicPick,
+					results: ['loss'],
+					fixture: liveFixture({ status: 'finished', homeScore: 3, awayScore: 0 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'live', survival: 'out' })
+	})
+
+	it('says nothing about a pick whose match has not kicked off', () => {
+		const view = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				pick: {
+					...classicPick,
+					fixture: liveFixture({ status: 'scheduled', homeScore: null, awayScore: null }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'live', survival: 'unknown' })
+	})
+
+	it('calls a missed classic deadline out, with an empty entry', () => {
+		const view = buildGameView(baseInput({ round: ACTIVE_ROUND, pick: null }))
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'out',
+			entry: { type: 'none' },
+		})
+	})
+
+	it('breaks a ranked slate into correct, wrong and still-to-play', () => {
+		const view = buildGameView(
+			baseInput({
+				gameMode: 'turbo',
+				picksRequired: 5,
+				round: ACTIVE_ROUND,
+				pick: {
+					picksMade: 5,
+					isAuto: false,
+					team: null,
+					results: ['win', 'win', 'loss', 'pending', 'void'],
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			mode: 'turbo',
+			// Turbo has no mid-round elimination — the standings tell that story.
+			survival: 'unknown',
+			entry: {
+				type: 'ranked',
+				picksMade: 5,
+				picksRequired: 5,
+				correct: 2,
+				wrong: 1,
+				pending: 1,
+				livesRemaining: null,
+			},
+		})
+	})
+
+	it('carries cup lives and flags the last-life player as at risk', () => {
+		const safe = buildGameView(
+			baseInput({
+				gameMode: 'cup',
+				picksRequired: 6,
+				livesRemaining: 2,
+				round: ACTIVE_ROUND,
+				pick: { picksMade: 6, isAuto: false, team: null, results: ['win', 'saved_by_life'] },
+			}),
+		)
+		const spent = buildGameView(
+			baseInput({
+				gameMode: 'cup',
+				picksRequired: 6,
+				livesRemaining: 0,
+				round: ACTIVE_ROUND,
+				pick: { picksMade: 6, isAuto: false, team: null, results: ['loss'] },
+			}),
+		)
+		expect(safe.hero).toMatchObject({
+			kind: 'live',
+			survival: 'surviving',
+			entry: { correct: 2, livesRemaining: 2 },
+		})
+		expect(spent.hero).toMatchObject({ kind: 'live', survival: 'at-risk' })
+	})
+
+	// Cup persists a handicapped-underdog draw_success as pick.result = 'draw' —
+	// a surviving pick, rendered win-coloured by the grid (`mapPickResult`). The
+	// hero's counts must agree: 'draw' is a hit in cup, still a miss in turbo's
+	// hypothetical (unreachable) case and in classic's deriveSurvival.
+	it('counts a cup draw (underdog draw_success) as correct, matching the grid', () => {
+		const view = buildGameView(
+			baseInput({
+				gameMode: 'cup',
+				picksRequired: 6,
+				livesRemaining: 2,
+				round: ACTIVE_ROUND,
+				pick: { picksMade: 6, isAuto: false, team: null, results: ['win', 'draw', 'loss'] },
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			entry: { correct: 2, wrong: 1, pending: 0 },
+		})
+	})
+})
+
+/**
+ * Round 1 of a no-rebuys classic game can't put anyone out — the rule lives in
+ * `settleClassicPickRow`, in `processDeadlineLock`'s round-1 branch and in the
+ * standings' `projectClassicPlayer`. The hero reads the same scoreboard as those
+ * standings, so a losing pick here must not say "Out" above a table saying alive.
+ */
+describe('buildGameView — classic starting-round exemption', () => {
+	const STARTING_ROUND: BuildGameViewInput['round'] = {
+		...ACTIVE_ROUND,
+		number: 1,
+		label: 'GW1',
+		longLabel: 'Gameweek 1',
+	}
+
+	it('keeps a losing round-1 pick surviving when rebuys are off', () => {
+		const view = buildGameView(
+			baseInput({
+				round: STARTING_ROUND,
+				allowRebuys: false,
+				pick: {
+					...classicPick,
+					fixture: liveFixture({ homeScore: 0, awayScore: 2 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'surviving',
+			startingRoundExemption: true,
+		})
+	})
+
+	it('keeps a settled round-1 draw and loss surviving when rebuys are off', () => {
+		for (const result of ['draw', 'loss'] as const) {
+			const view = buildGameView(
+				baseInput({
+					round: STARTING_ROUND,
+					allowRebuys: false,
+					pick: {
+						...classicPick,
+						results: [result],
+						fixture: liveFixture({ status: 'finished', homeScore: 1, awayScore: 1 }),
+					},
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'live', survival: 'surviving' })
+		}
+	})
+
+	it('does not warn a round-1 no-picker that they are out', () => {
+		// `processDeadlineLock` leaves round-1 no-pickers alone in a no-rebuys game.
+		const view = buildGameView(baseInput({ round: STARTING_ROUND, allowRebuys: false, pick: null }))
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'unknown',
+			entry: { type: 'none' },
+			startingRoundExemption: true,
+		})
+	})
+
+	it('still eliminates on a losing round-1 pick when rebuys are on', () => {
+		// With rebuys the exemption doesn't apply: round 1 puts you out, and the
+		// rebuy offer is the way back in.
+		const view = buildGameView(
+			baseInput({
+				round: STARTING_ROUND,
+				allowRebuys: true,
+				pick: {
+					...classicPick,
+					results: ['loss'],
+					fixture: liveFixture({ status: 'finished', homeScore: 0, awayScore: 2 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'out',
+			startingRoundExemption: false,
+		})
+	})
+
+	it('never exempts a later round, or the single-round modes', () => {
+		const laterRound = buildGameView(
+			baseInput({
+				round: ACTIVE_ROUND,
+				allowRebuys: false,
+				pick: { ...classicPick, results: ['loss'], fixture: liveFixture() },
+			}),
+		)
+		expect(laterRound.hero).toMatchObject({
+			kind: 'live',
+			survival: 'out',
+			startingRoundExemption: false,
+		})
+
+		for (const mode of ['turbo', 'cup'] as const) {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					picksRequired: 6,
+					round: STARTING_ROUND,
+					allowRebuys: false,
+					pick: { picksMade: 6, isAuto: false, team: null, results: ['loss'] },
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'live', startingRoundExemption: false })
+		}
+	})
+
+	it('flags the exemption on the settled round-result hero too', () => {
+		const view = buildGameView(
+			baseInput({
+				round: { ...STARTING_ROUND, status: 'completed' },
+				allowRebuys: false,
+				pick: {
+					...classicPick,
+					results: ['draw'],
+					fixture: liveFixture({ status: 'finished', homeScore: 1, awayScore: 1 }),
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'round-result',
+			result: 'survived',
+			startingRoundExemption: true,
+		})
+	})
+})
+
+describe('buildGameView — round result', () => {
+	it('reports survival and the next round for classic', () => {
+		const view = buildGameView(
+			baseInput({
+				round: COMPLETED_ROUND,
+				pick: { ...classicPick, results: ['win'] },
+				nextRound: {
+					number: 8,
+					label: 'GW8',
+					longLabel: 'Gameweek 8',
+					deadline: FUTURE_DEADLINE,
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'round-result',
+			mode: 'classic',
+			result: 'survived',
+			nextRound: { number: 8, label: 'GW8', deadlineIso: FUTURE_DEADLINE.toISOString() },
+		})
+	})
+
+	it('reports elimination on the round the player went out in', () => {
+		const view = buildGameView(
+			baseInput({
+				round: COMPLETED_ROUND,
+				isAlive: false,
+				eliminatedRoundLabel: 'GW7',
+				eliminatedRoundId: ROUND_ID,
+				pick: { ...classicPick, results: ['loss'] },
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'round-result', result: 'eliminated' })
+	})
+
+	// A game can sit on a settled round for days (`advanceGameToNextRound` parks
+	// there when the next round is TBD), and a competition-scoped round can settle
+	// before this game advances. Someone who went out three rounds ago must not be
+	// told "you're out" again on a round they never picked in.
+	it('sends a player eliminated in an earlier round to the spectator hero', () => {
+		const view = buildGameView(
+			baseInput({
+				round: COMPLETED_ROUND,
+				isAlive: false,
+				eliminatedRoundLabel: 'GW5',
+				eliminatedRoundId: 'round-5',
+				pick: null,
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'spectator', eliminatedRoundLabel: 'GW5' })
+	})
+
+	// `eliminatedRoundId` is null for an admin-removed player: no round claims the
+	// elimination, so nothing should announce one.
+	it('spectates when the elimination round is unknown', () => {
+		const view = buildGameView(baseInput({ round: COMPLETED_ROUND, isAlive: false, pick: null }))
+		expect(view.hero).toMatchObject({ kind: 'spectator' })
+	})
+
+	it('has no survival verdict for the single-round modes', () => {
+		for (const mode of ['turbo', 'cup'] as const) {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					picksRequired: 6,
+					round: COMPLETED_ROUND,
+					pick: { picksMade: 6, isAuto: false, team: null, results: ['win', 'win', 'loss'] },
+				}),
+			)
+			expect(view.hero).toMatchObject({
+				kind: 'round-result',
+				mode,
+				result: 'played',
+				entry: { type: 'ranked', correct: 2, wrong: 1 },
+			})
+		}
+	})
+
+	it('never points a single-round mode at a next round', () => {
+		// Turbo and cup play one gameweek and stop — an N+1 round exists in the
+		// competition, but the game never advances to it.
+		for (const mode of ['turbo', 'cup'] as const) {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					picksRequired: 6,
+					round: COMPLETED_ROUND,
+					pick: { picksMade: 6, isAuto: false, team: null, results: ['win'] },
+					nextRound: {
+						number: 8,
+						label: 'GW8',
+						longLabel: 'Gameweek 8',
+						deadline: FUTURE_DEADLINE,
+					},
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'round-result', nextRound: null })
+		}
+	})
+
+	it('leaves the next round null when there is nothing after this one', () => {
+		const view = buildGameView(baseInput({ round: COMPLETED_ROUND, pick: classicPick }))
+		expect(view.hero).toMatchObject({ kind: 'round-result', nextRound: null })
+	})
+
+	it('reports the result for a round the game has already moved past', () => {
+		const view = buildGameView(
+			baseInput({ game: { currentRoundId: 'round-9', currentRoundNumber: 9 } }),
+		)
+		expect(view.hero).toMatchObject({ kind: 'round-result', result: 'survived' })
+	})
+})
+
+describe('buildGameView — winner', () => {
+	for (const mode of ['classic', 'turbo', 'cup'] as const) {
+		it(`leads a completed ${mode} game with its outcome`, () => {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					gameStatus: 'completed',
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
+			)
+			expect(view.hero).toMatchObject({
+				kind: 'winner',
+				mode,
+				viewerOutcome: 'won',
+				viewerPotShare: '80.00',
+				runnerUpName: 'Dave',
+				winners: [{ name: 'Sean', potShare: '80.00' }],
+			})
+		})
+
+		// The shape every game that has really finished arrives in:
+		// `applyAutoCompletion` nulls out `game.currentRoundId` when it crowns a
+		// winner, so `page.tsx` has no round to hand the deriver. The outcome must
+		// still lead the page — this is the only place the winner is shown now that
+		// the standalone banner is gone.
+		it(`leads a completed ${mode} game with no current round`, () => {
+			const view = buildGameView(
+				baseInput({
+					gameMode: mode,
+					gameStatus: 'completed',
+					round: null,
+					game: { currentRoundId: null, currentRoundNumber: null },
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
+			)
+			expect(view.hero).toMatchObject({ kind: 'winner', mode, round: null, viewerOutcome: 'won' })
+			// The hero stands in for the round strip even without a round to name.
+			expect(view.demote).toEqual({ roundStrip: true, pickPlaceholder: true })
+		})
+	}
+
+	it('reads as a shared win when the pot splits', () => {
+		const view = buildGameView(
+			baseInput({
+				gameStatus: 'completed',
+				viewerUserId: 'user-2',
+				winner: {
+					winners: [
+						{ userId: 'user-1', name: 'Sean', potShare: '40.00', stats: [] },
+						{ userId: 'user-2', name: 'Dave', potShare: '40.00', stats: [] },
+					],
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'winner', viewerOutcome: 'shared', runnerUpName: null })
+	})
+
+	// `calculatePayouts` gives the rounding remainder to the earliest winners, so
+	// an odd pot splits unevenly. The hero must quote the viewer their own cut.
+	it('quotes the viewer their own share of an unevenly split pot', () => {
+		const view = buildGameView(
+			baseInput({
+				gameStatus: 'completed',
+				viewerUserId: 'user-2',
+				winner: {
+					winners: [
+						{ userId: 'user-1', name: 'Sean', potShare: '16.67', stats: [] },
+						{ userId: 'user-2', name: 'Dave', potShare: '16.66', stats: [] },
+						{ userId: 'user-3', name: 'Rich', potShare: '16.66', stats: [] },
+					],
+				},
+			}),
+		)
+		expect(view.hero).toMatchObject({ viewerOutcome: 'shared', viewerPotShare: '16.66' })
+	})
+
+	it('reads as a loss for everyone else', () => {
+		const view = buildGameView(
+			baseInput({ gameStatus: 'completed', winner: WINNER, viewerUserId: 'user-9' }),
+		)
+		expect(view.hero).toMatchObject({ kind: 'winner', viewerOutcome: 'lost', viewerPotShare: null })
+	})
+
+	it('falls back to no hero on a completed game with no winner recorded', () => {
+		const view = buildGameView(baseInput({ gameStatus: 'completed', pick: classicPick }))
+		expect(view.hero).toMatchObject({ kind: 'none', reason: 'game-completed' })
+	})
+
+	it('has no hero on a completed game with neither a winner nor a round', () => {
+		const view = buildGameView(
+			baseInput({
+				gameStatus: 'completed',
+				round: null,
+				game: { currentRoundId: null, currentRoundNumber: null },
+			}),
+		)
+		expect(view.hero).toEqual({
+			kind: 'none',
+			mode: 'classic',
+			round: null,
+			reason: 'game-completed',
+		})
+	})
+})
+
+describe('buildGameView — eliminated classic players', () => {
+	const rebuy = { entryFee: '10.00', closesAt: FUTURE_DEADLINE, pendingPayment: null }
+
+	it('puts the rebuy call to action in the hero slot', () => {
+		const view = buildGameView(
+			baseInput({ isAlive: false, rebuyAvailable: true, rebuy, eliminatedRoundLabel: 'GW1' }),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'rebuy',
+			entryFee: '10.00',
+			closesAtIso: FUTURE_DEADLINE.toISOString(),
+			pendingPayment: null,
+			eliminatedRoundLabel: 'GW1',
+		})
+	})
+
+	it('carries a started rebuy that is waiting on payment', () => {
+		const view = buildGameView(
+			baseInput({
+				isAlive: false,
+				rebuyAvailable: true,
+				rebuy: { ...rebuy, pendingPayment: { id: 'pay-1', amount: '10.00' } },
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'rebuy',
+			pendingPayment: { id: 'pay-1', amount: '10.00' },
+		})
+	})
+
+	it('goes quiet with no rebuy on offer — allowRebuys off, or the window closed', () => {
+		const view = buildGameView(
+			baseInput({ isAlive: false, rebuy: null, eliminatedRoundLabel: 'GW34' }),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'spectator',
+			mode: 'classic',
+			eliminatedRoundLabel: 'GW34',
+		})
+	})
+
+	it('keeps spectating through a live round', () => {
+		const view = buildGameView(
+			baseInput({ isAlive: false, round: ACTIVE_ROUND, eliminatedRoundLabel: 'GW6' }),
+		)
+		expect(view.hero).toMatchObject({ kind: 'spectator' })
+	})
+
+	it('still shows the rebuy offer while the round it missed is in play', () => {
+		const view = buildGameView(
+			baseInput({ isAlive: false, round: ACTIVE_ROUND, rebuyAvailable: true, rebuy }),
+		)
+		expect(view.hero).toMatchObject({ kind: 'rebuy' })
+	})
+
+	it('keeps the pick hero for an admin acting as an eliminated player', () => {
+		// Acting-as passes isAlive=true so the admin can rebuy-via-pick.
+		const view = buildGameView(baseInput({ actingAsName: 'Dave', rebuyAvailable: true, rebuy }))
+		expect(view.hero).toMatchObject({ kind: 'pick-open', actingAsName: 'Dave' })
+	})
+
+	// `isAlive` gates the pick UI; it is not a claim about the player. On a
+	// settled round the round-result hero states one, so it reads the real
+	// membership status — otherwise the admin is told their eliminated target
+	// "survived", directly above standings showing them out.
+	it('does not tell an admin their eliminated target survived the settled round', () => {
+		const view = buildGameView(
+			baseInput({
+				actingAsName: 'Dave',
+				isAlive: true,
+				targetEliminated: true,
+				round: COMPLETED_ROUND,
+				pick: null,
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'round-result',
+			result: 'eliminated',
+			actingAsName: 'Dave',
+		})
+	})
+
+	it('reads an eliminated acting-as target as out on a ranked live round', () => {
+		const view = buildGameView(
+			baseInput({
+				gameMode: 'cup',
+				picksRequired: 6,
+				actingAsName: 'Dave',
+				isAlive: true,
+				targetEliminated: true,
+				livesRemaining: 2,
+				round: ACTIVE_ROUND,
+				pick: { picksMade: 6, isAuto: false, team: null, results: ['win'] },
+			}),
+		)
+		expect(view.hero).toMatchObject({ kind: 'live', survival: 'out' })
+	})
+})
+
+describe('buildGameView — no hero', () => {
 	it('has no hero without a current round', () => {
 		const view = buildGameView(
 			baseInput({ round: null, game: { currentRoundId: null, currentRoundNumber: null } }),
@@ -220,37 +867,58 @@ describe('buildGameView — no hero yet', () => {
 		expect(view.hero).toEqual({ kind: 'none', mode: 'classic', round: null, reason: 'no-round' })
 	})
 
-	it('has no hero on a completed game', () => {
-		const view = buildGameView(baseInput({ gameStatus: 'completed', pick: classicPick }))
-		expect(view.hero).toMatchObject({ kind: 'none', reason: 'game-completed' })
-	})
-
-	it('has no hero once the round itself is processed', () => {
+	it('has no hero for a round the game has not reached yet', () => {
 		const view = buildGameView(
-			baseInput({
-				round: {
-					id: ROUND_ID,
-					number: 7,
-					status: 'completed',
-					deadline: PAST_DEADLINE,
-					label: 'GW7',
-					longLabel: 'Gameweek 7',
-				},
-			}),
+			baseInput({ game: { currentRoundId: 'round-5', currentRoundNumber: 5 } }),
 		)
-		expect(view.hero).toMatchObject({ kind: 'none', reason: 'round-completed' })
+		expect(view.hero).toMatchObject({ kind: 'none', reason: 'round-locked' })
+		expect(view.demote).toEqual({ roundStrip: false, pickPlaceholder: false })
+	})
+})
+
+describe('buildGameView — placeholder demotion', () => {
+	// The pick section's stand-in card ("You have been eliminated from this
+	// game.", "Round closed — picks locked…") restates whatever the hero already
+	// said, for every state the hero has a variant for.
+	it('stands the placeholder card down for every post-deadline variant', () => {
+		const cases: Array<[string, BuildGameViewInput]> = [
+			['live', baseInput({ round: ACTIVE_ROUND, pick: classicPick })],
+			['round-result', baseInput({ round: COMPLETED_ROUND, pick: classicPick })],
+			[
+				'winner',
+				baseInput({
+					gameStatus: 'completed',
+					round: null,
+					game: { currentRoundId: null, currentRoundNumber: null },
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
+			],
+			[
+				'rebuy',
+				baseInput({
+					isAlive: false,
+					rebuy: { entryFee: '10.00', closesAt: FUTURE_DEADLINE, pendingPayment: null },
+				}),
+			],
+			['spectator', baseInput({ isAlive: false })],
+		]
+		for (const [kind, input] of cases) {
+			const view = buildGameView(input)
+			expect(view.hero.kind).toBe(kind)
+			expect(view.demote.pickPlaceholder).toBe(true)
+		}
 	})
 
-	it('has no hero for a round the game has not reached', () => {
-		const view = buildGameView(
-			baseInput({ game: { currentRoundId: 'round-9', currentRoundNumber: 9 } }),
+	it('keeps the placeholder for the pre-deadline and no-hero states', () => {
+		const open = buildGameView(baseInput({ pick: null }))
+		const made = buildGameView(baseInput({ pick: classicPick }))
+		const none = buildGameView(
+			baseInput({ round: null, game: { currentRoundId: null, currentRoundNumber: null } }),
 		)
-		expect(view.hero).toMatchObject({ kind: 'none', reason: 'round-completed' })
-	})
-
-	it('has no hero for an eliminated player', () => {
-		const view = buildGameView(baseInput({ isAlive: false }))
-		expect(view.hero).toMatchObject({ kind: 'none', reason: 'not-playing' })
+		expect(open.demote.pickPlaceholder).toBe(false)
+		expect(made.demote.pickPlaceholder).toBe(false)
+		expect(none.demote.pickPlaceholder).toBe(false)
 	})
 })
 
@@ -263,7 +931,8 @@ describe('buildGameView — purity', () => {
 			baseInput({ now: new Date(FUTURE_DEADLINE.getTime()), pick: classicPick }),
 		)
 		expect(justBefore.hero.kind).toBe('pick-made')
-		expect(exactlyOn.hero).toMatchObject({ kind: 'none', reason: 'round-locked' })
+		// One millisecond later the deadline owns the page: pick-focus → spectate-focus.
+		expect(exactlyOn.hero.kind).toBe('live')
 	})
 
 	it('does not mutate its input', () => {
@@ -282,10 +951,55 @@ describe('buildGameView — purity', () => {
 				baseInput({ gameMode: mode, picksRequired, pick: null }),
 				baseInput({ gameMode: mode, picksRequired, pick: complete }),
 				baseInput({ gameMode: mode, picksRequired, pick: rankedPick(1, true) }),
+				// Post-deadline: live, round result and the completed-game outcome.
+				baseInput({
+					gameMode: mode,
+					picksRequired,
+					round: ACTIVE_ROUND,
+					livesRemaining: 1,
+					pick: { ...complete, fixture: liveFixture(), results: ['pending'] },
+				}),
+				baseInput({
+					gameMode: mode,
+					picksRequired,
+					round: COMPLETED_ROUND,
+					pick: { ...complete, results: ['win'] },
+					nextRound: {
+						number: 8,
+						label: 'GW8',
+						longLabel: 'Gameweek 8',
+						deadline: FUTURE_DEADLINE,
+					},
+				}),
+				baseInput({
+					gameMode: mode,
+					gameStatus: 'completed',
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
+				// The real completed-game shape: no current round left to name.
+				baseInput({
+					gameMode: mode,
+					gameStatus: 'completed',
+					round: null,
+					game: { currentRoundId: null, currentRoundNumber: null },
+					winner: WINNER,
+					viewerUserId: 'user-1',
+				}),
 			]),
 			baseInput({ round: null, game: { currentRoundId: null, currentRoundNumber: null } }),
 			baseInput({ gameStatus: 'completed' }),
 			baseInput({ isAlive: false }),
+			baseInput({ isAlive: false, eliminatedRoundLabel: 'GW3' }),
+			baseInput({
+				isAlive: false,
+				rebuyAvailable: true,
+				rebuy: {
+					entryFee: '10.00',
+					closesAt: FUTURE_DEADLINE,
+					pendingPayment: { id: 'pay-1', amount: '10.00' },
+				},
+			}),
 			baseInput({ now: FUTURE_DEADLINE }),
 		]
 		for (const variant of variants) {

@@ -1,9 +1,10 @@
-import type { WinnerBannerEntry } from '@/components/game/winner-banner'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
 import type { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
+import type { HeroWinnerEntry } from '@/lib/game/game-view'
 import { calculatePayouts } from '@/lib/game-logic/prizes'
 
-// The prop crosses the Server → Client Component boundary (page.tsx → GameDetailView).
+// Feeds the game hero's `winner` variant via `buildGameView`, so the payload
+// crosses the Server → Client Component boundary (page.tsx → GameDetailView).
 // Everything in here must be JSON-serializable. There is a unit test
 // (`winner-banner-builder.test.ts`) that round-trips the result via
 // `structuredClone` to enforce this — `structuredClone` throws on function
@@ -27,7 +28,7 @@ interface BuildWinnerBannerInput {
 }
 
 export interface WinnerBannerPayload {
-	winners: WinnerBannerEntry[]
+	winners: HeroWinnerEntry[]
 	runnerUpName?: string
 }
 
@@ -49,7 +50,7 @@ export function buildWinnerBanner(input: BuildWinnerBannerInput): WinnerBannerPa
 		input.turboStandings.rounds.length > 0
 	) {
 		const lastRound = input.turboStandings.rounds[input.turboStandings.rounds.length - 1]
-		const winners: WinnerBannerEntry[] = winnerPlayers.map((p) => {
+		const winners: HeroWinnerEntry[] = winnerPlayers.map((p) => {
 			const tp = lastRound.players.find((x) => x.id === p.id)
 			return {
 				userId: p.userId,
@@ -69,7 +70,7 @@ export function buildWinnerBanner(input: BuildWinnerBannerInput): WinnerBannerPa
 	}
 
 	if (input.gameMode === 'cup' && input.cupStandings) {
-		const winners: WinnerBannerEntry[] = winnerPlayers.map((p) => {
+		const winners: HeroWinnerEntry[] = winnerPlayers.map((p) => {
 			const cp = input.cupStandings?.players.find((x) => x.id === p.id)
 			return {
 				userId: p.userId,
@@ -93,7 +94,7 @@ export function buildWinnerBanner(input: BuildWinnerBannerInput): WinnerBannerPa
 
 	if (input.gameMode === 'classic') {
 		const roundsPlayed = input.classicGrid?.rounds.length ?? 0
-		const winners: WinnerBannerEntry[] = winnerPlayers.map((p) => ({
+		const winners: HeroWinnerEntry[] = winnerPlayers.map((p) => ({
 			userId: p.userId,
 			name: input.classicGrid?.players.find((x) => x.id === p.id)?.name ?? 'Player',
 			potShare: potShareFor(p.userId),

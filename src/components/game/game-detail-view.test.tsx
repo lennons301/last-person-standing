@@ -28,7 +28,7 @@ const view: GameViewDescriptor = {
 		playerCount: 4,
 		rebuyAvailable: false,
 	},
-	demote: { roundStrip: false },
+	demote: { roundStrip: false, pickPlaceholder: false },
 }
 
 const adminPayments: AdminPayment[] = [
@@ -145,11 +145,61 @@ describe('GameDetailView management fold', () => {
 		render(
 			<GameDetailView
 				game={game({ currentRound })}
-				view={{ ...view, demote: { roundStrip: true } }}
+				view={{ ...view, demote: { roundStrip: true, pickPlaceholder: false } }}
 				pickSection={null}
 			/>,
 		)
 		expect(screen.queryByText('Gameweek 7')).toBeNull()
+	})
+
+	// The hero renders the acting-as target's lens, but the rebuy offer belongs to
+	// the viewer's own membership — without a fallback the admin loses their own
+	// buy-back-in button for as long as `?actingAs=` is set.
+	it('keeps the viewer’s rebuy offer reachable when the hero is not theirs', () => {
+		render(
+			<GameDetailView
+				game={game()}
+				view={view}
+				pickSection={null}
+				rebuy={{
+					entryFee: '10.00',
+					round2Deadline: new Date('2026-08-20T18:00:00Z'),
+					pendingPayment: null,
+					creatorName: 'Alice',
+				}}
+			/>,
+		)
+		expect(screen.getByRole('button', { name: 'Rebuy £10.00' })).toBeTruthy()
+	})
+
+	it('leaves the offer to the rebuy hero when that is the state', () => {
+		render(
+			<GameDetailView
+				game={game()}
+				view={{
+					...view,
+					hero: {
+						kind: 'rebuy',
+						mode: 'classic',
+						round: { number: 1, label: 'GW1', longLabel: 'Gameweek 1', deadlineIso: null },
+						entryFee: '10.00',
+						closesAtIso: null,
+						pendingPayment: null,
+						eliminatedRoundLabel: 'GW1',
+					},
+				}}
+				pickSection={null}
+				rebuy={{
+					entryFee: '10.00',
+					round2Deadline: new Date('2026-08-20T18:00:00Z'),
+					pendingPayment: null,
+					creatorName: 'Alice',
+				}}
+			/>,
+		)
+		// One button, from the hero itself — not two.
+		expect(screen.getAllByRole('button', { name: 'Rebuy £10.00' })).toHaveLength(1)
+		expect(screen.queryByText('You can buy back in')).toBeNull()
 	})
 
 	it('hangs an unpaid balance off the stat line instead of a band', () => {
