@@ -128,7 +128,9 @@ export function GameHero({ hero, notices, rebuyAction, pickAnchor = '#pick' }: G
 			className={cn('mb-4 md:mb-6 rounded-xl overflow-hidden', skin.frame)}
 		>
 			<div className="p-4 md:p-5">
-				{hero.round && <RoundLine round={hero.round} deadline={deadlineModeFor(hero)} />}
+				{hero.round && (
+					<RoundLine round={hero.round} deadline={deadlineModeFor(hero, actingAsName != null)} />
+				)}
 
 				{hero.kind === 'pick-open' && (
 					<PickOpenBody
@@ -197,13 +199,16 @@ export function GameHero({ hero, notices, rebuyAction, pickAnchor = '#pick' }: G
 /** How the round line treats the deadline in each state. */
 type DeadlineMode = 'countdown' | 'closed' | 'complete' | 'none'
 
-function deadlineModeFor(hero: GameHeroDescriptor): DeadlineMode {
+function deadlineModeFor(hero: GameHeroDescriptor, actingAs: boolean): DeadlineMode {
 	switch (hero.kind) {
 		case 'pick-open':
 		case 'pick-made':
 			return 'countdown'
 		case 'live':
-			return 'closed'
+			// Acting-as deliberately keeps the pick card below editable after the
+			// deadline (admin override), so "Picks locked" would sit directly above
+			// an open picker — name the round and stop there.
+			return actingAs ? 'none' : 'closed'
 		case 'round-result':
 			return 'complete'
 		// Rebuy and spectator can both sit on a round that's still open. Neither

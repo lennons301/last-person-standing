@@ -132,6 +132,38 @@ describe('GameHero', () => {
 		expect(screen.getByText('Picks locked')).toBeTruthy()
 	})
 
+	// Acting-as keeps the pick card below editable after the deadline (admin
+	// override), so the live hero must not claim "Picks locked" above it.
+	it('drops the locked claim from a live hero when acting as another player', () => {
+		const hero: GameHeroDescriptor = {
+			kind: 'live',
+			mode: 'classic',
+			round,
+			entry: {
+				type: 'team',
+				shortName: 'ARS',
+				name: 'Arsenal',
+				opponentName: 'Everton',
+				side: 'home',
+				fixture: {
+					id: 'fixture-1',
+					status: 'live',
+					homeShort: 'ARS',
+					awayShort: 'EVE',
+					homeScore: 1,
+					awayScore: 0,
+					kickoffIso: '2099-08-08T14:00:00.000Z',
+				},
+			},
+			survival: 'surviving',
+			startingRoundExemption: false,
+			actingAsName: 'Dave',
+		}
+		render(<GameHero hero={hero} />)
+		expect(screen.getByText('Picking as Dave')).toBeTruthy()
+		expect(screen.queryByText('Picks locked')).toBeNull()
+	})
+
 	// The score sits directly after the picked team's name, so it has to read from
 	// their side: "Burnley 3–0" for an away pick in a 3–0 home defeat is a lie.
 	it('orients the score to the picked team when the pick was away', () => {

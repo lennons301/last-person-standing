@@ -611,8 +611,17 @@ function buildEntry(input: BuildGameViewInput, picksRequired: number): HeroEntry
 	const results = pick.results ?? []
 	// `void` (cancelled fixture) is settled-as-non-event: neither a hit nor a
 	// miss, and not waiting on anything either.
-	const correct = results.filter((r) => r === 'win' || r === 'saved_by_life').length
-	const wrong = results.filter((r) => r === 'loss' || r === 'draw').length
+	//
+	// Cup persists a handicapped-underdog `draw_success` as `pick.result =
+	// 'draw'` (`settleFixture`) — a *surviving* pick, and the grid renders it as
+	// one (`mapPickResult`: 'draw' → 'win'). Count it with the hits there, or the
+	// hero contradicts the grid directly below it. 'draw' is unreachable in
+	// turbo, and classic never takes this ranked path.
+	const drawSurvives = input.gameMode === 'cup'
+	const correct = results.filter(
+		(r) => r === 'win' || r === 'saved_by_life' || (drawSurvives && r === 'draw'),
+	).length
+	const wrong = results.filter((r) => r === 'loss' || (!drawSurvives && r === 'draw')).length
 	const pending = results.filter((r) => r === 'pending').length
 	return {
 		type: 'ranked',
@@ -626,15 +635,6 @@ function buildEntry(input: BuildGameViewInput, picksRequired: number): HeroEntry
 }
 
 /**
- * Classic's starting-round exemption: in round 1 of a no-rebuys game a loss, a
- * draw and even a missed deadline all leave the player in. It's a rule of the
- * mode (`docs/game-modes/classic.md`), encoded in `settleClassicPickRow`, in
- * `processDeadlineLock`'s round-1 branch, and in the standings' own projection
- * (`projectClassicPlayer`). The hero reads the same scoreboard as those
- * standings, so without this it would announce "Out" directly above a table
- * showing the same player alive.
- */
-/**
  * Did the player being rendered actually go out? `isAlive` can't answer that —
  * acting-as forces it true so the admin keeps the pick hero — so every
  * statement of fact ("you survived", "out") goes through here instead.
@@ -643,6 +643,15 @@ function isTargetEliminated(input: BuildGameViewInput): boolean {
 	return input.targetEliminated ?? !input.isAlive
 }
 
+/**
+ * Classic's starting-round exemption: in round 1 of a no-rebuys game a loss, a
+ * draw and even a missed deadline all leave the player in. It's a rule of the
+ * mode (`docs/game-modes/classic.md`), encoded in `settleClassicPickRow`, in
+ * `processDeadlineLock`'s round-1 branch, and in the standings' own projection
+ * (`projectClassicPlayer`). The hero reads the same scoreboard as those
+ * standings, so without this it would announce "Out" directly above a table
+ * showing the same player alive.
+ */
 function isStartingRoundExempt(input: BuildGameViewInput): boolean {
 	return input.gameMode === 'classic' && input.round?.number === 1 && input.allowRebuys !== true
 }

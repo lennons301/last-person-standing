@@ -389,6 +389,26 @@ describe('buildGameView — live hero', () => {
 		})
 		expect(spent.hero).toMatchObject({ kind: 'live', survival: 'at-risk' })
 	})
+
+	// Cup persists a handicapped-underdog draw_success as pick.result = 'draw' —
+	// a surviving pick, rendered win-coloured by the grid (`mapPickResult`). The
+	// hero's counts must agree: 'draw' is a hit in cup, still a miss in turbo's
+	// hypothetical (unreachable) case and in classic's deriveSurvival.
+	it('counts a cup draw (underdog draw_success) as correct, matching the grid', () => {
+		const view = buildGameView(
+			baseInput({
+				gameMode: 'cup',
+				picksRequired: 6,
+				livesRemaining: 2,
+				round: ACTIVE_ROUND,
+				pick: { picksMade: 6, isAuto: false, team: null, results: ['win', 'draw', 'loss'] },
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			entry: { correct: 2, wrong: 1, pending: 0 },
+		})
+	})
 })
 
 /**
