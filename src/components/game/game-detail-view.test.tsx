@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('sonner', () => ({
@@ -69,23 +69,30 @@ function game(overrides: Record<string, unknown> = {}) {
 	}
 }
 
+function livePayload(fixtures: unknown[] = []) {
+	return {
+		gameId: 'g1',
+		gameMode: 'classic',
+		roundId: null,
+		fixtures,
+		picks: [],
+		players: [],
+		viewerUserId: 'u1',
+		updatedAt: '2026-08-04T00:00:00.000Z',
+	}
+}
+
+function mockLive(payload: unknown) {
+	vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+		new Response(JSON.stringify(payload), { status: 200 }),
+	)
+}
+
 describe('GameDetailView management fold', () => {
 	beforeEach(() => {
 		// LiveProvider polls /api/games/[id]/live on mount — hand it an empty
 		// but well-formed payload so the poll settles instead of throwing.
-		const livePayload = {
-			gameId: 'g1',
-			gameMode: 'classic',
-			roundId: null,
-			fixtures: [],
-			picks: [],
-			players: [],
-			viewerUserId: 'u1',
-			updatedAt: '2026-08-04T00:00:00.000Z',
-		}
-		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-			new Response(JSON.stringify(livePayload), { status: 200 }),
-		)
+		mockLive(livePayload())
 	})
 
 	it('renders the collapsed Manage game fold for admins', () => {
@@ -166,5 +173,39 @@ describe('GameDetailView management fold', () => {
 		)
 
 		expect(screen.queryByRole('button', { name: /manage game/i })).toBeNull()
+	})
+})
+
+describe('GameDetailView live scores', () => {
+	beforeEach(() => {
+		mockLive(livePayload())
+	})
+
+	it('carries no permanent score band — the pop-out control is the only entry point', async () => {
+		mockLive(
+			livePayload([
+				{
+					id: 'f1',
+					kickoff: new Date(Date.now() - 30 * 60_000).toISOString(),
+					homeScore: 1,
+					awayScore: 0,
+					status: 'live',
+					homeShort: 'ARS',
+					awayShort: 'CHE',
+				},
+			]),
+		)
+
+		render(<GameDetailView game={game()} view={view} pickSection={null} />)
+
+		await waitFor(() => expect(screen.getByRole('button', { name: /live scores/i })).toBeTruthy())
+		expect(document.querySelectorAll('[data-fixture-id]').length).toBe(0)
+	})
+
+	it('shows no live-scores control when nothing is in play', async () => {
+		render(<GameDetailView game={game()} view={view} pickSection={null} />)
+
+		await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
+		expect(screen.queryByRole('button', { name: /live scores/i })).toBeNull()
 	})
 })

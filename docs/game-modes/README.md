@@ -101,7 +101,7 @@ While a fixture is `live` or `halftime` (kicked off, not yet finished), the serv
 
 - **Per pick:** `LivePick.projectedOutcome` (`winning` / `drawing` / `losing` / `saved-by-life` / `settled-win` / `settled-loss` / `pending`).
 - **Per player:** `LivePlayer.projectedStreak`, `projectedLivesRemaining`, `projectedStatus`.
-- **Cell visuals:** an in-progress pick that's currently winning renders with the **same visual treatment as a settled win**. A currently-losing pick renders as a settled loss. Players orient via fixture status (live ticker / kickoff time / LIVE-HT pill) — the cell colour represents the projected result. Nothing is persisted until the fixture finishes.
+- **Cell visuals:** an in-progress pick that's currently winning renders with the **same visual treatment as a settled win**. A currently-losing pick renders as a settled loss. Players orient via fixture status (live scores pop-out / kickoff time / LIVE-HT pill) — the cell colour represents the projected result. Nothing is persisted until the fixture finishes.
 
 Computed entirely server-side in `getLivePayload` (`src/lib/game/detail-queries.ts`). Pure function `projectPickOutcome` lives in `src/lib/live/derive.ts`. No DB writes.
 
