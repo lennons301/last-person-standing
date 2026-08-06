@@ -116,6 +116,7 @@ function rebuyActionFor(fixture: HeroFixture): React.ReactNode {
 			gameId="preview"
 			entryFee={fixture.hero.entryFee}
 			pendingPayment={fixture.hero.pendingPayment}
+			creatorName="Alice"
 			size="lg"
 		/>
 	)

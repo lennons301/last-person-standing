@@ -15,13 +15,14 @@ import { SettleUpNotice } from '@/components/game/settle-up-notice'
 import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
 import { LiveProvider } from '@/components/live/live-provider'
-import { LiveScoreTicker } from '@/components/live/live-score-ticker'
+import { LiveScoresSheet } from '@/components/live/live-scores-sheet'
 import { CupStandings } from '@/components/standings/cup-standings'
 import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/standings/progress-grid'
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
 import type { GameViewDescriptor } from '@/lib/game/game-view'
 import type { PotBreakdown } from '@/lib/game-logic/prizes'
+import type { PaymentProvider } from '@/lib/payments/payment-link'
 
 interface GameDetailViewProps {
 	game: {
@@ -37,6 +38,11 @@ interface GameDetailViewProps {
 		creatorName: string
 		isAdmin: boolean
 		myPayment: { id: string; status: PaymentStatus; amount: string } | null
+		/** Pre-filled link to pay the creator what the viewer owes, if any. */
+		myPaymentPayUrl: string | null
+		/** The creator's saved handle — only used by the admin's own editor. */
+		creatorPaymentProvider: PaymentProvider | null
+		creatorPaymentHandle: string | null
 		adminPayments: AdminPayment[] | undefined
 		myCurrentRoundPick: {
 			id: string
@@ -71,7 +77,11 @@ interface GameDetailViewProps {
 	 */
 	rebuy?: {
 		entryFee: string
+		round2Deadline: Date
 		pendingPayment: { id: string; amount: string } | null
+		creatorName: string
+		/** Pre-filled pay-the-creator link for the rebuy amount (null: no handle). */
+		payUrl?: string | null
 	} | null
 	cupStandings?: CupLadderData | null
 }
@@ -124,9 +134,16 @@ export function GameDetailView({
 						gameId={game.id}
 						entryFee={rebuy.entryFee}
 						pendingPayment={rebuy.pendingPayment}
+						creatorName={rebuy.creatorName}
+						payUrl={rebuy.payUrl}
 					/>
 				) : (
-					<RebuyOfferNotice gameId={game.id} entryFee={rebuy.entryFee} />
+					<RebuyOfferNotice
+						gameId={game.id}
+						entryFee={rebuy.entryFee}
+						round2Deadline={rebuy.round2Deadline}
+						creatorName={rebuy.creatorName}
+					/>
 				))}
 			<VoidedPickBanner gameId={game.id} gameMode={game.gameMode as 'classic' | 'turbo' | 'cup'} />
 		</>
@@ -142,7 +159,9 @@ export function GameDetailView({
 	return (
 		<LiveProvider gameId={game.id}>
 			<div>
-				<LiveScoreTicker />
+				{/* Reference scores are on-demand — a control, not a permanent band,
+				    and only while there's live action to check. */}
+				<LiveScoresSheet />
 
 				<GameIdentityBar
 					name={game.name}
@@ -163,6 +182,7 @@ export function GameDetailView({
 								status={owed.status}
 								amount={owed.amount}
 								creatorName={game.creatorName}
+								payUrl={game.myPaymentPayUrl}
 								onClaimed={refresh}
 							/>
 						)
@@ -185,6 +205,8 @@ export function GameDetailView({
 									gameId={game.id}
 									entryFee={rebuy.entryFee}
 									pendingPayment={rebuy.pendingPayment}
+									creatorName={rebuy.creatorName}
+									payUrl={rebuy.payUrl}
 									size="lg"
 								/>
 							) : null
@@ -238,6 +260,8 @@ export function GameDetailView({
 						aliveCount={game.aliveCount}
 						pot={game.pot}
 						payments={game.adminPayments}
+						paymentProvider={game.creatorPaymentProvider}
+						paymentHandle={game.creatorPaymentHandle}
 						onChange={refresh}
 					/>
 				)}

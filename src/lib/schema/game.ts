@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm'
+import { relations, sql } from 'drizzle-orm'
 import {
 	boolean,
 	integer,
@@ -120,6 +120,13 @@ export const pick = pgTable(
 			table.roundId,
 			table.confidenceRank,
 		),
+		// Classic picks carry no confidenceRank, so the index above never fires for
+		// them (Postgres treats NULLs as distinct). This partial index is what makes
+		// "one classic pick per player per round" a database invariant, so two
+		// concurrent auto-pick writers can't both get past a read-then-insert.
+		uniqueIndex('pick_player_round_classic_idx')
+			.on(table.gamePlayerId, table.roundId)
+			.where(sql`${table.confidenceRank} is null`),
 	],
 )
 

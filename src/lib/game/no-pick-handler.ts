@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne } from 'drizzle-orm'
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
@@ -89,7 +89,7 @@ async function applyRule2Classic(
 	gameId: string,
 	player: typeof gamePlayer.$inferSelect,
 	roundId: string,
-): Promise<'auto-pick-inserted' | 'eliminated-no-fallback'> {
+): Promise<'auto-pick-inserted' | 'eliminated-no-fallback' | 'already-picked'> {
 	const fixtures = await db.query.fixture.findMany({
 		where: eq(fixture.roundId, roundId),
 		with: { homeTeam: true, awayTeam: true },
@@ -140,17 +140,30 @@ async function applyRule2Classic(
 		return 'eliminated-no-fallback'
 	}
 	const predictedResult = chosenFixture.homeTeamId === teamId ? 'home_win' : 'away_win'
-	await db.insert(pick).values({
-		gameId,
-		roundId,
-		gamePlayerId: player.id,
-		fixtureId: chosenFixture.id,
-		teamId,
-		predictedResult,
-		confidenceRank: null,
-		isAuto: true,
-	})
-	return 'auto-pick-inserted'
+	// The existing-pick read above makes this idempotent across *sequential*
+	// invocations (deadline trigger, daily-sync fallback, crown guard). Two
+	// invocations racing each other could both pass that read, so the partial
+	// unique index `pick_player_round_classic_idx` is the real arbiter: the
+	// loser's insert is a no-op and returns no row. Counting the returned rows
+	// (rather than assuming one) keeps `autoPicksInserted` honest.
+	const inserted = await db
+		.insert(pick)
+		.values({
+			gameId,
+			roundId,
+			gamePlayerId: player.id,
+			fixtureId: chosenFixture.id,
+			teamId,
+			predictedResult,
+			confidenceRank: null,
+			isAuto: true,
+		})
+		.onConflictDoNothing({
+			target: [pick.gamePlayerId, pick.roundId],
+			where: sql`${pick.confidenceRank} is null`,
+		})
+		.returning({ id: pick.id })
+	return inserted.length > 0 ? 'auto-pick-inserted' : 'already-picked'
 }
 
 async function applyRule3TurboOrCup(

@@ -66,6 +66,8 @@ stateDiagram-v2
 
 **Deferred knockout ties can't strand picks.** A knockout tie that finishes level with no `winner` reported (football-data winner-lag) leaves its pick `pending` rather than scoring a draw (`settleClassicPickRow`). Advancement is gated on those picks at BOTH advancement sites — the settle path and reconcile's `advanceGameIfReady` — even when the data source marks the round completed. If a pick was stranded anyway (the game advanced before the gates existed), the daily reconcile's all-rounds `sweepStuckFixtures` settles it once the winner lands: the elimination is applied to the round the tie belongs to, later pick rows stay untouched, and the game's current round pointer never moves backwards.
 
+**A pick left pending on any terminal fixture self-heals.** The same sweep covers `cancelled` fixtures, not just winner-lag ties — see the [Cancellation](#cancellation) section for why a missed void is the more urgent case.
+
 **No-pick processing runs at the deadline, not the next morning.** `processDeadlineLock` fires via a QStash `deadline_lock` job scheduled by `openRoundForGame` for deadline+30s: round 3+ no-pickers get the worst-placed unused team auto-assigned (`isAuto=true`), or are eliminated (`no_pick_no_fallback`) when every team in the round is already used; rounds 1–2 follow the rebuy rules. The daily sync remains the idempotent fallback, and the settle path's completion check runs the same lock before evaluating winners (the crown guard) — so a pickless finalist can never be crowned in the window between the last fixture settling and the next sync. See the [README's trigger surfaces](./README.md#the-deadline-no-pick-lock).
 
 ## Live projection
@@ -106,6 +108,7 @@ When a fixture's status flips to `cancelled` (or `postponed` — auto-cancelled)
   - Players eliminated by this round are reinstated to `'alive'`.
   - Team usage for `round-voided` picks is filtered out at validation time — teams are released.
   - All games on this round advance via the standard flow.
+- **A missed inline void self-heals on the daily sweep.** If the void never ran (the write site missed the status flip), the pick sits `pending` on a fixture that will never finish — and once the data source marks the round completed, that pending pick *pins* the game: `reconcileGameState` early-returns to the gated advancement and never reaches `sweepGameSettlement`, the per-game path that handles cancellations. `sweepStuckFixtures` (all-rounds, daily) covers `cancelled` fixtures as well as `finished` ones for exactly this reason; `settleFixture` voids them idempotently and the game advances on the same pass.
 
 See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`](../superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md).
 
@@ -120,7 +123,7 @@ See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`
 - WC group-stage settle + advance.
 - Live projection: in-progress fixture surfaces projected `'alive'` / `'eliminated'` per player + `'winning'` / `'losing'` per pick.
 - Deadline no-pick lock + crown guard (`lifecycle: deadline no-pick lock + crown guard`): the Barry race (pickless finalist with no legal team eliminated before rounds-exhausted can crown), pre-deadline no-op, worst-placed-unused auto-pick at deadline time, idempotency across the QStash trigger / daily-sync fallback / crown-guard invocations.
-- Stuck-pick recovery (`lifecycle: stuck-pick recovery`): reconcile refuses to advance past a deferred pending pick in a data-source-completed round; the daily sweep settles the pick once the winner lands with the elimination in the original round; stranded picks in non-current rounds self-heal without dragging the game's round pointer backwards.
+- Stuck-pick recovery (`lifecycle: stuck-pick recovery`): reconcile refuses to advance past a deferred pending pick in a data-source-completed round; the daily sweep settles the pick once the winner lands with the elimination in the original round; stranded picks in non-current rounds self-heal without dragging the game's round pointer backwards; a pick left pending on a **cancelled** fixture (missed inline void) pins the game past the per-game reconcile and is voided by the all-rounds sweep, which then advances it; archived competitions are never swept.
 
 Not yet covered (gaps to fill):
 - WC knockout auto-elimination via `computeWcClassicAutoElims`.
