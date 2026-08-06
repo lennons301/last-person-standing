@@ -1,6 +1,6 @@
 {
-  "id": "2a7d74d0-9e87-4dc2-ba85-bf435bf8de4e",
-  "prevId": "e215c93f-6a0a-4d52-8f3e-912b3f9072f8",
+  "id": "d7d34b83-eb5d-4694-8b9d-6776eb7a92ec",
+  "prevId": "2a7d74d0-9e87-4dc2-ba85-bf435bf8de4e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1165,6 +1165,28 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pick_player_round_classic_idx": {
+          "name": "pick_player_round_classic_idx",
+          "columns": [
+            {
+              "expression": "game_player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "round_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"pick\".\"confidence_rank\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -23,6 +23,7 @@ import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
+import { buildPaymentLink, buildPaymentReference } from '@/lib/payments/payment-link'
 import { user } from '@/lib/schema/auth'
 import { gamePlayer } from '@/lib/schema/game'
 
@@ -369,6 +370,20 @@ export default async function GameDetailPage({
 			</div>
 		)
 
+	// Pre-filled pay links for whatever this viewer owes. Derived server-side and
+	// handed down as plain strings. Suppressed for the creator themselves — a
+	// link to your own account is noise, and they still have "Mark as paid".
+	const payReference = buildPaymentReference(game.name, session.user.name)
+	const payLinkFor = (amount: string | null | undefined) =>
+		game.isAdmin
+			? null
+			: buildPaymentLink({
+					provider: game.creatorPaymentProvider,
+					handle: game.creatorPaymentHandle,
+					amount,
+					reference: payReference,
+				})
+
 	return (
 		<GameDetailView
 			game={{
@@ -384,6 +399,9 @@ export default async function GameDetailPage({
 				creatorName: game.creatorName,
 				isAdmin: game.isAdmin,
 				myPayment: game.myPayment,
+				myPaymentPayUrl: payLinkFor(game.myPayment?.amount),
+				creatorPaymentProvider: game.creatorPaymentProvider,
+				creatorPaymentHandle: game.creatorPaymentHandle,
 				adminPayments: game.adminPayments,
 				myCurrentRoundPick: game.myCurrentRoundPick,
 				currentRound: headerRoundInfo,
@@ -400,6 +418,8 @@ export default async function GameDetailPage({
 							entryFee={game.rebuyBanner.entryFee}
 							round2Deadline={game.rebuyBanner.round2Deadline}
 							pendingPayment={game.rebuyBanner.pendingPayment}
+							creatorName={game.creatorName}
+							payUrl={payLinkFor(game.rebuyBanner.pendingPayment?.amount)}
 						/>
 					)}
 					{actingAsTarget && (

@@ -15,13 +15,14 @@ import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
 import { WinnerBanner, type WinnerBannerEntry } from '@/components/game/winner-banner'
 import { LiveProvider } from '@/components/live/live-provider'
-import { LiveScoreTicker } from '@/components/live/live-score-ticker'
+import { LiveScoresSheet } from '@/components/live/live-scores-sheet'
 import { CupStandings } from '@/components/standings/cup-standings'
 import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/standings/progress-grid'
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
 import type { GameViewDescriptor } from '@/lib/game/game-view'
 import type { PotBreakdown } from '@/lib/game-logic/prizes'
+import type { PaymentProvider } from '@/lib/payments/payment-link'
 
 interface GameDetailViewProps {
 	game: {
@@ -37,6 +38,11 @@ interface GameDetailViewProps {
 		creatorName: string
 		isAdmin: boolean
 		myPayment: { id: string; status: PaymentStatus; amount: string } | null
+		/** Pre-filled link to pay the creator what the viewer owes, if any. */
+		myPaymentPayUrl: string | null
+		/** The creator's saved handle — only used by the admin's own editor. */
+		creatorPaymentProvider: PaymentProvider | null
+		creatorPaymentHandle: string | null
 		adminPayments: AdminPayment[] | undefined
 		myCurrentRoundPick: {
 			id: string
@@ -118,7 +124,9 @@ export function GameDetailView({
 	return (
 		<LiveProvider gameId={game.id}>
 			<div>
-				<LiveScoreTicker />
+				{/* Reference scores are on-demand — a control, not a permanent band,
+				    and only while there's live action to check. */}
+				<LiveScoresSheet />
 
 				<GameIdentityBar
 					name={game.name}
@@ -139,6 +147,7 @@ export function GameDetailView({
 								status={owed.status}
 								amount={owed.amount}
 								creatorName={game.creatorName}
+								payUrl={game.myPaymentPayUrl}
 								onClaimed={refresh}
 							/>
 						)
@@ -205,6 +214,8 @@ export function GameDetailView({
 						aliveCount={game.aliveCount}
 						pot={game.pot}
 						payments={game.adminPayments}
+						paymentProvider={game.creatorPaymentProvider}
+						paymentHandle={game.creatorPaymentHandle}
 						onChange={refresh}
 					/>
 				)}

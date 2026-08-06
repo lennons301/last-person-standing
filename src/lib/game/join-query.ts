@@ -20,6 +20,10 @@ export async function getGameByInviteCode(code: string) {
 	return {
 		...g,
 		creatorName: creator?.name ?? 'Unknown',
+		// Where the creator collects. Only ever read behind the authenticated
+		// join page — the handle never reaches an unauthenticated surface.
+		creatorPaymentProvider: creator?.paymentProvider ?? null,
+		creatorPaymentHandle: creator?.paymentHandle ?? null,
 	}
 }
 

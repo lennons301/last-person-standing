@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { PayLinkButton } from './pay-link-button'
 
 interface JoinGameCardProps {
 	gameId: string
@@ -13,6 +14,11 @@ interface JoinGameCardProps {
 	playerCount: number
 	entryFee: string | null
 	creatorName: string
+	/**
+	 * Pre-filled pay link for the creator, or null when they've saved no handle
+	 * (then the card keeps today's "collect payment separately" line).
+	 */
+	payUrl: string | null
 }
 
 export function JoinGameCard({
@@ -23,6 +29,7 @@ export function JoinGameCard({
 	playerCount,
 	entryFee,
 	creatorName,
+	payUrl,
 }: JoinGameCardProps) {
 	const router = useRouter()
 	const [loading, setLoading] = useState(false)
@@ -67,11 +74,27 @@ export function JoinGameCard({
 				)}
 			</div>
 
-			{entryFee && (
-				<p className="text-xs text-muted-foreground mb-4 italic">
-					Admin will collect payment separately.
-				</p>
-			)}
+			{/* Paying is optional at this point — join now, pay later is always fine,
+			    so the link sits above the join button rather than in its way. */}
+			{entryFee &&
+				(payUrl ? (
+					<div className="mb-4 space-y-1.5">
+						<PayLinkButton
+							url={payUrl}
+							creatorName={creatorName}
+							amount={entryFee}
+							className="inline-flex w-full items-center justify-center rounded-lg border border-[var(--alive)] px-4 py-2 text-sm font-semibold text-[var(--alive)] hover:bg-[var(--alive-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						/>
+						<p className="text-xs text-muted-foreground">
+							Opens {creatorName}'s payment link — pay by card, then mark it paid in the app. You
+							can also join now and pay later.
+						</p>
+					</div>
+				) : (
+					<p className="text-xs text-muted-foreground mb-4 italic">
+						Admin will collect payment separately.
+					</p>
+				))}
 
 			{error && <p className="text-sm text-[var(--eliminated)] mb-2">{error}</p>}
 

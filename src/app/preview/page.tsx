@@ -6,6 +6,11 @@ const GALLERIES = [
 		title: 'Game hero',
 		description: 'Top-of-page pick hero + stat line, one card per state × mode.',
 	},
+	{
+		href: '/preview/live-scores',
+		title: 'Live scores',
+		description: 'The on-demand scores pop-out and its control, one payload per live scenario.',
+	},
 ]
 
 export default function PreviewIndexPage() {

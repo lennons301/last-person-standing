@@ -3,6 +3,7 @@
 import { AdminPanel } from '@/components/game/admin-panel'
 import { type AdminPayment, PaymentsPanel } from '@/components/game/payments-panel'
 import { Disclosure } from '@/components/ui/disclosure'
+import type { PaymentProvider } from '@/lib/payments/payment-link'
 
 interface ManageGameFoldProps {
 	gameId: string
@@ -13,6 +14,9 @@ interface ManageGameFoldProps {
 	aliveCount: number
 	pot: { confirmed: string; pending: string; total: string }
 	payments: AdminPayment[] | undefined
+	/** The admin's own saved pay-me handle, editable from the Payments panel. */
+	paymentProvider?: PaymentProvider | null
+	paymentHandle?: string | null
 	onChange?: () => void
 }
 
@@ -31,6 +35,8 @@ export function ManageGameFold({
 	aliveCount,
 	pot,
 	payments,
+	paymentProvider = null,
+	paymentHandle = null,
 	onChange,
 }: ManageGameFoldProps) {
 	return (
@@ -61,6 +67,8 @@ export function ManageGameFold({
 						gameStatus={gameStatus}
 						totals={pot}
 						payments={payments}
+						paymentProvider={paymentProvider}
+						paymentHandle={paymentHandle}
 						onChange={onChange}
 					/>
 				)}
