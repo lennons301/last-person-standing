@@ -142,7 +142,11 @@ export async function settleFixture(fixtureId: string): Promise<SettleResult> {
 			for (const p of gamePicks) {
 				if (g.gameMode === 'cup') continue
 				if (p.result !== 'pending') continue
-				await settleClassicPickRow(p, fx)
+				// Counted like any other settle so the sweep telemetry
+				// (stuckFixturesSettled) doesn't undercount a fixture whose only
+				// pending picks belong to non-active games.
+				const rowResult = await settleClassicPickRow(p, fx)
+				if (rowResult.settled) result.classicSettled++
 			}
 			continue
 		}
@@ -582,7 +586,7 @@ async function checkAndMaybeCompleteOrAdvance(
 		// healed by the all-rounds sweep) must land its elimination and stop —
 		// re-advancing from the old round would drag currentRoundId backwards.
 		if (g.currentRoundId === roundId) {
-			const advanced = await advanceGameToNextRound(gameId, g.competitionId, roundNumber)
+			const { advanced } = await advanceGameToNextRound(gameId, g.competitionId, roundNumber)
 			if (advanced) result.gamesAdvanced.push(gameId)
 		}
 	}
@@ -677,11 +681,31 @@ async function runWcClassicAutoElims(gameId: string, currentRoundId: string): Pr
 	}
 }
 
-async function advanceGameToNextRound(
+/**
+ * Advance the game's currentRoundId pointer to the next round in the
+ * competition. Round-state is per-game: each game advances independently
+ * based on when its rounds complete, not on a global competition timeline.
+ *
+ * Refuses to advance to a round with no fixtures or no deadline (e.g. WC
+ * knockout pre-bracket-publication). In that case the game stays pointed at
+ * the just-completed round; `advanceGameIfReady` (reconcile path) retries on
+ * subsequent cron ticks once the next round has been populated.
+ *
+ * On successful advance, marks the new currentRound as 'open' and schedules
+ * any auto-submit-flagged plans for it.
+ *
+ * THE single advancement implementation. Both paths that advance a game call
+ * it: the settle path (`checkAndMaybeCompleteOrAdvance` below) and the
+ * reconcile path (`advanceGameIfReady` in process-round.ts). They share the
+ * pending-pick gate (`gameHasPendingPicksInRound`) too — keep it that way;
+ * two divergent advancement bodies is how a game ends up advancing past an
+ * unresolved knockout tie on one path but not the other.
+ */
+export async function advanceGameToNextRound(
 	gameId: string,
 	competitionId: string,
 	completedRoundNumber: number,
-): Promise<boolean> {
+): Promise<{ advanced: boolean; reason?: 'no-next-round' | 'next-round-tbd' }> {
 	const nextRound = await db.query.round.findFirst({
 		where: and(eq(round.competitionId, competitionId), gt(round.number, completedRoundNumber)),
 		orderBy: [asc(round.number)],
@@ -689,16 +713,16 @@ async function advanceGameToNextRound(
 	})
 	if (!nextRound) {
 		await db.update(game).set({ currentRoundId: null }).where(eq(game.id, gameId))
-		return false
+		return { advanced: false, reason: 'no-next-round' }
 	}
 	if (nextRound.fixtures.length === 0 || nextRound.deadline == null) {
 		// Next round is TBD (e.g. WC bracket pre-publication). Game stays
 		// pointed at the just-completed round; reconcile retries on next tick.
-		return false
+		return { advanced: false, reason: 'next-round-tbd' }
 	}
 	await db.update(game).set({ currentRoundId: nextRound.id }).where(eq(game.id, gameId))
 	await openRoundForGame(nextRound.id)
-	return true
+	return { advanced: true }
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -914,7 +938,7 @@ async function voidWholeRound(roundId: string, result: SettleResult): Promise<vo
 }
 
 /**
- * Sweep across ALL rounds for pending picks on finished fixtures — unlike
+ * Sweep across ALL rounds for pending picks on terminal fixtures — unlike
  * sweepGameSettlement, which only walks a game's current round. Runs as
  * part of reconcileAllActiveGames (daily-sync / manual process-rounds), so
  * a pick stranded behind an already-advanced game (e.g. a deferred knockout
@@ -926,18 +950,26 @@ export async function sweepStuckFixtures(): Promise<{
 	stuckFixtures: number
 	settled: number
 }> {
-	// Find fixtures with status='finished' that have at least one pick still
-	// 'pending'. Two-step query keeps Drizzle happy and avoids a custom raw
-	// SQL join. Archived competitions are excluded at the query — they are
-	// immutable history, and this sweep runs outside reconcileGameState's
-	// per-game archived guard.
-	const finishedFixtures = await db
+	// Find fixtures in a terminal state ('finished' or 'cancelled') that have
+	// at least one pick still 'pending'. Cancelled is in scope because a
+	// missed inline void leaves a pick pending on a fixture that will never
+	// finish, and that pending pick *pins* the game: reconcileGameState
+	// early-returns on a completed round to the gated advancement, so it
+	// never reaches sweepGameSettlement (the only other cancellation-aware
+	// path). settleFixture voids cancelled fixtures idempotently.
+	// Two-step query keeps Drizzle happy and avoids a custom raw SQL join.
+	// Archived competitions are excluded at the query — they are immutable
+	// history, and this sweep runs outside reconcileGameState's per-game
+	// archived guard.
+	const terminalFixtures = await db
 		.select({ id: fixture.id })
 		.from(fixture)
 		.innerJoin(round, eq(fixture.roundId, round.id))
 		.innerJoin(competition, eq(round.competitionId, competition.id))
-		.where(and(eq(fixture.status, 'finished'), ne(competition.status, 'archived')))
-	const ids = finishedFixtures.map((f) => f.id)
+		.where(
+			and(inArray(fixture.status, ['finished', 'cancelled']), ne(competition.status, 'archived')),
+		)
+	const ids = terminalFixtures.map((f) => f.id)
 	if (ids.length === 0) return { stuckFixtures: 0, settled: 0 }
 	const pendingPicks = await db
 		.select({ fixtureId: pick.fixtureId })
@@ -951,7 +983,9 @@ export async function sweepStuckFixtures(): Promise<{
 		const r = await settleFixture(fid)
 		// Only count fixtures where something actually settled — a deferred
 		// knockout tie whose winner is still unknown stays pending on purpose.
-		if (r.classicSettled + r.turboSettled + r.cupGamesReevaluated > 0) settled++
+		// `picksVoided` carries the cancelled case (and the history-completeness
+		// path carries picks whose game is no longer active).
+		if (r.classicSettled + r.turboSettled + r.cupGamesReevaluated + r.picksVoided > 0) settled++
 	}
 	return { stuckFixtures: stuckIds.length, settled }
 }

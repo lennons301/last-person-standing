@@ -3599,6 +3599,130 @@ describe('lifecycle: stuck-pick recovery', () => {
 		expect(g?.currentRoundId).toBe(r6)
 	})
 
+	it('sweeps a pending pick left on a CANCELLED fixture — the pinned game unblocks and advances', async () => {
+		// The post-gate failure mode: an inline void was missed, so a pick sits
+		// pending on a cancelled fixture in a round the data source already
+		// completed. reconcileGameState early-returns a completed round straight
+		// to the gated advancement, so it never reaches sweepGameSettlement (the
+		// only per-game path that handles cancellations) — the pending pick pins
+		// the game. The all-rounds sweep has to cover cancelled fixtures too.
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
+		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
+		const win = await makeTeam({ name: 'Win', shortName: 'WIN' })
+		const lose = await makeTeam({ name: 'Lose', shortName: 'LOS' })
+		const spare1 = await makeTeam({ name: 'Spare1', shortName: 'SP1' })
+		const spare2 = await makeTeam({ name: 'Spare2', shortName: 'SP2' })
+		const next1 = await makeTeam({ name: 'Next1', shortName: 'NX1' })
+		const next2 = await makeTeam({ name: 'Next2', shortName: 'NX2' })
+		const r4 = await makeRound(compId, { number: 4, status: 'open' })
+		const r5 = await makeRound(compId, {
+			number: 5,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		// Three fixtures so the single cancellation stays under the classic
+		// round-void threshold — this is a per-fixture void, not a round void.
+		const fxCancel = await makeFixture({ roundId: r4, homeTeamId: home, awayTeamId: away })
+		const fxSafe = await makeFixture({ roundId: r4, homeTeamId: win, awayTeamId: lose })
+		const fxThird = await makeFixture({ roundId: r4, homeTeamId: spare1, awayTeamId: spare2 })
+		await makeFixture({ roundId: r5, homeTeamId: next1, awayTeamId: next2 })
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r4,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpBacker = await makePlayer({ gameId, userId: 'u-backer' })
+		const gpSafe1 = await makePlayer({ gameId, userId: 'u-safe1' })
+		const gpSafe2 = await makePlayer({ gameId, userId: 'u-safe2' })
+		const backerPickId = await makePick({
+			gameId,
+			gamePlayerId: gpBacker,
+			roundId: r4,
+			teamId: home,
+			fixtureId: fxCancel,
+		})
+		await makePick({ gameId, gamePlayerId: gpSafe1, roundId: r4, teamId: win, fixtureId: fxSafe })
+		await makePick({ gameId, gamePlayerId: gpSafe2, roundId: r4, teamId: win, fixtureId: fxSafe })
+
+		await finishFixture(fxSafe, 2, 0, 'home')
+		await settleFixture(fxSafe)
+		await finishFixture(fxThird, 1, 0, 'home')
+		await settleFixture(fxThird)
+		// The cancellation lands WITHOUT an inline settle observing it.
+		await db.update(fixtureTable).set({ status: 'cancelled' }).where(eq(fixtureTable.id, fxCancel))
+		// The data source marks the round completed (every fixture terminal).
+		await db.update(roundTable).set({ status: 'completed' }).where(eq(roundTable.id, r4))
+
+		// The pin: the per-game surface can't heal this on its own.
+		const pinned = await reconcileGameState(gameId)
+		expect(pinned.ok && pinned.action).toBe('noop')
+		expect((await db.query.game.findFirst({ where: eq(game.id, gameId) }))?.currentRoundId).toBe(r4)
+
+		const summary = await reconcileAllActiveGames()
+		expect(summary.stuckFixturesSettled).toBe(1)
+
+		// The pick voids, the backer stays alive, and the game moves on.
+		const backerPick = await db.query.pick.findFirst({ where: eq(pick.id, backerPickId) })
+		expect(backerPick?.result).toBe('void')
+		expect(backerPick?.cancellationReason).toBe('cancelled')
+		expect(
+			(await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpBacker) }))?.status,
+		).toBe('alive')
+		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+		expect(g?.status).toBe('active')
+		expect(g?.currentRoundId).toBe(r5)
+	})
+
+	it('counts a stuck fixture whose only pending picks belong to a non-active game', async () => {
+		// Telemetry-only: those picks settle via the history-completeness path
+		// (no elimination, no completion, no advance — the game is done), which
+		// used to leave `stuckFixturesSettled` reporting zero work.
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
+		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
+		const r4 = await makeRound(compId, { number: 4, status: 'completed' })
+		const fxTie = await makeFixture({
+			roundId: r4,
+			homeTeamId: home,
+			awayTeamId: away,
+			status: 'finished',
+			homeScore: 1,
+			awayScore: 1,
+		})
+		await db.update(fixtureTable).set({ winner: 'away' }).where(eq(fixtureTable.id, fxTie))
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r4,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpStuck = await makePlayer({ gameId, userId: 'u-stuck' })
+		const stuckPickId = await makePick({
+			gameId,
+			gamePlayerId: gpStuck,
+			roundId: r4,
+			teamId: home,
+			fixtureId: fxTie,
+		})
+		await db.update(game).set({ status: 'completed' }).where(eq(game.id, gameId))
+
+		const summary = await reconcileAllActiveGames()
+
+		expect(summary.checked).toBe(0)
+		expect(summary.stuckFixturesSettled).toBe(1)
+		// The row settles for history; the finished game is otherwise untouched.
+		expect((await db.query.pick.findFirst({ where: eq(pick.id, stuckPickId) }))?.result).toBe(
+			'loss',
+		)
+		expect(
+			(await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpStuck) }))?.status,
+		).toBe('alive')
+	})
+
 	it('never sweeps a stranded pick on an archived competition — archived history is immutable', async () => {
 		// The archived-immutability invariant: every recovery surface must leave
 		// archived competitions untouched. reconcileGameState already guards, but
