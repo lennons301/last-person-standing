@@ -17,12 +17,12 @@ describe('rebuy pay link', () => {
 				entryFee="10.00"
 				pendingPayment={{ id: 'p1', amount: '10.00' }}
 				creatorName="Alice"
-				payUrl="https://revolut.me/alicejones/10.00gbp"
+				payUrl="https://revolut.me/alicejones"
 			/>,
 		)
 
 		const link = screen.getByRole('link', { name: 'Pay Alice £10.00' })
-		expect(link.getAttribute('href')).toBe('https://revolut.me/alicejones/10.00gbp')
+		expect(link.getAttribute('href')).toBe('https://revolut.me/alicejones')
 		expect(screen.getByRole('button', { name: /claim paid/i })).toBeTruthy()
 	})
 

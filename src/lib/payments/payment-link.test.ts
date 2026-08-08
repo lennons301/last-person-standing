@@ -104,9 +104,10 @@ describe('buildPaymentLink', () => {
 		).toBe('https://monzo.me/alicejones/10.00?d=The%20Lads%20LPS%20Alice')
 	})
 
-	it('builds a Revolut link with the amount pre-filled', () => {
-		// revolut.me carries no reference parameter — degrade to amount-only
-		// rather than smuggle the note into a path segment.
+	it('builds a bare Revolut link', () => {
+		// revolut.me carries neither an amount nor a reference: a `/10.00gbp`
+		// suffix lands on a dead page instead of the creator's payment sheet, so
+		// the link degrades to the plain handle rather than pre-filling anything.
 		expect(
 			buildPaymentLink({
 				provider: 'revolut',
@@ -114,16 +115,23 @@ describe('buildPaymentLink', () => {
 				amount: '10.00',
 				reference: 'The Lads LPS Alice',
 			}),
-		).toBe('https://revolut.me/alicejones/10.00gbp')
+		).toBe('https://revolut.me/alicejones')
 	})
 
 	it('normalises the amount to two decimal places', () => {
 		expect(buildPaymentLink({ provider: 'monzo', handle, amount: '10' })).toBe(
 			'https://monzo.me/alicejones/10.00',
 		)
+	})
+
+	// The amount never reaches a Revolut URL, but it still gates one: nothing
+	// owed, nothing to link to — the button shows the amount either way.
+	it('still requires a payable amount for a Revolut link', () => {
 		expect(buildPaymentLink({ provider: 'revolut', handle, amount: '7.5' })).toBe(
-			'https://revolut.me/alicejones/7.50gbp',
+			'https://revolut.me/alicejones',
 		)
+		expect(buildPaymentLink({ provider: 'revolut', handle, amount: '0' })).toBeNull()
+		expect(buildPaymentLink({ provider: 'revolut', handle, amount: null })).toBeNull()
 	})
 
 	it('omits the reference parameter when there is no reference', () => {
