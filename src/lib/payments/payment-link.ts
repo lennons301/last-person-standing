@@ -95,15 +95,20 @@ export interface PaymentLinkInput {
  * Formats (checked August 2026):
  * - Monzo: `monzo.me/{handle}/{amount}?d={note}` — amount and note both
  *   pre-fill.
- * - Revolut: `revolut.me/{handle}/{amount}gbp` — amount only. There's no
- *   reference parameter, so the note is dropped rather than faked.
+ * - Revolut: `revolut.me/{handle}` — bare. The `/{amount}gbp` suffix that used
+ *   to be appended doesn't resolve: revolut.me answers it with a dead page
+ *   rather than the creator's payment sheet, so a link that pre-filled the
+ *   amount cost the payer the whole page. There's no reference parameter
+ *   either, so the note is dropped rather than faked.
  *
  * Neither provider *documents* these parameters — both are long-standing
  * conventions, and Monzo's and Revolut's own help pages describe only the
  * in-app flow. That's why the amount and note are additive: strip them and
  * what's left, `provider.me/{handle}`, is the plain link the provider does
  * document, so the worst case if a convention changes is a payer who types the
- * amount themselves rather than a dead end.
+ * amount themselves rather than a dead end. Revolut is that worst case today —
+ * the amount still gates the link (no amount owed, no link) and still shows on
+ * the button, the payer just enters it in the app.
  *
  * Both are card-rail — any payer settles with an ordinary debit card, no
  * matching app required — and neither charges the *recipient* on a personal
@@ -125,7 +130,7 @@ export function buildPaymentLink(input: PaymentLinkInput): string | null {
 		return `https://monzo.me/${handle}/${amount}${note}`
 	}
 	if (input.provider === 'revolut') {
-		return `https://revolut.me/${handle}/${amount}gbp`
+		return `https://revolut.me/${handle}`
 	}
 	return null
 }
