@@ -1,24 +1,28 @@
 'use client'
 
 import { LocalDateTime } from '@/components/local-datetime'
-import { FixtureRow } from './fixture-row'
+import { FixtureRow, type FixtureTeamInfo, type RowFormSheetRenderer } from './fixture-row'
+import type { FormResult } from './form-dots'
+
+interface PlannerTeam {
+	id: string
+	short: string
+	name: string
+	colour: string | null
+	badgeUrl: string | null
+	/**
+	 * The team's *current* form — a future round's opponents haven't played yet,
+	 * so there is no such thing as form "as of" GW27. Current form is exactly what
+	 * the decision needs: which in-form team to spend now and which to save.
+	 */
+	form?: FormResult[]
+	leaguePosition?: number | null
+}
 
 export interface PlannerFixture {
 	id: string
-	homeTeam: {
-		id: string
-		short: string
-		name: string
-		colour: string | null
-		badgeUrl: string | null
-	}
-	awayTeam: {
-		id: string
-		short: string
-		name: string
-		colour: string | null
-		badgeUrl: string | null
-	}
+	homeTeam: PlannerTeam
+	awayTeam: PlannerTeam
 	kickoff: Date | null
 }
 
@@ -41,6 +45,25 @@ interface PlannerRoundProps {
 	lockedTeamId: string | null
 	/** Commit/replace a locked real pick for this round. */
 	onLock: (roundId: string, teamId: string) => Promise<void>
+	/**
+	 * The competition the round belongs to. Required for the form-detail sheet —
+	 * without it (or `renderFormSheet`) planner rows show form and position but
+	 * don't tap through, which is the parity gap this prop closes.
+	 */
+	competitionId?: string
+	/** Fixture-driven override for the sheet, for the database-free gallery. */
+	renderFormSheet?: RowFormSheetRenderer
+}
+
+function teamInfo(t: PlannerTeam): FixtureTeamInfo {
+	return {
+		id: t.id,
+		shortName: t.short,
+		name: t.name,
+		badgeUrl: t.badgeUrl,
+		form: t.form,
+		leaguePosition: t.leaguePosition ?? null,
+	}
 }
 
 export function PlannerRound(props: PlannerRoundProps) {
@@ -84,21 +107,19 @@ export function PlannerRound(props: PlannerRoundProps) {
 				const awayUsed = props.usedTeams.find((u) => u.teamId === f.awayTeam.id)
 				const homeIsLocked = f.homeTeam.id === props.lockedTeamId
 				const awayIsLocked = f.awayTeam.id === props.lockedTeamId
+				const home = teamInfo(f.homeTeam)
+				const away = teamInfo(f.awayTeam)
+				const renderFormSheet = props.renderFormSheet
 				return (
 					<FixtureRow
 						key={f.id}
-						home={{
-							id: f.homeTeam.id,
-							shortName: f.homeTeam.short,
-							name: f.homeTeam.name,
-							badgeUrl: f.homeTeam.badgeUrl,
-						}}
-						away={{
-							id: f.awayTeam.id,
-							shortName: f.awayTeam.short,
-							name: f.awayTeam.name,
-							badgeUrl: f.awayTeam.badgeUrl,
-						}}
+						home={home}
+						away={away}
+						competitionId={props.competitionId}
+						roundNumber={props.roundNumber}
+						renderFormSheet={
+							renderFormSheet ? (args) => renderFormSheet({ ...args, home, away }) : undefined
+						}
 						kickoff={f.kickoff ?? undefined}
 						homeState={
 							homeIsLocked

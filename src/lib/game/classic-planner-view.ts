@@ -1,4 +1,5 @@
 import type { ChainSlot } from '@/components/picks/chain-ribbon'
+import type { FormResult } from '@/components/picks/form-dots'
 import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
 
 /**
@@ -174,21 +175,18 @@ export interface FutureRoundRow {
 	fixtures: Array<{
 		id: string
 		kickoff: Date | null
-		homeTeam: {
-			id: string
-			name: string
-			shortName: string
-			badgeUrl: string | null
-			primaryColor: string | null
-		}
-		awayTeam: {
-			id: string
-			name: string
-			shortName: string
-			badgeUrl: string | null
-			primaryColor: string | null
-		}
+		homeTeam: FutureRoundTeam
+		awayTeam: FutureRoundTeam
 	}>
+}
+
+export interface FutureRoundTeam {
+	id: string
+	name: string
+	shortName: string
+	badgeUrl: string | null
+	primaryColor: string | null
+	leaguePosition?: number | null
 }
 
 export interface BuildPlannerRoundsInput {
@@ -196,6 +194,13 @@ export interface BuildPlannerRoundsInput {
 	pastPicks: Array<{ roundNumber: number; teamId: string }>
 	/** Real picks the player has locked in for future rounds. */
 	lockedPicks: Array<{ roundNumber: number; teamId: string; roundId: string }>
+	/**
+	 * Each team's current form, keyed by team id. A future round's fixtures
+	 * haven't been played, so there is no form "as of" that round — current form
+	 * is what the planner needs (which in-form team to spend, which to save) and
+	 * it's what the form sheet behind the row shows.
+	 */
+	formByTeamId?: Map<string, FormResult[]>
 }
 
 /**
@@ -232,23 +237,21 @@ export function buildPlannerRounds(input: BuildPlannerRoundsInput): PlannerRound
 			})
 		}
 
+		const plannerTeam = (t: FutureRoundTeam): PlannerFixture['homeTeam'] => ({
+			id: t.id,
+			name: t.name,
+			short: t.shortName,
+			colour: t.primaryColor,
+			badgeUrl: t.badgeUrl,
+			form: input.formByTeamId?.get(t.id),
+			leaguePosition: t.leaguePosition ?? null,
+		})
+
 		const fixtures: PlannerFixture[] = r.fixtures.map((f) => ({
 			id: f.id,
 			kickoff: f.kickoff,
-			homeTeam: {
-				id: f.homeTeam.id,
-				name: f.homeTeam.name,
-				short: f.homeTeam.shortName,
-				colour: f.homeTeam.primaryColor,
-				badgeUrl: f.homeTeam.badgeUrl,
-			},
-			awayTeam: {
-				id: f.awayTeam.id,
-				name: f.awayTeam.name,
-				short: f.awayTeam.shortName,
-				colour: f.awayTeam.primaryColor,
-				badgeUrl: f.awayTeam.badgeUrl,
-			},
+			homeTeam: plannerTeam(f.homeTeam),
+			awayTeam: plannerTeam(f.awayTeam),
 		}))
 
 		return {
