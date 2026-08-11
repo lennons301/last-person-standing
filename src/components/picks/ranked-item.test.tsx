@@ -59,6 +59,43 @@ describe('RankedItem form tap-through', () => {
 		expect(screen.getByText('Manchester United')).toBeTruthy()
 	})
 
+	it('never clips the mobile short code, only the desktop full name', () => {
+		// Same invariant the fixture row holds: the row's whole content is two team
+		// names, so they must not be the things that give way when six controls
+		// share a phone-width line.
+		const { container } = renderList({ competitionId: 'c1' })
+		const shortCode = [...container.querySelectorAll('span')].find(
+			(el) => el.textContent === 'MUN' && el.className.includes('sm:hidden'),
+		)
+		expect(shortCode).toBeTruthy()
+		expect(shortCode?.className).toContain('whitespace-nowrap')
+		expect(shortCode?.className).not.toContain('truncate')
+		expect(screen.getByText('Manchester United').className).toContain('truncate')
+	})
+
+	it('uses only named scale steps — no ad-hoc bracket font sizes', () => {
+		// Badges carry a URL so the row renders images rather than initials: the
+		// initials' font size is locked to the badge diameter, which is TeamBadge's
+		// geometry problem, not part of the row's hierarchy.
+		const { container } = renderList({
+			competitionId: 'c1',
+			picks: [
+				{
+					...PICK,
+					homeTeam: { ...PICK.homeTeam, badgeUrl: '/mun.png' },
+					awayTeam: { ...PICK.awayTeam, badgeUrl: '/new.png' },
+				},
+			],
+		})
+		const bracketSizes = [...container.querySelectorAll('[class]')]
+			// `getAttribute` rather than `.className` — on SVG elements the latter is
+			// an SVGAnimatedString, not a string.
+			.flatMap((el) => (el.getAttribute('class') ?? '').split(/\s+/))
+			// Bracketed *lengths* only — `text-[var(--alive)]` is a colour, not a size.
+			.filter((c) => /^text-\[[\d.]+(rem|px|em)\]$/.test(c))
+		expect(bracketSizes).toEqual([])
+	})
+
 	it('keeps the reorder, prediction and remove controls alongside it', () => {
 		renderList({ competitionId: 'c1', roundNumber: 3 })
 		expect(screen.getByLabelText('Drag to reorder')).toBeTruthy()

@@ -138,63 +138,74 @@ export function RankedItem({
 				>
 					{pick.rank}
 				</div>
-				<div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
-					<TeamName
-						team={pick.homeTeam}
-						sheetEnabled={sheetEnabled}
-						onOpen={() => openSheet('home')}
-					/>
-					<span
-						className={cn(TYPE.meta, 'text-muted-foreground font-semibold uppercase tracking-wide')}
-					>
-						vs
-					</span>
-					<TeamName
-						team={pick.awayTeam}
-						sheetEnabled={sheetEnabled}
-						onOpen={() => openSheet('away')}
-					/>
+				{/* Teams and controls share a line from `sm` up and stack below it. Six
+				    things on one 375px line left the two team names as the only
+				    shrinkable ones, so they truncated — on a row whose entire content
+				    is those two names. */}
+				<div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+					<div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1">
+						<TeamName
+							team={pick.homeTeam}
+							sheetEnabled={sheetEnabled}
+							onOpen={() => openSheet('home')}
+						/>
+						<span
+							className={cn(
+								TYPE.meta,
+								'text-muted-foreground font-semibold uppercase tracking-wide',
+							)}
+						>
+							vs
+						</span>
+						<TeamName
+							team={pick.awayTeam}
+							sheetEnabled={sheetEnabled}
+							onOpen={() => openSheet('away')}
+						/>
+					</div>
+					<div className="flex items-center gap-2 shrink-0 ml-auto">
+						<button
+							type="button"
+							onClick={onChangePrediction}
+							className={cn(
+								CHIP,
+								'shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+								PRED_COLOUR[pick.prediction],
+							)}
+							aria-label={`Change prediction (currently ${PRED_LABEL[pick.prediction]})`}
+						>
+							{PRED_LABEL[pick.prediction]}
+						</button>
+						<div className="flex flex-col gap-0.5 shrink-0">
+							<button
+								type="button"
+								onClick={onMoveUp}
+								disabled={isFirst}
+								className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+								aria-label="Move up"
+							>
+								<ChevronUp className="h-3.5 w-3.5" />
+							</button>
+							<button
+								type="button"
+								onClick={onMoveDown}
+								disabled={isLast}
+								className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+								aria-label="Move down"
+							>
+								<ChevronDown className="h-3.5 w-3.5" />
+							</button>
+						</div>
+						<button
+							type="button"
+							onClick={onRemove}
+							className="text-muted-foreground hover:text-[var(--eliminated)] p-1 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+							aria-label="Remove"
+						>
+							<X className="h-4 w-4" />
+						</button>
+					</div>
 				</div>
-				<button
-					type="button"
-					onClick={onChangePrediction}
-					className={cn(
-						CHIP,
-						'shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-						PRED_COLOUR[pick.prediction],
-					)}
-					aria-label={`Change prediction (currently ${PRED_LABEL[pick.prediction]})`}
-				>
-					{PRED_LABEL[pick.prediction]}
-				</button>
-				<div className="flex flex-col gap-0.5 shrink-0">
-					<button
-						type="button"
-						onClick={onMoveUp}
-						disabled={isFirst}
-						className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-						aria-label="Move up"
-					>
-						<ChevronUp className="h-3.5 w-3.5" />
-					</button>
-					<button
-						type="button"
-						onClick={onMoveDown}
-						disabled={isLast}
-						className="border border-border rounded p-1 disabled:opacity-30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-						aria-label="Move down"
-					>
-						<ChevronDown className="h-3.5 w-3.5" />
-					</button>
-				</div>
-				<button
-					type="button"
-					onClick={onRemove}
-					className="text-muted-foreground hover:text-[var(--eliminated)] p-1 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-					aria-label="Remove"
-				>
-					<X className="h-4 w-4" />
-				</button>
 			</div>
 
 			{renderFormSheet
