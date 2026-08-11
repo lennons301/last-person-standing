@@ -85,6 +85,13 @@
       "when": 1786476875164,
       "tag": "0011_add_fixture_odds",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786482783372,
+      "tag": "0012_add_team_standings_line",
+      "breakpoints": true
     }
   ]
 }

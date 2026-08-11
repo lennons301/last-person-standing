@@ -400,6 +400,8 @@ describe('syncCompetition league-position persistence', () => {
 				drawn: 1,
 				lost: 1,
 				points: 25,
+				goalsFor: 20,
+				goalsAgainst: 10,
 			},
 			{
 				teamExternalId: '2',
@@ -409,6 +411,8 @@ describe('syncCompetition league-position persistence', () => {
 				drawn: 2,
 				lost: 2,
 				points: 20,
+				goalsFor: 20,
+				goalsAgainst: 10,
 			},
 		])
 		// Payload teams resolve to existing club rows by name.
@@ -421,15 +425,23 @@ describe('syncCompetition league-position persistence', () => {
 			{ footballDataApiKey: 'fd-key' },
 		)
 
-		// Two standings rows → two updates with leaguePosition.
+		// Two standings rows → two updates with leaguePosition, each carrying the
+		// rest of that team's line: the Table view shows position, played, points
+		// and goals as one row, so they have to be written from one sync pass.
 		const positionSets = dbUpdateSet.mock.calls
 			.map((call) => call[0])
 			.filter((payload) => 'leaguePosition' in payload)
 		expect(positionSets).toHaveLength(2)
 		expect(positionSets).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ leaguePosition: 1 }),
-				expect.objectContaining({ leaguePosition: 4 }),
+				expect.objectContaining({
+					leaguePosition: 1,
+					played: 10,
+					points: 25,
+					goalsFor: 20,
+					goalsAgainst: 10,
+				}),
+				expect.objectContaining({ leaguePosition: 4, played: 10, points: 20 }),
 			]),
 		)
 	})
@@ -449,6 +461,8 @@ describe('syncCompetition league-position persistence', () => {
 				drawn: 0,
 				lost: 0,
 				points: 0,
+				goalsFor: 20,
+				goalsAgainst: 10,
 			},
 		])
 		dbQueryTeamFindMany.mockResolvedValue([{ id: 'team-stale-uuid', externalIds: { fpl: '999' } }])
@@ -682,8 +696,28 @@ describe('mergeFootballDataIds', () => {
 		])
 		fdFetchRounds.mockResolvedValue([])
 		fdFetchStandings.mockResolvedValue([
-			{ teamExternalId: '64', position: 1, played: 10, won: 9, drawn: 1, lost: 0, points: 28 },
-			{ teamExternalId: '57', position: 2, played: 10, won: 8, drawn: 1, lost: 1, points: 25 },
+			{
+				teamExternalId: '64',
+				position: 1,
+				played: 10,
+				won: 9,
+				drawn: 1,
+				lost: 0,
+				points: 28,
+				goalsFor: 20,
+				goalsAgainst: 10,
+			},
+			{
+				teamExternalId: '57',
+				position: 2,
+				played: 10,
+				won: 8,
+				drawn: 1,
+				lost: 1,
+				points: 25,
+				goalsFor: 20,
+				goalsAgainst: 10,
+			},
 		])
 
 		await mergeFootballDataIds(
@@ -735,8 +769,28 @@ describe('mergeFootballDataIds', () => {
 		])
 		fdFetchRounds.mockResolvedValue([])
 		fdFetchStandings.mockResolvedValue([
-			{ teamExternalId: '57', position: 4, played: 10, won: 6, drawn: 2, lost: 2, points: 20 },
-			{ teamExternalId: '999', position: 20, played: 10, won: 0, drawn: 1, lost: 9, points: 1 },
+			{
+				teamExternalId: '57',
+				position: 4,
+				played: 10,
+				won: 6,
+				drawn: 2,
+				lost: 2,
+				points: 20,
+				goalsFor: 20,
+				goalsAgainst: 10,
+			},
+			{
+				teamExternalId: '999',
+				position: 20,
+				played: 10,
+				won: 0,
+				drawn: 1,
+				lost: 9,
+				points: 1,
+				goalsFor: 20,
+				goalsAgainst: 10,
+			},
 		])
 
 		await mergeFootballDataIds(

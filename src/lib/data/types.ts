@@ -13,6 +13,8 @@ export interface AdapterStanding {
 	drawn: number
 	lost: number
 	points: number
+	goalsFor: number
+	goalsAgainst: number
 }
 
 export interface AdapterTeam {
