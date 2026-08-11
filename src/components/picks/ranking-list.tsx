@@ -15,16 +15,29 @@ import {
 	sortableKeyboardCoordinates,
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { RankedItem, type RankedPick } from './ranked-item'
+import { type FormSheetRenderer, RankedItem, type RankedPick } from './ranked-item'
 
 interface RankingListProps {
 	picks: RankedPick[]
 	onReorder: (picks: RankedPick[]) => void
 	onRemove: (id: string) => void
 	onChangePrediction: (id: string) => void
+	/** Passed straight through to each row's form-detail tap-through. */
+	competitionId?: string
+	roundNumber?: number
+	/** Per-pick sheet override, for the database-free `/preview/picks` gallery. */
+	renderFormSheet?: (pick: RankedPick) => FormSheetRenderer
 }
 
-export function RankingList({ picks, onReorder, onRemove, onChangePrediction }: RankingListProps) {
+export function RankingList({
+	picks,
+	onReorder,
+	onRemove,
+	onChangePrediction,
+	competitionId,
+	roundNumber,
+	renderFormSheet,
+}: RankingListProps) {
 	const sensors = useSensors(
 		useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
 		useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -66,6 +79,9 @@ export function RankingList({ picks, onReorder, onRemove, onChangePrediction }: 
 						onMoveDown={() => handleMoveDown(pick.id)}
 						onRemove={() => onRemove(pick.id)}
 						onChangePrediction={() => onChangePrediction(pick.id)}
+						competitionId={competitionId}
+						roundNumber={roundNumber}
+						renderFormSheet={renderFormSheet?.(pick)}
 					/>
 				))}
 			</SortableContext>

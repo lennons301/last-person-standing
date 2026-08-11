@@ -516,10 +516,11 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 	}))
 
 	return {
-		roundName: roundData.name ?? `GW${roundData.number}`,
+		// No round name or deadline: the game hero derives both from
+		// `buildGameView` and renders them directly above the turbo picker, which
+		// no longer repeats either.
 		roundNumber: roundData.number,
 		competitionId: roundData.competitionId,
-		deadline: roundData.deadline,
 		fixtures,
 		existingPicks: existingPicks.map((p) => ({
 			fixtureId: p.fixtureId ?? '',
