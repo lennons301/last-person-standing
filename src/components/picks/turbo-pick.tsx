@@ -212,7 +212,7 @@ export function TurboPick({
 				onReorder={(newOrder) => setRanked(newOrder)}
 				onRemove={handleRemove}
 				onChangePrediction={(id) => setEditingId(id)}
-				competitionId={renderFormSheet ? undefined : competitionId}
+				competitionId={competitionId}
 				roundNumber={roundNumber}
 				renderFormSheet={
 					renderFormSheet
@@ -252,7 +252,7 @@ export function TurboPick({
 										leaguePosition: fix.away.leaguePosition,
 									}}
 									kickoff={fix.kickoff}
-									competitionId={renderFormSheet ? undefined : competitionId}
+									competitionId={competitionId}
 									roundNumber={roundNumber}
 									renderFormSheet={
 										renderFormSheet
