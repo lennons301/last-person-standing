@@ -60,3 +60,23 @@ describe('ClassicPick — no duplication of the hero', () => {
 		expect(screen.getByText(/Gameweek 27 · picks locked/)).toBeTruthy()
 	})
 })
+
+describe('ClassicPick win probability', () => {
+	const ODDS = {
+		home: { probability: 8 / 13, price: 1.5 },
+		away: { probability: 2 / 13, price: 6 },
+		asOf: '2026-08-14T11:30:00Z',
+	}
+
+	it('surfaces each fixture’s win probability inline in the fixtures view', () => {
+		renderPicker({ fixtures: [{ ...FIXTURES[0], odds: ODDS }] })
+		expect(screen.getByText('62%')).toBeTruthy()
+		expect(screen.getByText('1.50')).toBeTruthy()
+		expect(screen.getByText('15%')).toBeTruthy()
+	})
+
+	it('renders no probability for an unpriced fixture', () => {
+		const { container } = renderPicker()
+		expect(container.textContent).not.toContain('%')
+	})
+})
