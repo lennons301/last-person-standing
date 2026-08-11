@@ -13,6 +13,7 @@ import {
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { reconcileAllActiveGames } from '@/lib/game/reconcile'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
+import { type OddsSyncSummary, syncFixtureOdds } from '@/lib/game/sync-fixture-odds'
 import { competition } from '@/lib/schema/competition'
 import { game } from '@/lib/schema/game'
 import { cronRun } from '@/lib/schema/ops'
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
 	try {
 		const body = await readJsonBody(request)
 		const apiKey = process.env.FOOTBALL_DATA_API_KEY
+		const oddsApiKey = process.env.ODDS_API_KEY
 		// Season detection + rollover runs BEFORE any sync writes: it derives the
 		// current PL season from football-data's currentSeason cross-checked
 		// against FPL's GW1 deadline, creating the new-season competition and
@@ -64,10 +66,25 @@ export async function POST(request: Request) {
 				rounds: number
 				fixtures: number
 				pots?: { matched: number; unmatched: string[] }
+				odds?: OddsSyncSummary | { error: string }
 			} = {
 				competitionId: c.id,
 				rounds: summary.rounds,
 				fixtures: summary.fixtures,
+			}
+			// Indicative win-probability refresh. One provider request covers the
+			// whole competition, and odds for a round freeze at its deadline (see
+			// syncFixtureOdds). Enrichment only: a provider outage is recorded on
+			// the entry and the run carries on, because this same cron drives
+			// deadline locking and reconciliation, which must not go red with it.
+			if (oddsApiKey) {
+				try {
+					entry.odds = await syncFixtureOdds(c, oddsApiKey)
+				} catch (oddsErr) {
+					const message = serializeError(oddsErr).message
+					console.error('[cron/daily-sync] odds refresh failed', c.id, message)
+					entry.odds = { error: message }
+				}
 			}
 			if (summary.deadlinePassedRoundIds?.length) {
 				deadlineLockedRoundIds.push(...summary.deadlinePassedRoundIds)
