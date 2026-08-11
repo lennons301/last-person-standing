@@ -198,7 +198,7 @@ function SplitTable({
 
 	return (
 		<div className="text-xs">
-			<div className="grid grid-cols-[2.5rem_1.5rem_3.5rem_3.5rem_1fr] items-center gap-x-2 text-2xs uppercase tracking-wider text-muted-foreground/70 mb-1">
+			<div className="grid grid-cols-[2.5rem_1.5rem_3.5rem_3.5rem_1fr] items-center gap-x-1.5 text-2xs uppercase tracking-wider text-muted-foreground/70 mb-1">
 				<span />
 				<span className="text-right">P</span>
 				<span className="text-right">W-D-L</span>
@@ -208,7 +208,7 @@ function SplitTable({
 			{rows.map(({ label, split }) => (
 				<div
 					key={label}
-					className="grid grid-cols-[2.5rem_1.5rem_3.5rem_3.5rem_1fr] items-center gap-x-2 py-0.5 tabular-nums"
+					className="grid grid-cols-[2.5rem_1.5rem_3.5rem_3.5rem_1fr] items-center gap-x-1.5 py-0.5 tabular-nums"
 				>
 					<span className="text-muted-foreground">{label}</span>
 					<span className="text-right font-mono">{split.played}</span>
