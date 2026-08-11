@@ -49,7 +49,7 @@ function detailForTeam(t: FixtureTeamInfo | RankedTeam): TeamFormDetail {
 }
 
 /** The one form-sheet renderer every row in this gallery shares. */
-const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClose }) => {
+const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClose, market }) => {
 	const team = side === 'home' ? home : away
 	const opponent = side === 'home' ? away : home
 	return (
@@ -59,6 +59,10 @@ const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClos
 				if (!next) onClose()
 			}}
 			detail={detailForTeam(team)}
+			// Comes down from the row, exactly as it does on the real page — so a
+			// priced row taps through to a sheet with the full 1X2, and an unpriced
+			// one to a sheet with no market block at all.
+			market={market}
 			teamPreview={team}
 			opponentPreview={{ shortName: opponent.shortName }}
 		/>
@@ -86,7 +90,12 @@ export function PreviewFixtureRow({
 			kickoff={kickoff}
 			odds={
 				fixture.odds && oddsAsOf
-					? { home: fixture.odds.home, away: fixture.odds.away, asOf: oddsAsOf }
+					? {
+							home: fixture.odds.home,
+							draw: fixture.odds.draw,
+							away: fixture.odds.away,
+							asOf: oddsAsOf,
+						}
 					: null
 			}
 			selectedSide={selected}
@@ -145,7 +154,7 @@ export function PreviewTurboPick({
 				away: f.away,
 				kickoff: kickoffs.get(f.id) ?? null,
 			}))}
-			renderFormSheet={({ fixtureId, side, open, onClose }) => {
+			renderFormSheet={({ fixtureId, side, open, onClose, market }) => {
 				const fixture = byId.get(fixtureId)
 				if (!fixture) return null
 				const team = side === 'home' ? fixture.home : fixture.away
@@ -157,6 +166,7 @@ export function PreviewTurboPick({
 							if (!next) onClose()
 						}}
 						detail={detailForTeam(team)}
+						market={market ?? null}
 						teamPreview={team}
 						opponentPreview={{ shortName: opponent.shortName }}
 					/>

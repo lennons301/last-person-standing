@@ -12,9 +12,12 @@ const ROW = {
 }
 
 describe('toFixtureOddsView', () => {
-	it('pairs each side’s persisted probability with the price it came from', () => {
+	it('pairs each outcome’s persisted probability with the price it came from', () => {
+		// All three outcomes travel, including the draw the row itself never shows:
+		// the form sheet one tap below renders the full 1X2.
 		expect(toFixtureOddsView(ROW)).toEqual({
 			home: { probability: 8 / 13, price: 1.5 },
+			draw: { probability: 3 / 13, price: 4 },
 			away: { probability: 2 / 13, price: 6 },
 			asOf: '2026-08-14T11:30:00.000Z',
 		})

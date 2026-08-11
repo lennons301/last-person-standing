@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { loadTeamFormDetail } from '@/app/actions/team-form'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
-import { TeamFormSheetView } from './team-form-panel'
+import { type FormMarket, TeamFormSheetView } from './team-form-panel'
 
 interface TeamFormSheetProps {
 	open: boolean
@@ -12,6 +12,11 @@ interface TeamFormSheetProps {
 	competitionId: string
 	opponentTeamId?: string
 	beforeRoundNumber?: number
+	/**
+	 * The fixture's full 1X2, passed straight through: it comes down with the
+	 * caller's row, so it needs none of this component's loading.
+	 */
+	market?: FormMarket | null
 	// Used for the loading-state header so the sheet doesn't pop in empty.
 	teamPreview: { name: string; shortName: string; badgeUrl?: string | null }
 	opponentPreview?: { shortName: string }
@@ -31,6 +36,7 @@ export function TeamFormSheet({
 	competitionId,
 	opponentTeamId,
 	beforeRoundNumber,
+	market = null,
 	teamPreview,
 	opponentPreview,
 }: TeamFormSheetProps) {
@@ -67,6 +73,7 @@ export function TeamFormSheet({
 			detail={detail}
 			loading={loading}
 			error={error}
+			market={market}
 			teamPreview={teamPreview}
 			opponentPreview={opponentPreview}
 		/>
