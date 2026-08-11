@@ -2,7 +2,7 @@
 
 import { ChevronRight } from 'lucide-react'
 import type React from 'react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { LocalDateTime } from '@/components/local-datetime'
 import { cn } from '@/lib/utils'
 import { FormDots, type FormResult } from './form-dots'
@@ -13,7 +13,7 @@ import { TeamFormSheet } from './team-form-sheet'
 import { TierPips } from './tier-pips'
 
 /**
- * The row's type scale. Four steps, deliberately, replacing the ad-hoc pile of
+ * The row's type scale. Three steps, deliberately, replacing the ad-hoc pile of
  * `text-[9px]` / `[10px]` / `[11px]` / `[0.7rem]` micro sizes this row used to
  * carry. Everything in the row (and its sub-components) picks one:
  *
@@ -30,7 +30,7 @@ import { TierPips } from './tier-pips'
 const TYPE = {
 	name: 'text-base sm:text-lg font-semibold leading-tight',
 	meta: 'text-xs leading-tight',
-	chip: 'text-2xs font-semibold leading-tight',
+	chip: 'text-2xs font-semibold',
 } as const
 
 /** Shared chip shell — colour comes from the caller, geometry from here. */
@@ -137,6 +137,11 @@ export function FixtureRow({
 	const bonusLivesOnButton = underdogSide && plusN ? plusN : 0
 	const showTopPlusN = !underdogSide && plusN != null && plusN > 0
 	const [sheetTeam, setSheetTeam] = useState<'home' | 'away' | null>(null)
+	// Retain the last opened side so the form panel keeps its content through the
+	// sheet's dismiss animation, instead of flipping to the other team as it closes
+	// (sheetTeam goes null the moment the close starts).
+	const lastSheetSide = useRef<'home' | 'away'>('home')
+	const activeSheetSide = sheetTeam ?? lastSheetSide.current
 	const sheetEnabled = !!competitionId || !!renderFormSheet
 	// The top strip carries everything that isn't a team: tier annotations, the
 	// row-level status label and the kickoff. `usedLabel` lives here rather than
@@ -209,14 +214,17 @@ export function FixtureRow({
 					home={home}
 					away={away}
 					sheetEnabled={sheetEnabled}
-					onOpenSheet={(side) => setSheetTeam(side)}
+					onOpenSheet={(side) => {
+						lastSheetSide.current = side
+						setSheetTeam(side)
+					}}
 				/>
 				{children}
 			</div>
 
 			{renderFormSheet
 				? renderFormSheet({
-						side: sheetTeam ?? 'home',
+						side: activeSheetSide,
 						open: sheetTeam !== null,
 						onClose: () => setSheetTeam(null),
 					})
@@ -226,13 +234,15 @@ export function FixtureRow({
 							onOpenChange={(open) => {
 								if (!open) setSheetTeam(null)
 							}}
-							teamId={sheetTeam === 'home' ? home.id : away.id}
+							teamId={activeSheetSide === 'home' ? home.id : away.id}
 							competitionId={competitionId}
-							opponentTeamId={sheetTeam === 'home' ? away.id : home.id}
+							opponentTeamId={activeSheetSide === 'home' ? away.id : home.id}
 							beforeRoundNumber={roundNumber}
-							teamPreview={sheetTeam === 'home' ? home : away}
+							teamPreview={activeSheetSide === 'home' ? home : away}
 							opponentPreview={
-								sheetTeam === 'home' ? { shortName: away.shortName } : { shortName: home.shortName }
+								activeSheetSide === 'home'
+									? { shortName: away.shortName }
+									: { shortName: home.shortName }
 							}
 						/>
 					)}
@@ -401,10 +411,7 @@ function TeamPickButton({
 		>
 			<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="lg" responsive />
 			<div
-				className={cn(
-					'flex flex-col gap-0.5 min-w-0 flex-1 basis-0',
-					isHome ? 'items-end' : 'items-start',
-				)}
+				className={cn('flex flex-col gap-0.5 min-w-0 flex-1', isHome ? 'items-end' : 'items-start')}
 			>
 				{/* The mobile short code never truncates: it's 3–4 characters, so it
 				    gets `whitespace-nowrap` and no overflow clipping. Only the desktop
