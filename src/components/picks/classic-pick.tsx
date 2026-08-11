@@ -59,6 +59,19 @@ interface ClassicPickProps {
 	 * through its server action.
 	 */
 	renderFormSheet?: RowFormSheetRenderer
+	/**
+	 * Submit the current round's pick. Defaults to the picks API — the sibling of
+	 * `planHandlers.onLock`, for the round being played rather than a planned one.
+	 */
+	onSubmitPick?: (input: { teamId: string; fixtureId: string }) => Promise<void>
+	/**
+	 * Start with the fixtures open even though a pick is already locked in. In the
+	 * app a locked pick collapses the card and the hero's "Change pick" re-opens
+	 * it — but that signal is a window-global event, so `/preview/picks` (which
+	 * renders several of these cards side by side) would open every one of them at
+	 * once. This opens exactly one.
+	 */
+	startExpanded?: boolean
 }
 
 interface PickSelection {
@@ -84,6 +97,8 @@ export function ClassicPick({
 	actingAs,
 	summaryInHero = false,
 	renderFormSheet,
+	onSubmitPick,
+	startExpanded = false,
 }: ClassicPickProps) {
 	const router = useRouter()
 	const initialSelection: PickSelection | null =
@@ -94,7 +109,7 @@ export function ClassicPick({
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	// Collapse fixtures by default if a pick is already locked in
-	const [expanded, setExpanded] = useState(!existingPickTeamId)
+	const [expanded, setExpanded] = useState(startExpanded || !existingPickTeamId)
 
 	// The hero above owns the pick confirmation; its "Change pick" button expands
 	// the fixtures here so changing a pick stays a one-click action.
@@ -117,6 +132,18 @@ export function ClassicPick({
 
 	async function handleSubmit() {
 		if (!selection) return
+		if (onSubmitPick) {
+			setLoading(true)
+			setError(null)
+			try {
+				await onSubmitPick(selection)
+				setExpanded(false)
+			} catch (e) {
+				setError(e instanceof Error ? e.message : 'Failed to submit pick')
+			}
+			setLoading(false)
+			return
+		}
 		setLoading(true)
 		setError(null)
 		const res = await fetch(`/api/picks/${gameId}/${roundId}`, {

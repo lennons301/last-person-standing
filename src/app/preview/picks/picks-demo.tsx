@@ -3,21 +3,24 @@
 import { useState } from 'react'
 import type { RowFixture } from '@/app/preview/picks/fixtures'
 import { TEAM_FORM_DETAIL, TEAM_FORM_DETAIL_EMPTY } from '@/app/preview/picks/fixtures'
+import { ClassicPick, type ClassicPickFixture } from '@/components/picks/classic-pick'
+import type { FixtureTeamInfo, RowFormSheetRenderer } from '@/components/picks/fixture-row'
 import { FixtureRow } from '@/components/picks/fixture-row'
 import { type PlannerFixture, PlannerRound, type UsedInfo } from '@/components/picks/planner-round'
 import { TeamFormSheetView } from '@/components/picks/team-form-panel'
+import type { PlannerRoundInput } from '@/lib/game/classic-planner-view'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
- * Interactive halves of the pick-selector gallery. `FixtureRow` and
- * `PlannerRound` both take click handlers, which a server component can't pass,
- * so the gallery's rows live here — and the form sheet is fed from fixtures
- * through `renderFormSheet` so nothing in this gallery reaches a database.
+ * Interactive halves of the pick-selector gallery. `FixtureRow`, `PlannerRound`
+ * and `ClassicPick` all take click handlers, which a server component can't
+ * pass, so the gallery's rows live here — and every write seam is stubbed
+ * (`renderFormSheet`, `onSubmitPick`, `planHandlers.onLock`) so nothing in this
+ * gallery reaches a database or the picks API.
  */
 
 /** Swaps the fixture detail's team for whichever side the viewer tapped. */
-function detailFor(fixture: RowFixture, side: 'home' | 'away'): TeamFormDetail {
-	const t = side === 'home' ? fixture.home : fixture.away
+function detailFor(t: FixtureTeamInfo): TeamFormDetail {
 	const base = t.form?.length ? TEAM_FORM_DETAIL : TEAM_FORM_DETAIL_EMPTY
 	return {
 		...base,
@@ -29,6 +32,23 @@ function detailFor(fixture: RowFixture, side: 'home' | 'away'): TeamFormDetail {
 			leaguePosition: t.leaguePosition ?? null,
 		},
 	}
+}
+
+/** The one form-sheet renderer every row in this gallery shares. */
+const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClose }) => {
+	const team = side === 'home' ? home : away
+	const opponent = side === 'home' ? away : home
+	return (
+		<TeamFormSheetView
+			open={open}
+			onOpenChange={(next) => {
+				if (!next) onClose()
+			}}
+			detail={detailFor(team)}
+			teamPreview={team}
+			opponentPreview={{ shortName: opponent.shortName }}
+		/>
+	)
 }
 
 export function PreviewFixtureRow({
@@ -61,34 +81,15 @@ export function PreviewFixtureRow({
 			underdogSide={fixture.underdogSide}
 			onPickHome={readonly ? undefined : () => setSelected((s) => (s === 'home' ? null : 'home'))}
 			onPickAway={readonly ? undefined : () => setSelected((s) => (s === 'away' ? null : 'away'))}
-			renderFormSheet={({ side, open, onClose }) => (
-				<TeamFormSheetView
-					open={open}
-					onOpenChange={(next) => {
-						if (!next) onClose()
-					}}
-					detail={detailFor(fixture, side)}
-					teamPreview={side === 'home' ? fixture.home : fixture.away}
-					opponentPreview={{
-						shortName: side === 'home' ? fixture.away.shortName : fixture.home.shortName,
-					}}
-				/>
-			)}
+			renderFormSheet={(args) =>
+				previewFormSheet({ ...args, home: fixture.home, away: fixture.away })
+			}
 		/>
 	)
 }
 
-export function PreviewPlannerRound({
-	roundId,
-	roundNumber,
-	roundName,
-	roundLabel,
-	deadline,
-	fixturesTbc,
-	fixtures,
-	usedTeams,
-	lockedTeamId,
-}: {
+/** A planner round with its dates still in transit as ISO strings. */
+export interface PreviewPlannerRoundInput {
 	roundId: string
 	roundNumber: number
 	roundName: string
@@ -98,20 +99,83 @@ export function PreviewPlannerRound({
 	fixtures: Array<Omit<PlannerFixture, 'kickoff'> & { kickoff: string | null }>
 	usedTeams: UsedInfo[]
 	lockedTeamId: string | null
-}) {
-	const [locked, setLocked] = useState(lockedTeamId)
+}
+
+function hydrate(round: PreviewPlannerRoundInput): PlannerRoundInput {
+	return {
+		...round,
+		deadline: round.deadline ? new Date(round.deadline) : null,
+		fixtures: round.fixtures.map((f) => ({
+			...f,
+			kickoff: f.kickoff ? new Date(f.kickoff) : null,
+		})),
+	}
+}
+
+export function PreviewPlannerRound(props: PreviewPlannerRoundInput) {
+	const [locked, setLocked] = useState(props.lockedTeamId)
+	const round = hydrate(props)
 	return (
 		<PlannerRound
-			roundId={roundId}
-			roundNumber={roundNumber}
-			roundName={roundName}
-			roundLabel={roundLabel}
-			deadline={deadline ? new Date(deadline) : null}
-			fixturesTbc={fixturesTbc}
-			fixtures={fixtures.map((f) => ({ ...f, kickoff: f.kickoff ? new Date(f.kickoff) : null }))}
-			usedTeams={usedTeams}
+			roundId={round.roundId}
+			roundNumber={round.roundNumber}
+			roundName={round.roundName}
+			roundLabel={round.roundLabel}
+			deadline={round.deadline}
+			fixturesTbc={round.fixturesTbc}
+			fixtures={round.fixtures}
+			usedTeams={round.usedTeams}
 			lockedTeamId={locked}
 			onLock={async (_roundId, teamId) => setLocked(teamId)}
+			renderFormSheet={previewFormSheet}
+		/>
+	)
+}
+
+export interface PreviewClassicCard {
+	roundName: string
+	roundNumber: number
+	deadline: string | null
+	fixtures: ClassicPickFixture[]
+	usedTeamsByRound: Record<string, string>
+	existingPickTeamId: string | null
+	existingPickFixtureId: string | null
+	currentRoundClosed?: boolean
+	summaryInHero?: boolean
+	startExpanded?: boolean
+	planner?: PreviewPlannerRoundInput[]
+}
+
+export function PreviewClassicPick({ card }: { card: PreviewClassicCard }) {
+	// The gallery's stand-in for the picks API: keep the selection the viewer made
+	// and let the card collapse as it would after a real submit.
+	const [pick, setPick] = useState<{ teamId: string; fixtureId: string } | null>(
+		card.existingPickTeamId && card.existingPickFixtureId
+			? { teamId: card.existingPickTeamId, fixtureId: card.existingPickFixtureId }
+			: null,
+	)
+
+	return (
+		<ClassicPick
+			// Never used: every write seam below is stubbed, so no request is built
+			// from these.
+			gameId="preview-game"
+			roundId="preview-round"
+			competitionId="preview-competition"
+			roundName={card.roundName}
+			roundNumber={card.roundNumber}
+			deadline={card.deadline ? new Date(card.deadline) : null}
+			fixtures={card.fixtures}
+			usedTeamsByRound={card.usedTeamsByRound}
+			existingPickTeamId={pick?.teamId ?? null}
+			existingPickFixtureId={pick?.fixtureId ?? null}
+			futureRounds={card.planner?.map(hydrate)}
+			currentRoundClosed={card.currentRoundClosed}
+			summaryInHero={card.summaryInHero}
+			startExpanded={card.startExpanded}
+			onSubmitPick={async (next) => setPick(next)}
+			planHandlers={{ onLock: async () => {} }}
+			renderFormSheet={previewFormSheet}
 		/>
 	)
 }
