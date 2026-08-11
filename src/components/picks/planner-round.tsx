@@ -49,7 +49,7 @@ export function PlannerRound(props: PlannerRoundProps) {
 			<div className="rounded-xl border border-border bg-muted/30 px-3 py-3 opacity-55">
 				<div className="flex justify-between items-center">
 					<div className="font-semibold text-sm">{props.roundLabel} · Fixtures TBC</div>
-					<span className="text-[11px] text-muted-foreground">
+					<span className="text-xs text-muted-foreground">
 						Opens for picks when fixtures are published
 					</span>
 				</div>
@@ -64,7 +64,7 @@ export function PlannerRound(props: PlannerRoundProps) {
 						{props.roundLabel} · {props.roundName}
 					</div>
 					{props.deadline && (
-						<div className="text-[11px] text-muted-foreground">
+						<div className="text-xs text-muted-foreground">
 							Deadline{' '}
 							<LocalDateTime
 								date={props.deadline}
@@ -74,7 +74,7 @@ export function PlannerRound(props: PlannerRoundProps) {
 					)}
 				</div>
 				{props.lockedTeamId && (
-					<span className="text-[11px] font-semibold text-[var(--alive)] uppercase tracking-wide">
+					<span className="text-xs font-semibold text-[var(--alive)] uppercase tracking-wide">
 						Locked in
 					</span>
 				)}

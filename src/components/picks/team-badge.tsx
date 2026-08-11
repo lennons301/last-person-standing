@@ -15,11 +15,15 @@ interface TeamBadgeProps {
 	className?: string
 }
 
+// `box` is the badge geometry; `text` sizes the initials fallback and is locked
+// to the box diameter (three characters inside a 20px circle need 7px type), so
+// it deliberately sits outside the shared type scale — and is only applied on
+// the fallback branch, where there is actually text.
 const SIZES = {
-	sm: { wrapper: 'w-5 h-5 text-[0.45rem]', px: 20 },
-	md: { wrapper: 'w-7 h-7 text-[0.55rem]', px: 28 },
-	lg: { wrapper: 'w-10 h-10 text-xs', px: 40 },
-	xl: { wrapper: 'w-14 h-14 text-sm', px: 56 },
+	sm: { box: 'w-5 h-5', text: 'text-[0.45rem]', px: 20 },
+	md: { box: 'w-7 h-7', text: 'text-[0.55rem]', px: 28 },
+	lg: { box: 'w-10 h-10', text: 'text-xs', px: 40 },
+	xl: { box: 'w-14 h-14', text: 'text-sm', px: 56 },
 }
 
 const SMALLER: Record<'sm' | 'md' | 'lg' | 'xl', 'sm' | 'md' | 'lg' | 'xl'> = {
@@ -37,8 +41,6 @@ export function TeamBadge({
 	className,
 }: TeamBadgeProps) {
 	if (responsive) {
-		const small = SIZES[SMALLER[size]]
-		const large = SIZES[size]
 		// Render two badges and toggle visibility — keeps each badge's <Image>
 		// pinned to its own px dimensions without runtime media query JS.
 		return (
@@ -58,12 +60,12 @@ export function TeamBadge({
 			</>
 		)
 	}
-	const { wrapper, px } = SIZES[size]
+	const { box, text, px } = SIZES[size]
 
 	if (badgeUrl) {
 		return (
 			<div
-				className={cn('relative flex items-center justify-center shrink-0', wrapper, className)}
+				className={cn('relative flex items-center justify-center shrink-0', box, className)}
 				style={{ width: px, height: px }}
 			>
 				<Image
@@ -83,7 +85,8 @@ export function TeamBadge({
 		<div
 			className={cn(
 				'rounded-full flex items-center justify-center font-bold text-white shrink-0',
-				wrapper,
+				box,
+				text,
 				className,
 			)}
 			style={{ backgroundColor: getTeamColour(shortName), width: px, height: px }}

@@ -22,6 +22,13 @@ export interface TeamFormPanelProps {
 	teamPreview: { name: string; shortName: string; badgeUrl?: string | null }
 	/** When set, the head-to-head section renders against this opponent. */
 	opponentPreview?: { shortName: string }
+	/**
+	 * Element used for the team name heading. Inside the sheet this must be
+	 * Radix's `SheetTitle` (the dialog needs an accessible name); rendered
+	 * standalone — as `/preview/picks` does — Radix would throw for want of a
+	 * dialog context, so the default is a plain heading.
+	 */
+	titleComponent?: React.ComponentType<{ className?: string; children: React.ReactNode }>
 }
 
 export function TeamFormPanel({
@@ -30,6 +37,7 @@ export function TeamFormPanel({
 	error = null,
 	teamPreview,
 	opponentPreview,
+	titleComponent: Title = PlainTitle,
 }: TeamFormPanelProps) {
 	const display = detail?.team ?? {
 		name: teamPreview.name,
@@ -44,7 +52,7 @@ export function TeamFormPanel({
 				<div className="flex items-center gap-3">
 					<TeamBadge shortName={display.shortName} badgeUrl={display.badgeUrl ?? null} size="lg" />
 					<div className="flex-1 min-w-0">
-						<SheetTitle className="text-base">{display.name}</SheetTitle>
+						<Title className="text-base font-semibold text-foreground">{display.name}</Title>
 						{detail && (
 							<div className="text-xs text-muted-foreground mt-0.5">
 								{display.leaguePosition != null && `${ordinal(display.leaguePosition)} · `}
@@ -145,10 +153,14 @@ export function TeamFormSheetView({
 				side="bottom"
 				className="rounded-t-2xl sm:max-w-lg sm:left-1/2 sm:right-auto sm:bottom-auto sm:top-1/2 sm:rounded-2xl sm:-translate-x-1/2 sm:-translate-y-1/2"
 			>
-				<TeamFormPanel {...panel} />
+				<TeamFormPanel {...panel} titleComponent={SheetTitle} />
 			</SheetContent>
 		</Sheet>
 	)
+}
+
+function PlainTitle({ className, children }: { className?: string; children: React.ReactNode }) {
+	return <h3 className={className}>{children}</h3>
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
