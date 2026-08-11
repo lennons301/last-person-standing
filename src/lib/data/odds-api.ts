@@ -8,6 +8,10 @@
  * proportionally, which is the standard indicative read of a market price.
  */
 
+import { fetchJson } from './fetch-json'
+
+const BASE_URL = 'https://api.the-odds-api.com/v4'
+
 /** A single `h2h` outcome as the source reports it. */
 interface OddsApiOutcome {
 	name: string
@@ -112,4 +116,30 @@ function priceFor(outcomes: OddsApiOutcome[], name: string): number | null {
 	const outcome = outcomes?.find((o) => o.name === name)
 	if (!outcome || !Number.isFinite(outcome.price) || outcome.price <= 0) return null
 	return outcome.price
+}
+
+/**
+ * Reads one competition's 1X2 prices from the-odds-api.
+ *
+ * One call covers the whole competition, which is what makes the free tier's
+ * request budget viable on the daily-sync cadence: PL odds cost one request a
+ * day, not one per fixture.
+ */
+export class OddsApiAdapter {
+	constructor(
+		private sportKey: string,
+		private apiKey: string,
+	) {}
+
+	async fetchOdds(): Promise<OddsMarket[]> {
+		const url = new URL(`${BASE_URL}/sports/${this.sportKey}/odds`)
+		url.searchParams.set('apiKey', this.apiKey)
+		// UK books quote the 1X2 market our players recognise, decimal prices are
+		// the format the de-vig maths (and the displayed win-price) assume.
+		url.searchParams.set('regions', 'uk')
+		url.searchParams.set('markets', 'h2h')
+		url.searchParams.set('oddsFormat', 'decimal')
+		const payload = await fetchJson<OddsApiEvent[]>(url.toString())
+		return parseOddsEvents(payload)
+	}
 }
