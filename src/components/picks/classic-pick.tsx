@@ -9,7 +9,12 @@ import { PlannerRound } from '@/components/picks/planner-round'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
 import type { ChainSummary, PlannerRoundInput } from '@/lib/game/classic-planner-view'
-import { FixtureRow, type FixtureTeamInfo, type RowFormSheetRenderer } from './fixture-row'
+import {
+	type FixtureOdds,
+	FixtureRow,
+	type FixtureTeamInfo,
+	type RowFormSheetRenderer,
+} from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
 
 export interface ClassicPickFixture {
@@ -17,6 +22,8 @@ export interface ClassicPickFixture {
 	home: FixtureTeamInfo
 	away: FixtureTeamInfo
 	kickoff: string | null
+	/** Indicative win-probabilities. Absent for fixtures we have no odds for. */
+	odds?: FixtureOdds | null
 }
 
 export interface ClassicPickPlanHandlers {
@@ -291,6 +298,7 @@ export function ClassicPick({
 						home={fixture.home}
 						away={fixture.away}
 						kickoff={fixture.kickoff ?? undefined}
+						odds={fixture.odds}
 						selectedSide={selected}
 						usedSide={usedSide}
 						usedLabel={usedSide === 'both' ? `Both used` : undefined}

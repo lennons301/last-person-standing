@@ -87,10 +87,18 @@ export default function PicksPreviewPage() {
 					</header>
 					<div className="flex flex-wrap items-start gap-4">
 						<div className="flex-1 min-w-[320px]">
-							<PreviewFixtureRow fixture={f} kickoff={at(now, f.kickoffInMinutes)} />
+							<PreviewFixtureRow
+								fixture={f}
+								kickoff={at(now, f.kickoffInMinutes)}
+								oddsAsOf={at(now, f.odds?.asOfInMinutes)}
+							/>
 						</div>
 						<MobileColumn>
-							<PreviewFixtureRow fixture={f} kickoff={at(now, f.kickoffInMinutes)} />
+							<PreviewFixtureRow
+								fixture={f}
+								kickoff={at(now, f.kickoffInMinutes)}
+								oddsAsOf={at(now, f.odds?.asOfInMinutes)}
+							/>
 						</MobileColumn>
 					</div>
 				</section>
@@ -157,10 +165,18 @@ export default function PicksPreviewPage() {
 					</header>
 					<div className="flex flex-wrap items-start gap-4">
 						<div className="flex-1 min-w-[320px]">
-							<PreviewFixtureRow fixture={f} kickoff={at(now, f.kickoffInMinutes)} />
+							<PreviewFixtureRow
+								fixture={f}
+								kickoff={at(now, f.kickoffInMinutes)}
+								oddsAsOf={at(now, f.odds?.asOfInMinutes)}
+							/>
 						</div>
 						<MobileColumn>
-							<PreviewFixtureRow fixture={f} kickoff={at(now, f.kickoffInMinutes)} />
+							<PreviewFixtureRow
+								fixture={f}
+								kickoff={at(now, f.kickoffInMinutes)}
+								oddsAsOf={at(now, f.odds?.asOfInMinutes)}
+							/>
 						</MobileColumn>
 					</div>
 				</section>

@@ -1,5 +1,5 @@
 import type { user } from './schema/auth'
-import type { competition, fixture, round, team, teamForm } from './schema/competition'
+import type { competition, fixture, fixtureOdds, round, team, teamForm } from './schema/competition'
 import type { game, gamePlayer, pick, plannedPick } from './schema/game'
 import type { payment, payout } from './schema/payment'
 
@@ -11,6 +11,8 @@ export type Round = typeof round.$inferSelect
 export type Team = typeof team.$inferSelect
 export type Fixture = typeof fixture.$inferSelect
 export type TeamForm = typeof teamForm.$inferSelect
+/** A fixture's persisted bookmaker odds (de-vigged probabilities + raw prices). */
+export type FixtureOddsRow = typeof fixtureOdds.$inferSelect
 export type Game = typeof game.$inferSelect
 export type GamePlayer = typeof gamePlayer.$inferSelect
 export type Pick = typeof pick.$inferSelect

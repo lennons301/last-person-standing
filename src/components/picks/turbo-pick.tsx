@@ -5,7 +5,7 @@ import type React from 'react'
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { FixtureRow } from './fixture-row'
+import { type FixtureOdds, FixtureRow } from './fixture-row'
 import type { FormResult } from './form-dots'
 import { PickConfirmBar } from './pick-confirm-bar'
 import { PicksSubmittedNotice } from './picks-submitted-notice'
@@ -33,6 +33,8 @@ export interface TurboPickFixture {
 		leaguePosition?: number | null
 	}
 	kickoff: string | null
+	/** Indicative win-probabilities. Absent for fixtures we have no odds for. */
+	odds?: FixtureOdds | null
 }
 
 /** A ranked prediction as it crosses into (and out of) this component. */
@@ -252,6 +254,7 @@ export function TurboPick({
 										leaguePosition: fix.away.leaguePosition,
 									}}
 									kickoff={fix.kickoff}
+									odds={fix.odds}
 									competitionId={competitionId}
 									roundNumber={roundNumber}
 									renderFormSheet={

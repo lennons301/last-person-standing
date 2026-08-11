@@ -36,6 +36,32 @@ export type RowFormSheetRenderer = (args: {
 	onClose: () => void
 }) => React.ReactNode
 
+/**
+ * One side's indicative market read: the de-vigged win probability and the raw
+ * decimal win-price it was derived from.
+ */
+export interface SideOdds {
+	/** De-vigged implied probability, 0–1. */
+	probability: number
+	/** Decimal win-price as the bookmaker quoted it. */
+	price: number
+}
+
+/**
+ * A fixture's win-probability signal, sourced from bookmaker 1X2 prices (see
+ * `src/lib/data/odds-api.ts`). Absent for any fixture or competition we have no
+ * odds for — the row then shows no probability at all rather than a zero.
+ *
+ * The draw price isn't shown: the row's job is "how likely is each side to
+ * win", which is exactly what a survivor pick turns on.
+ */
+export interface FixtureOdds {
+	home: SideOdds
+	away: SideOdds
+	/** When the bookmaker last moved this market. Frozen at the round deadline. */
+	asOf: string | Date
+}
+
 export type SideState =
 	| { kind: 'current' }
 	| { kind: 'tentative' }
@@ -70,6 +96,11 @@ export interface FixtureRowProps {
 	underdogSide?: 'home' | 'away' | null
 	homeState?: SideState
 	awayState?: SideState
+	/**
+	 * Indicative win-probabilities for the two sides. Same for every player in
+	 * every game, and unset for fixtures we have no odds for.
+	 */
+	odds?: FixtureOdds | null
 	// Required for the form-detail sheet. Optional only for old callsites that
 	// don't yet pass them — when omitted, the form row is non-tappable.
 	competitionId?: string
@@ -112,6 +143,7 @@ export function FixtureRow({
 	underdogSide,
 	homeState,
 	awayState,
+	odds,
 	competitionId,
 	roundNumber,
 	renderFormSheet,
@@ -136,7 +168,9 @@ export function FixtureRow({
 	// inline in the team row because inline it competed with the team names for
 	// width on a phone — and here it also escapes the dimming applied to a
 	// fully-used card, so the reason the row is greyed out stays legible.
-	const showStrip = tierValue != null || showTopPlusN || !!showHeart || !!usedLabel
+	// The odds stamp joins that strip: it belongs to the whole fixture, not to
+	// either team, and it's the one piece of the market read that must stay quiet.
+	const showStrip = tierValue != null || showTopPlusN || !!showHeart || !!usedLabel || !!odds
 
 	return (
 		<div>
@@ -150,6 +184,11 @@ export function FixtureRow({
 						<TierPips value={tierValue as 0 | 1 | 2 | 3 | 4 | 5} max={tierMax} />
 					)}
 					{showTopPlusN && plusN != null && <PlusNBadge value={plusN} />}
+					{odds && (
+						<span className="text-muted-foreground/70 whitespace-nowrap">
+							Odds as of <LocalDateTime date={odds.asOf} options={ODDS_AS_OF_FORMAT} />
+						</span>
+					)}
 					{kickoff && (
 						<span className="ml-auto">
 							<LocalDateTime date={kickoff} />
@@ -174,6 +213,7 @@ export function FixtureRow({
 						state={homeState}
 						onClick={onPickHome}
 						bonusLives={underdogSide === 'home' ? bonusLivesOnButton : 0}
+						odds={odds?.home}
 					/>
 					<div className="flex flex-col items-center justify-center shrink-0 px-2 min-w-[44px] sm:px-3 sm:min-w-[56px] bg-muted/30 border-l border-r border-border">
 						<span className={cn(TYPE.meta, 'text-muted-foreground uppercase tracking-wide')}>
@@ -196,6 +236,7 @@ export function FixtureRow({
 						state={awayState}
 						onClick={onPickAway}
 						bonusLives={underdogSide === 'away' ? bonusLivesOnButton : 0}
+						odds={odds?.away}
 					/>
 				</div>
 				<FormBar
@@ -362,6 +403,8 @@ interface TeamPickButtonProps {
 	 * hides the chip.
 	 */
 	bonusLives?: number
+	/** This side's indicative win probability + price. Absent when unpriced. */
+	odds?: SideOdds
 }
 
 function TeamPickButton({
@@ -373,6 +416,7 @@ function TeamPickButton({
 	state,
 	onClick,
 	bonusLives,
+	odds,
 }: TeamPickButtonProps) {
 	const stateBlocksClick =
 		state?.kind === 'restricted' || state?.kind === 'used' || state?.kind === 'planned-elsewhere'
@@ -408,6 +452,7 @@ function TeamPickButton({
 				    TENTATIVE / USED GW3) shrank the column and clipped codes like MUN. */}
 				<span className={cn(TYPE.name, 'sm:hidden whitespace-nowrap')}>{team.shortName}</span>
 				<span className={cn(TYPE.name, 'hidden sm:block w-full truncate')}>{team.name}</span>
+				{odds && <WinProbability odds={odds} teamName={team.name} />}
 				{(showBonus || chip) && (
 					<div
 						className={cn(
@@ -431,6 +476,37 @@ function TeamPickButton({
 				)}
 			</div>
 		</button>
+	)
+}
+
+/**
+ * Stamp format for the odds' freshness: date + time, no weekday. Short enough
+ * to sit on the strip beside the kickoff without competing with it, but dated —
+ * once a round's odds freeze at the deadline, "14:32" alone would read as today.
+ */
+const ODDS_AS_OF_FORMAT: Intl.DateTimeFormatOptions = {
+	day: 'numeric',
+	month: 'short',
+	hour: '2-digit',
+	minute: '2-digit',
+}
+
+/**
+ * The market's read on this side: a de-vigged win chance, with the raw decimal
+ * price it came from alongside so the number is traceable to a real quote
+ * rather than reading as a house model.
+ */
+function WinProbability({ odds, teamName }: { odds: SideOdds; teamName: string }) {
+	return (
+		<span
+			className={cn(TYPE.chip, 'font-normal text-muted-foreground whitespace-nowrap')}
+			title={`${teamName} to win — indicative bookmaker odds`}
+		>
+			<span className="font-semibold text-foreground/80">
+				{Math.round(odds.probability * 100)}%
+			</span>{' '}
+			<span className="font-mono">{odds.price.toFixed(2)}</span>
+		</span>
 	)
 }
 

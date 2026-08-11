@@ -115,3 +115,34 @@ describe('FixtureRow type scale', () => {
 		expect(bracketSizes).toEqual([])
 	})
 })
+
+describe('FixtureRow win probability', () => {
+	// 8/13 and 2/13 — the de-vigged read of a 1.50 / 4.00 / 6.00 market.
+	const ODDS = {
+		home: { probability: 8 / 13, price: 1.5 },
+		away: { probability: 2 / 13, price: 6 },
+		asOf: '2026-08-14T11:30:00Z',
+	}
+
+	it('renders each side’s win probability with the raw price it came from', () => {
+		render(<FixtureRow home={MUN} away={NEW} odds={ODDS} />)
+
+		expect(screen.getByText('62%')).toBeTruthy()
+		expect(screen.getByText('1.50')).toBeTruthy()
+		expect(screen.getByText('15%')).toBeTruthy()
+		expect(screen.getByText('6.00')).toBeTruthy()
+	})
+
+	it('stamps when the odds were taken', () => {
+		const { container } = render(<FixtureRow home={MUN} away={NEW} odds={ODDS} />)
+		expect(container.textContent).toContain('Odds as of')
+	})
+
+	it('renders no probability at all for a fixture with no odds', () => {
+		// A fixture (or whole competition) the source doesn't price. Never a zero,
+		// never a placeholder — the row is simply the row it was before.
+		const { container } = render(<FixtureRow home={MUN} away={NEW} />)
+		expect(container.textContent).not.toContain('%')
+		expect(container.textContent).not.toContain('Odds as of')
+	})
+})

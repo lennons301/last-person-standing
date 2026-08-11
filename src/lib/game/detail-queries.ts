@@ -26,6 +26,7 @@ import {
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, type gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
+import { toFixtureOddsView } from './fixture-odds-view'
 
 export async function getGameDetail(gameId: string, userId: string) {
 	const gameData = await db.query.game.findFirst({
@@ -388,7 +389,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 		where: eq(round.id, roundId),
 		with: {
 			fixtures: {
-				with: { homeTeam: true, awayTeam: true },
+				with: { homeTeam: true, awayTeam: true, odds: true },
 				orderBy: (fx, { asc }) => asc(fx.kickoff),
 			},
 			competition: true,
@@ -436,6 +437,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 			leaguePosition: f.awayTeam.leaguePosition,
 		},
 		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
+		odds: toFixtureOddsView(f.odds),
 	}))
 
 	return {
@@ -473,7 +475,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 		where: eq(round.id, roundId),
 		with: {
 			fixtures: {
-				with: { homeTeam: true, awayTeam: true },
+				with: { homeTeam: true, awayTeam: true, odds: true },
 				orderBy: (fx, { asc }) => asc(fx.kickoff),
 			},
 			competition: true,
@@ -513,6 +515,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 			leaguePosition: f.awayTeam.leaguePosition,
 		},
 		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
+		odds: toFixtureOddsView(f.odds),
 	}))
 
 	return {

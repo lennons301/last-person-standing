@@ -28,8 +28,10 @@ import {
 } from '@/lib/game/bootstrap-competitions'
 import { getCupLadderData, getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import {
+	getClassicPickData,
 	getLivePayload,
 	getProgressGridData,
+	getTurboPickData,
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
@@ -49,6 +51,7 @@ import {
 	liveFixture,
 	makeCompetition,
 	makeFixture,
+	makeFixtureOdds,
 	makeGame,
 	makePayment,
 	makePick,
@@ -3839,5 +3842,86 @@ describe('lifecycle: stuck-pick recovery', () => {
 		const g = await db.query.game.findFirst({ where: eq(game.id, gameId) })
 		expect(g?.status).toBe('active')
 		expect(g?.currentRoundId).toBe(r4)
+	})
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* win-probability: persisted odds → pick selectors                        */
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe('lifecycle: persisted odds reach the pick selectors', () => {
+	/**
+	 * The last link of the odds tracer bullet (fetch → de-vig → persist →
+	 * surface). Everything upstream is unit-tested against mocks; this is the
+	 * only place the real `fixture` → `fixture_odds` relation runs against
+	 * Postgres. Seeded directly, no provider: the question here is purely
+	 * whether the join returns the persisted market and whether an unpriced
+	 * fixture comes back absent rather than zeroed.
+	 */
+	async function seedRoundWithOneOddsRow(gameMode: 'classic' | 'turbo') {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', leaguePosition: 1 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', leaguePosition: 20 })
+		const c = await makeTeam({ name: 'C', shortName: 'C', leaguePosition: 8 })
+		const d = await makeTeam({ name: 'D', shortName: 'D', leaguePosition: 12 })
+		const r1 = await makeRound(compId, {
+			number: 1,
+			status: 'open',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const priced = await makeFixture({
+			roundId: r1,
+			homeTeamId: a,
+			awayTeamId: b,
+			kickoff: new Date(Date.now() + 90_000_000),
+		})
+		const unpriced = await makeFixture({
+			roundId: r1,
+			homeTeamId: c,
+			awayTeamId: d,
+			kickoff: new Date(Date.now() + 93_600_000),
+		})
+		// A 1.50 / 4.00 / 6.00 market, de-vigged: 8/13, 3/13, 2/13.
+		const asOf = new Date('2026-08-14T11:30:00.000Z')
+		await makeFixtureOdds({
+			fixtureId: priced,
+			homePrice: 1.5,
+			drawPrice: 4,
+			awayPrice: 6,
+			homeProbability: 8 / 13,
+			drawProbability: 3 / 13,
+			awayProbability: 2 / 13,
+			asOf,
+		})
+		const gameId = await makeGame({ competitionId: compId, gameMode, currentRoundId: r1 })
+		const gamePlayerId = await makePlayer({ gameId, userId: 'u-odds' })
+		return { gameId, roundId: r1, gamePlayerId, priced, unpriced, asOf }
+	}
+
+	it('classic: the fixtures view carries the persisted market, and nothing for an unpriced fixture', async () => {
+		const seed = await seedRoundWithOneOddsRow('classic')
+
+		const data = await getClassicPickData(seed.gameId, seed.roundId, seed.gamePlayerId)
+
+		const priced = data?.fixtures.find((f) => f.id === seed.priced)
+		expect(priced?.odds?.home.probability).toBeCloseTo(8 / 13, 10)
+		expect(priced?.odds?.home.price).toBeCloseTo(1.5, 10)
+		expect(priced?.odds?.away.probability).toBeCloseTo(2 / 13, 10)
+		expect(priced?.odds?.away.price).toBeCloseTo(6, 10)
+		expect(priced?.odds?.asOf).toBe(seed.asOf.toISOString())
+
+		const unpriced = data?.fixtures.find((f) => f.id === seed.unpriced)
+		expect(unpriced?.odds).toBeNull()
+	})
+
+	it('turbo: the same market reaches its fixtures view', async () => {
+		const seed = await seedRoundWithOneOddsRow('turbo')
+
+		const data = await getTurboPickData(seed.gameId, seed.roundId, seed.gamePlayerId)
+
+		const priced = data?.fixtures.find((f) => f.id === seed.priced)
+		expect(priced?.odds?.home.probability).toBeCloseTo(8 / 13, 10)
+		expect(priced?.odds?.away.price).toBeCloseTo(6, 10)
+		expect(data?.fixtures.find((f) => f.id === seed.unpriced)?.odds).toBeNull()
 	})
 })

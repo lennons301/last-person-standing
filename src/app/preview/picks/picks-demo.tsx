@@ -68,10 +68,13 @@ const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClos
 export function PreviewFixtureRow({
 	fixture,
 	kickoff,
+	oddsAsOf,
 }: {
 	fixture: RowFixture
 	/** Pre-resolved on the server so the fixture stays a plain serialisable object. */
 	kickoff: string | null
+	/** Same, for the odds' "as of" stamp. Null when the fixture carries no odds. */
+	oddsAsOf?: string | null
 }) {
 	const [selected, setSelected] = useState<'home' | 'away' | null>(fixture.selectedSide ?? null)
 	const readonly = !!fixture.readonly
@@ -81,6 +84,11 @@ export function PreviewFixtureRow({
 			home={fixture.home}
 			away={fixture.away}
 			kickoff={kickoff}
+			odds={
+				fixture.odds && oddsAsOf
+					? { home: fixture.odds.home, away: fixture.odds.away, asOf: oddsAsOf }
+					: null
+			}
 			selectedSide={selected}
 			usedSide={fixture.usedSide}
 			usedLabel={fixture.usedLabel}

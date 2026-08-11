@@ -14,6 +14,7 @@ import { db } from '@/lib/db'
 import {
 	competition,
 	fixture,
+	fixtureOdds,
 	round as roundTable,
 	team as teamTable,
 } from '@/lib/schema/competition'
@@ -35,6 +36,7 @@ export async function resetDb(): Promise<void> {
 			payment,
 			payout,
 			game,
+			fixture_odds,
 			fixture,
 			round,
 			team_form,
@@ -120,6 +122,36 @@ export async function makeFixture(opts: {
 		})
 		.returning()
 	return f.id
+}
+
+/**
+ * Persist a fixture's de-vigged bookmaker market — what `syncFixtureOdds`
+ * writes on the daily cadence. Seeded directly so the surface assertions
+ * exercise the real `fixture` → `fixture_odds` join without a provider.
+ */
+export async function makeFixtureOdds(opts: {
+	fixtureId: string
+	homePrice: number
+	drawPrice: number
+	awayPrice: number
+	homeProbability: number
+	drawProbability: number
+	awayProbability: number
+	asOf?: Date
+	bookmaker?: string
+}): Promise<void> {
+	await db.insert(fixtureOdds).values({
+		fixtureId: opts.fixtureId,
+		source: 'the_odds_api',
+		bookmaker: opts.bookmaker ?? 'smoke_book',
+		homePrice: opts.homePrice,
+		drawPrice: opts.drawPrice,
+		awayPrice: opts.awayPrice,
+		homeProbability: opts.homeProbability,
+		drawProbability: opts.drawProbability,
+		awayProbability: opts.awayProbability,
+		asOf: opts.asOf ?? new Date(),
+	})
 }
 
 export async function makeGame(opts: {
