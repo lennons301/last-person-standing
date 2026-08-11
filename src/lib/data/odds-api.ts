@@ -77,7 +77,15 @@ export function deVig(prices: number[]): number[] {
  * the displayed probability two views of the same quote — an averaged
  * probability next to one book's price would be two different markets.
  */
-export function parseOddsEvents(payload: OddsApiEvent[]): OddsMarket[] {
+export function parseOddsEvents(
+	payload: OddsApiEvent[],
+	options?: { readAt?: Date },
+): OddsMarket[] {
+	// When the source sends no update stamp of its own, the honest answer for
+	// "odds as of" is when we read them. Never the kickoff: for any pickable
+	// fixture that's in the future, and the row would print a market it claims
+	// to have read tomorrow.
+	const readAt = options?.readAt ?? new Date()
 	const markets: OddsMarket[] = []
 	for (const event of payload) {
 		for (const bookmaker of event.bookmakers ?? []) {
@@ -98,7 +106,7 @@ export function parseOddsEvents(payload: OddsApiEvent[]): OddsMarket[] {
 				awayTeam: event.away_team,
 				commenceTime: new Date(event.commence_time),
 				bookmaker: bookmaker.key,
-				asOf: new Date(h2h.last_update ?? bookmaker.last_update ?? event.commence_time),
+				asOf: stampFor(h2h.last_update ?? bookmaker.last_update, readAt),
 				homePrice,
 				drawPrice,
 				awayPrice,
@@ -110,6 +118,13 @@ export function parseOddsEvents(payload: OddsApiEvent[]): OddsMarket[] {
 		}
 	}
 	return markets
+}
+
+/** The source's own stamp when it sent a usable one, else when we read it. */
+function stampFor(lastUpdate: string | null | undefined, readAt: Date): Date {
+	if (!lastUpdate) return readAt
+	const parsed = new Date(lastUpdate)
+	return Number.isNaN(parsed.getTime()) ? readAt : parsed
 }
 
 function priceFor(outcomes: OddsApiOutcome[], name: string): number | null {
@@ -140,6 +155,8 @@ export class OddsApiAdapter {
 		url.searchParams.set('markets', 'h2h')
 		url.searchParams.set('oddsFormat', 'decimal')
 		const payload = await fetchJson<OddsApiEvent[]>(url.toString())
-		return parseOddsEvents(payload)
+		// Stamped at the moment the payload landed, so a market the source didn't
+		// date is dated by us rather than by its kickoff.
+		return parseOddsEvents(payload, { readAt: new Date() })
 	}
 }

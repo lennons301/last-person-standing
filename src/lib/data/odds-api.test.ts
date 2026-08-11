@@ -136,3 +136,37 @@ describe('OddsApiAdapter', () => {
 		fetchMock.mockRestore()
 	})
 })
+
+describe('parseOddsEvents when the source omits its update stamp', () => {
+	const UNSTAMPED = [
+		{
+			...MOCK_PAYLOAD[0],
+			bookmakers: [
+				{
+					key: 'no_stamp_book',
+					markets: [
+						{
+							key: 'h2h',
+							outcomes: [
+								{ name: 'Manchester United', price: 1.5 },
+								{ name: 'Newcastle United', price: 6.0 },
+								{ name: 'Draw', price: 4.0 },
+							],
+						},
+					],
+				},
+			],
+		},
+	]
+
+	it('stamps the market with when it was read, never with the kickoff', () => {
+		// The row prints this as "Odds as of {time}". Falling back to the fixture's
+		// commence time would claim the market was read in the future — the one
+		// thing worse than showing no odds is showing a wrong one.
+		const readAt = new Date('2026-08-14T12:00:00Z')
+		const [market] = parseOddsEvents(UNSTAMPED, { readAt })
+
+		expect(market.asOf).toEqual(readAt)
+		expect(market.asOf.getTime()).toBeLessThan(market.commenceTime.getTime())
+	})
+})
