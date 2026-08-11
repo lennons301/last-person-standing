@@ -253,12 +253,16 @@ interface FormBarProps {
  * Position is deliberately *not* gated on form. It used to be — the whole bar
  * only rendered when at least one side had form results, so at the start of a
  * season (nobody has played) the row silently lost its league positions too.
- * Now the bar renders whenever it has anything to say (or anything to open),
- * and a form-less half says so explicitly rather than rendering blank.
+ * Now position alone is enough to bring the bar out, and the form-less half says
+ * so explicitly rather than rendering blank.
+ *
+ * A row with neither is still bar-less, as before: modes that don't source form
+ * or positions at all (cup) pass neither, and an unconditional "No form yet"
+ * there would be claiming something about the teams that the row can't know.
  */
 function FormBar({ home, away, sheetEnabled, onOpenSheet }: FormBarProps) {
 	const hasContent = [home, away].some((t) => t.form?.length || t.leaguePosition != null)
-	if (!hasContent && !sheetEnabled) return null
+	if (!hasContent) return null
 
 	return (
 		<div className="grid grid-cols-2 border-t border-border bg-muted/40">

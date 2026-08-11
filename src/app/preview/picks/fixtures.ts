@@ -77,8 +77,8 @@ export const ROW_FIXTURES: RowFixture[] = [
 	},
 	{
 		id: 'row-no-form-no-position',
-		title: 'Season start — no form, no position',
-		note: 'A brand-new competition with no table yet. The bar stays as the way into the form sheet.',
+		title: 'No form, no position',
+		note: 'What cup mode passes (it sources neither). The bottom bar stands down entirely rather than claiming "no form yet" about teams the row knows nothing about.',
 		home: WOL(),
 		away: BHA(),
 		kickoffInMinutes: 60 * 72,
@@ -146,11 +146,11 @@ export const ROW_FIXTURES: RowFixture[] = [
 	{
 		id: 'row-kickoff-passed',
 		title: 'Disabled — kickoff passed',
+		note: 'Both sides dim and stop responding. `disabledReason` is accepted by the row but not rendered anywhere yet, and no mode passes it — a loose end for whichever mode ticket needs it.',
 		home: MUN(['W', 'L', 'D', 'W', 'W'], 4),
 		away: BHA(['D', 'W', 'W', 'L', 'D'], 8),
 		kickoffInMinutes: -35,
 		disabledSide: 'both',
-		disabledReason: 'Kicked off',
 		readonly: true,
 	},
 ]

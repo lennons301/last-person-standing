@@ -43,9 +43,12 @@ describe('FixtureRow league position', () => {
 		expect(screen.getAllByText('No form yet')).toHaveLength(1)
 	})
 
-	it('drops the bottom bar entirely when there is nothing to show and no sheet to open', () => {
-		const { container } = render(<FixtureRow home={MUN} away={NEW} />)
+	it('drops the bottom bar entirely when the row has neither form nor position', () => {
+		// Cup fixtures carry neither, and an unconditional "No form yet" there would
+		// assert something about the teams the row has no basis for.
+		const { container } = render(<FixtureRow home={MUN} away={NEW} competitionId="c1" />)
 		expect(container.textContent).not.toContain('No form yet')
+		expect(screen.queryByLabelText(/Open form details/)).toBeNull()
 	})
 })
 
