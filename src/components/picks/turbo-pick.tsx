@@ -1,17 +1,18 @@
 'use client'
 
-import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import type React from 'react'
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { formatDeadline } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { FixtureRow } from './fixture-row'
 import type { FormResult } from './form-dots'
 import { PickConfirmBar } from './pick-confirm-bar'
+import { PicksSubmittedNotice } from './picks-submitted-notice'
 import { type Prediction, PredictionButtons } from './prediction-buttons'
 import type { RankedPick } from './ranked-item'
 import { RankingList } from './ranking-list'
+import { SECTION_HEADING, TYPE } from './type-scale'
 
 export interface TurboPickFixture {
 	id: string
@@ -37,28 +38,45 @@ export interface TurboPickFixture {
 interface TurboPickProps {
 	gameId: string
 	roundId: string
-	roundName: string
 	roundNumber: number
 	competitionId: string
-	deadline: Date | null
 	fixtures: TurboPickFixture[]
 	existingPicks: Array<{ fixtureId: string; confidenceRank: number; predictedResult: Prediction }>
 	numberOfPicks: number
 	/** When set, the admin is picking on behalf of this player. */
 	actingAs?: { gamePlayerId: string; userName: string }
+	/**
+	 * Overrides how the form-detail sheet is rendered for one side of one
+	 * fixture — ranked or remaining. The default path resolves it through a
+	 * database-backed server action; `/preview/picks` supplies its own so the
+	 * gallery stays database-free. See `FixtureRow`'s prop of the same name.
+	 */
+	renderFormSheet?: (args: {
+		fixtureId: string
+		side: 'home' | 'away'
+		open: boolean
+		onClose: () => void
+	}) => React.ReactNode
 }
 
+/**
+ * Turbo's pick interface: N confidence-ranked predictions for a single round.
+ *
+ * The round title and its deadline countdown belong to the game hero directly
+ * above — this component used to repeat both, so the same gameweek name and the
+ * same clock appeared twice within a screen of each other. It starts at its two
+ * lists instead.
+ */
 export function TurboPick({
 	gameId,
 	roundId,
-	roundName,
 	roundNumber,
 	competitionId,
-	deadline,
 	fixtures,
 	existingPicks,
 	numberOfPicks,
 	actingAs,
+	renderFormSheet,
 }: TurboPickProps) {
 	const router = useRouter()
 
@@ -73,11 +91,13 @@ export function TurboPick({
 				rank: i + 1,
 				fixtureId: p.fixtureId,
 				homeTeam: {
+					id: fix.home.id,
 					shortName: fix.home.shortName,
 					name: fix.home.name,
 					badgeUrl: fix.home.badgeUrl,
 				},
 				awayTeam: {
+					id: fix.away.id,
 					shortName: fix.away.shortName,
 					name: fix.away.name,
 					badgeUrl: fix.away.badgeUrl,
@@ -124,11 +144,13 @@ export function TurboPick({
 				rank: ranked.length + 1,
 				fixtureId: fixture.id,
 				homeTeam: {
+					id: fixture.home.id,
 					shortName: fixture.home.shortName,
 					name: fixture.home.name,
 					badgeUrl: fixture.home.badgeUrl,
 				},
 				awayTeam: {
+					id: fixture.away.id,
 					shortName: fixture.away.shortName,
 					name: fixture.away.name,
 					badgeUrl: fixture.away.badgeUrl,
@@ -179,66 +201,35 @@ export function TurboPick({
 
 	return (
 		<div>
-			<div className="flex justify-between items-baseline mb-3">
-				<h2 className="font-display text-xl font-semibold">{roundName}</h2>
-				{deadline && (
-					<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
-						⏱ {formatDeadline(deadline)}
-					</span>
-				)}
-			</div>
+			{hasSubmittedPicks && <PicksSubmittedNotice dirty={isDirty} />}
 
-			{hasSubmittedPicks && (
-				<div
-					className={cn(
-						'mb-4 rounded-lg border px-4 py-3 flex items-start gap-3',
-						isDirty
-							? 'border-[var(--draw)]/60 bg-[var(--draw-bg)]'
-							: 'border-[var(--alive)]/40 bg-[var(--alive-bg)]',
-					)}
-				>
-					{isDirty ? (
-						<AlertCircle className="h-5 w-5 text-[var(--draw)] shrink-0 mt-0.5" />
-					) : (
-						<CheckCircle2 className="h-5 w-5 text-[var(--alive)] shrink-0 mt-0.5" />
-					)}
-					<div className="flex-1">
-						<div
-							className={cn(
-								'font-semibold text-sm',
-								isDirty ? 'text-[var(--draw)]' : 'text-[var(--alive)]',
-							)}
-						>
-							{isDirty ? 'Unsaved changes' : 'Picks locked in'}
-						</div>
-						<p className="text-xs text-muted-foreground mt-0.5">
-							{isDirty
-								? 'Resubmit to update your picks. Previous submission stays active until you do.'
-								: 'Your picks are in. Reorder, change predictions, or remove before the deadline — then resubmit.'}
-						</p>
-					</div>
-				</div>
-			)}
-
-			<div className="flex justify-between items-baseline mb-2">
-				<h3 className="font-display font-semibold text-lg">Your predictions</h3>
-				<span className="text-sm text-muted-foreground">
-					{ranked.length} of {numberOfPicks}
-				</span>
-			</div>
+			<SectionHeading
+				title="Your predictions"
+				aside={`${ranked.length} of ${numberOfPicks}`}
+				hint="Most confident first. Tap a team for its form."
+			/>
 
 			<RankingList
 				picks={ranked}
 				onReorder={(newOrder) => setRanked(newOrder)}
 				onRemove={handleRemove}
 				onChangePrediction={(id) => setEditingId(id)}
+				competitionId={renderFormSheet ? undefined : competitionId}
+				roundNumber={roundNumber}
+				renderFormSheet={
+					renderFormSheet
+						? (pick) => (args) => renderFormSheet({ fixtureId: pick.fixtureId, ...args })
+						: undefined
+				}
 			/>
 
 			{remaining.length > 0 && (
-				<>
-					<h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mt-6 mb-3 pt-4 border-t">
-						Remaining fixtures — predict to add
-					</h3>
+				<div className="mt-6 pt-4 border-t">
+					<SectionHeading
+						title="Remaining fixtures"
+						aside={`${remaining.length} left`}
+						hint="Predict a result to add it to your ranking."
+					/>
 
 					<div className="space-y-2">
 						{remaining.map((fix) => {
@@ -263,8 +254,13 @@ export function TurboPick({
 										leaguePosition: fix.away.leaguePosition,
 									}}
 									kickoff={fix.kickoff}
-									competitionId={competitionId}
+									competitionId={renderFormSheet ? undefined : competitionId}
 									roundNumber={roundNumber}
+									renderFormSheet={
+										renderFormSheet
+											? (args) => renderFormSheet({ fixtureId: fix.id, ...args })
+											: undefined
+									}
 								>
 									<div className="px-4 py-3 border-t border-border bg-muted/20">
 										<PredictionButtons
@@ -285,7 +281,7 @@ export function TurboPick({
 							)
 						})}
 					</div>
-				</>
+				</div>
 			)}
 
 			{error && <p className="text-sm text-[var(--eliminated)] mt-3">{error}</p>}
@@ -322,6 +318,25 @@ export function TurboPick({
 					<PredictionButtons value={editingPick?.prediction} onChange={handleEditPrediction} />
 				</DialogContent>
 			</Dialog>
+		</div>
+	)
+}
+
+/**
+ * Heading for one of the picker's two lists. Both get the same treatment: they're
+ * lists of equal rank, and the old pair announced themselves at two different
+ * weights (a display heading against a muted uppercase micro-label), which read
+ * as a hierarchy that isn't there. The round title they used to sit under belongs
+ * to the game hero now.
+ */
+function SectionHeading({ title, aside, hint }: { title: string; aside: string; hint: string }) {
+	return (
+		<div className="mb-2">
+			<div className="flex justify-between items-baseline gap-3">
+				<h3 className={SECTION_HEADING}>{title}</h3>
+				<span className={cn(TYPE.meta, 'text-muted-foreground shrink-0')}>{aside}</span>
+			</div>
+			<p className={cn(TYPE.meta, 'text-muted-foreground mt-0.5')}>{hint}</p>
 		</div>
 	)
 }
