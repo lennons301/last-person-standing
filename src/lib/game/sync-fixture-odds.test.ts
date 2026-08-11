@@ -29,7 +29,8 @@ vi.mock('@/lib/data/odds-api', async (importOriginal) => ({
 }))
 
 import { OddsApiAdapter } from '@/lib/data/odds-api'
-import { syncFixtureOdds } from './sync-fixture-odds'
+import { TEAM_COLOURS } from '@/lib/teams/colours'
+import { ODDS_API_NAME_TO_SHORT_NAME, syncFixtureOdds } from './sync-fixture-odds'
 
 const PL = {
 	id: 'comp-pl',
@@ -147,5 +148,52 @@ describe('syncFixtureOdds', () => {
 
 		expect(summary.matched).toBe(0)
 		expect(fetchOddsMock).not.toHaveBeenCalled()
+	})
+})
+
+describe('the-odds-api club name table', () => {
+	it('covers every club the app carries a team colour for', () => {
+		// `TEAM_COLOURS` is the estate's own superset of recent + current PL
+		// squads, kept deliberately wide so an August rollover never silently
+		// thins the data out. This table is maintained the same way and by the
+		// same ritual, so it must not fall behind it: a club that drops out here
+		// loses its win-probability the moment the source spells its name in full
+		// while we spell it short.
+		const covered = new Set(Object.values(ODDS_API_NAME_TO_SHORT_NAME))
+		const missing = Object.keys(TEAM_COLOURS).filter((code) => !covered.has(code))
+		expect(missing).toEqual([])
+	})
+})
+
+describe('syncFixtureOdds naming drift', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it('warns when markets go unmatched, so drift is visible without reading the payload', async () => {
+		// The failure mode this guards is a promoted club the table hasn't learned
+		// yet: it produces no error, just a quietly odds-less fixture.
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		fetchOddsMock.mockResolvedValue([{ ...MARKET, homeTeam: 'Real Madrid', awayTeam: 'Barcelona' }])
+		dbQueryRoundFindMany.mockResolvedValue(plRound(new Date('2026-08-15T12:30:00Z')))
+
+		await syncFixtureOdds(PL, 'key-123', { now: NOW })
+
+		expect(warn).toHaveBeenCalledWith(
+			expect.stringContaining('unmatched'),
+			expect.arrayContaining(['Real Madrid v Barcelona']),
+		)
+		warn.mockRestore()
+	})
+
+	it('stays quiet when every market matched', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		fetchOddsMock.mockResolvedValue([MARKET])
+		dbQueryRoundFindMany.mockResolvedValue(plRound(new Date('2026-08-15T12:30:00Z')))
+
+		await syncFixtureOdds(PL, 'key-123', { now: NOW })
+
+		expect(warn).not.toHaveBeenCalled()
+		warn.mockRestore()
 	})
 })

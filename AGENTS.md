@@ -105,7 +105,8 @@ The human ritual is **verification only** — nothing to execute:
 1. **Check the first August daily-sync runs are green**: `gh run list --workflow=daily-sync.yml`.
 2. **Run the read-only inspector** (season-agnostic — it derives the expected season from the sources): `doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/inspect-pl-rollover.ts`. It verifies the new competition (38 rounds / 380 fixtures / 20 teams), GW1 pairings against both FPL and football-data, team badge + external-id coverage, and that predecessor seasons stay archived and untouched. Exits non-zero on any failed check.
 3. **Add colour entries for promoted clubs** in `src/lib/teams/colours.ts` if the inspector flags any team falling back to grey.
-4. **Confirm a GW1 game can be created** — the new competition's Gameweek 1 must be pickable (future deadline) in the game-creation flow.
+4. **Add odds-name entries for promoted clubs** in `ODDS_API_NAME_TO_SHORT_NAME` (`src/lib/game/sync-fixture-odds.ts`) — the-odds-api spells clubs in full ("Wolverhampton Wanderers") where FPL abbreviates ("Wolves"), and a club absent from that table loses its win-probability with no error. Both tables are supersets: add, don't replace. The signal is the daily-sync log line `[syncFixtureOdds] … unmatched market(s)` (also `odds.unmatched` in the cron's response); a unit test holds the table to `TEAM_COLOURS`'s coverage, so keeping the two in step keeps CI green.
+5. **Confirm a GW1 game can be created** — the new competition's Gameweek 1 must be pickable (future deadline) in the game-creation flow.
 
 Two failure modes need a human hand, and both fail loudly rather than corrupt:
 

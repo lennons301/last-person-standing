@@ -30,9 +30,15 @@ export function oddsSportKeyFor(
  * an explicit table — the same shape as `FPL_TO_FD_TLA` in
  * bootstrap-competitions. Keyed by normalised source name → our team's short
  * name. A club missing from this table falls back to normalised name/short-name
- * equality and, failing that, simply gets no odds (reported in `unmatched`).
+ * equality and, failing that, simply gets no odds (reported in `unmatched` and
+ * warned about at the end of the sync).
+ *
+ * Deliberately a **superset**, like `TEAM_COLOURS` in `src/lib/teams/colours.ts`
+ * — recently relegated clubs stay so an August rollover never thins the table
+ * out mid-season, and a unit test holds this table to that one's coverage.
+ * Promoted clubs are added by the annual rollover ritual in AGENTS.md.
  */
-const ODDS_API_NAME_TO_SHORT_NAME: Record<string, string> = {
+export const ODDS_API_NAME_TO_SHORT_NAME: Record<string, string> = {
 	arsenal: 'ARS',
 	'aston villa': 'AVL',
 	bournemouth: 'BOU',
@@ -40,15 +46,20 @@ const ODDS_API_NAME_TO_SHORT_NAME: Record<string, string> = {
 	'brighton and hove albion': 'BHA',
 	burnley: 'BUR',
 	chelsea: 'CHE',
+	'coventry city': 'COV',
 	'crystal palace': 'CRY',
 	everton: 'EVE',
 	fulham: 'FUL',
+	'hull city': 'HUL',
+	'ipswich town': 'IPS',
 	'leeds united': 'LEE',
+	'leicester city': 'LEI',
 	liverpool: 'LIV',
 	'manchester city': 'MCI',
 	'manchester united': 'MUN',
 	'newcastle united': 'NEW',
 	'nottingham forest': 'NFO',
+	southampton: 'SOU',
 	sunderland: 'SUN',
 	'tottenham hotspur': 'TOT',
 	'west ham united': 'WHU',
@@ -170,6 +181,15 @@ export async function syncFixtureOdds(
 				set: { ...values, updatedAt: now },
 			})
 		summary.matched++
+	}
+	// Naming drift (a promoted club the table hasn't learned) produces no error,
+	// just quietly odds-less fixtures — so say it in the log rather than leaving
+	// it to whoever reads the cron's response body.
+	if (summary.unmatched.length > 0) {
+		console.warn(
+			`[syncFixtureOdds] ${comp.id}: ${summary.unmatched.length} unmatched market(s) — check ODDS_API_NAME_TO_SHORT_NAME`,
+			summary.unmatched,
+		)
 	}
 	return summary
 }
