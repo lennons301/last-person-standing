@@ -479,7 +479,11 @@ function TeamPickButton({
 	)
 }
 
-/** Time-only stamp for the odds' freshness — the date is the fixture's, not the market's. */
+/**
+ * Stamp format for the odds' freshness: date + time, no weekday. Short enough
+ * to sit on the strip beside the kickoff without competing with it, but dated —
+ * once a round's odds freeze at the deadline, "14:32" alone would read as today.
+ */
 const ODDS_AS_OF_FORMAT: Intl.DateTimeFormatOptions = {
 	day: 'numeric',
 	month: 'short',
