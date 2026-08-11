@@ -99,6 +99,13 @@
 	--radius-lg: var(--radius);
 	--font-sans: var(--font-sans);
 	--font-display: var(--font-display);
+	/*
+	 * One step below Tailwind's `text-xs`, for the status chips and dense
+	 * metadata in fixture rows. Named deliberately so dense UI reaches for a
+	 * scale step rather than inventing another `text-[9px]`.
+	 */
+	--text-2xs: 0.6875rem;
+	--text-2xs--line-height: 1rem;
 }
 
 @layer base {

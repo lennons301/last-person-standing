@@ -14,9 +14,11 @@ const COLOURS = {
 	L: 'bg-[var(--eliminated)] text-white',
 }
 
+// Sizes are boxes; the type inside them comes off the shared scale
+// (`text-2xs` / `text-xs`) rather than a per-size bracket value.
 const SIZES = {
-	sm: 'w-4 h-4 text-[0.55rem]',
-	md: 'w-5 h-5 text-[0.65rem]',
+	sm: 'w-4 h-4 text-2xs',
+	md: 'w-5 h-5 text-2xs',
 	lg: 'w-6 h-6 text-xs',
 }
 

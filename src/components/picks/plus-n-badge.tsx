@@ -10,7 +10,7 @@ export function PlusNBadge({ value, className }: PlusNBadgeProps) {
 	return (
 		<span
 			className={cn(
-				'inline-flex items-center rounded px-1.5 py-[1px] text-[10px] font-bold leading-none',
+				'inline-flex items-center rounded px-1.5 py-0.5 text-2xs font-semibold leading-tight',
 				strong ? 'bg-amber-100 text-amber-900' : 'bg-muted text-foreground/70',
 				className,
 			)}
