@@ -40,7 +40,7 @@ export function ChainRibbon({ slots, summary }: ChainRibbonProps) {
 				<div className="flex gap-3 text-[10px] text-muted-foreground">
 					<Legend colour="bg-[var(--alive)]" label="Win" />
 					<Legend colour="bg-[var(--eliminated)]" label="Loss" />
-					<Legend colour="bg-[#7c3aed]" label="Planned" />
+					<Legend colour="bg-[var(--planned)]" label="Planned" />
 				</div>
 			</div>
 			<div className="flex gap-1 overflow-x-auto py-1">
@@ -69,8 +69,8 @@ function Slot({ slot }: { slot: ChainSlot }) {
 		s.kind === 'loss' && 'bg-[var(--eliminated-bg)] border-[var(--eliminated)]',
 		s.kind === 'draw' && 'bg-[var(--draw-bg)] border-[var(--draw)]',
 		s.kind === 'current' && 'border-2 border-[var(--alive)] shadow-[inset_0_0_0_1px_var(--alive)]',
-		s.kind === 'planned' && 'border-2 border-dashed border-[#7c3aed] bg-[#f5f3ff]',
-		s.kind === 'planned-locked' && 'border-2 border-[#7c3aed] bg-[#ede9fe]',
+		s.kind === 'planned' && 'border-2 border-dashed border-[var(--planned)] bg-[var(--planned-bg)]',
+		s.kind === 'planned-locked' && 'border-2 border-[var(--planned)] bg-[var(--planned-bg)]',
 		s.kind === 'empty' && 'border-dashed text-muted-foreground',
 		s.kind === 'tbc' && 'border-dashed opacity-55',
 	)
@@ -88,7 +88,7 @@ function Slot({ slot }: { slot: ChainSlot }) {
 				<div className="mt-1 text-base opacity-50">?</div>
 			)}
 			{s.kind === 'planned-locked' && (
-				<div className="text-[7px] font-bold text-[#7c3aed] mt-0.5">AUTO</div>
+				<div className="text-[7px] font-bold text-[var(--planned)] mt-0.5">AUTO</div>
 			)}
 		</div>
 	)

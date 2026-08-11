@@ -7,6 +7,12 @@ const GALLERIES = [
 		description: 'Top-of-page pick hero + stat line, one card per state × mode.',
 	},
 	{
+		href: '/preview/picks',
+		title: 'Pick selector',
+		description:
+			'The shared FixtureRow across every mode state, in the nested planner, plus the form-detail panel.',
+	},
+	{
 		href: '/preview/live-scores',
 		title: 'Live scores',
 		description: 'The on-demand scores pop-out and its control, one payload per live scenario.',
