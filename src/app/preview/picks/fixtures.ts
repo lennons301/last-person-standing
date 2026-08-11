@@ -487,7 +487,7 @@ const ACC = () => team('t-acc', 'Accrington Stanley', 'ACC')
  * Cup rows carry no form and no league position — deliberately, and not a gap
  * this gallery papers over: a cup team's meaningful form lives in its *league*,
  * not the cup, so sourcing it is a cross-competition problem deferred to the
- * FA-Cup effort (#157). What's reviewable here is everything cup gets from the
+ * FA-Cup effort. What's reviewable here is everything cup gets from the
  * shared row for free: the type scale, the unclipped short code, the truncating
  * full name, and the tier annotations landing on the right side of the fixture.
  */
@@ -528,7 +528,8 @@ const CUP_CARD_FIXTURES: CupCardFixtureRow[] = [
 		home: SHW(),
 		away: BHA(),
 		kickoffInMinutes: 60 * 28,
-		// Away is two tiers up: the away side is restricted, the home side pays +2.
+		// Away is two tiers up: the away side is restricted, and picking the home
+		// underdog earns +2.
 		tierDifference: -2,
 	},
 	{
@@ -544,8 +545,10 @@ const CUP_CARD_FIXTURES: CupCardFixtureRow[] = [
 		home: CHE(),
 		away: TOT(),
 		kickoffInMinutes: 60 * 31,
-		// Same tier: no strip at all, so the kickoff falls back into the middle
-		// column. The plainest row cup can produce.
+		// Same tier: pickable both ways with nothing to earn. The strip still
+		// renders — `CupPick` passes `tierValue={0}`, not `undefined` — so it
+		// carries three empty pips, no heart, no +N, and the kickoff on its
+		// right. The plainest strip cup can produce, not the absence of one.
 		tierDifference: 0,
 	},
 ]
@@ -569,7 +572,7 @@ export const CUP_CARDS: CupCardFixture[] = [
 	},
 	{
 		id: 'cup-card-part-ranked',
-		title: 'Part-ranked — two underdogs and a favourite',
+		title: 'Part-ranked — two underdogs and a level-tier pick',
 		note: 'The lives summary projects the gain, and the ranked column shows the two shapes a slot takes: an underdog pick that pays lives and a level-tier pick that does not. Tap a fourth team to keep filling it.',
 		numberOfPicks: 6,
 		livesRemaining: 2,
