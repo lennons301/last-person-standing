@@ -11,7 +11,6 @@ interface CupPickFormProps {
 	livesRemaining: number
 	maxLives: number
 	initialSlots: CupPickSlot[]
-	deadline: Date | null
 	readonly?: boolean
 	/** When set, the admin is picking on behalf of this player. */
 	actingAs?: { gamePlayerId: string; userName: string }
@@ -27,7 +26,6 @@ export function CupPickForm({
 	livesRemaining,
 	maxLives,
 	initialSlots,
-	deadline,
 	readonly,
 	actingAs,
 	competitionId,
@@ -65,7 +63,6 @@ export function CupPickForm({
 			maxLives={maxLives}
 			initialSlots={initialSlots}
 			onSubmit={handleSubmit}
-			deadline={deadline}
 			readonly={readonly}
 			submitLabelOverride={actingAs ? `Submit as ${actingAs.userName}` : undefined}
 			competitionId={competitionId}

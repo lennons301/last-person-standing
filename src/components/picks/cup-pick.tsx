@@ -2,7 +2,6 @@
 
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { LocalDateTime } from '@/components/local-datetime'
 import { Disclosure } from '@/components/ui/disclosure'
 import { cn } from '@/lib/utils'
 import { FixtureRow, type SideState } from './fixture-row'
@@ -43,7 +42,6 @@ interface CupPickProps {
 	maxLives: number
 	initialSlots: CupPickSlot[]
 	onSubmit: (slots: CupPickSlot[]) => Promise<void>
-	deadline?: Date | null
 	readonly?: boolean
 	/** When set (e.g. "Submit as Rachel" for admin acting-as), overrides the default submit label. */
 	submitLabelOverride?: string
@@ -105,7 +103,6 @@ export function CupPick({
 	maxLives,
 	initialSlots,
 	onSubmit,
-	deadline,
 	readonly,
 	submitLabelOverride,
 	competitionId,
@@ -201,16 +198,9 @@ export function CupPick({
 				maxLives={maxLives}
 				projectedGain={projectedGain}
 			/>
-			<div className="rounded-lg bg-foreground text-background px-3 py-2 text-xs">
-				{deadline ? (
-					<>
-						Deadline <LocalDateTime date={deadline} />
-					</>
-				) : (
-					'Deadline not set'
-				)}{' '}
-				· rank {numberOfPicks} picks
-			</div>
+			{/* No deadline strip and no "rank N picks" line: the game hero directly
+			    above this card names the round, counts the deadline down and states
+			    how many predictions to rank. All this card does is take them. */}
 			<div className="grid gap-3 md:grid-cols-[1fr_320px]">
 				<Disclosure
 					className="order-2 md:order-1"
