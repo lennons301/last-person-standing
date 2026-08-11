@@ -35,16 +35,35 @@ export interface TurboPickFixture {
 	kickoff: string | null
 }
 
+/** A ranked prediction as it crosses into (and out of) this component. */
+export interface TurboPickEntry {
+	fixtureId: string
+	confidenceRank: number
+	predictedResult: Prediction
+}
+
 interface TurboPickProps {
 	gameId: string
 	roundId: string
 	roundNumber: number
 	competitionId: string
 	fixtures: TurboPickFixture[]
-	existingPicks: Array<{ fixtureId: string; confidenceRank: number; predictedResult: Prediction }>
+	existingPicks: TurboPickEntry[]
 	numberOfPicks: number
 	/** When set, the admin is picking on behalf of this player. */
 	actingAs?: { gamePlayerId: string; userName: string }
+	/**
+	 * Ranking the list starts on, when it differs from what's been submitted.
+	 * Defaults to `existingPicks`, which is the only thing the game page passes:
+	 * a player's on-screen ranking starts as whatever they last locked in.
+	 *
+	 * `/preview/picks` is the one caller that sets it, because two of the
+	 * picker's states are unreachable from `existingPicks` alone — turbo's API
+	 * only accepts a complete ranking, so a partial one never comes back from the
+	 * database, and "unsaved changes" only exists once the on-screen order has
+	 * drifted from the submitted one.
+	 */
+	initialRanking?: TurboPickEntry[]
 	/**
 	 * Overrides how the form-detail sheet is rendered for one side of one
 	 * fixture — ranked or remaining. The default path resolves it through a
@@ -76,38 +95,17 @@ export function TurboPick({
 	existingPicks,
 	numberOfPicks,
 	actingAs,
+	initialRanking,
 	renderFormSheet,
 }: TurboPickProps) {
 	const router = useRouter()
 
-	const initialRanked: RankedPick[] = existingPicks
-		.slice()
-		.sort((a, b) => a.confidenceRank - b.confidenceRank)
-		.map((p, i): RankedPick | null => {
-			const fix = fixtures.find((f) => f.id === p.fixtureId)
-			if (!fix) return null
-			return {
-				id: p.fixtureId,
-				rank: i + 1,
-				fixtureId: p.fixtureId,
-				homeTeam: {
-					id: fix.home.id,
-					shortName: fix.home.shortName,
-					name: fix.home.name,
-					badgeUrl: fix.home.badgeUrl,
-				},
-				awayTeam: {
-					id: fix.away.id,
-					shortName: fix.away.shortName,
-					name: fix.away.name,
-					badgeUrl: fix.away.badgeUrl,
-				},
-				prediction: p.predictedResult,
-			}
-		})
-		.filter((x): x is RankedPick => x !== null)
+	// The submitted snapshot, and what the list starts as. The same thing for
+	// every real caller; `/preview/picks` is the exception (see `initialRanking`).
+	const initialRanked = toRankedPicks(existingPicks, fixtures)
+	const startingRanked = initialRanking ? toRankedPicks(initialRanking, fixtures) : initialRanked
 
-	const [ranked, setRanked] = useState<RankedPick[]>(initialRanked)
+	const [ranked, setRanked] = useState<RankedPick[]>(startingRanked)
 	const [pendingPredictions, setPendingPredictions] = useState<Record<string, Prediction>>({})
 	const [editingId, setEditingId] = useState<string | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -320,6 +318,39 @@ export function TurboPick({
 			</Dialog>
 		</div>
 	)
+}
+
+/**
+ * Confidence-ordered pick entries → ranked rows, dropping any entry whose
+ * fixture isn't in this round (the row can't be drawn without its teams).
+ */
+function toRankedPicks(entries: TurboPickEntry[], fixtures: TurboPickFixture[]): RankedPick[] {
+	return entries
+		.slice()
+		.sort((a, b) => a.confidenceRank - b.confidenceRank)
+		.map((p, i): RankedPick | null => {
+			const fix = fixtures.find((f) => f.id === p.fixtureId)
+			if (!fix) return null
+			return {
+				id: p.fixtureId,
+				rank: i + 1,
+				fixtureId: p.fixtureId,
+				homeTeam: {
+					id: fix.home.id,
+					shortName: fix.home.shortName,
+					name: fix.home.name,
+					badgeUrl: fix.home.badgeUrl,
+				},
+				awayTeam: {
+					id: fix.away.id,
+					shortName: fix.away.shortName,
+					name: fix.away.name,
+					badgeUrl: fix.away.badgeUrl,
+				},
+				prediction: p.predictedResult,
+			}
+		})
+		.filter((x): x is RankedPick => x !== null)
 }
 
 /**

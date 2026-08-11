@@ -1,10 +1,17 @@
 import {
 	PLANNER_FIXTURES,
+	RANKED_LIST_FIXTURES,
 	ROW_FIXTURES,
 	TEAM_FORM_DETAIL,
 	TEAM_FORM_DETAIL_EMPTY,
+	TURBO_SCENARIOS,
 } from '@/app/preview/picks/fixtures'
-import { PreviewFixtureRow, PreviewPlannerRound } from '@/app/preview/picks/picks-demo'
+import {
+	PreviewFixtureRow,
+	PreviewPlannerRound,
+	PreviewRankedList,
+	PreviewTurboPick,
+} from '@/app/preview/picks/picks-demo'
 import { TeamFormPanel } from '@/components/picks/team-form-panel'
 
 // Fixtures are relative to render time, so never cache this page.
@@ -36,7 +43,13 @@ export default function PicksPreviewPage() {
 				<p>
 					The pick selector's shared foundation: <code>FixtureRow</code> — imported by classic,
 					turbo, cup and the classic planner — in every state the modes can put it in, plus the
-					form-detail panel that hangs off it. Hand-built fixtures, no auth, no database.
+					form-detail panel that hangs off it. Then turbo's whole picker: its ranked list, its
+					remaining-fixtures list, and each state of its submission. Hand-built fixtures, no auth,
+					no database.
+				</p>
+				<p>
+					Nothing here renders a round title or a deadline: on the real page the game hero sits
+					directly above the picker and owns both.
 				</p>
 				<p>
 					Every row renders twice: full page width, then in a 375px column. The narrow column is a
@@ -99,6 +112,41 @@ export default function PicksPreviewPage() {
 								/>
 							</div>
 						</MobileColumn>
+					</div>
+				</section>
+			))}
+
+			{RANKED_LIST_FIXTURES.map((f) => (
+				<section key={f.id} className="space-y-2">
+					<header>
+						<h2 className="font-display text-sm font-semibold">{f.title}</h2>
+						{f.note && <p className="text-xs text-muted-foreground">{f.note}</p>}
+					</header>
+					<div className="flex flex-wrap items-start gap-4">
+						<div className="flex-1 min-w-[320px]">
+							<PreviewRankedList fixture={f} />
+						</div>
+						<MobileColumn>
+							<PreviewRankedList fixture={f} />
+						</MobileColumn>
+					</div>
+				</section>
+			))}
+
+			{TURBO_SCENARIOS.map((s) => (
+				<section key={s.id} className="space-y-2">
+					<header>
+						<h2 className="font-display text-sm font-semibold">{s.title}</h2>
+						{s.note && <p className="text-xs text-muted-foreground">{s.note}</p>}
+					</header>
+					{/* `transform-gpu` makes each scenario box the containing block for the
+					    picker's own `fixed` confirm bar, so five pickers on one page don't
+					    stack five bars at the bottom of the viewport on mobile widths. */}
+					<div className="transform-gpu relative overflow-hidden rounded-lg border border-dashed border-border/70 p-4">
+						<PreviewTurboPick
+							scenario={s}
+							fixtures={s.fixtures.map((f) => ({ id: f.id, kickoff: at(now, f.kickoffInMinutes) }))}
+						/>
 					</div>
 				</section>
 			))}
