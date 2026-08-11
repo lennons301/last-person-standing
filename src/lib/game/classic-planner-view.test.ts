@@ -18,6 +18,7 @@ function futureRound(
 					shortName: 'HOM',
 					badgeUrl: null,
 					primaryColor: null,
+					leaguePosition: 3,
 				},
 				awayTeam: {
 					id: 'away',
@@ -25,6 +26,7 @@ function futureRound(
 					shortName: 'AWY',
 					badgeUrl: null,
 					primaryColor: null,
+					leaguePosition: 17,
 				},
 			},
 		],
@@ -60,6 +62,26 @@ describe('buildPlannerRounds — locked advance picks', () => {
 		const r6 = rounds.find((r) => r.roundId === 'r6')
 		const used = r6?.usedTeams.find((u) => u.teamId === 'home')
 		expect(used).toEqual({ teamId: 'home', label: 'PICKED GW5', kind: 'used' })
+	})
+
+	it('carries form and league position onto planner fixtures', () => {
+		// Parity with the current-round picker: a planner row shows form dots and a
+		// league position, so the player can tell which in-form team to spend and
+		// which to save. Form here is *current* form — the future round's fixtures
+		// haven't been played.
+		const rounds = buildPlannerRounds({
+			futureRounds: [futureRound({ id: 'r5', number: 5 })],
+			pastPicks: [],
+			lockedPicks: [],
+			formByTeamId: new Map([['home', ['W', 'D', 'L']]]),
+		})
+		const fx = rounds[0].fixtures[0]
+		expect(fx.homeTeam.form).toEqual(['W', 'D', 'L'])
+		expect(fx.homeTeam.leaguePosition).toBe(3)
+		// No form for the away side is `undefined`, not an empty array — the row
+		// distinguishes "no results yet" from "played and lost every one".
+		expect(fx.awayTeam.form).toBeUndefined()
+		expect(fx.awayTeam.leaguePosition).toBe(17)
 	})
 
 	it('keeps past-round picks marked as USED', () => {
