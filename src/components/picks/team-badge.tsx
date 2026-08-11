@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import Link from 'next/link'
 import { getTeamColour } from '@/lib/teams/colours'
 import { cn } from '@/lib/utils'
 
@@ -6,6 +7,13 @@ interface TeamBadgeProps {
 	shortName: string
 	badgeUrl?: string | null
 	size?: 'sm' | 'md' | 'lg' | 'xl'
+	/**
+	 * Makes the badge a link — in practice always to the team's form guide
+	 * (`formGuidePath`). Only set it where the badge isn't already inside a
+	 * button: a link nested in a button is invalid, and on the pick surfaces the
+	 * badge's tap belongs to the pick.
+	 */
+	href?: string
 	/**
 	 * When true, render one size smaller below the `sm` breakpoint. Used on
 	 * tight contexts (planner pick-ahead, card-in-card layouts) where the
@@ -38,8 +46,26 @@ export function TeamBadge({
 	badgeUrl,
 	size = 'md',
 	responsive = false,
+	href,
 	className,
 }: TeamBadgeProps) {
+	if (href) {
+		return (
+			<Link
+				href={href}
+				aria-label={`${shortName} form guide`}
+				className="shrink-0 rounded-full hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+			>
+				<TeamBadge
+					shortName={shortName}
+					badgeUrl={badgeUrl}
+					size={size}
+					responsive={responsive}
+					className={className}
+				/>
+			</Link>
+		)
+	}
 	if (responsive) {
 		// Render two badges and toggle visibility — keeps each badge's <Image>
 		// pinned to its own px dimensions without runtime media query JS.

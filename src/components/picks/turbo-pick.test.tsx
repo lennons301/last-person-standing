@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/navigation', () => ({
 	useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+	// The form sheet reads the current path to build the form guide's back link.
+	usePathname: () => '/game/g1',
 }))
 
 import { TurboPick, type TurboPickFixture } from './turbo-pick'

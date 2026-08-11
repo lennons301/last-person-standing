@@ -1,6 +1,9 @@
+import { ChevronRight } from 'lucide-react'
+import Link from 'next/link'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 import { cn } from '@/lib/utils'
+import { ordinal } from './ordinal'
 import { TeamBadge } from './team-badge'
 
 /**
@@ -29,6 +32,12 @@ export interface TeamFormPanelProps {
 	 * dialog context, so the default is a plain heading.
 	 */
 	titleComponent?: React.ComponentType<{ className?: string; children: React.ReactNode }>
+	/**
+	 * Link to the team's full form guide (`formGuidePath`). When set, the header
+	 * badge and the footer link both lead there — the sheet is the quick read,
+	 * the guide is the deep dive. Omitted where no route exists to link to.
+	 */
+	formGuideHref?: string
 }
 
 export function TeamFormPanel({
@@ -38,6 +47,7 @@ export function TeamFormPanel({
 	teamPreview,
 	opponentPreview,
 	titleComponent: Title = PlainTitle,
+	formGuideHref,
 }: TeamFormPanelProps) {
 	const display = detail?.team ?? {
 		name: teamPreview.name,
@@ -50,7 +60,12 @@ export function TeamFormPanel({
 		<>
 			<SheetHeader className="text-left">
 				<div className="flex items-center gap-3">
-					<TeamBadge shortName={display.shortName} badgeUrl={display.badgeUrl ?? null} size="lg" />
+					<TeamBadge
+						shortName={display.shortName}
+						badgeUrl={display.badgeUrl ?? null}
+						size="lg"
+						href={formGuideHref}
+					/>
 					<div className="flex-1 min-w-0">
 						<Title className="text-base font-semibold text-foreground">{display.name}</Title>
 						{detail && (
@@ -133,6 +148,20 @@ export function TeamFormPanel({
 						)}
 					</>
 				)}
+
+				{formGuideHref && (
+					// The way out of the sheet's summary and into the season: position
+					// line, home/away split, goals, every result. Offered even while the
+					// sheet is still loading — the page it leads to doesn't depend on
+					// what the sheet resolved.
+					<Link
+						href={formGuideHref}
+						className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2.5 text-sm font-medium hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+					>
+						Full form guide
+						<ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+					</Link>
+				)}
 			</div>
 		</>
 	)
@@ -188,10 +217,4 @@ function ResultPill({ result }: { result: 'W' | 'D' | 'L' }) {
 			{result}
 		</span>
 	)
-}
-
-function ordinal(n: number): string {
-	const s = ['th', 'st', 'nd', 'rd']
-	const v = n % 100
-	return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
