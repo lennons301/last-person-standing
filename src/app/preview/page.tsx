@@ -13,6 +13,12 @@ const GALLERIES = [
 			'The shared FixtureRow across every mode state, in the nested planner, plus the form-detail panel.',
 	},
 	{
+		href: '/preview/form-guide',
+		title: 'Form guide',
+		description:
+			"A team's full form guide: position line, season splits, goals, results, next fixture and head-to-head.",
+	},
+	{
 		href: '/preview/live-scores',
 		title: 'Live scores',
 		description: 'The on-demand scores pop-out and its control, one payload per live scenario.',

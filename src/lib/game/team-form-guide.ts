@@ -140,10 +140,11 @@ export async function getTeamFormGuide(
 			status: fixture.status,
 			kickoff: fixture.kickoff,
 			roundNumber: round.number,
-			roundName: round.name,
 		})
 		.from(fixture)
 		.innerJoin(round, eq(round.id, fixture.roundId))
+		// Every fixture, not just the finished ones: the unplayed ones are what
+		// give `loadNextFixture` its opponent without a second team read.
 		.where(
 			and(
 				eq(round.competitionId, competitionId),
