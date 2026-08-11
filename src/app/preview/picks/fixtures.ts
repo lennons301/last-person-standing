@@ -1,5 +1,5 @@
 import type { CupPickSlot } from '@/components/picks/cup-pick'
-import type { FixtureTeamInfo, SideState } from '@/components/picks/fixture-row'
+import type { FixtureTeamInfo, SideOdds, SideState } from '@/components/picks/fixture-row'
 import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
 import type { RankedPick } from '@/components/picks/ranked-item'
 import type { TurboPickEntry } from '@/components/picks/turbo-pick'
@@ -69,6 +69,13 @@ export interface RowFixture {
 	plusN?: number
 	showHeart?: boolean
 	underdogSide?: 'home' | 'away' | null
+	/**
+	 * Indicative win-probabilities, with the "odds as of" stamp kept relative to
+	 * render time like every other clock in this gallery. Omitted entirely for
+	 * the fixtures we have no odds for — which is the state worth reviewing next
+	 * to a priced row.
+	 */
+	odds?: { home: SideOdds; away: SideOdds; asOfInMinutes: number }
 	/** Disables the pick handlers, for read-only / post-deadline states. */
 	readonly?: boolean
 }
@@ -157,6 +164,41 @@ export const ROW_FIXTURES: RowFixture[] = [
 		plusN: 2,
 		showHeart: true,
 		underdogSide: 'away',
+	},
+	{
+		id: 'row-odds',
+		title: 'Win probability — odds present',
+		note: 'De-vigged from a bookmaker 1X2 market: the percentage each side wins, with the raw decimal price it came from. Identical for every player, frozen once the deadline passes, and stamped with when the market was last read.',
+		home: MUN(['W', 'W', 'D', 'L', 'W'], 4),
+		away: NEW(['L', 'D', 'W', 'W', 'L'], 9),
+		kickoffInMinutes: 60 * 26,
+		// A 1.50 / 4.00 / 6.00 market: 8/13, 3/13 and 2/13 once the overround is out.
+		odds: {
+			home: { probability: 8 / 13, price: 1.5 },
+			away: { probability: 2 / 13, price: 6 },
+			asOfInMinutes: -95,
+		},
+	},
+	{
+		id: 'row-odds-absent',
+		title: 'Win probability — odds absent',
+		note: 'The same fixture, unpriced (a competition we have no odds for, or a match nobody is quoting). No percentage, no placeholder, no zero — and no "odds as of" stamp either. The row is exactly the row it was before odds existed.',
+		home: MUN(['W', 'W', 'D', 'L', 'W'], 4),
+		away: NEW(['L', 'D', 'W', 'W', 'L'], 9),
+		kickoffInMinutes: 60 * 26,
+	},
+	{
+		id: 'row-odds-longshot',
+		title: 'Win probability — heavy favourite',
+		note: 'A lopsided market, at the widest split the chips have to hold: three digits of percentage against a long price, on a phone.',
+		home: ARS(['W', 'W', 'W', 'W', 'D'], 1),
+		away: WOL(['L', 'L', 'D', 'L', 'L'], 20),
+		kickoffInMinutes: 60 * 30,
+		odds: {
+			home: { probability: 0.879, price: 1.1 },
+			away: { probability: 0.037, price: 24 },
+			asOfInMinutes: -12,
+		},
 	},
 	{
 		id: 'row-kickoff-passed',
