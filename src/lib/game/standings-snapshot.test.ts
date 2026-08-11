@@ -111,6 +111,32 @@ describe('recordStandingsSnapshot', () => {
 		expect(dbInsertFn).not.toHaveBeenCalled()
 	})
 
+	it('stays quiet at season start — a whole table on zero played is not a fault', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		await recordStandingsSnapshot(
+			'comp-pl',
+			[standing({ teamExternalId: '65', played: 0, won: 0, points: 0 })],
+			new Map([['65', 'team-mci']]),
+			{ now: NOW },
+		)
+		expect(warn).not.toHaveBeenCalled()
+		warn.mockRestore()
+	})
+
+	it('warns when played matchdays arrive but none resolve to a team', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		await recordStandingsSnapshot(
+			'comp-pl',
+			[standing({ teamExternalId: 'not-ours' })],
+			new Map(),
+			{
+				now: NOW,
+			},
+		)
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('none snapshotted'))
+		warn.mockRestore()
+	})
+
 	it('skips a team on zero games played — its position is a placeholder, not a data point', async () => {
 		const summary = await recordStandingsSnapshot(
 			'comp-pl',

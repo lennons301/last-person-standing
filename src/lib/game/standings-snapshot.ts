@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, countDistinct, eq } from 'drizzle-orm'
 import type { AdapterStanding } from '@/lib/data/types'
 import { db } from '@/lib/db'
 import { standingsSnapshot } from '@/lib/schema/competition'
@@ -70,6 +70,15 @@ export async function recordStandingsSnapshot(
 			})
 		summary.written++
 	}
+	// Played matchdays arrived but nothing landed: every row's team failed to
+	// resolve (an id-map mismatch), which shows up only as a position line that
+	// quietly stops growing. Say it here rather than leave it to whoever
+	// notices. A whole table on zero played is season start, not a fault.
+	if (summary.written === 0 && standings.some((row) => row.played > 0)) {
+		console.warn(
+			`[recordStandingsSnapshot] ${competitionId}: ${standings.length} standings row(s), none snapshotted`,
+		)
+	}
 	return summary
 }
 
@@ -111,10 +120,9 @@ export async function getPositionLine(
  * Null when nothing has been snapshotted yet.
  */
 export async function getTableSize(competitionId: string): Promise<number | null> {
-	const rows = await db
-		.select({ teamId: standingsSnapshot.teamId })
+	const [row] = await db
+		.select({ teams: countDistinct(standingsSnapshot.teamId) })
 		.from(standingsSnapshot)
 		.where(eq(standingsSnapshot.competitionId, competitionId))
-	const distinct = new Set(rows.map((r) => r.teamId))
-	return distinct.size > 0 ? distinct.size : null
+	return row?.teams ? Number(row.teams) : null
 }
