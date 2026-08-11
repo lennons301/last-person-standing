@@ -1,6 +1,7 @@
 import {
 	CLASSIC_CARDS,
 	CLASSIC_SIDE_STATES,
+	CUP_CARDS,
 	PLANNER_FIXTURES,
 	RANKED_LIST_FIXTURES,
 	ROW_FIXTURES,
@@ -10,6 +11,7 @@ import {
 } from '@/app/preview/picks/fixtures'
 import {
 	PreviewClassicPick,
+	PreviewCupPick,
 	PreviewFixtureRow,
 	PreviewPlannerRound,
 	type PreviewPlannerRoundInput,
@@ -58,8 +60,9 @@ export default function PicksPreviewPage() {
 					The pick selector's shared foundation: <code>FixtureRow</code> — imported by classic,
 					turbo, cup and the classic planner — in every state the modes can put it in, plus the
 					form-detail panel that hangs off it. Then a section per mode: classic's planner, side
-					states and picker card, and turbo's whole picker — its ranked list, its remaining-fixtures
-					list, and each state of its submission. Hand-built fixtures, no auth, no database.
+					states and picker card, turbo's whole picker — its ranked list, its remaining-fixtures
+					list, and each state of its submission — and cup's picker card. Hand-built fixtures, no
+					auth, no database.
 				</p>
 				<p>
 					Nothing here renders a round title or a deadline: on the real page the game hero sits
@@ -262,6 +265,45 @@ export default function PicksPreviewPage() {
 					</div>
 				</section>
 			))}
+
+			<GroupHeading title="Cup — the picker card">
+				<code>CupPick</code>, which reaches the shared row through the same <code>FixtureRow</code>{' '}
+				classic uses — so the legibility and type-scale work lands here with no cup-specific code.
+				Two things to look at: the deadline strip and the “rank N picks” line are gone (the hero
+				above owns both), and the rows carry no form or league position, because a cup team’s form
+				lives in its league rather than the cup — a cross-competition problem left to the FA-Cup
+				effort.
+			</GroupHeading>
+
+			{CUP_CARDS.map((c) => {
+				const card = {
+					numberOfPicks: c.numberOfPicks,
+					livesRemaining: c.livesRemaining,
+					maxLives: c.maxLives,
+					fixtures: c.fixtures.map(({ kickoffInMinutes, ...f }) => ({
+						...f,
+						kickoff: at(now, kickoffInMinutes),
+					})),
+					initialSlots: c.initialSlots,
+					readonly: c.readonly,
+				}
+				return (
+					<section key={c.id} className="space-y-2">
+						<header>
+							<h2 className="font-display text-sm font-semibold">{c.title}</h2>
+							{c.note && <p className="text-xs text-muted-foreground">{c.note}</p>}
+						</header>
+						<div className="flex flex-wrap items-start gap-4">
+							<div className="flex-1 min-w-[320px]">
+								<PreviewCupPick card={card} />
+							</div>
+							<MobileColumn>
+								<PreviewCupPick card={card} />
+							</MobileColumn>
+						</div>
+					</section>
+				)
+			})}
 
 			<GroupHeading title="Form detail">
 				The sheet every form bar above taps through to.

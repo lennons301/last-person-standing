@@ -1,3 +1,4 @@
+import type { CupPickSlot } from '@/components/picks/cup-pick'
 import type { FixtureTeamInfo, SideState } from '@/components/picks/fixture-row'
 import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
 import type { RankedPick } from '@/components/picks/ranked-item'
@@ -13,12 +14,12 @@ import type { TeamFormDetail } from '@/lib/game/team-form-detail'
  * demand (a season-start round with no form anywhere, both teams already used,
  * a cup tier gap on the underdog).
  *
- * The turbo section goes a level up from the row: it drives the real
- * `TurboPick`, because the states worth reviewing there (partial ranking,
- * unsaved changes) belong to the picker rather than to any one row.
+ * Grouped the way the gallery is: the **shared-row** fixtures first, then one
+ * section per mode (classic, turbo, cup).
  *
- * The remaining per-mode tickets (classic / cup-lite) add their own fixtures
- * alongside these.
+ * The turbo and cup sections go a level up from the row: they drive the real
+ * `TurboPick` / `CupPick`, because the states worth reviewing there (partial
+ * ranking, unsaved changes) belong to the picker rather than to any one row.
  */
 
 function team(
@@ -474,6 +475,128 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		existingPickFixtureId: 'cf-1',
 		currentRoundClosed: true,
 		plannerSetId: 'planner-with-chips',
+	},
+]
+
+/* ---------------------------------------------------------------------- cup */
+
+const SHW = () => team('t-shw', 'Sheffield Wednesday', 'SHW')
+const ACC = () => team('t-acc', 'Accrington Stanley', 'ACC')
+
+/**
+ * Cup rows carry no form and no league position — deliberately, and not a gap
+ * this gallery papers over: a cup team's meaningful form lives in its *league*,
+ * not the cup, so sourcing it is a cross-competition problem deferred to the
+ * FA-Cup effort. What's reviewable here is everything cup gets from the
+ * shared row for free: the type scale, the unclipped short code, the truncating
+ * full name, and the tier annotations landing on the right side of the fixture.
+ */
+export interface CupCardFixtureRow {
+	id: string
+	home: FixtureTeamInfo
+	away: FixtureTeamInfo
+	kickoffInMinutes: number | null
+	/** From home perspective: positive = home is the higher tier. */
+	tierDifference: number
+}
+
+export interface CupCardFixture {
+	id: string
+	title: string
+	note?: string
+	/** 6 for the World Cup, up to 10 for a domestic cup. */
+	numberOfPicks: number
+	livesRemaining: number
+	maxLives: number
+	fixtures: CupCardFixtureRow[]
+	initialSlots: CupPickSlot[]
+	readonly?: boolean
+}
+
+const CUP_CARD_FIXTURES: CupCardFixtureRow[] = [
+	{
+		id: 'cupf-1',
+		home: MUN(),
+		away: ACC(),
+		kickoffInMinutes: 60 * 26,
+		// Three tiers between them: unpickable from the favourite's side, and the
+		// biggest life bonus on the board from the underdog's.
+		tierDifference: 3,
+	},
+	{
+		id: 'cupf-2',
+		home: SHW(),
+		away: BHA(),
+		kickoffInMinutes: 60 * 28,
+		// Away is two tiers up: the away side is restricted, and picking the home
+		// underdog earns +2.
+		tierDifference: -2,
+	},
+	{
+		id: 'cupf-3',
+		home: WOL(),
+		away: NEW(),
+		kickoffInMinutes: 60 * 30,
+		// One tier apart: pickable both ways, +1 on the underdog, no heart.
+		tierDifference: 1,
+	},
+	{
+		id: 'cupf-4',
+		home: CHE(),
+		away: TOT(),
+		kickoffInMinutes: 60 * 31,
+		// Same tier: pickable both ways with nothing to earn. The strip still
+		// renders — `CupPick` passes `tierValue={0}`, not `undefined` — so it
+		// carries three empty pips, no heart, no +N, and the kickoff on its
+		// right. The plainest strip cup can produce, not the absence of one.
+		tierDifference: 0,
+	},
+]
+
+/**
+ * The cup picker card. Same reason classic's cards are here: what matters is
+ * what *isn't* rendered — the round name, the deadline countdown and "rank N
+ * picks" all belong to the game hero directly above, so the card no longer
+ * repeats them (#157).
+ */
+export const CUP_CARDS: CupCardFixture[] = [
+	{
+		id: 'cup-card-open',
+		title: 'Nothing ranked yet',
+		note: 'Opens onto the fixtures with every slot empty. No deadline strip and no "rank 6 picks" line: the hero above carries both, and the ranked column is the only place the count now appears.',
+		numberOfPicks: 6,
+		livesRemaining: 2,
+		maxLives: 3,
+		fixtures: CUP_CARD_FIXTURES,
+		initialSlots: [],
+	},
+	{
+		id: 'cup-card-part-ranked',
+		title: 'Part-ranked — two underdogs and a level-tier pick',
+		note: 'The lives summary projects the gain, and the ranked column shows the two shapes a slot takes: an underdog pick that pays lives and a level-tier pick that does not. Tap a fourth team to keep filling it.',
+		numberOfPicks: 6,
+		livesRemaining: 2,
+		maxLives: 3,
+		fixtures: CUP_CARD_FIXTURES,
+		initialSlots: [
+			{ confidenceRank: 1, fixtureId: 'cupf-1', pickedSide: 'away' },
+			{ confidenceRank: 2, fixtureId: 'cupf-4', pickedSide: 'home' },
+			{ confidenceRank: 3, fixtureId: 'cupf-2', pickedSide: 'home' },
+		],
+	},
+	{
+		id: 'cup-card-readonly',
+		title: 'Read-only — the completed game',
+		note: 'What a finished game leaves behind: submit is disabled and every pick, reorder and remove click is swallowed. Worth noticing that the rows still look tappable — `readonly` ignores the clicks rather than disabling the buttons, which is CupPick’s own handling; the shared row only dims what it is told to.',
+		numberOfPicks: 6,
+		livesRemaining: 1,
+		maxLives: 3,
+		fixtures: CUP_CARD_FIXTURES,
+		initialSlots: [
+			{ confidenceRank: 1, fixtureId: 'cupf-3', pickedSide: 'away' },
+			{ confidenceRank: 2, fixtureId: 'cupf-1', pickedSide: 'away' },
+		],
+		readonly: true,
 	},
 ]
 

@@ -1,9 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import type { RankedListFixture, RowFixture, TurboScenario } from '@/app/preview/picks/fixtures'
+import type {
+	CupCardFixtureRow,
+	RankedListFixture,
+	RowFixture,
+	TurboScenario,
+} from '@/app/preview/picks/fixtures'
 import { TEAM_FORM_DETAIL, TEAM_FORM_DETAIL_EMPTY } from '@/app/preview/picks/fixtures'
 import { ClassicPick, type ClassicPickFixture } from '@/components/picks/classic-pick'
+import { CupPick, type CupPickSlot } from '@/components/picks/cup-pick'
 import type { FixtureTeamInfo, RowFormSheetRenderer } from '@/components/picks/fixture-row'
 import { FixtureRow } from '@/components/picks/fixture-row'
 import { type PlannerFixture, PlannerRound, type UsedInfo } from '@/components/picks/planner-round'
@@ -276,6 +282,49 @@ export function PreviewClassicPick({ card }: { card: PreviewClassicCard }) {
 			onSubmitPick={async (next) => setPick(next)}
 			planHandlers={{ onLock: async () => {} }}
 			renderFormSheet={previewFormSheet}
+		/>
+	)
+}
+
+export interface PreviewCupCard {
+	numberOfPicks: number
+	livesRemaining: number
+	maxLives: number
+	fixtures: Array<Omit<CupCardFixtureRow, 'kickoffInMinutes'> & { kickoff: string | null }>
+	initialSlots: CupPickSlot[]
+	readonly?: boolean
+}
+
+export function PreviewCupPick({ card }: { card: PreviewCupCard }) {
+	return (
+		<CupPick
+			fixtures={card.fixtures.map((f) => ({
+				id: f.id,
+				homeTeamId: f.home.id,
+				homeShort: f.home.shortName,
+				homeName: f.home.name,
+				homeColor: null,
+				homeBadgeUrl: f.home.badgeUrl ?? null,
+				awayTeamId: f.away.id,
+				awayShort: f.away.shortName,
+				awayName: f.away.name,
+				awayColor: null,
+				awayBadgeUrl: f.away.badgeUrl ?? null,
+				kickoff: f.kickoff ? new Date(f.kickoff) : null,
+				tierDifference: f.tierDifference,
+			}))}
+			numberOfPicks={card.numberOfPicks}
+			livesRemaining={card.livesRemaining}
+			maxLives={card.maxLives}
+			initialSlots={card.initialSlots}
+			readonly={card.readonly}
+			// The gallery's stand-in for the picks API: the ranking is `CupPick`'s own
+			// state, so the card stays fully interactive with the submit going nowhere.
+			onSubmit={async () => {}}
+			// No `competitionId` on purpose. Cup passes the row neither form nor league
+			// position, so there's no form bar and nothing to tap through — and leaving
+			// it off keeps the sheet's database-backed server action out of reach of a
+			// gallery that must never touch a database.
 		/>
 	)
 }

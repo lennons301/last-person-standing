@@ -436,7 +436,6 @@ export default async function GameDetailPage({
 					livesRemaining={targetLivesRemaining}
 					maxLives={startingLives}
 					initialSlots={cupInitialSlots}
-					deadline={game.currentRound.deadline}
 					readonly={game.status === 'completed'}
 					actingAs={actingAsForPickUI}
 					competitionId={game.competition.id}
