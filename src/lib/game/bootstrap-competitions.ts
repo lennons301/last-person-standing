@@ -6,6 +6,7 @@ import type { AdapterStanding, CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
 import { settleFixture } from '@/lib/game/settle'
+import { recordStandingsSnapshot } from '@/lib/game/standings-snapshot'
 import {
 	findByTeamPair,
 	type PlannerRound,
@@ -287,8 +288,14 @@ function competitionRoundsWithFixtures(competitionId: string) {
  * merge-built in mergeFootballDataIds) so writes stay within the competition
  * being synced. Rows whose team is not in the map are skipped. Feeds the
  * pick-UI ordinals and the auto-pick worst-placed-team ordering.
+ *
+ * The same read also lands a per-matchday snapshot (`standings_snapshot`),
+ * which is what the form guide's position line is drawn from. It rides this
+ * funnel deliberately: one provider read, one place where "the table changed"
+ * is known, no second cron.
  */
 async function persistLeaguePositions(
+	competitionId: string,
 	standings: AdapterStanding[],
 	teamIdByExternalId: Map<string, string>,
 ): Promise<void> {
@@ -297,6 +304,7 @@ async function persistLeaguePositions(
 		if (!teamId) continue
 		await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, teamId))
 	}
+	await recordStandingsSnapshot(competitionId, standings, teamIdByExternalId)
 }
 
 /**
@@ -402,7 +410,7 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// through the football-data ids merged in step 1. The FPL adapter has no
 	// standings source, so this merge step is what makes positions real for
 	// FPL-bootstrapped competitions.
-	await persistLeaguePositions(await fdAdapter.fetchStandings(), ourTeamIdByFdId)
+	await persistLeaguePositions(comp.id, await fdAdapter.fetchStandings(), ourTeamIdByFdId)
 
 	// 4) Coverage assertion. Self-diagnosing for the next time the FPL/football-
 	// data data shape drifts (likely each August when promoted PL teams arrive).
@@ -509,7 +517,7 @@ export async function syncCompetition(
 	// supports standings. Resolved through the current payload's team list so
 	// updates stay within this competition's own teams.
 	if (typeof adapter.fetchStandings === 'function') {
-		await persistLeaguePositions(await adapter.fetchStandings(), teamIdByPayloadId)
+		await persistLeaguePositions(comp.id, await adapter.fetchStandings(), teamIdByPayloadId)
 	}
 
 	// Fixture upsert matching is scoped to this competition's own rounds:
