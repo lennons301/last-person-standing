@@ -1,5 +1,7 @@
 import type { FixtureTeamInfo, SideState } from '@/components/picks/fixture-row'
 import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
+import type { RankedPick } from '@/components/picks/ranked-item'
+import type { TurboPickEntry } from '@/components/picks/turbo-pick'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
@@ -11,8 +13,12 @@ import type { TeamFormDetail } from '@/lib/game/team-form-detail'
  * demand (a season-start round with no form anywhere, both teams already used,
  * a cup tier gap on the underdog).
  *
- * This file carries the **shared-row** fixtures only. The per-mode tickets
- * (classic / turbo / cup-lite) add their own alongside these.
+ * The turbo section goes a level up from the row: it drives the real
+ * `TurboPick`, because the states worth reviewing there (partial ranking,
+ * unsaved changes) belong to the picker rather than to any one row.
+ *
+ * The remaining per-mode tickets (classic / cup-lite) add their own fixtures
+ * alongside these.
  */
 
 function team(
@@ -33,6 +39,14 @@ const WOL = (form?: FixtureTeamInfo['form'], pos?: number) =>
 	team('t-wol', 'Wolverhampton Wanderers', 'WOL', form, pos)
 const BHA = (form?: FixtureTeamInfo['form'], pos?: number) =>
 	team('t-bha', 'Brighton & Hove Albion', 'BHA', form, pos)
+const ARS = (form?: FixtureTeamInfo['form'], pos?: number) =>
+	team('t-ars', 'Arsenal', 'ARS', form, pos)
+const LIV = (form?: FixtureTeamInfo['form'], pos?: number) =>
+	team('t-liv', 'Liverpool', 'LIV', form, pos)
+const CHE = (form?: FixtureTeamInfo['form'], pos?: number) =>
+	team('t-che', 'Chelsea', 'CHE', form, pos)
+const NFO = (form?: FixtureTeamInfo['form'], pos?: number) =>
+	team('t-nfo', 'Nottingham Forest', 'NFO', form, pos)
 
 export interface RowFixture {
 	id: string
@@ -256,8 +270,6 @@ export const PLANNER_FIXTURES: PlannerFixtureSet[] = [
 
 /* ------------------------------------------------------------------ classic */
 
-const CHE = (form?: FixtureTeamInfo['form'], pos?: number) =>
-	team('t-che', 'Chelsea', 'CHE', form, pos)
 const TOT = (form?: FixtureTeamInfo['form'], pos?: number) =>
 	team('t-tot', 'Tottenham Hotspur', 'TOT', form, pos)
 
@@ -462,6 +474,195 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		existingPickFixtureId: 'cf-1',
 		currentRoundClosed: true,
 		plannerSetId: 'planner-with-chips',
+	},
+]
+
+/**
+ * Turbo-mode fixtures: the whole picker, not just a row.
+ *
+ * Turbo's API only accepts a complete ranking, so two of the picker's states —
+ * a partial ranking, and an on-screen order that has drifted from the submitted
+ * one — never come back from a database. `initialRanking` is what lets the
+ * gallery mount them (see `TurboPick`).
+ */
+export interface TurboScenario {
+	id: string
+	title: string
+	note?: string
+	numberOfPicks: number
+	fixtures: Array<{
+		id: string
+		home: FixtureTeamInfo
+		away: FixtureTeamInfo
+		kickoffInMinutes: number | null
+	}>
+	/** What the player has locked in. Empty, or exactly `numberOfPicks` entries. */
+	existingPicks: TurboPickEntry[]
+	/** What the list starts on, when that differs from the submission. */
+	initialRanking?: TurboPickEntry[]
+}
+
+function turboFixture(
+	id: string,
+	home: FixtureTeamInfo,
+	away: FixtureTeamInfo,
+	kickoffInMinutes: number,
+): TurboScenario['fixtures'][number] {
+	return { id, home, away, kickoffInMinutes }
+}
+
+/** Five fixtures with form and positions everywhere — the everyday turbo round. */
+const TURBO_ROUND: TurboScenario['fixtures'] = [
+	turboFixture(
+		'tf-1',
+		MUN(['W', 'W', 'D', 'L', 'W'], 4),
+		NEW(['L', 'D', 'W', 'W', 'L'], 9),
+		60 * 26,
+	),
+	turboFixture(
+		'tf-2',
+		ARS(['W', 'W', 'W', 'D', 'W'], 1),
+		WOL(['L', 'L', 'D', 'L', 'W'], 17),
+		60 * 27,
+	),
+	turboFixture(
+		'tf-3',
+		BHA(['D', 'W', 'L', 'W', 'D'], 7),
+		LIV(['W', 'D', 'W', 'W', 'W'], 2),
+		60 * 29,
+	),
+	turboFixture(
+		'tf-4',
+		CHE(['L', 'W', 'W', 'D', 'L'], 8),
+		NFO(['D', 'L', 'W', 'L', 'D'], 13),
+		60 * 32,
+	),
+	turboFixture(
+		'tf-5',
+		NEW(['L', 'D', 'W', 'W', 'L'], 9),
+		MUN(['W', 'W', 'D', 'L', 'W'], 4),
+		60 * 50,
+	),
+]
+
+/** Season start: positions from last season's table, nobody has kicked a ball. */
+const TURBO_ROUND_NO_FORM: TurboScenario['fixtures'] = [
+	turboFixture('tfe-1', WOL(undefined, 14), BHA(undefined, 7), 60 * 50),
+	turboFixture('tfe-2', NFO(undefined, 13), ARS(undefined, 1), 60 * 52),
+	turboFixture('tfe-3', CHE(undefined, 8), LIV(undefined, 2), 60 * 54),
+]
+
+const THREE_SUBMITTED: TurboPickEntry[] = [
+	{ fixtureId: 'tf-2', confidenceRank: 1, predictedResult: 'home_win' },
+	{ fixtureId: 'tf-3', confidenceRank: 2, predictedResult: 'away_win' },
+	{ fixtureId: 'tf-1', confidenceRank: 3, predictedResult: 'draw' },
+]
+
+export const TURBO_SCENARIOS: TurboScenario[] = [
+	{
+		id: 'turbo-empty',
+		title: 'Turbo — nothing ranked yet',
+		note: 'The opening state: an empty confidence list over every fixture in the round. No round title and no deadline chip — both belong to the game hero above the picker.',
+		numberOfPicks: 3,
+		fixtures: TURBO_ROUND,
+		existingPicks: [],
+	},
+	{
+		id: 'turbo-partial',
+		title: 'Turbo — partially ranked (nothing submitted)',
+		note: 'Mid-flow: one of three ranked, the rest still in the remaining list. Nothing is locked in, so there is no submission notice and the confirm bar stays disabled.',
+		numberOfPicks: 3,
+		fixtures: TURBO_ROUND,
+		existingPicks: [],
+		initialRanking: [{ fixtureId: 'tf-2', confidenceRank: 1, predictedResult: 'home_win' }],
+	},
+	{
+		id: 'turbo-full',
+		title: 'Turbo — fully ranked and submitted',
+		note: 'Three of three locked in and unchanged since: "Picks locked in", and the confirm bar has nothing to resubmit.',
+		numberOfPicks: 3,
+		fixtures: TURBO_ROUND,
+		existingPicks: THREE_SUBMITTED,
+	},
+	{
+		id: 'turbo-dirty',
+		title: 'Turbo — unsaved changes',
+		note: 'Submitted, then reordered: the top two have swapped places on screen but not in the database. The notice flips to "Unsaved changes" and the bar re-arms.',
+		numberOfPicks: 3,
+		fixtures: TURBO_ROUND,
+		existingPicks: THREE_SUBMITTED,
+		initialRanking: [
+			{ fixtureId: 'tf-3', confidenceRank: 1, predictedResult: 'away_win' },
+			{ fixtureId: 'tf-2', confidenceRank: 2, predictedResult: 'home_win' },
+			{ fixtureId: 'tf-1', confidenceRank: 3, predictedResult: 'draw' },
+		],
+	},
+	{
+		id: 'turbo-empty-form',
+		title: 'Turbo — season start, no form anywhere',
+		note: 'Gameweek 1. Every remaining row says "No form yet" and keeps its league position, and the ranked row still taps through — to a form sheet that reports an unplayed season rather than an empty one.',
+		numberOfPicks: 2,
+		fixtures: TURBO_ROUND_NO_FORM,
+		existingPicks: [],
+		initialRanking: [{ fixtureId: 'tfe-2', confidenceRank: 1, predictedResult: 'away_win' }],
+	},
+]
+
+/**
+ * Ranked rows in isolation, at both widths. The picker scenarios above cover
+ * them in context; this is the row itself — the tap-through target, the rank
+ * chip and the reorder controls all competing for the same line on a phone.
+ */
+export interface RankedListFixture {
+	id: string
+	title: string
+	note?: string
+	picks: RankedPick[]
+}
+
+function rankedTeam(t: FixtureTeamInfo): RankedPick['homeTeam'] {
+	return { id: t.id, shortName: t.shortName, name: t.name, badgeUrl: t.badgeUrl ?? null }
+}
+
+export const RANKED_LIST_FIXTURES: RankedListFixture[] = [
+	{
+		id: 'ranked-tap-through',
+		title: 'Ranked item — form tap-through',
+		note: 'Tap either team to open the same form sheet the remaining-fixtures list opens. Ranking a fixture used to drop its form entirely, so a committed pick could only be re-checked by un-ranking it.',
+		picks: [
+			{
+				id: 'rl-1',
+				rank: 1,
+				fixtureId: 'tf-2',
+				homeTeam: rankedTeam(ARS()),
+				awayTeam: rankedTeam(WOL()),
+				prediction: 'home_win',
+			},
+			{
+				id: 'rl-2',
+				rank: 2,
+				fixtureId: 'tf-3',
+				homeTeam: rankedTeam(BHA()),
+				awayTeam: rankedTeam(LIV()),
+				prediction: 'away_win',
+			},
+			{
+				id: 'rl-3',
+				rank: 3,
+				fixtureId: 'tf-1',
+				homeTeam: rankedTeam(MUN()),
+				awayTeam: rankedTeam(NEW()),
+				prediction: 'draw',
+			},
+			{
+				id: 'rl-4',
+				rank: 4,
+				fixtureId: 'tf-4',
+				homeTeam: rankedTeam(CHE()),
+				awayTeam: rankedTeam(NFO()),
+				prediction: 'home_win',
+			},
+		],
 	},
 ]
 

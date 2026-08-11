@@ -11,33 +11,7 @@ import { PlusNBadge } from './plus-n-badge'
 import { TeamBadge } from './team-badge'
 import { TeamFormSheet } from './team-form-sheet'
 import { TierPips } from './tier-pips'
-
-/**
- * The row's type scale. Three steps, deliberately, replacing the ad-hoc pile of
- * `text-[9px]` / `[10px]` / `[11px]` / `[0.7rem]` micro sizes this row used to
- * carry. Everything in the row (and its sub-components) picks one:
- *
- * - `name`     — the team name on the pick button. The primary affordance: the
- *                largest and only bold-dark type in the row.
- * - `meta`     — secondary metadata: kickoff, "vs", league position.
- * - `chip`     — status chips (CURRENT / TENTATIVE / AUTO / USED, +N lives) and
- *                the tier strip. Never allowed to compete with a team name, so
- *                these stay muted unless the state itself is the message.
- *
- * `text-2xs` is a real scale step declared in `globals.css`, not an arbitrary
- * bracket value.
- */
-const TYPE = {
-	name: 'text-base sm:text-lg font-semibold leading-tight',
-	meta: 'text-xs leading-tight',
-	chip: 'text-2xs font-semibold',
-} as const
-
-/** Shared chip shell — colour comes from the caller, geometry from here. */
-const CHIP = cn(
-	TYPE.chip,
-	'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 max-w-full uppercase tracking-wide',
-)
+import { CHIP, TYPE } from './type-scale'
 
 export interface FixtureTeamInfo {
 	id: string
