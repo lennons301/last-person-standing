@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm'
 import {
+	doublePrecision,
 	integer,
 	jsonb,
 	pgEnum,
@@ -158,6 +159,41 @@ export const teamForm = pgTable(
 	(table) => [uniqueIndex('team_form_team_comp_idx').on(table.teamId, table.competitionId)],
 )
 
+/**
+ * Indicative bookmaker odds for one fixture — at most one row per fixture
+ * (the unique index is the upsert target). Absence is meaningful: a fixture or
+ * competition we have no odds for simply has no row, and every surface renders
+ * no win-probability rather than a zero.
+ *
+ * Probabilities are de-vigged (see `src/lib/data/odds-api.ts`) and stored
+ * alongside the raw decimal prices they came from, so a surface can show the
+ * percentage and the price it derives from as one quote. `asOf` is the
+ * bookmaker's own last-update stamp — the "odds as of {time}" the UI shows —
+ * and stops moving once the round deadline passes (see `syncFixtureOdds`).
+ */
+export const fixtureOdds = pgTable(
+	'fixture_odds',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		fixtureId: uuid('fixture_id')
+			.notNull()
+			.references(() => fixture.id),
+		/** Odds provider, e.g. 'the_odds_api'. */
+		source: varchar('source', { length: 50 }).notNull(),
+		/** Provider's bookmaker key the prices were read from, e.g. 'betfair_ex_uk'. */
+		bookmaker: varchar('bookmaker', { length: 50 }).notNull(),
+		homePrice: doublePrecision('home_price').notNull(),
+		drawPrice: doublePrecision('draw_price').notNull(),
+		awayPrice: doublePrecision('away_price').notNull(),
+		homeProbability: doublePrecision('home_probability').notNull(),
+		drawProbability: doublePrecision('draw_probability').notNull(),
+		awayProbability: doublePrecision('away_probability').notNull(),
+		asOf: timestamp('as_of').notNull(),
+		updatedAt: timestamp('updated_at').defaultNow().notNull(),
+	},
+	(table) => [uniqueIndex('fixture_odds_fixture_idx').on(table.fixtureId)],
+)
+
 // -- Relations --
 
 export const competitionRelations = relations(competition, ({ many }) => ({
@@ -176,6 +212,11 @@ export const fixtureRelations = relations(fixture, ({ one }) => ({
 	round: one(round, { fields: [fixture.roundId], references: [round.id] }),
 	homeTeam: one(team, { fields: [fixture.homeTeamId], references: [team.id] }),
 	awayTeam: one(team, { fields: [fixture.awayTeamId], references: [team.id] }),
+	odds: one(fixtureOdds, { fields: [fixture.id], references: [fixtureOdds.fixtureId] }),
+}))
+
+export const fixtureOddsRelations = relations(fixtureOdds, ({ one }) => ({
+	fixture: one(fixture, { fields: [fixtureOdds.fixtureId], references: [fixture.id] }),
 }))
 
 export const teamFormRelations = relations(teamForm, ({ one }) => ({
