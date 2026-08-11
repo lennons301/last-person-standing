@@ -9,7 +9,7 @@ import { PlannerRound } from '@/components/picks/planner-round'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
 import type { ChainSummary, PlannerRoundInput } from '@/lib/game/classic-planner-view'
-import { FixtureRow, type FixtureTeamInfo } from './fixture-row'
+import { FixtureRow, type FixtureTeamInfo, type RowFormSheetRenderer } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
 
 export interface ClassicPickFixture {
@@ -52,6 +52,13 @@ interface ClassicPickProps {
 	 * the same team, opponent and deadline a second time.
 	 */
 	summaryInHero?: boolean
+	/**
+	 * Fixture-driven override for the form-detail sheet, applied to the
+	 * current-round rows and the planner's rows alike. Only `/preview/picks`
+	 * passes it; in the app the rows resolve the sheet from `competitionId`
+	 * through its server action.
+	 */
+	renderFormSheet?: RowFormSheetRenderer
 }
 
 interface PickSelection {
@@ -76,6 +83,7 @@ export function ClassicPick({
 	currentRoundClosed = false,
 	actingAs,
 	summaryInHero = false,
+	renderFormSheet,
 }: ClassicPickProps) {
 	const router = useRouter()
 	const initialSelection: PickSelection | null =
@@ -209,25 +217,21 @@ export function ClassicPick({
 		)
 	) : (
 		<div className="space-y-2">
-			<div className="flex justify-between items-baseline mb-3">
-				<h2 className="font-display text-xl font-semibold">{roundName}</h2>
-				<div className="flex items-center gap-2">
-					{deadline && (
-						<span className="text-xs font-medium text-[var(--draw)] bg-[var(--draw-bg)] px-2 py-0.5 rounded-md">
-							⏱ {formatDeadline(deadline)}
-						</span>
-					)}
-					{existingPickTeamId && (
-						<button
-							type="button"
-							onClick={() => setExpanded(false)}
-							className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-						>
-							Collapse <ChevronUp className="h-3 w-3" />
-						</button>
-					)}
+			{/* No round heading and no deadline chip: the hero above names the round
+			    and counts the deadline down in every state that renders this picker.
+			    Expanded, the selector's job is narrowly "choose your team" — so the
+			    only chrome it keeps is the way back to the collapsed summary. */}
+			{existingPickTeamId && (
+				<div className="flex justify-end mb-3">
+					<button
+						type="button"
+						onClick={() => setExpanded(false)}
+						className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+					>
+						Collapse <ChevronUp className="h-3 w-3" />
+					</button>
 				</div>
-			</div>
+			)}
 
 			{fixtures.map((fixture) => {
 				const isSelectedFixture = fixture.id === selection?.fixtureId
@@ -267,6 +271,11 @@ export function ClassicPick({
 						onPickAway={() => handlePick(fixture, 'away')}
 						competitionId={competitionId}
 						roundNumber={roundNumber}
+						renderFormSheet={
+							renderFormSheet
+								? (args) => renderFormSheet({ ...args, home: fixture.home, away: fixture.away })
+								: undefined
+						}
 					/>
 				)
 			})}
@@ -351,9 +360,11 @@ export function ClassicPick({
 	const planner = futureRounds && futureRounds.length > 0 && (
 		<PlannerSection
 			gameId={gameId}
+			competitionId={competitionId}
 			rounds={futureRounds}
 			handlers={resolvedHandlers}
 			defaultOpen={currentRoundClosed}
+			renderFormSheet={renderFormSheet}
 		/>
 	)
 
@@ -378,14 +389,18 @@ export function ClassicPick({
  */
 function PlannerSection({
 	gameId,
+	competitionId,
 	rounds,
 	handlers,
 	defaultOpen = false,
+	renderFormSheet,
 }: {
 	gameId: string
+	competitionId: string
 	rounds: PlannerRoundInput[]
 	handlers: ClassicPickPlanHandlers
 	defaultOpen?: boolean
+	renderFormSheet?: RowFormSheetRenderer
 }) {
 	const storageKey = `lps.planner-open.${gameId}`
 	const [open, setOpen] = useState(defaultOpen)
@@ -462,6 +477,8 @@ function PlannerSection({
 							usedTeams={r.usedTeams}
 							lockedTeamId={r.lockedTeamId}
 							onLock={(rid, tid) => guard(() => handlers.onLock(rid, tid))}
+							competitionId={competitionId}
+							renderFormSheet={renderFormSheet}
 						/>
 					))}
 				</div>

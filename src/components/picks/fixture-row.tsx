@@ -48,6 +48,20 @@ export interface FixtureTeamInfo {
 	leaguePosition?: number | null
 }
 
+/**
+ * `renderFormSheet` lifted one level up, for components that own a *set* of
+ * `FixtureRow`s (classic's picker and its planner) and resolve the renderer per
+ * row. Keyed on the row's two teams rather than on any mode's fixture type, so
+ * one renderer serves current-round rows and planner rows alike.
+ */
+export type RowFormSheetRenderer = (args: {
+	home: FixtureTeamInfo
+	away: FixtureTeamInfo
+	side: 'home' | 'away'
+	open: boolean
+	onClose: () => void
+}) => React.ReactNode
+
 export type SideState =
 	| { kind: 'current' }
 	| { kind: 'tentative' }

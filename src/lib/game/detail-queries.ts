@@ -1644,6 +1644,7 @@ export async function getClassicPlannerData(
 					shortName: f.homeTeam.shortName,
 					badgeUrl: f.homeTeam.badgeUrl,
 					primaryColor: f.homeTeam.primaryColor,
+					leaguePosition: f.homeTeam.leaguePosition,
 				},
 				awayTeam: {
 					id: f.awayTeam.id,
@@ -1651,9 +1652,24 @@ export async function getClassicPlannerData(
 					shortName: f.awayTeam.shortName,
 					badgeUrl: f.awayTeam.badgeUrl,
 					primaryColor: f.awayTeam.primaryColor,
+					leaguePosition: f.awayTeam.leaguePosition,
 				},
 			})),
 		}))
+
+	// Form for a planner row is *current* form: every finished fixture in the
+	// competition, not "as of" the round being planned (its opponents haven't
+	// played yet). Bounding above the highest round number is what expresses
+	// that — and it lines up with the form sheet the row taps through to, which
+	// filters on `< roundNumber` and so sees the same finished set for any
+	// upcoming round.
+	const formBound = Math.max(0, ...gameData.competition.rounds.map((r) => r.number)) + 1
+	const plannerTeamIds = Array.from(
+		new Set(
+			futureRoundRows.flatMap((r) => r.fixtures.flatMap((f) => [f.homeTeam.id, f.awayTeam.id])),
+		),
+	)
+	const plannerForms = await computeTeamForms(plannerTeamIds, gameData.competition.id, formBound)
 
 	// Past + current picks count as "used" in the planner (for the "USED GW3"
 	// labels). Locked future picks are passed separately so each future round
@@ -1669,6 +1685,7 @@ export async function getClassicPlannerData(
 		futureRounds: futureRoundRows,
 		pastPicks: pastPicksForPlanner,
 		lockedPicks: lockedPicksForPlanner,
+		formByTeamId: plannerForms,
 	})
 
 	return { chain, futureRounds }
