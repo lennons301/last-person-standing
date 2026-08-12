@@ -272,8 +272,10 @@ async function loadNextFixture(
 			roundName: round.name,
 			odds: {
 				homePrice: fixtureOdds.homePrice,
+				drawPrice: fixtureOdds.drawPrice,
 				awayPrice: fixtureOdds.awayPrice,
 				homeProbability: fixtureOdds.homeProbability,
+				drawProbability: fixtureOdds.drawProbability,
 				awayProbability: fixtureOdds.awayProbability,
 				asOf: fixtureOdds.asOf,
 			},

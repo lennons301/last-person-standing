@@ -12,6 +12,7 @@ import { PicksSubmittedNotice } from './picks-submitted-notice'
 import { type Prediction, PredictionButtons } from './prediction-buttons'
 import type { RankedPick } from './ranked-item'
 import { RankingList } from './ranking-list'
+import type { FormMarket } from './team-form-panel'
 import { SECTION_HEADING, TYPE } from './type-scale'
 
 export interface TurboPickFixture {
@@ -77,6 +78,12 @@ interface TurboPickProps {
 		side: 'home' | 'away'
 		open: boolean
 		onClose: () => void
+		/**
+		 * The fixture's full 1X2, for the sheet's market block. Present for the
+		 * remaining-fixtures rows, which carry the fixture's odds; absent for
+		 * ranked rows, which show no probabilities of their own.
+		 */
+		market?: FormMarket | null
 	}) => React.ReactNode
 }
 

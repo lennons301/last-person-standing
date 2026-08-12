@@ -106,6 +106,7 @@ export const FULL_GUIDE: TeamFormGuide = guideFrom(SEASON_RESULTS, {
 		home: true,
 		odds: {
 			home: { probability: 0.52, price: 1.85 },
+			draw: { probability: 0.22, price: 4.4 },
 			away: { probability: 0.26, price: 3.6 },
 			asOf: '2026-11-20T09:12:00.000Z',
 		},

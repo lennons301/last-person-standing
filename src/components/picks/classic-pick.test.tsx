@@ -66,6 +66,7 @@ describe('ClassicPick — no duplication of the hero', () => {
 describe('ClassicPick win probability', () => {
 	const ODDS = {
 		home: { probability: 8 / 13, price: 1.5 },
+		draw: { probability: 3 / 13, price: 4 },
 		away: { probability: 2 / 13, price: 6 },
 		asOf: '2026-08-14T11:30:00Z',
 	}
