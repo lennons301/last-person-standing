@@ -335,12 +335,15 @@ interface FormBarProps {
  * Position is deliberately *not* gated on form. It used to be — the whole bar
  * only rendered when at least one side had form results, so at the start of a
  * season (nobody has played) the row silently lost its league positions too.
- * Now position alone is enough to bring the bar out, and the form-less half says
- * so explicitly rather than rendering blank.
+ * Now position alone is enough to bring the bar out, and a form-less half shows
+ * that position on its own. It used to carry a "No form yet" filler beside it;
+ * the filler repeated what the player already knew — a position with nothing
+ * next to it reads as a season that hasn't started, and the chevron says where
+ * to look — while colliding with the position it sat next to.
  *
  * A row with neither is still bar-less, as before: modes that don't source form
- * or positions at all (cup) pass neither, and an unconditional "No form yet"
- * there would be claiming something about the teams that the row can't know.
+ * or positions at all (cup) pass neither, and a bar there would be a strip with
+ * nothing in it but a chevron into a sheet that has nothing to show.
  */
 function FormBar({ home, away, sheetEnabled, onOpenSheet }: FormBarProps) {
 	const hasContent = [home, away].some((t) => t.form?.length || t.leaguePosition != null)
@@ -374,27 +377,25 @@ interface FormHalfProps {
 function FormHalf({ team, side, sheetEnabled, onOpenSheet }: FormHalfProps) {
 	const isHome = side === 'home'
 	const hasForm = !!team.form?.length
+	const position =
+		team.leaguePosition != null ? (
+			<span
+				className={cn(
+					TYPE.meta,
+					'text-muted-foreground font-medium font-mono',
+					// The margin spaces the position from the form beside it; with no
+					// form there's nothing to space it from.
+					hasForm && (isHome ? 'ml-2' : 'mr-2'),
+				)}
+			>
+				{ordinal(team.leaguePosition)}
+			</span>
+		) : null
 	const content = (
 		<>
-			{team.leaguePosition != null && !isHome && (
-				<span className={cn(TYPE.meta, 'text-muted-foreground font-medium font-mono mr-2')}>
-					{ordinal(team.leaguePosition)}
-				</span>
-			)}
-			{hasForm ? (
-				<FormDots results={team.form as FormResult[]} size="sm" />
-			) : (
-				// An explicit "nothing yet" beats an empty half — a blank strip reads
-				// as a half-loaded row, this reads as the season not having started.
-				<span className={cn(TYPE.chip, 'font-normal text-muted-foreground/70 whitespace-nowrap')}>
-					No form yet
-				</span>
-			)}
-			{team.leaguePosition != null && isHome && (
-				<span className={cn(TYPE.meta, 'text-muted-foreground font-medium font-mono ml-2')}>
-					{ordinal(team.leaguePosition)}
-				</span>
-			)}
+			{!isHome && position}
+			{hasForm && <FormDots results={team.form as FormResult[]} size="sm" />}
+			{isHome && position}
 			{sheetEnabled && (
 				<ChevronRight
 					className={cn(

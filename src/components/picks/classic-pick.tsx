@@ -16,6 +16,7 @@ import {
 	type PickTableRow,
 	type PickView,
 	pickTableHasStandings,
+	type UsedRoundLabel,
 } from '@/lib/game/pick-table-view'
 import {
 	type FixtureOdds,
@@ -49,7 +50,8 @@ interface ClassicPickProps {
 	competitionId: string
 	deadline: Date | null
 	fixtures: ClassicPickFixture[]
-	usedTeamsByRound: Record<string, string>
+	/** teamId → the earlier round that team was spent in, short label and long. */
+	usedTeamsByRound: Record<string, UsedRoundLabel>
 	/**
 	 * teamId → why this team can't be picked, for restrictions that aren't
 	 * "already used" (the World Cup's own classic rules are the case that will
