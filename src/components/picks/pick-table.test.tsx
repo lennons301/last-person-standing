@@ -26,6 +26,7 @@ const FIXTURES: PickTableFixture[] = [
 		},
 		odds: {
 			home: { probability: 0.82, price: 1.18 },
+			draw: { probability: 0.11, price: 9 },
 			away: { probability: 0.07, price: 13.5 },
 			asOf: '2099-02-28T09:00:00.000Z',
 		},

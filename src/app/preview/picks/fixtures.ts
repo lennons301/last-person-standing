@@ -7,8 +7,9 @@ import type {
 } from '@/components/picks/fixture-row'
 import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
 import type { RankedPick } from '@/components/picks/ranked-item'
+import type { FormMarket } from '@/components/picks/team-form-panel'
 import type { TurboPickEntry } from '@/components/picks/turbo-pick'
-import type { TeamFormDetail } from '@/lib/game/team-form-detail'
+import type { FormSplit, TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
  * Hand-built fixtures for the pick-selector gallery.
@@ -102,7 +103,7 @@ export interface RowFixture {
 	 * the fixtures we have no odds for — which is the state worth reviewing next
 	 * to a priced row.
 	 */
-	odds?: { home: SideOdds; away: SideOdds; asOfInMinutes: number }
+	odds?: { home: SideOdds; draw: SideOdds; away: SideOdds; asOfInMinutes: number }
 	/** Disables the pick handlers, for read-only / post-deadline states. */
 	readonly?: boolean
 }
@@ -202,6 +203,7 @@ export const ROW_FIXTURES: RowFixture[] = [
 		// A 1.50 / 4.00 / 6.00 market: 8/13, 3/13 and 2/13 once the overround is out.
 		odds: {
 			home: { probability: 8 / 13, price: 1.5 },
+			draw: { probability: 3 / 13, price: 4 },
 			away: { probability: 2 / 13, price: 6 },
 			asOfInMinutes: -95,
 		},
@@ -223,6 +225,7 @@ export const ROW_FIXTURES: RowFixture[] = [
 		kickoffInMinutes: 60 * 30,
 		odds: {
 			home: { probability: 0.879, price: 1.1 },
+			draw: { probability: 0.084, price: 11 },
 			away: { probability: 0.037, price: 24 },
 			asOfInMinutes: -12,
 		},
@@ -576,7 +579,7 @@ export interface PickTableScenarioFixture {
 	away: FixtureTeamInfo
 	kickoffInMinutes: number | null
 	/** Kept relative to render time like every other clock in this gallery. */
-	odds?: { home: SideOdds; away: SideOdds; asOfInMinutes: number }
+	odds?: { home: SideOdds; draw: SideOdds; away: SideOdds; asOfInMinutes: number }
 }
 
 export interface PickTableScenario {
@@ -600,6 +603,7 @@ const PRICED_FIXTURES: PickTableScenarioFixture[] = [
 		kickoffInMinutes: 60 * 26,
 		odds: {
 			home: { probability: 0.82, price: 1.18 },
+			draw: { probability: 0.11, price: 9 },
 			away: { probability: 0.07, price: 13.5 },
 			asOfInMinutes: -180,
 		},
@@ -611,6 +615,7 @@ const PRICED_FIXTURES: PickTableScenarioFixture[] = [
 		kickoffInMinutes: 60 * 28,
 		odds: {
 			home: { probability: 0.51, price: 1.85 },
+			draw: { probability: 0.25, price: 4 },
 			away: { probability: 0.24, price: 3.9 },
 			asOfInMinutes: -180,
 		},
@@ -622,6 +627,7 @@ const PRICED_FIXTURES: PickTableScenarioFixture[] = [
 		kickoffInMinutes: 60 * 31,
 		odds: {
 			home: { probability: 0.33, price: 2.9 },
+			draw: { probability: 0.25, price: 4 },
 			away: { probability: 0.42, price: 2.25 },
 			asOfInMinutes: -180,
 		},
@@ -998,7 +1004,37 @@ export const TEAM_FORM_DETAIL: TeamFormDetail = {
 		badgeUrl: null,
 		leaguePosition: 4,
 	},
-	seasonRecord: { wins: 14, draws: 6, losses: 6 },
+	// A team that's a fortress at home and ordinary away — the whole point of the
+	// split. The aggregate row alone ("14-6-6") hides it completely.
+	splits: {
+		overall: {
+			played: 26,
+			wins: 14,
+			draws: 6,
+			losses: 6,
+			goalsFor: 45,
+			goalsAgainst: 30,
+			form: ['W', 'D', 'L', 'W', 'W'],
+		},
+		home: {
+			played: 13,
+			wins: 10,
+			draws: 2,
+			losses: 1,
+			goalsFor: 29,
+			goalsAgainst: 11,
+			form: ['W', 'W', 'D', 'W', 'W'],
+		},
+		away: {
+			played: 13,
+			wins: 4,
+			draws: 4,
+			losses: 5,
+			goalsFor: 16,
+			goalsAgainst: 19,
+			form: ['D', 'L', 'W', 'L', 'D'],
+		},
+	},
 	recent: [
 		{
 			roundNumber: 26,
@@ -1046,6 +1082,17 @@ export const TEAM_FORM_DETAIL: TeamFormDetail = {
 	],
 }
 
+/** Nothing played, at any venue. Zeroes, not gaps. */
+const EMPTY_SPLIT: FormSplit = {
+	played: 0,
+	wins: 0,
+	draws: 0,
+	losses: 0,
+	goalsFor: 0,
+	goalsAgainst: 0,
+	form: [],
+}
+
 /** Season start: the team exists, nothing has been played, no table yet. */
 export const TEAM_FORM_DETAIL_EMPTY: TeamFormDetail = {
 	team: {
@@ -1055,7 +1102,37 @@ export const TEAM_FORM_DETAIL_EMPTY: TeamFormDetail = {
 		badgeUrl: null,
 		leaguePosition: null,
 	},
-	seasonRecord: { wins: 0, draws: 0, losses: 0 },
+	splits: {
+		overall: EMPTY_SPLIT,
+		home: EMPTY_SPLIT,
+		away: EMPTY_SPLIT,
+	},
 	recent: [],
 	headToHead: [],
+}
+
+/**
+ * The full 1X2 the enriched sheet shows, matching `row-odds` above: the same
+ * 1.50 / 4.00 / 6.00 market the fixture row quotes two-thirds of. `asOf` is
+ * fixed rather than relative — the sheet's stamp is reviewed for wording and
+ * width, not freshness.
+ */
+export const FORM_PANEL_MARKET: FormMarket = {
+	home: { shortName: 'MUN', probability: 8 / 13, price: 1.5 },
+	draw: { probability: 3 / 13, price: 4 },
+	away: { shortName: 'NEW', probability: 2 / 13, price: 6 },
+	asOf: '2026-02-21T11:30:00.000Z',
+	teamSide: 'home',
+}
+
+/**
+ * A lopsided market, at the widest the sheet's percentage + price columns get,
+ * and seen from the *away* team's sheet — so the marked row is the away one.
+ */
+export const FORM_PANEL_MARKET_LONGSHOT: FormMarket = {
+	home: { shortName: 'ARS', probability: 0.879, price: 1.1 },
+	draw: { probability: 0.084, price: 11 },
+	away: { shortName: 'WOL', probability: 0.037, price: 24 },
+	asOf: '2026-02-21T11:30:00.000Z',
+	teamSide: 'away',
 }

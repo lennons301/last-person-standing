@@ -1,23 +1,57 @@
+import { LocalDateTime } from '@/components/local-datetime'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import type { TeamFormDetail } from '@/lib/game/team-form-detail'
+import type { FormSplit, TeamFormDetail } from '@/lib/game/team-form-detail'
 import { cn } from '@/lib/utils'
+import { FormDots } from './form-dots'
+import { ODDS_AS_OF_FORMAT } from './odds-format'
 import { TeamBadge } from './team-badge'
 
+/** One outcome of the 1X2 market: the de-vigged chance and the price it came from. */
+export interface FormMarketQuote {
+	probability: number
+	price: number
+}
+
 /**
- * The presentational half of the team form-detail sheet.
+ * The full home/draw/away market for the fixture this sheet was opened from —
+ * the detail that sits one level below the two win-probabilities the fixture row
+ * itself shows.
+ *
+ * It comes down with the row, not from the form query: the sheet renders it even
+ * while the form is still loading (or after it failed), because it was already
+ * on screen when the viewer tapped.
+ */
+export interface FormMarket {
+	home: FormMarketQuote & { shortName: string }
+	draw: FormMarketQuote
+	away: FormMarketQuote & { shortName: string }
+	/** When the bookmaker last moved the market. Frozen at the round deadline. */
+	asOf: string | Date
+	/** Which side of the fixture this sheet's team is, so its outcome reads as theirs. */
+	teamSide: 'home' | 'away'
+}
+
+/**
+ * Props of the presentational half of the team form-detail sheet.
  *
  * `TeamFormSheet` (the sibling file) owns the data-loading: it calls a
  * database-backed server action and hands the result down here. This file takes
- * a `TeamFormDetail` — or a loading / error state — and nothing else, so the
- * `/preview/picks` gallery can render every state from hand-built fixtures with
- * no auth and no database, per the "split the presentational half out" rule in
- * AGENTS.md.
+ * a `TeamFormDetail` — or a loading / error state — plus the market that came
+ * down with the caller's row, and nothing else, so the `/preview/picks` gallery
+ * can render every state from hand-built fixtures with no auth and no database,
+ * per the "split the presentational half out" rule in AGENTS.md.
  */
 export interface TeamFormPanelProps {
 	/** Resolved detail, or null while loading / after a failure. */
 	detail: TeamFormDetail | null
 	loading?: boolean
 	error?: string | null
+	/**
+	 * Full 1X2 for the fixture. Absent for an unpriced fixture (or a competition
+	 * we have no odds for), in which case the sheet shows no market at all —
+	 * never a zero, exactly as the row doesn't.
+	 */
+	market?: FormMarket | null
 	/** Header content available before `detail` resolves, so the sheet never pops in empty. */
 	teamPreview: { name: string; shortName: string; badgeUrl?: string | null }
 	/** When set, the head-to-head section renders against this opponent. */
@@ -35,6 +69,7 @@ export function TeamFormPanel({
 	detail,
 	loading = false,
 	error = null,
+	market = null,
 	teamPreview,
 	opponentPreview,
 	titleComponent: Title = PlainTitle,
@@ -56,8 +91,8 @@ export function TeamFormPanel({
 						{detail && (
 							<div className="text-xs text-muted-foreground mt-0.5">
 								{display.leaguePosition != null && `${ordinal(display.leaguePosition)} · `}
-								{detail.seasonRecord.wins}W {detail.seasonRecord.draws}D{' '}
-								{detail.seasonRecord.losses}L this season
+								{detail.splits.overall.wins}W {detail.splits.overall.draws}D{' '}
+								{detail.splits.overall.losses}L this season
 							</div>
 						)}
 					</div>
@@ -70,6 +105,11 @@ export function TeamFormPanel({
 				{detail && (
 					<>
 						<section>
+							<SectionLabel>Home and away</SectionLabel>
+							<SplitTable splits={detail.splits} />
+						</section>
+
+						<section className="border-t pt-4">
 							<SectionLabel>Last {detail.recent.length} matches</SectionLabel>
 							<ul className="space-y-1.5">
 								{detail.recent.map((r) => (
@@ -133,8 +173,125 @@ export function TeamFormPanel({
 						)}
 					</>
 				)}
+
+				{market && <MarketSection market={market} />}
 			</div>
 		</>
+	)
+}
+
+/**
+ * Season record by venue, with goals. Three rows — overall, home, away — because
+ * the aggregate hides the read a picker is actually after: a mid-table team can
+ * be unbeaten at home, and the pick is for one specific venue.
+ */
+function SplitTable({
+	splits,
+}: {
+	splits: { overall: FormSplit; home: FormSplit; away: FormSplit }
+}) {
+	const rows: Array<{ label: string; split: FormSplit }> = [
+		{ label: 'All', split: splits.overall },
+		{ label: 'Home', split: splits.home },
+		{ label: 'Away', split: splits.away },
+	]
+
+	return (
+		<div className="text-xs">
+			<div className="grid grid-cols-[2.5rem_1.5rem_3.5rem_3.5rem_1fr] items-center gap-x-1.5 text-2xs uppercase tracking-wider text-muted-foreground/70 mb-1">
+				<span />
+				<span className="text-right">P</span>
+				<span className="text-right">W-D-L</span>
+				<span className="text-right">GF-GA</span>
+				<span>Form</span>
+			</div>
+			{rows.map(({ label, split }) => (
+				<div
+					key={label}
+					className="grid grid-cols-[2.5rem_1.5rem_3.5rem_3.5rem_1fr] items-center gap-x-1.5 py-0.5 tabular-nums"
+				>
+					<span className="text-muted-foreground">{label}</span>
+					<span className="text-right font-mono">{split.played}</span>
+					<span className="text-right font-mono">
+						{split.wins}-{split.draws}-{split.losses}
+					</span>
+					<span className="text-right font-mono">
+						{split.goalsFor}-{split.goalsAgainst}
+					</span>
+					{split.form.length > 0 ? (
+						<FormDots results={split.form} size="sm" />
+					) : (
+						<span className="text-muted-foreground/70">—</span>
+					)}
+				</div>
+			))}
+		</div>
+	)
+}
+
+/**
+ * The full 1X2 for the fixture: every outcome, its de-vigged chance and the
+ * price it came from. The fixture row above shows the two win chances only, so
+ * this is the level of detail the tap-through exists for — the draw included,
+ * which is the outcome that eliminates a classic picker.
+ */
+function MarketSection({ market }: { market: FormMarket }) {
+	const outcomes: Array<{ key: string; label: string; quote: FormMarketQuote; theirs: boolean }> = [
+		{
+			key: 'home',
+			label: `${market.home.shortName} win`,
+			quote: market.home,
+			theirs: market.teamSide === 'home',
+		},
+		{ key: 'draw', label: 'Draw', quote: market.draw, theirs: false },
+		{
+			key: 'away',
+			label: `${market.away.shortName} win`,
+			quote: market.away,
+			theirs: market.teamSide === 'away',
+		},
+	]
+
+	return (
+		<section className="border-t pt-4">
+			<SectionLabel>Match odds</SectionLabel>
+			<div className="space-y-1.5">
+				{outcomes.map((o) => (
+					<div key={o.key} className="flex items-center gap-2 text-xs tabular-nums">
+						<span
+							className={cn(
+								'w-20 shrink-0 truncate',
+								o.theirs ? 'font-semibold text-foreground' : 'text-muted-foreground',
+							)}
+						>
+							{o.label}
+						</span>
+						<span className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+							<span
+								className={cn(
+									'block h-full rounded-full',
+									o.theirs ? 'bg-foreground/70' : 'bg-foreground/25',
+								)}
+								style={{ width: `${Math.round(o.quote.probability * 100)}%` }}
+							/>
+						</span>
+						<span
+							className={cn('w-9 text-right', o.theirs ? 'font-semibold' : 'text-foreground/80')}
+						>
+							{Math.round(o.quote.probability * 100)}%
+						</span>
+						<span className="w-10 text-right font-mono text-muted-foreground">
+							{o.quote.price.toFixed(2)}
+						</span>
+					</div>
+				))}
+			</div>
+			<p className="text-2xs text-muted-foreground/70 mt-2">
+				Indicative bookmaker prices, as of{' '}
+				<LocalDateTime date={market.asOf} options={ODDS_AS_OF_FORMAT} />. Frozen once the round
+				deadline passes.
+			</p>
+		</section>
 	)
 }
 

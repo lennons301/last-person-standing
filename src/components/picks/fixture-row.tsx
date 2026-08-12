@@ -7,8 +7,10 @@ import { LocalDateTime } from '@/components/local-datetime'
 import { cn } from '@/lib/utils'
 import { FormDots, type FormResult } from './form-dots'
 import { HeartIcon } from './heart-icon'
+import { ODDS_AS_OF_FORMAT } from './odds-format'
 import { PlusNBadge } from './plus-n-badge'
 import { TeamBadge } from './team-badge'
+import type { FormMarket } from './team-form-panel'
 import { TeamFormSheet } from './team-form-sheet'
 import { TierPips } from './tier-pips'
 import { CHIP, TYPE } from './type-scale'
@@ -53,6 +55,8 @@ export type RowFormSheetRenderer = (args: {
 	side: 'home' | 'away'
 	open: boolean
 	onClose: () => void
+	/** The fixture's full 1X2, for the sheet's market block. Null when unpriced. */
+	market: FormMarket | null
 }) => React.ReactNode
 
 /**
@@ -71,11 +75,14 @@ export interface SideOdds {
  * `src/lib/data/odds-api.ts`). Absent for any fixture or competition we have no
  * odds for — the row then shows no probability at all rather than a zero.
  *
- * The draw price isn't shown: the row's job is "how likely is each side to
- * win", which is exactly what a survivor pick turns on.
+ * The draw isn't *shown* on the row: its job is "how likely is each side to
+ * win", which is exactly what a survivor pick turns on. It's carried all the
+ * same, because the form sheet one tap below shows the full home/draw/away
+ * market — and a market is either fully known or absent, never part-priced.
  */
 export interface FixtureOdds {
 	home: SideOdds
+	draw: SideOdds
 	away: SideOdds
 	/** When the bookmaker last moved this market. Frozen at the round deadline. */
 	asOf: string | Date
@@ -135,6 +142,8 @@ export interface FixtureRowProps {
 		side: 'home' | 'away'
 		open: boolean
 		onClose: () => void
+		/** The fixture's full 1X2, for the sheet's market block. Null when unpriced. */
+		market: FormMarket | null
 	}) => React.ReactNode
 	/**
 	 * Extra content rendered inside the bordered card, below the form bar.
@@ -182,6 +191,18 @@ export function FixtureRow({
 	const lastSheetSide = useRef<'home' | 'away'>('home')
 	const activeSheetSide = sheetTeam ?? lastSheetSide.current
 	const sheetEnabled = !!competitionId || !!renderFormSheet
+	// The row shows two win chances; the sheet below it shows the whole market.
+	// Built here rather than fetched there — it arrived with the row, so it's on
+	// screen the instant the sheet opens, form still loading or not.
+	const sheetMarket: FormMarket | null = odds
+		? {
+				home: { shortName: home.shortName, ...odds.home },
+				draw: odds.draw,
+				away: { shortName: away.shortName, ...odds.away },
+				asOf: odds.asOf,
+				teamSide: activeSheetSide,
+			}
+		: null
 	// The top strip carries everything that isn't a team: tier annotations, the
 	// row-level status label and the kickoff. `usedLabel` lives here rather than
 	// inline in the team row because inline it competed with the team names for
@@ -275,9 +296,11 @@ export function FixtureRow({
 						side: activeSheetSide,
 						open: sheetTeam !== null,
 						onClose: () => setSheetTeam(null),
+						market: sheetMarket,
 					})
 				: competitionId && (
 						<TeamFormSheet
+							market={sheetMarket}
 							open={sheetTeam !== null}
 							onOpenChange={(open) => {
 								if (!open) setSheetTeam(null)
@@ -496,18 +519,6 @@ function TeamPickButton({
 			</div>
 		</button>
 	)
-}
-
-/**
- * Stamp format for the odds' freshness: date + time, no weekday. Short enough
- * to sit on the strip beside the kickoff without competing with it, but dated —
- * once a round's odds freeze at the deadline, "14:32" alone would read as today.
- */
-const ODDS_AS_OF_FORMAT: Intl.DateTimeFormatOptions = {
-	day: 'numeric',
-	month: 'short',
-	hour: '2-digit',
-	minute: '2-digit',
 }
 
 /**

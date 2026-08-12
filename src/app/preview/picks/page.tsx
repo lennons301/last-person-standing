@@ -2,6 +2,8 @@ import {
 	CLASSIC_CARDS,
 	CLASSIC_SIDE_STATES,
 	CUP_CARDS,
+	FORM_PANEL_MARKET,
+	FORM_PANEL_MARKET_LONGSHOT,
 	PICK_TABLE_SCENARIOS,
 	PLANNER_FIXTURES,
 	RANKED_LIST_FIXTURES,
@@ -258,6 +260,7 @@ export default function PicksPreviewPage() {
 					odds: f.odds
 						? {
 								home: f.odds.home,
+								draw: f.odds.draw,
 								away: f.odds.away,
 								asOf: at(now, f.odds.asOfInMinutes) as string,
 							}
@@ -379,45 +382,100 @@ export default function PicksPreviewPage() {
 			})}
 
 			<GroupHeading title="Form detail">
-				The sheet every form bar above taps through to.
+				The sheet every form bar above taps through to — the enriched one: recent form split into
+				home and away with goals for and against, and the full home/draw/away market the row itself
+				only shows two-thirds of. The market comes down with the row rather than from the form
+				query, so it's on screen while the form is still loading, and it survives a form failure.
 			</GroupHeading>
 
-			<section className="space-y-2">
-				<header>
-					<h2 className="font-display text-sm font-semibold">Form detail panel</h2>
-					<p className="text-xs text-muted-foreground">
-						The presentational half split out of <code>TeamFormSheet</code>, rendered inline from
-						fixtures. Tap either half of any form bar above to see it inside the real sheet.
-					</p>
-				</header>
-				<div className="grid gap-4 sm:grid-cols-2">
-					{[
-						{ id: 'loaded', label: 'Loaded', props: { detail: TEAM_FORM_DETAIL } },
-						{
-							id: 'empty',
-							label: 'Season start — nothing played',
-							props: { detail: TEAM_FORM_DETAIL_EMPTY },
-						},
-						{ id: 'loading', label: 'Loading', props: { detail: null, loading: true } },
-						{
-							id: 'error',
-							label: 'Failed',
-							props: { detail: null, error: 'Could not load team form' },
-						},
-					].map((s) => (
-						<div key={s.id} className="rounded-lg border border-border bg-card">
-							<div className="text-2xs uppercase tracking-wide text-muted-foreground/70 px-4 pt-3">
-								{s.label}
-							</div>
-							<TeamFormPanel
-								{...s.props}
-								teamPreview={{ name: 'Manchester United', shortName: 'MUN' }}
-								opponentPreview={{ shortName: 'NEW' }}
-							/>
+			{FORM_PANEL_STATES.map((s) => (
+				<section key={s.id} className="space-y-2">
+					<header>
+						<h2 className="font-display text-sm font-semibold">{s.label}</h2>
+						<p className="text-xs text-muted-foreground">{s.note}</p>
+					</header>
+					<div className="flex flex-wrap items-start gap-4">
+						<div className="flex-1 min-w-[320px] rounded-lg border border-border bg-card py-3">
+							<TeamFormPanel {...s.props} />
 						</div>
-					))}
-				</div>
-			</section>
+						<MobileColumn>
+							<div className="rounded-lg border border-border bg-card py-3">
+								<TeamFormPanel {...s.props} />
+							</div>
+						</MobileColumn>
+					</div>
+				</section>
+			))}
 		</div>
 	)
 }
+
+/**
+ * The panel is the presentational half split out of `TeamFormSheet` — the sheet
+ * itself loads through a database-backed server action, so the gallery renders
+ * the panel inline from fixtures. Tapping either half of any form bar above shows
+ * the same content inside the real sheet.
+ */
+const FORM_PANEL_STATES: Array<{
+	id: string
+	label: string
+	note: string
+	props: React.ComponentProps<typeof TeamFormPanel>
+}> = [
+	{
+		id: 'enriched',
+		label: 'Loaded — split, goals, full 1X2',
+		note: 'Everything the picker gets before committing: the venue split (this team is a fortress at home and ordinary away, which the aggregate row hides), goals for and against per venue, the last matches, the head-to-head, and the whole market including the draw — the outcome that eliminates a classic picker.',
+		props: {
+			detail: TEAM_FORM_DETAIL,
+			market: FORM_PANEL_MARKET,
+			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
+			opponentPreview: { shortName: 'NEW' },
+		},
+	},
+	{
+		id: 'unpriced',
+		label: 'Loaded — unpriced fixture',
+		note: 'The same sheet for a fixture nobody quotes (or a competition we have no odds for): the form half is untouched and there is no market block at all — no zeroes, no placeholder, exactly as the row shows no probability.',
+		props: {
+			detail: TEAM_FORM_DETAIL,
+			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
+			opponentPreview: { shortName: 'NEW' },
+		},
+	},
+	{
+		id: 'empty',
+		label: 'Season start — nothing played, market priced',
+		note: 'Nothing to split yet: every venue reads zero, with a dash where the form string would be. The market is still there — bookmakers price GW1 — and here it is the away side that is the sheet team, so the marked row is the away one, at the widest the percentage and price columns get.',
+		props: {
+			detail: TEAM_FORM_DETAIL_EMPTY,
+			market: FORM_PANEL_MARKET_LONGSHOT,
+			teamPreview: { name: 'Wolverhampton Wanderers', shortName: 'WOL' },
+			opponentPreview: { shortName: 'ARS' },
+		},
+	},
+	{
+		id: 'loading',
+		label: 'Loading — market already on screen',
+		note: 'The form is still in flight; the market was already on the row the viewer tapped, so it renders immediately rather than waiting on a query it does not depend on.',
+		props: {
+			detail: null,
+			loading: true,
+			market: FORM_PANEL_MARKET,
+			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
+			opponentPreview: { shortName: 'NEW' },
+		},
+	},
+	{
+		id: 'error',
+		label: 'Failed — market survives',
+		note: 'The form query failed. The market still shows, for the same reason: it never came from that query.',
+		props: {
+			detail: null,
+			error: 'Could not load team form',
+			market: FORM_PANEL_MARKET,
+			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
+			opponentPreview: { shortName: 'NEW' },
+		},
+	},
+]
