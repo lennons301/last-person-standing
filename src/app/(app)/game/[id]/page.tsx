@@ -425,6 +425,9 @@ export default async function GameDetailPage({
 					roundId={game.currentRound.id}
 					roundNumber={turboPickData.roundNumber}
 					competitionId={turboPickData.competitionId}
+					// League → the remaining fixtures open as the Table view; anything
+					// else → as fixture rows. The toggle is there when standings exist.
+					competitionType={turboPickData.competitionType}
 					fixtures={turboPickData.fixtures}
 					existingPicks={turboPickData.existingPicks}
 					numberOfPicks={numberOfPicks}

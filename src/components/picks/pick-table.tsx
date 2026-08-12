@@ -1,6 +1,7 @@
 'use client'
 
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from 'lucide-react'
+import type React from 'react'
 import { useState } from 'react'
 import {
 	DEFAULT_PICK_TABLE_SORT,
@@ -22,6 +23,11 @@ import { CHIP, TYPE } from './type-scale'
  * of my remaining teams is most likely to win" — so it opens on the market's
  * ordering and lets every column re-ask the question a different way.
  *
+ * Two modes, one board. `onPick` is classic's: a row commits the round's single
+ * pick. `ranking` is turbo's: a row joins the confidence set and carries the
+ * controls for its place in it. Same columns, same sorting, same degradation —
+ * the mode only changes what the last column does.
+ *
  * Everything it renders comes off `PickTableRow`; the sort lives here because
  * it's a view preference, and the ordering itself is `sortPickTableRows`, which
  * is where the degradation rules are tested.
@@ -30,6 +36,27 @@ import { CHIP, TYPE } from './type-scale'
  * goals isn't the same board. Instead the table scrolls horizontally with the
  * team column pinned, so every column stays reachable (and sortable) at 375px.
  */
+
+/**
+ * The board as a *ranking* surface, which is what turbo needs of it: a tap adds
+ * the team to the confidence set instead of committing the round's one pick, and
+ * the rows already in that set carry its controls.
+ *
+ * Passing this switches the last column from "Pick" to the rank controls.
+ * Everything else — every column, every sort, every degradation rule — is the
+ * same board classic reads.
+ */
+export interface PickTableRanking {
+	/** How many are ranked, and how many the round wants. Labels the add button. */
+	count: number
+	target: number
+	/** Add this row's team to the confidence set, at the end of it. */
+	onAdd: (row: PickTableRow) => void
+	/** Move this row's ranked call up or down one place. */
+	onMove: (row: PickTableRow, direction: 'up' | 'down') => void
+	/** Drop this row's ranked call out of the set. */
+	onRemove: (row: PickTableRow) => void
+}
 
 interface PickTableProps {
 	rows: PickTableRow[]
@@ -41,6 +68,11 @@ interface PickTableProps {
 	 * the confirm bar over the row you were comparing against.
 	 */
 	onPick?: (row: PickTableRow) => void | Promise<void>
+	/**
+	 * Turbo's ranking handlers. Mutually exclusive with `onPick` in practice: a
+	 * mode either commits one team from the board or builds a ranking on it.
+	 */
+	ranking?: PickTableRanking
 	/** Post-deadline / read-only: the board still reads, nothing commits. */
 	readonly?: boolean
 	initialSort?: PickTableSort
@@ -70,6 +102,7 @@ export function PickTable({
 	rows,
 	currentTeamId,
 	onPick,
+	ranking,
 	readonly = false,
 	initialSort = DEFAULT_PICK_TABLE_SORT,
 }: PickTableProps) {
@@ -99,7 +132,10 @@ export function PickTable({
 		<div className="rounded-lg border border-border bg-card overflow-x-auto">
 			<table className="w-full text-left border-collapse">
 				<caption className="sr-only">
-					Teams available to pick, sorted by {COLUMNS.find((c) => c.key === sort.column)?.longLabel}
+					{ranking
+						? `Teams available to rank, ${ranking.count} of ${ranking.target} ranked, sorted by`
+						: 'Teams available to pick, sorted by'}{' '}
+					{COLUMNS.find((c) => c.key === sort.column)?.longLabel}
 				</caption>
 				<thead>
 					<tr className="border-b border-border bg-muted/40">
@@ -112,7 +148,7 @@ export function PickTable({
 							/>
 						))}
 						<th scope="col" className="px-2 py-2">
-							<span className="sr-only">Pick</span>
+							<span className="sr-only">{ranking ? 'Rank' : 'Pick'}</span>
 						</th>
 					</tr>
 				</thead>
@@ -125,6 +161,7 @@ export function PickTable({
 							readonly={readonly}
 							pending={pendingRowId === row.id}
 							onPick={() => pick(row)}
+							ranking={ranking}
 						/>
 					))}
 				</tbody>
@@ -184,23 +221,29 @@ function Row({
 	readonly,
 	pending,
 	onPick,
+	ranking,
 }: {
 	row: PickTableRow
 	isCurrent: boolean
 	readonly: boolean
 	pending: boolean
 	onPick: () => void
+	ranking?: PickTableRanking
 }) {
 	const { team, opponent, state } = row
 	const gf = team.standing?.goalsFor
 	const ga = team.standing?.goalsAgainst
-	const unavailable = !row.pickable
+	const isRanked = state.kind === 'ranked'
+	// A ranked row isn't "unavailable" — it's the opposite, it's in the set. What
+	// it can't be is added again, which is what `pickable` is false for.
+	const unavailable = !row.pickable && !isRanked
+	const highlighted = isCurrent || isRanked
 
 	return (
 		<tr
 			className={cn(
 				'border-b border-border last:border-b-0',
-				isCurrent && 'bg-[var(--alive-bg)]',
+				highlighted && 'bg-[var(--alive-bg)]',
 				// Marked, not hidden: "Chelsea, used in GW3" is the answer to the
 				// question the player is asking. Dimmed enough to skip, legible
 				// enough to read.
@@ -210,7 +253,7 @@ function Row({
 			<td
 				className={cn(
 					'px-2 py-2 sticky left-0 z-10',
-					isCurrent ? 'bg-[var(--alive-bg)]' : 'bg-card',
+					highlighted ? 'bg-[var(--alive-bg)]' : 'bg-card',
 				)}
 			>
 				<div className="flex items-center gap-2 min-w-0">
@@ -225,6 +268,16 @@ function Row({
 						)}
 						{state.kind === 'restricted' && (
 							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>{state.reason}</span>
+						)}
+						{state.kind === 'ranked' && (
+							<span className={cn(CHIP, 'bg-[var(--alive-bg)] text-[var(--alive)]')}>
+								Ranked #{state.rank}
+							</span>
+						)}
+						{state.kind === 'fixture-ranked' && (
+							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>
+								#{state.rank}: {state.call}
+							</span>
 						)}
 						{isCurrent && state.kind === 'available' && (
 							<span className={cn(CHIP, 'bg-[var(--alive-bg)] text-[var(--alive)]')}>Current</span>
@@ -271,14 +324,10 @@ function Row({
 				)}
 			</td>
 			<td className="px-2 py-2 text-right">
-				{unavailable || readonly ? (
-					<span className="sr-only">
-						{state.kind === 'used'
-							? `${team.name} used in ${state.label}`
-							: state.kind === 'restricted'
-								? `${team.name} unavailable: ${state.reason}`
-								: `${team.name} locked`}
-					</span>
+				{ranking ? (
+					<RankCell row={row} ranking={ranking} readonly={readonly} />
+				) : unavailable || readonly ? (
+					<UnavailableNote row={row} />
 				) : (
 					<button
 						type="button"
@@ -301,6 +350,123 @@ function Row({
 				)}
 			</td>
 		</tr>
+	)
+}
+
+/**
+ * The last column in ranking mode: add this team to the confidence set, or —
+ * for a row already in it — move it and drop it. The controls live on the row
+ * itself rather than in a separate list, so ordering happens where the
+ * comparison is being made.
+ */
+function RankCell({
+	row,
+	ranking,
+	readonly,
+}: {
+	row: PickTableRow
+	ranking: PickTableRanking
+	readonly: boolean
+}) {
+	const { state, team, opponent } = row
+
+	if (state.kind === 'ranked') {
+		if (readonly) {
+			return <span className="sr-only">{`${team.name} ranked number ${state.rank}`}</span>
+		}
+		return (
+			<div className="inline-flex items-center gap-0.5">
+				<RankControl
+					label={`Move ${team.name} up to number ${state.rank - 1}`}
+					disabled={state.rank <= 1}
+					onClick={() => ranking.onMove(row, 'up')}
+				>
+					<ChevronUp className="h-4 w-4" aria-hidden />
+				</RankControl>
+				<RankControl
+					label={`Move ${team.name} down to number ${state.rank + 1}`}
+					disabled={state.rank >= ranking.count}
+					onClick={() => ranking.onMove(row, 'down')}
+				>
+					<ChevronDown className="h-4 w-4" aria-hidden />
+				</RankControl>
+				<RankControl
+					label={`Remove ${team.name} from your predictions`}
+					onClick={() => ranking.onRemove(row)}
+				>
+					<X className="h-4 w-4" aria-hidden />
+				</RankControl>
+			</div>
+		)
+	}
+
+	if (state.kind === 'fixture-ranked') {
+		// One prediction per fixture: the other side of a ranked fixture has
+		// nothing to offer until that call is removed or changed.
+		return (
+			<span className="sr-only">
+				{`${team.name}'s fixture is already ranked number ${state.rank}, for ${state.call}`}
+			</span>
+		)
+	}
+
+	if (!row.pickable || readonly) return <UnavailableNote row={row} />
+
+	// No cap at `target`: the fixtures view lets the ranking run past the round's
+	// count too, and the confirm bar is what holds the line (it only arms on
+	// exactly `target`). The two views agreeing matters more than the guard.
+	const nextRank = ranking.count + 1
+	return (
+		<button
+			type="button"
+			onClick={() => ranking.onAdd(row)}
+			// "Rank #4" out of a table cell says nothing about which call it makes.
+			aria-label={`Rank ${team.name} to beat ${opponent.name} at number ${nextRank}`}
+			className={cn(
+				TYPE.chip,
+				'rounded-md border border-border bg-card px-2.5 py-1.5 whitespace-nowrap uppercase tracking-wide hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+			)}
+		>
+			Rank #{nextRank}
+		</button>
+	)
+}
+
+function RankControl({
+	label,
+	disabled,
+	onClick,
+	children,
+}: {
+	label: string
+	disabled?: boolean
+	onClick: () => void
+	children: React.ReactNode
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			disabled={disabled}
+			aria-label={label}
+			className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+		>
+			{children}
+		</button>
+	)
+}
+
+/** Why this row offers no control, for a reader who can't see it dimmed. */
+function UnavailableNote({ row }: { row: PickTableRow }) {
+	const { state, team } = row
+	return (
+		<span className="sr-only">
+			{state.kind === 'used'
+				? `${team.name} used in ${state.label}`
+				: state.kind === 'restricted'
+					? `${team.name} unavailable: ${state.reason}`
+					: `${team.name} locked`}
+		</span>
 	)
 }
 
