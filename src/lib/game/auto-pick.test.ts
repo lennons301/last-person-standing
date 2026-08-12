@@ -51,6 +51,38 @@ describe('pickLowestRankedUnusedTeam', () => {
 		).toBe('t-che')
 	})
 
+	it('falls to the alphabetically-last club against a pre-season opening table', () => {
+		// Gameweek 1: no fixture has finished, so the persisted table is the
+		// opening one — every club at zero, positioned alphabetically. "Worst
+		// placed" therefore means last alphabetically (West Brom here), and it
+		// means it deterministically: the opening table gives every club its own
+		// position, so the fallback never lands on the id tie-break below.
+		// Arsenal, Chelsea, Everton, Liverpool, Man City, West Brom.
+		const openingPositions = new Map([
+			['t-ars', 1],
+			['t-che', 2],
+			['t-eve', 3],
+			['t-liv', 4],
+			['t-mci', 5],
+			['t-wba', 6],
+		])
+
+		expect(
+			pickLowestRankedUnusedTeam({
+				fixtures,
+				usedTeamIds: new Set(),
+				teamPositions: openingPositions,
+			}),
+		).toBe('t-wba')
+		expect(
+			pickLowestRankedUnusedTeam({
+				fixtures,
+				usedTeamIds: new Set(['t-wba']),
+				teamPositions: openingPositions,
+			}),
+		).toBe('t-mci')
+	})
+
 	it('returns null when all teams in round are used', () => {
 		expect(
 			pickLowestRankedUnusedTeam({
