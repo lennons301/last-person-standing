@@ -9,8 +9,7 @@ import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
 import type { RankedPick } from '@/components/picks/ranked-item'
 import type { FormMarket } from '@/components/picks/team-form-panel'
 import type { TurboPickEntry } from '@/components/picks/turbo-pick'
-import type { UsedRoundLabel } from '@/lib/game/pick-table-view'
-import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
+import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import type { FormSplit, TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
@@ -46,10 +45,7 @@ function team(
  * shows the short chip and the long announcement a real round produces.
  */
 function usedIn(roundNumber: number): UsedRoundLabel {
-	return {
-		label: roundLabel('league', roundNumber),
-		longLabel: roundLabelLong('league', roundNumber),
-	}
+	return usedRoundLabel('league', roundNumber)
 }
 
 /**

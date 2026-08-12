@@ -1,4 +1,5 @@
 import type { FixtureOdds, FixtureTeamInfo } from '@/components/picks/fixture-row'
+import { type CompetitionType, roundLabel, roundLabelLong } from '@/lib/game/round-label'
 
 /**
  * The pick selector's Table view, derived.
@@ -31,6 +32,22 @@ export interface UsedRoundLabel {
 	label: string
 	/** Long form, e.g. "Gameweek 3" / "Matchday 1" / "Round of 16". */
 	longLabel: string
+}
+
+/**
+ * Both labels for the round a team was spent in. Derived from the competition's
+ * own labelling rather than from the round's provider name — FPL names its events
+ * "Gameweek 3", which is the long form, and a chip that took it verbatim spelled
+ * out the part the player already knows.
+ */
+export function usedRoundLabel(
+	competitionType: CompetitionType,
+	roundNumber: number,
+): UsedRoundLabel {
+	return {
+		label: roundLabel(competitionType, roundNumber),
+		longLabel: roundLabelLong(competitionType, roundNumber),
+	}
 }
 
 export type PickTableRowState =

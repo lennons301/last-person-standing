@@ -8,6 +8,7 @@ import {
 	type PickTableFixture,
 	pickTableHasStandings,
 	sortPickTableRows,
+	usedRoundLabel,
 } from './pick-table-view'
 
 function team(id: string, name: string, overrides: Partial<FixtureTeamInfo> = {}): FixtureTeamInfo {
@@ -66,6 +67,23 @@ const FIXTURES: PickTableFixture[] = [
 function ids(rows: ReturnType<typeof buildPickTableRows>): string[] {
 	return rows.map((r) => r.team.shortName)
 }
+
+describe('usedRoundLabel', () => {
+	it('names a league round short for the chip and long for a reader', () => {
+		// The chip used to take the round's provider name, which for the PL is the
+		// long form — "Used Gameweek 3", spelling out what the player knows.
+		expect(usedRoundLabel('league', 3)).toEqual({ label: 'GW3', longLabel: 'Gameweek 3' })
+	})
+
+	it('gives a knockout its own short label rather than a gameweek', () => {
+		expect(usedRoundLabel('knockout', 2)).toEqual({ label: 'R2', longLabel: 'Round 2' })
+		expect(usedRoundLabel('group_knockout', 1)).toEqual({ label: 'MD1', longLabel: 'Matchday 1' })
+		expect(usedRoundLabel('group_knockout', 5)).toEqual({
+			label: 'R16',
+			longLabel: 'Round of 16',
+		})
+	})
+})
 
 describe('buildPickTableRows', () => {
 	it('emits one row per team, carrying its opponent and the side it plays on', () => {

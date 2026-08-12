@@ -12,7 +12,7 @@ import {
 	type ChainRoundRow,
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
-import type { UsedRoundLabel } from '@/lib/game/pick-table-view'
+import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
@@ -425,17 +425,12 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 	})
 
 	// A game plays one competition, so every previous pick's round labels the same
-	// way this one does. Both forms come from `round-label`, not from the round's
-	// provider name ("Gameweek 3"): the chip shows the short one, a screen reader
-	// gets the long one.
+	// way this one does.
 	const competitionType = roundData.competition.type
 	const usedTeamsByRound: Record<string, UsedRoundLabel> = {}
 	for (const p of myPreviousPicks) {
 		if (p.roundId !== roundId && p.round) {
-			usedTeamsByRound[p.teamId] = {
-				label: roundLabel(competitionType, p.round.number),
-				longLabel: roundLabelLong(competitionType, p.round.number),
-			}
+			usedTeamsByRound[p.teamId] = usedRoundLabel(competitionType, p.round.number)
 		}
 	}
 
