@@ -126,6 +126,68 @@ describe('buildPickTableRows', () => {
 	})
 })
 
+describe('buildPickTableRows — turbo’s ranking', () => {
+	it('marks the ranked team with its confidence rank, and its opponent with the call', () => {
+		const rows = buildPickTableRows({
+			fixtures: FIXTURES,
+			rankedFixtures: { 'fx-1': { rank: 2, teamId: 't-ars' } },
+		})
+		expect(rows.find((r) => r.team.id === 't-ars')?.state).toEqual({ kind: 'ranked', rank: 2 })
+		// One prediction per fixture: Burnley is in a fixture already called, and
+		// the row says whose call it is rather than dropping out of the board.
+		expect(rows.find((r) => r.team.id === 't-bur')?.state).toEqual({
+			kind: 'fixture-ranked',
+			rank: 2,
+			call: 'ARS',
+		})
+		expect(rows.find((r) => r.team.id === 't-bur')?.pickable).toBe(false)
+	})
+
+	it('names a draw call on both of the fixture’s rows — no team wins it', () => {
+		const rows = buildPickTableRows({
+			fixtures: FIXTURES,
+			rankedFixtures: { 'fx-1': { rank: 1, teamId: null } },
+		})
+		for (const id of ['t-ars', 't-bur']) {
+			expect(rows.find((r) => r.team.id === id)?.state).toEqual({
+				kind: 'fixture-ranked',
+				rank: 1,
+				call: 'Draw',
+			})
+		}
+	})
+
+	it('leaves the fixtures outside the ranking untouched', () => {
+		const rows = buildPickTableRows({
+			fixtures: FIXTURES,
+			rankedFixtures: { 'fx-1': { rank: 1, teamId: 't-ars' } },
+		})
+		expect(rows.find((r) => r.team.id === 't-che')?.state).toEqual({ kind: 'available' })
+		expect(rows.find((r) => r.team.id === 't-che')?.pickable).toBe(true)
+	})
+
+	it('lets a mode block outrank the ranking — the block is what needs saying', () => {
+		const rows = buildPickTableRows({
+			fixtures: FIXTURES,
+			restrictedTeams: { 't-ars': 'Already through' },
+			rankedFixtures: { 'fx-1': { rank: 1, teamId: 't-ars' } },
+		})
+		expect(rows.find((r) => r.team.id === 't-ars')?.state).toEqual({
+			kind: 'restricted',
+			reason: 'Already through',
+		})
+	})
+
+	it('sorts ranked rows on their numbers like any other — the ranking is not the order', () => {
+		const rows = buildPickTableRows({
+			fixtures: FIXTURES,
+			rankedFixtures: { 'fx-2': { rank: 1, teamId: 't-che' } },
+		})
+		// Chelsea is ranked #1 but unpriced, so safest-first still sinks it.
+		expect(ids(sortPickTableRows(rows, DEFAULT_PICK_TABLE_SORT))[0]).toBe('ARS')
+	})
+})
+
 describe('sortPickTableRows', () => {
 	const rows = buildPickTableRows({ fixtures: FIXTURES })
 
