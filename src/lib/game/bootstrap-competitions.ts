@@ -287,7 +287,7 @@ function competitionRoundsWithFixtures(competitionId: string) {
  * are keyed by, the team row that id resolves to, and the club name the
  * opening table is ordered by.
  */
-export interface CompetitionTeamRef {
+interface CompetitionTeamRef {
 	externalId: string
 	teamId: string
 	name: string
@@ -568,6 +568,7 @@ export async function syncCompetition(
 	const compTeamRefs: CompetitionTeamRef[] = []
 	for (const at of adapterTeams) {
 		const existing = await db.query.team.findFirst({ where: eq(team.name, at.name) })
+		let teamId: string
 		if (existing) {
 			await db
 				.update(team)
@@ -583,7 +584,7 @@ export async function syncCompetition(
 					externalIds: { ...(existing.externalIds ?? {}), [key]: at.externalId },
 				})
 				.where(eq(team.id, existing.id))
-			teamIdByPayloadId.set(at.externalId, existing.id)
+			teamId = existing.id
 		} else {
 			const [created] = await db
 				.insert(team)
@@ -598,14 +599,10 @@ export async function syncCompetition(
 					externalIds: { [key]: at.externalId },
 				})
 				.returning()
-			teamIdByPayloadId.set(at.externalId, created.id)
+			teamId = created.id
 		}
-		compTeamRefs.push({
-			externalId: at.externalId,
-			// biome-ignore lint/style/noNonNullAssertion: set on both branches above
-			teamId: teamIdByPayloadId.get(at.externalId)!,
-			name: at.name,
-		})
+		teamIdByPayloadId.set(at.externalId, teamId)
+		compTeamRefs.push({ externalId: at.externalId, teamId, name: at.name })
 	}
 
 	// Persist latest league standings into team.leaguePosition when the adapter
