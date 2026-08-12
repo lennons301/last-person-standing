@@ -1,5 +1,4 @@
 import type { FixtureOdds, FixtureTeamInfo } from '@/components/picks/fixture-row'
-import type { FormResult } from '@/components/picks/form-dots'
 
 /**
  * The pick selector's Table view, derived.
@@ -51,6 +50,13 @@ export interface PickTableRow {
 	winProbability: number | null
 	/** Decimal win-price the probability came from. Null with the probability. */
 	price: number | null
+	/**
+	 * The fixture's whole 1X2, carried for the form sheet a row taps through to —
+	 * which shows the full home/draw/away market, not just this row's side. It
+	 * comes down with the row for the same reason the fixture row's does: it's on
+	 * screen the instant the sheet opens, form still loading or not.
+	 */
+	fixtureOdds: FixtureOdds | null
 	state: PickTableRowState
 	/** False for used / restricted rows: marked, listed, but not pickable. */
 	pickable: boolean
@@ -129,6 +135,7 @@ export function buildPickTableRows({
 				kickoff: toIso(fixture.kickoff),
 				winProbability: sideOdds?.probability ?? null,
 				price: sideOdds?.price ?? null,
+				fixtureOdds: fixture.odds ?? null,
 				state,
 				pickable: state.kind === 'available',
 			})
@@ -142,15 +149,15 @@ function toIso(value: string | Date | null | undefined): string | null {
 	return typeof value === 'string' ? value : value.toISOString()
 }
 
-export type PickTableSortColumn =
-	| 'team'
-	| 'position'
-	| 'played'
-	| 'points'
-	| 'goalDifference'
-	| 'form'
-	| 'opponent'
-	| 'winProbability'
+/**
+ * The board's sortable columns — a subset of what it *shows*.
+ *
+ * Only three, because the board is five columns wide on a phone and two of them
+ * carry no order: form is three results (its "more is better" reading was points
+ * from the last five, which the column no longer shows), and the next opponent
+ * sorts alphabetically, which answers nothing a player asks.
+ */
+export type PickTableSortColumn = 'team' | 'position' | 'winProbability'
 
 export interface PickTableSort {
 	column: PickTableSortColumn
@@ -158,27 +165,24 @@ export interface PickTableSort {
 }
 
 /**
- * Safest-first. The whole point of the board is "who is most likely to win this
- * round", so it opens on the market's answer rather than on the league table's.
+ * Top of the table first. The board is a standings board, so it opens the way
+ * the league does — the ordering the player already carries in their head, and
+ * the one column that's there for every team whether the round is priced or not.
+ * The market read is one tap away on the Win header.
  */
 export const DEFAULT_PICK_TABLE_SORT: PickTableSort = {
-	column: 'winProbability',
-	direction: 'desc',
+	column: 'position',
+	direction: 'asc',
 }
 
 /**
  * The direction a column sorts on its first tap: whichever end of it the player
- * is looking for. Best-first for the "more is better" columns, top-of-the-table
- * first for position, A–Z for the names.
+ * is looking for. Safest-first for the win chance, top-of-the-table first for
+ * position, A–Z for the name.
  */
 const FIRST_DIRECTION: Record<PickTableSortColumn, 'asc' | 'desc'> = {
 	team: 'asc',
 	position: 'asc',
-	played: 'asc',
-	points: 'desc',
-	goalDifference: 'desc',
-	form: 'desc',
-	opponent: 'asc',
 	winProbability: 'desc',
 }
 
@@ -193,35 +197,16 @@ export function nextPickTableSort(
 	return { column, direction: FIRST_DIRECTION[column] }
 }
 
-/** Points from the last five results — the only ordering "form" can carry. */
-export function formPoints(form: FormResult[] | undefined | null): number | null {
-	if (!form?.length) return null
-	return form.reduce((total, r) => total + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0)
-}
-
 /**
  * The value a column sorts on, or null where this row has nothing to sort by —
- * an unpriced fixture, a team with no form yet, a competition with no table.
+ * an unpriced fixture, or a competition with no league table behind it.
  */
 function sortValue(row: PickTableRow, column: PickTableSortColumn): number | string | null {
 	switch (column) {
 		case 'team':
 			return row.team.name
-		case 'opponent':
-			return row.opponent.name
 		case 'position':
 			return row.team.leaguePosition ?? null
-		case 'played':
-			return row.team.standing?.played ?? null
-		case 'points':
-			return row.team.standing?.points ?? null
-		case 'goalDifference': {
-			const { goalsFor, goalsAgainst } = row.team.standing ?? {}
-			if (goalsFor == null || goalsAgainst == null) return null
-			return goalsFor - goalsAgainst
-		}
-		case 'form':
-			return formPoints(row.team.form)
 		case 'winProbability':
 			return row.winProbability
 	}
@@ -231,9 +216,9 @@ function sortValue(row: PickTableRow, column: PickTableSortColumn): number | str
  * Sort, degrading rather than lying.
  *
  * Rows with nothing to sort by always sink to the bottom — in *both*
- * directions. Ascending win-probability must not float every unpriced fixture to
- * the top of a board whose whole promise is "safest first"; a missing value is
- * "we don't know", not zero. Ties (and the sunk rows among themselves) fall back
+ * directions. Ascending win-probability must not float every unpriced fixture
+ * above a 7% shot; a missing value is "we don't know", not zero. Ties (and the
+ * sunk rows among themselves) fall back
  * to team name, so the order is total and a re-sort never shuffles equals.
  *
  * Pure and non-mutating: the caller keeps its own row array.

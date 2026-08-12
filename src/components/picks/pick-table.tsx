@@ -1,8 +1,8 @@
 'use client'
 
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronUp, X } from 'lucide-react'
 import type React from 'react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
 	DEFAULT_PICK_TABLE_SORT,
 	nextPickTableSort,
@@ -12,39 +12,45 @@ import {
 	sortPickTableRows,
 } from '@/lib/game/pick-table-view'
 import { cn } from '@/lib/utils'
+import type { FixtureTeamInfo, RowFormSheetRenderer } from './fixture-row'
 import { FormDots } from './form-dots'
 import { TeamBadge } from './team-badge'
+import type { FormMarket } from './team-form-panel'
+import { TeamFormSheet } from './team-form-sheet'
 import { CHIP, TYPE } from './type-scale'
 
 /**
- * The Table view: one row per team the player could pick, sorted safest-first.
+ * The Table view: one row per team the player could pick, as a standings board.
  *
  * Where the Fixtures view answers "what's on this weekend", this answers "which
- * of my remaining teams is most likely to win" — so it opens on the market's
- * ordering and lets every column re-ask the question a different way.
+ * of my remaining teams is most likely to win" — so it opens the way the league
+ * table does and lets the two columns that re-ask the question (team, win
+ * chance) re-sort it.
  *
- * Two modes, one board. `onPick` is classic's: a row commits the round's single
- * pick. `ranking` is turbo's: a row joins the confidence set and carries the
- * controls for its place in it. Same columns, same sorting, same degradation —
- * the mode only changes what the last column does.
+ * Two modes, one board. `onSelect` is classic's: a row selects its team and the
+ * confirm bar below commits it — a tap never writes. `ranking` is turbo's: the
+ * last column adds the team to the confidence set and carries the controls for
+ * its place in it. Same columns, same sorting, same degradation.
  *
  * Everything it renders comes off `PickTableRow`; the sort lives here because
  * it's a view preference, and the ordering itself is `sortPickTableRows`, which
  * is where the degradation rules are tested.
  *
- * Width: the columns don't collapse on a phone — a board missing points and
- * goals isn't the same board. Instead the table scrolls horizontally with the
- * team column pinned, so every column stays reachable (and sortable) at 375px.
+ * Width: five columns, no horizontal scroll and no pinned column — the board
+ * fits a 360px phone. That's what played, points and goals came out for: goals
+ * stay reachable in the form sheet's home/away split, one tap from the form
+ * cell. The win column keeps its decimal price at every width (the price is what
+ * explains the percentage) by stacking it under the percentage on a phone rather
+ * than dropping it.
  */
 
 /**
  * The board as a *ranking* surface, which is what turbo needs of it: a tap adds
- * the team to the confidence set instead of committing the round's one pick, and
+ * the team to the confidence set instead of selecting the round's one pick, and
  * the rows already in that set carry its controls.
  *
- * Passing this switches the last column from "Pick" to the rank controls.
- * Everything else — every column, every sort, every degradation rule — is the
- * same board classic reads.
+ * Passing this adds the rank column. Everything else — every column, every sort,
+ * every degradation rule — is the same board classic reads.
  */
 export interface PickTableRanking {
 	/** How many are ranked, and how many the round wants. Labels the add button. */
@@ -58,31 +64,60 @@ export interface PickTableRanking {
 	onRemove: (row: PickTableRow) => void
 }
 
+/**
+ * `RowFormSheetRenderer` plus the fixture the row belongs to — the one thing a
+ * board row knows that a fixture row's renderer is handed for free. Turbo keys
+ * its renderer on the fixture, so without it the mode would have to re-derive
+ * the fixture from the two team ids.
+ *
+ * A plain `RowFormSheetRenderer` (which is what classic and the gallery already
+ * have) is assignable to this: it simply ignores the extra field.
+ */
+export type PickTableFormSheetRenderer = (
+	args: Parameters<RowFormSheetRenderer>[0] & { fixtureId: string },
+) => React.ReactNode
+
 interface PickTableProps {
 	rows: PickTableRow[]
-	/** The team currently picked for this round, if any. Marked, not re-pickable. */
+	/** The team currently picked for this round, if any. Marked, not re-selectable. */
 	currentTeamId?: string | null
 	/**
-	 * Commit this row's team. One tap: the board's whole point is picking from
-	 * the ordering you're reading, and a select-then-confirm step here would put
-	 * the confirm bar over the row you were comparing against.
+	 * The row the player has selected, by `PickTableRow.id`. Marked here; the
+	 * confirm bar below the board is what commits it.
 	 */
-	onPick?: (row: PickTableRow) => void | Promise<void>
+	selectedRowId?: string | null
 	/**
-	 * Turbo's ranking handlers. Mutually exclusive with `onPick` in practice: a
-	 * mode either commits one team from the board or builds a ranking on it.
+	 * Select this row's team. Tapping anywhere on the row that isn't the form
+	 * calls this — the same select-then-confirm contract the Fixtures view uses,
+	 * so a single tap can never commit a pick from either view.
+	 */
+	onSelect?: (row: PickTableRow) => void
+	/**
+	 * Turbo's ranking handlers. Mutually exclusive with `onSelect` in practice: a
+	 * mode either selects one team from the board or builds a ranking on it.
 	 */
 	ranking?: PickTableRanking
 	/** Post-deadline / read-only: the board still reads, nothing commits. */
 	readonly?: boolean
 	initialSort?: PickTableSort
+	// Required for the form-detail sheet the form cell taps through to. Without
+	// either, the form cell is not tappable and carries no chevron.
+	competitionId?: string
+	roundNumber?: number
+	/**
+	 * Overrides how the form sheet is rendered, for callers that can't reach the
+	 * database-backed server action the default path uses (`/preview/picks`).
+	 * Supplying it makes the form cell tappable even without a `competitionId`.
+	 */
+	renderFormSheet?: PickTableFormSheetRenderer
 }
 
 interface ColumnSpec {
-	key: PickTableSortColumn
+	/** The column's sort, or null where the column carries no useful order. */
+	key: PickTableSortColumn | null
 	/** Short header, for the narrow columns. */
 	label: string
-	/** Spelled out for screen readers, where "GF/GA" is not a word. */
+	/** Spelled out for screen readers, where "#" is not a word. */
 	longLabel: string
 	align: 'left' | 'right'
 }
@@ -90,35 +125,43 @@ interface ColumnSpec {
 const COLUMNS: ColumnSpec[] = [
 	{ key: 'team', label: 'Team', longLabel: 'Team', align: 'left' },
 	{ key: 'position', label: '#', longLabel: 'League position', align: 'right' },
-	{ key: 'played', label: 'P', longLabel: 'Played', align: 'right' },
-	{ key: 'points', label: 'Pts', longLabel: 'Points', align: 'right' },
-	{ key: 'goalDifference', label: 'GF/GA', longLabel: 'Goals for and against', align: 'right' },
-	{ key: 'form', label: 'Form', longLabel: 'Recent form', align: 'left' },
-	{ key: 'opponent', label: 'Next', longLabel: 'Next opponent', align: 'left' },
+	{ key: null, label: 'Form', longLabel: 'Recent form', align: 'left' },
+	{ key: null, label: 'Next', longLabel: 'Next opponent', align: 'left' },
 	{ key: 'winProbability', label: 'Win', longLabel: 'Win probability', align: 'right' },
 ]
+
+/**
+ * How many of a team's results the form cell shows. Six fitted a board that
+ * scrolled sideways; three fit a phone, and the sheet one tap away carries the
+ * rest. The array is most-recent-first, so this is the front of it.
+ */
+const FORM_RESULTS_SHOWN = 3
+
+/** Narrow cells buy their width back from the padding; the team cell doesn't. */
+const CELL = 'px-1.5 py-2 sm:px-2'
 
 export function PickTable({
 	rows,
 	currentTeamId,
-	onPick,
+	selectedRowId,
+	onSelect,
 	ranking,
 	readonly = false,
 	initialSort = DEFAULT_PICK_TABLE_SORT,
+	competitionId,
+	roundNumber,
+	renderFormSheet,
 }: PickTableProps) {
 	const [sort, setSort] = useState<PickTableSort>(initialSort)
-	const [pendingRowId, setPendingRowId] = useState<string | null>(null)
+	const [sheetRowId, setSheetRowId] = useState<string | null>(null)
+	// Retain the last opened row so the sheet keeps its team through the dismiss
+	// animation instead of emptying the moment the close starts.
+	const lastSheetRowId = useRef<string | null>(null)
 	const sorted = sortPickTableRows(rows, sort)
+	const sheetEnabled = !!competitionId || !!renderFormSheet
+	const selectable = !!onSelect && !readonly
 
-	async function pick(row: PickTableRow) {
-		if (!onPick || readonly || !row.pickable) return
-		setPendingRowId(row.id)
-		try {
-			await onPick(row)
-		} finally {
-			setPendingRowId(null)
-		}
-	}
+	const sheetRow = sorted.find((r) => r.id === (sheetRowId ?? lastSheetRowId.current)) ?? null
 
 	if (rows.length === 0) {
 		return (
@@ -128,69 +171,164 @@ export function PickTable({
 		)
 	}
 
+	// Both gestures, stated rather than discovered. Composed from what this board
+	// actually offers, so a read-only round doesn't promise a selection.
+	const gestures = [
+		selectable && 'Tap a row to select a team',
+		ranking && !readonly && 'Tap Rank to back a team',
+		sheetEnabled && 'Tap the form for team detail',
+	].filter(Boolean) as string[]
+
 	return (
-		<div className="rounded-lg border border-border bg-card overflow-x-auto">
-			<table className="w-full text-left border-collapse">
-				<caption className="sr-only">
-					{ranking
-						? `Teams available to rank, ${ranking.count} of ${ranking.target} ranked, sorted by`
-						: 'Teams available to pick, sorted by'}{' '}
-					{COLUMNS.find((c) => c.key === sort.column)?.longLabel}
-				</caption>
-				<thead>
-					<tr className="border-b border-border bg-muted/40">
-						{COLUMNS.map((col) => (
-							<SortableHeader
-								key={col.key}
-								column={col}
-								sort={sort}
-								onSort={() => setSort((s) => nextPickTableSort(s, col.key))}
+		<>
+			<div className="rounded-lg border border-border bg-card">
+				<table className="w-full table-auto text-left border-collapse">
+					<caption className="sr-only">
+						{ranking
+							? `Teams available to rank, ${ranking.count} of ${ranking.target} ranked`
+							: readonly
+								? 'Teams in this round, read-only'
+								: 'Teams available to pick'}
+						, sorted by {COLUMNS.find((c) => c.key === sort.column)?.longLabel}
+					</caption>
+					<thead>
+						<tr className="border-b border-border bg-muted/40">
+							{COLUMNS.map((col) => {
+								const { key } = col
+								return (
+									<HeaderCell
+										key={col.label}
+										column={col}
+										sort={sort}
+										onSort={key ? () => setSort((s) => nextPickTableSort(s, key)) : undefined}
+									/>
+								)
+							})}
+							{ranking && (
+								<th scope="col" className={CELL}>
+									<span className="sr-only">Rank</span>
+								</th>
+							)}
+						</tr>
+						{gestures.length > 0 && (
+							<tr className="border-b border-border bg-muted/40">
+								<td
+									colSpan={COLUMNS.length + (ranking ? 1 : 0)}
+									className={cn(TYPE.meta, 'px-2 pb-1.5 text-muted-foreground')}
+								>
+									{gestures.join(' · ')}
+								</td>
+							</tr>
+						)}
+					</thead>
+					<tbody>
+						{sorted.map((row) => (
+							<Row
+								key={row.id}
+								row={row}
+								isCurrent={row.team.id === currentTeamId}
+								isSelected={row.id === selectedRowId}
+								readonly={readonly}
+								onSelect={selectable ? () => onSelect?.(row) : undefined}
+								sheetEnabled={sheetEnabled}
+								onOpenSheet={() => {
+									lastSheetRowId.current = row.id
+									setSheetRowId(row.id)
+								}}
+								ranking={ranking}
 							/>
 						))}
-						<th scope="col" className="px-2 py-2">
-							<span className="sr-only">{ranking ? 'Rank' : 'Pick'}</span>
-						</th>
-					</tr>
-				</thead>
-				<tbody>
-					{sorted.map((row) => (
-						<Row
-							key={row.id}
-							row={row}
-							isCurrent={row.team.id === currentTeamId}
-							readonly={readonly}
-							pending={pendingRowId === row.id}
-							onPick={() => pick(row)}
-							ranking={ranking}
-						/>
-					))}
-				</tbody>
-			</table>
-		</div>
+					</tbody>
+				</table>
+			</div>
+
+			{sheetRow &&
+				(renderFormSheet
+					? renderFormSheet({
+							fixtureId: sheetRow.fixtureId,
+							...sheetSides(sheetRow),
+							side: sheetRow.side,
+							open: sheetRowId !== null,
+							onClose: () => setSheetRowId(null),
+							market: sheetMarket(sheetRow),
+						})
+					: competitionId && (
+							<TeamFormSheet
+								market={sheetMarket(sheetRow)}
+								open={sheetRowId !== null}
+								onOpenChange={(open) => {
+									if (!open) setSheetRowId(null)
+								}}
+								teamId={sheetRow.team.id}
+								competitionId={competitionId}
+								opponentTeamId={sheetRow.opponent.id}
+								beforeRoundNumber={roundNumber}
+								teamPreview={sheetRow.team}
+								opponentPreview={{ shortName: sheetRow.opponent.shortName }}
+							/>
+						))}
+		</>
 	)
 }
 
-function SortableHeader({
+/** The row's two teams as the sheet's renderer wants them: by side, not by role. */
+function sheetSides(row: PickTableRow): { home: FixtureTeamInfo; away: FixtureTeamInfo } {
+	return row.side === 'home'
+		? { home: row.team, away: row.opponent }
+		: { home: row.opponent, away: row.team }
+}
+
+/**
+ * The whole 1X2 for the sheet, built from the odds that came down with the row.
+ * Null for an unpriced fixture, where the sheet shows no market at all.
+ */
+function sheetMarket(row: PickTableRow): FormMarket | null {
+	const odds = row.fixtureOdds
+	if (!odds) return null
+	const { home, away } = sheetSides(row)
+	return {
+		home: { shortName: home.shortName, ...odds.home },
+		draw: odds.draw,
+		away: { shortName: away.shortName, ...odds.away },
+		asOf: odds.asOf,
+		teamSide: row.side,
+	}
+}
+
+function HeaderCell({
 	column,
 	sort,
 	onSort,
 }: {
 	column: ColumnSpec
 	sort: PickTableSort
-	onSort: () => void
+	onSort?: () => void
 }) {
-	const active = sort.column === column.key
+	const active = column.key != null && sort.column === column.key
+	const headerCls = cn(
+		CELL,
+		'font-medium whitespace-nowrap',
+		column.align === 'right' ? 'text-right' : 'text-left',
+	)
+
+	// Form and Next carry no order worth offering, so their headers are labels.
+	if (!onSort) {
+		return (
+			<th scope="col" className={headerCls}>
+				<span className={cn(TYPE.meta, 'uppercase tracking-wide text-muted-foreground')}>
+					{column.label}
+				</span>
+			</th>
+		)
+	}
+
 	return (
 		<th
 			scope="col"
-			// `aria-sort` is what makes "every column is sortable" audible rather
-			// than just clickable.
+			// `aria-sort` is what makes "this column is sortable" audible rather than
+			// just clickable.
 			aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-			className={cn(
-				'px-2 py-2 font-medium whitespace-nowrap',
-				column.key === 'team' && 'sticky left-0 z-10 bg-muted/40',
-				column.align === 'right' ? 'text-right' : 'text-left',
-			)}
+			className={headerCls}
 		>
 			<button
 				type="button"
@@ -218,31 +356,36 @@ function SortableHeader({
 function Row({
 	row,
 	isCurrent,
+	isSelected,
 	readonly,
-	pending,
-	onPick,
+	onSelect,
+	sheetEnabled,
+	onOpenSheet,
 	ranking,
 }: {
 	row: PickTableRow
 	isCurrent: boolean
+	isSelected: boolean
 	readonly: boolean
-	pending: boolean
-	onPick: () => void
+	onSelect?: () => void
+	sheetEnabled: boolean
+	onOpenSheet: () => void
 	ranking?: PickTableRanking
 }) {
 	const { team, opponent, state } = row
-	const gf = team.standing?.goalsFor
-	const ga = team.standing?.goalsAgainst
 	const isRanked = state.kind === 'ranked'
 	// A ranked row isn't "unavailable" — it's the opposite, it's in the set. What
 	// it can't be is added again, which is what `pickable` is false for.
 	const unavailable = !row.pickable && !isRanked
-	const highlighted = isCurrent || isRanked
+	const highlighted = isCurrent || isRanked || isSelected
+	// The round's current pick is marked, not re-offered: there's nothing for a
+	// selection to change. Used and restricted teams stay listed and unselectable.
+	const selectable = !!onSelect && row.pickable && !isCurrent
 
 	return (
 		<tr
 			className={cn(
-				'border-b border-border last:border-b-0',
+				'relative border-b border-border last:border-b-0',
 				highlighted && 'bg-[var(--alive-bg)]',
 				// Marked, not hidden: "Chelsea, used in GW3" is the answer to the
 				// question the player is asking. Dimmed enough to skip, legible
@@ -250,12 +393,7 @@ function Row({
 				unavailable && 'opacity-60',
 			)}
 		>
-			<td
-				className={cn(
-					'px-2 py-2 sticky left-0 z-10',
-					highlighted ? 'bg-[var(--alive-bg)]' : 'bg-card',
-				)}
-			>
+			<td className="px-2 py-2">
 				<div className="flex items-center gap-2 min-w-0">
 					<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="sm" />
 					<div className="flex flex-col gap-0.5 min-w-0">
@@ -284,72 +422,112 @@ function Row({
 						)}
 					</div>
 				</div>
+				{selectable && (
+					// The row's tap target, stretched over every cell of it. A sibling of
+					// the form cell's button rather than its parent: one interactive
+					// control can't contain another, and the form is its own gesture.
+					<button
+						type="button"
+						onClick={onSelect}
+						aria-pressed={isSelected}
+						// "Select Chelsea" out of a table row says nothing about which
+						// fixture the pick commits to; the label carries the whole decision.
+						aria-label={`Select ${team.name} vs ${opponent.name} (${row.side === 'home' ? 'home' : 'away'})`}
+						className={cn(
+							'absolute inset-0 z-10 w-full rounded-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
+							isSelected && 'ring-2 ring-inset ring-[var(--alive)]',
+						)}
+					/>
+				)}
 			</td>
-			<NumberCell value={team.leaguePosition} />
-			<NumberCell value={team.standing?.played} />
-			<NumberCell value={team.standing?.points} />
-			<td className={cn(TYPE.meta, 'px-2 py-2 text-right font-mono whitespace-nowrap')}>
-				{gf != null && ga != null ? (
-					`${gf}/${ga}`
+			<td className={cn(TYPE.meta, CELL, 'text-right font-mono whitespace-nowrap')}>
+				{team.leaguePosition != null ? (
+					team.leaguePosition
 				) : (
 					<span className="text-muted-foreground/60">–</span>
 				)}
 			</td>
-			<td className="px-2 py-2">
-				{team.form?.length ? (
-					<FormDots results={team.form} size="sm" />
-				) : (
-					// Same wording the fixture row uses at season start: an explicit
-					// "nothing yet" rather than a blank that reads as half-loaded.
-					<span className={cn(TYPE.chip, 'font-normal text-muted-foreground/70 whitespace-nowrap')}>
-						No form yet
-					</span>
-				)}
-			</td>
-			<td className={cn(TYPE.meta, 'px-2 py-2 whitespace-nowrap')}>
+			<FormCell row={row} sheetEnabled={sheetEnabled} onOpenSheet={onOpenSheet} />
+			<td className={cn(TYPE.meta, CELL, 'whitespace-nowrap')}>
 				<span className="font-medium">{opponent.shortName}</span>{' '}
 				<span className="text-muted-foreground">({row.side === 'home' ? 'H' : 'A'})</span>
 			</td>
-			<td className={cn(TYPE.meta, 'px-2 py-2 text-right whitespace-nowrap')}>
+			<td className={cn(TYPE.meta, CELL, 'text-right whitespace-nowrap')}>
 				{row.winProbability != null ? (
-					<>
-						<span className="font-semibold">{Math.round(row.winProbability * 100)}%</span>{' '}
+					// The price never drops — it's what makes the percentage traceable to a
+					// real quote — so on a phone it stacks under it instead.
+					<span className="flex flex-col items-end sm:flex-row sm:items-baseline sm:justify-end sm:gap-1">
+						<span className="font-semibold">{Math.round(row.winProbability * 100)}%</span>
 						{row.price != null && (
 							<span className="font-mono text-muted-foreground">{row.price.toFixed(2)}</span>
 						)}
-					</>
+					</span>
 				) : (
 					// No odds for this fixture: say so, never show a 0%.
 					<span className="text-muted-foreground/60">No odds</span>
 				)}
 			</td>
-			<td className="px-2 py-2 text-right">
-				{ranking ? (
+			{ranking && (
+				<td className={cn(CELL, 'text-right')}>
 					<RankCell row={row} ranking={ranking} readonly={readonly} />
-				) : unavailable || readonly ? (
-					<UnavailableNote row={row} />
-				) : (
-					<button
-						type="button"
-						onClick={onPick}
-						// "Pick" alone is ambiguous read out of a table cell; the label
-						// carries the whole decision the tap commits.
-						aria-label={`Pick ${team.name} vs ${opponent.name} (${row.side === 'home' ? 'home' : 'away'})`}
-						disabled={pending || isCurrent}
-						className={cn(
-							TYPE.chip,
-							'rounded-md border px-2.5 py-1.5 whitespace-nowrap uppercase tracking-wide focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-							isCurrent
-								? 'border-[var(--alive)] text-[var(--alive)]'
-								: 'border-border bg-card hover:bg-muted',
-							pending && 'opacity-60',
-						)}
-					>
-						{isCurrent ? 'Picked' : pending ? 'Picking…' : 'Pick'}
-					</button>
-				)}
-			</td>
+				</td>
+			)}
 		</tr>
+	)
+}
+
+/**
+ * The three most recent results, and the tap-through to the form sheet — the
+ * same marker and gesture the Fixtures view's form bar uses, so the chevron
+ * means the same thing in both views.
+ *
+ * A team with no form has nothing to tap: the cell says the season hasn't
+ * started rather than offering a sheet with no results in it.
+ */
+function FormCell({
+	row,
+	sheetEnabled,
+	onOpenSheet,
+}: {
+	row: PickTableRow
+	sheetEnabled: boolean
+	onOpenSheet: () => void
+}) {
+	const form = row.team.form?.slice(0, FORM_RESULTS_SHOWN)
+
+	if (!form?.length) {
+		return (
+			<td className={CELL}>
+				{/* Same wording the fixture row uses at season start: an explicit
+				    "nothing yet" rather than a blank that reads as half-loaded. */}
+				<span className={cn(TYPE.chip, 'font-normal text-muted-foreground/70 whitespace-nowrap')}>
+					No form yet
+				</span>
+			</td>
+		)
+	}
+
+	if (!sheetEnabled) {
+		return (
+			<td className={CELL}>
+				<FormDots results={form} size="sm" />
+			</td>
+		)
+	}
+
+	return (
+		<td className={CELL}>
+			<button
+				type="button"
+				onClick={onOpenSheet}
+				aria-label={`Open form details for ${row.team.name}`}
+				// Above the row's stretched select button, which covers this cell too.
+				className="relative z-20 -mx-1 inline-flex items-center gap-0.5 rounded px-1 py-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+			>
+				<FormDots results={form} size="sm" />
+				<ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/60" aria-hidden />
+			</button>
+		</td>
 	)
 }
 
@@ -434,7 +612,8 @@ function RankCell({
 			aria-label={`Rank ${team.name} to beat ${opponent.name} at number ${nextRank}`}
 			className={cn(
 				TYPE.chip,
-				'rounded-md border border-border bg-card px-2.5 py-1.5 whitespace-nowrap uppercase tracking-wide hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+				// Above the row's stretched button in the mode that has one.
+				'relative z-20 rounded-md border border-border bg-card px-2 py-1.5 whitespace-nowrap uppercase tracking-wide hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 			)}
 		>
 			Rank #{nextRank}
@@ -459,7 +638,7 @@ function RankControl({
 			onClick={onClick}
 			disabled={disabled}
 			aria-label={label}
-			className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+			className="relative z-20 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 		>
 			{children}
 		</button>
@@ -477,13 +656,5 @@ function UnavailableNote({ row }: { row: PickTableRow }) {
 					? `${team.name} unavailable: ${state.reason}`
 					: `${team.name} locked`}
 		</span>
-	)
-}
-
-function NumberCell({ value }: { value?: number | null }) {
-	return (
-		<td className={cn(TYPE.meta, 'px-2 py-2 text-right font-mono whitespace-nowrap')}>
-			{value != null ? value : <span className="text-muted-foreground/60">–</span>}
-		</td>
 	)
 }

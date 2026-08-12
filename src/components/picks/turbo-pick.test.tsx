@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/navigation', () => ({
@@ -256,16 +256,19 @@ describe('TurboPick Table view', () => {
 
 	it('keeps the board on the same columns and sorting classic reads', () => {
 		renderTable()
-		for (const column of [
-			'League position',
-			'Played',
-			'Points',
-			'Recent form',
-			'Win probability',
-		]) {
+		expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+			'Team',
+			'#',
+			'Form',
+			'Next',
+			'Win',
+			'Rank',
+		])
+		for (const column of ['Team', 'League position', 'Win probability']) {
 			expect(screen.getByRole('button', { name: `Sort by ${column}` })).toBeTruthy()
 		}
-		// One row per team in the round, ranked or not, plus the header.
-		expect(screen.getAllByRole('row')).toHaveLength(7)
+		// One row per team in the round, ranked or not.
+		const body = screen.getByRole('table').querySelector('tbody') as HTMLElement
+		expect(within(body).getAllByRole('row')).toHaveLength(6)
 	})
 })

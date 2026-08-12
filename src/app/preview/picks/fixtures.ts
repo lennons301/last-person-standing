@@ -639,17 +639,33 @@ const UNPRICED_FIXTURES: PickTableScenarioFixture[] = PRICED_FIXTURES.map(
 	({ odds: _odds, ...f }) => f,
 )
 
+/**
+ * The same board with one team's form removed — a promoted club with nothing
+ * recorded yet, sitting beside teams that have played. Paired with a used-team
+ * chip in the scenario below, this is the widest a row gets on a phone.
+ */
+const ONE_TEAM_NO_FORM: PickTableScenarioFixture[] = PRICED_FIXTURES.map((f, i) =>
+	i === 0 ? { ...f, away: { ...f.away, form: undefined } } : f,
+)
+
 export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
 	{
 		id: 'table-priced',
 		title: 'Priced — the default board',
-		note: 'Opens safest-first on the market read. Every header is a sort: tap one to re-ask the question by position, points, goals or form; tap it again to flip it.',
+		note: 'Opens in league order: position ascending. Two headers re-ask the question — Win for the market read, Team for A–Z — and tapping the sorted one flips it. Form and Next are labels: three results carry no order, and the opponent’s name answers nothing.',
 		fixtures: PRICED_FIXTURES,
+	},
+	{
+		id: 'table-narrow',
+		title: 'Phone width — a used chip and a team with no form',
+		note: 'The state the five columns exist for, and the one to measure at 375px and 360px: no horizontal scroll and no pinned column, with the widest thing a row carries (a used-team chip) under one name and a team that hasn’t played yet on the row above. The win column keeps its decimal price at both widths — it stacks under the percentage rather than being dropped.',
+		fixtures: ONE_TEAM_NO_FORM,
+		usedTeamsByRound: { 't-new': 'GW11' },
 	},
 	{
 		id: 'table-unpriced',
 		title: 'No odds for the round',
-		note: 'The one column the board opens on, missing. Each row says "No odds" rather than showing a 0%, the rest of the row is unaffected, and the default sort degrades to the tie-break (team name) instead of inventing an order.',
+		note: 'The market read, missing. Each row says "No odds" rather than showing a 0%, the rest of the row is unaffected, and sorting by Win degrades to the tie-break (team name) instead of inventing an order — the board itself still opens in league order, which needs no prices.',
 		fixtures: UNPRICED_FIXTURES,
 	},
 	{
@@ -661,7 +677,7 @@ export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
 	{
 		id: 'table-empty-form',
 		title: 'Season start — nothing played',
-		note: 'Positions carried over, nothing played and no form anywhere. The standings columns show a dash rather than a zero, and the form column says so explicitly.',
+		note: 'Positions carried over, nothing played and no form anywhere. Every form cell says so explicitly rather than rendering blank — and none of them is tappable, because there is no form to open.',
 		fixtures: PRICED_FIXTURES.map((f) => ({
 			...f,
 			odds: undefined,
@@ -672,7 +688,7 @@ export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
 	{
 		id: 'table-used-restricted',
 		title: 'Used and restricted teams',
-		note: 'Classic’s spent teams carry the round they went in, and anything else the mode blocks carries its reason. Both stay in the table — "Arsenal, used in GW3" is the answer to the question the player is asking — and neither offers a Pick.',
+		note: 'Classic’s spent teams carry the round they went in, and anything else the mode blocks carries its reason. Both stay in the table — "Arsenal, used in GW3" is the answer to the question the player is asking — and neither can be selected. Nor can the round’s current pick: it is marked, not re-offered.',
 		fixtures: PRICED_FIXTURES,
 		usedTeamsByRound: { 't-ars': 'GW3', 't-new': 'GW11' },
 		restrictedTeams: { 't-liv': 'Blocked' },
@@ -966,8 +982,8 @@ export const TURBO_SCENARIOS: TurboScenario[] = [
  *
  * The picker scenarios above cover it in context (at full width, where the
  * confirm bar behaves); this is the board itself, which is the half that has to
- * survive 375px — eight columns, a rank chip and three controls on a row that
- * scrolls sideways with the team column pinned.
+ * survive a phone — classic's five columns plus a sixth carrying either a rank
+ * chip or three controls, with no horizontal scroll to hide it in.
  */
 export interface TurboTableScenario {
 	id: string
@@ -988,7 +1004,7 @@ export const TURBO_TABLE_SCENARIOS: TurboTableScenario[] = [
 	{
 		id: 'turbo-table-empty',
 		title: 'Nothing ranked yet',
-		note: 'The same board classic picks from, with the last column asking a different question: every row offers "Rank #1", and every header still sorts.',
+		note: 'The same board classic picks from, with a sixth column asking a different question: every row offers "Rank #1", and the same three headers still sort it.',
 		numberOfPicks: 3,
 		fixtures: PRICED_FIXTURES,
 		ranking: [],
@@ -1019,7 +1035,7 @@ export const TURBO_TABLE_SCENARIOS: TurboTableScenario[] = [
 	{
 		id: 'turbo-table-unpriced',
 		title: 'No odds for the round',
-		note: 'The column the board opens on, missing, with a ranking already on it. Each row says "No odds" rather than a 0%, the ranking is untouched, and the sort degrades to the tie-break — ranking from a board is not a market feature.',
+		note: 'The market read, missing, with a ranking already on it. Each row says "No odds" rather than a 0%, the ranking is untouched, and sorting by Win degrades to the tie-break — ranking from a board is not a market feature.',
 		numberOfPicks: 3,
 		fixtures: UNPRICED_FIXTURES,
 		ranking: [{ fixtureId: 'pt-2', teamId: 't-new' }],
