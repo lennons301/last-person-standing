@@ -85,6 +85,14 @@ export const team = pgTable('team', {
 	primaryColor: varchar('primary_color', { length: 7 }),
 	externalIds: jsonb('external_ids').$type<Record<string, string | number>>().default({}),
 	leaguePosition: integer('league_position'),
+	// The rest of the team's line in the official table, written by the same sync
+	// pass as `leaguePosition` (see `persistStandings`). Null where the source has
+	// no standings (a knockout competition, or a league before its first round) —
+	// the Table view reads the absence as "no table" rather than as zeroes.
+	played: integer('played'),
+	points: integer('points'),
+	goalsFor: integer('goals_for'),
+	goalsAgainst: integer('goals_against'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
@@ -204,7 +212,7 @@ export const fixtureOdds = pgTable(
  * honest across them.
  *
  * Written by the daily sync, from the same adapter standings read that sets
- * `team.leaguePosition` (see `persistLeaguePositions`). It **accumulates from
+ * `team.leaguePosition` (see `persistStandings`). It **accumulates from
  * deployment onward** — there is no historical backfill, so a competition
  * mid-season starts its line at whatever matchday the first sync after deploy
  * observed. `(competition, team, matchday)` is the upsert target, so repeated

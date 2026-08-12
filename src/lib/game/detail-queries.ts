@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import type { ClassicPickFixture } from '@/components/picks/classic-pick'
+import type { TeamStandingLine } from '@/components/picks/fixture-row'
 import type { FormResult } from '@/components/picks/form-dots'
 import type { GridCell, GridPlayer, GridRound } from '@/components/standings/progress-grid'
 import { db } from '@/lib/db'
@@ -384,6 +385,25 @@ async function computeTeamForms(
 	return map
 }
 
+/**
+ * The team's standings line for the pick surfaces' Table view. Passed through
+ * as-is, nulls included: a null played/points is "no table here", which the
+ * board renders as a dash rather than as a zero.
+ */
+function toStandingLine(t: {
+	played: number | null
+	points: number | null
+	goalsFor: number | null
+	goalsAgainst: number | null
+}): TeamStandingLine {
+	return {
+		played: t.played,
+		points: t.points,
+		goalsFor: t.goalsFor,
+		goalsAgainst: t.goalsAgainst,
+	}
+}
+
 export async function getClassicPickData(gameId: string, roundId: string, gamePlayerId: string) {
 	const roundData = await db.query.round.findFirst({
 		where: eq(round.id, roundId),
@@ -427,6 +447,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 			badgeUrl: f.homeTeam.badgeUrl,
 			form: formMap.get(f.homeTeamId),
 			leaguePosition: f.homeTeam.leaguePosition,
+			standing: toStandingLine(f.homeTeam),
 		},
 		away: {
 			id: f.awayTeamId,
@@ -435,6 +456,7 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 			badgeUrl: f.awayTeam.badgeUrl,
 			form: formMap.get(f.awayTeamId),
 			leaguePosition: f.awayTeam.leaguePosition,
+			standing: toStandingLine(f.awayTeam),
 		},
 		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
 		odds: toFixtureOddsView(f.odds),
@@ -444,6 +466,8 @@ export async function getClassicPickData(gameId: string, roundId: string, gamePl
 		roundName: roundData.name ?? `GW${roundData.number}`,
 		roundNumber: roundData.number,
 		competitionId: roundData.competitionId,
+		// Which view the picker opens on: a league opens on the Table.
+		competitionType: roundData.competition.type,
 		deadline: roundData.deadline,
 		fixtures,
 		usedTeamsByRound,

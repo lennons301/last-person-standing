@@ -14,7 +14,7 @@ export interface StandingsSnapshotSummary {
  * Persist one matchday's worth of official standings.
  *
  * Called from the same funnel that writes `team.leaguePosition`
- * (`persistLeaguePositions` in bootstrap-competitions), so the snapshot is
+ * (`persistStandings` in bootstrap-competitions), so the snapshot is
  * exactly what the daily sync saw — no second provider read, no second
  * schedule. Keyed on the team's own played count, upserted, so:
  *

@@ -1,5 +1,10 @@
 import type { CupPickSlot } from '@/components/picks/cup-pick'
-import type { FixtureTeamInfo, SideOdds, SideState } from '@/components/picks/fixture-row'
+import type {
+	FixtureTeamInfo,
+	SideOdds,
+	SideState,
+	TeamStandingLine,
+} from '@/components/picks/fixture-row'
 import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
 import type { RankedPick } from '@/components/picks/ranked-item'
 import type { FormMarket } from '@/components/picks/team-form-panel'
@@ -31,6 +36,28 @@ function team(
 	leaguePosition?: number,
 ): FixtureTeamInfo {
 	return { id, name, shortName, form, leaguePosition: leaguePosition ?? null }
+}
+
+/**
+ * A believable league row per club, so the Table view's columns sort into an
+ * order that reads like a real table. Hand-built like everything else here: the
+ * point is reviewing the board, not the standings sync.
+ */
+const STANDING: Record<string, TeamStandingLine> = {
+	ARS: { played: 26, points: 60, goalsFor: 58, goalsAgainst: 20 },
+	LIV: { played: 26, points: 55, goalsFor: 54, goalsAgainst: 26 },
+	MUN: { played: 26, points: 48, goalsFor: 44, goalsAgainst: 32 },
+	BHA: { played: 26, points: 45, goalsFor: 41, goalsAgainst: 34 },
+	CHE: { played: 25, points: 42, goalsFor: 40, goalsAgainst: 33 },
+	NEW: { played: 26, points: 38, goalsFor: 36, goalsAgainst: 35 },
+	TOT: { played: 26, points: 35, goalsFor: 38, goalsAgainst: 40 },
+	NFO: { played: 26, points: 30, goalsFor: 27, goalsAgainst: 38 },
+	WOL: { played: 26, points: 22, goalsFor: 21, goalsAgainst: 49 },
+}
+
+/** The same team with its league row attached — the Table view's own input. */
+function withStanding(t: FixtureTeamInfo): FixtureTeamInfo {
+	return { ...t, standing: STANDING[t.shortName] ?? null }
 }
 
 const MUN = (form?: FixtureTeamInfo['form'], pos?: number) =>
@@ -431,27 +458,35 @@ export interface ClassicCardFixture {
 	currentRoundClosed?: boolean
 	summaryInHero?: boolean
 	startExpanded?: boolean
+	/**
+	 * Which view the card opens on — a league opens on the Table, anything else
+	 * on the fixtures. Undefined behaves like a knockout.
+	 */
+	competitionType?: 'league' | 'knockout' | 'group_knockout'
 	/** Which planner set (by id) hangs off this card, if any. */
 	plannerSetId?: string
 }
 
+// Standings attached to every card fixture: with a league table behind the
+// round, the card carries the Fixtures ⇄ Table toggle, which is itself one of
+// the states worth reviewing here.
 const CLASSIC_CARD_FIXTURES: ClassicCardFixture['fixtures'] = [
 	{
 		id: 'cf-1',
-		home: MUN(['W', 'W', 'D', 'L', 'W'], 4),
-		away: NEW(['L', 'D', 'W', 'W', 'L'], 9),
+		home: withStanding(MUN(['W', 'W', 'D', 'L', 'W'], 4)),
+		away: withStanding(NEW(['L', 'D', 'W', 'W', 'L'], 9)),
 		kickoffInMinutes: 60 * 26,
 	},
 	{
 		id: 'cf-2',
-		home: CHE(['W', 'D', 'W', 'L', 'D'], 8),
-		away: TOT(['L', 'W', 'W', 'D', 'L'], 10),
+		home: withStanding(CHE(['W', 'D', 'W', 'L', 'D'], 8)),
+		away: withStanding(TOT(['L', 'W', 'W', 'D', 'L'], 10)),
 		kickoffInMinutes: 60 * 28,
 	},
 	{
 		id: 'cf-3',
-		home: WOL(['L', 'L', 'D', 'W', 'L'], 17),
-		away: BHA(['W', 'D', 'W', 'W', 'D'], 6),
+		home: withStanding(WOL(['L', 'L', 'D', 'W', 'L'], 17)),
+		away: withStanding(BHA(['W', 'D', 'W', 'W', 'D'], 6)),
 		kickoffInMinutes: 60 * 31,
 	},
 ]
@@ -508,6 +543,19 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		existingPickFixtureId: 'cf-1',
 	},
 	{
+		id: 'classic-card-league-table-view',
+		title: 'League — opens on the Table view',
+		note: 'The same card on a league competition: the toggle sits above the picker and the board is what the player lands on. Switch to Fixtures and back — the toggle is the only chrome the expanded card carries besides the way out.',
+		roundName: 'Gameweek 27',
+		roundNumber: 27,
+		deadlineInMinutes: 60 * 22,
+		fixtures: CLASSIC_CARD_FIXTURES,
+		usedTeamsByRound: { 't-tot': 'GW12' },
+		existingPickTeamId: null,
+		existingPickFixtureId: null,
+		competitionType: 'league',
+	},
+	{
 		id: 'classic-card-closed-round',
 		title: 'Round closed — read-only, planner open',
 		note: 'Past the deadline the current round is read-only, and the planner becomes the section — opened by default, and nested one level deeper than anywhere else the row renders. With `summaryInHero` the top card stands down entirely and only the planner remains.',
@@ -520,6 +568,115 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		existingPickFixtureId: 'cf-1',
 		currentRoundClosed: true,
 		plannerSetId: 'planner-with-chips',
+	},
+]
+
+/* --------------------------------------------------- classic: the Table view */
+
+export interface PickTableScenarioFixture {
+	id: string
+	home: FixtureTeamInfo
+	away: FixtureTeamInfo
+	kickoffInMinutes: number | null
+	/** Kept relative to render time like every other clock in this gallery. */
+	odds?: { home: SideOdds; draw: SideOdds; away: SideOdds; asOfInMinutes: number }
+}
+
+export interface PickTableScenario {
+	id: string
+	title: string
+	note?: string
+	fixtures: PickTableScenarioFixture[]
+	/** teamId → the round it was spent in, as classic's pick data builds it. */
+	usedTeamsByRound?: Record<string, string>
+	/** teamId → why it can't be picked, for restrictions that aren't "used". */
+	restrictedTeams?: Record<string, string>
+	currentTeamId?: string | null
+	readonly?: boolean
+}
+
+const PRICED_FIXTURES: PickTableScenarioFixture[] = [
+	{
+		id: 'pt-1',
+		home: withStanding(ARS(['W', 'W', 'D', 'W', 'W'], 1)),
+		away: withStanding(WOL(['L', 'L', 'D', 'L', 'L'], 18)),
+		kickoffInMinutes: 60 * 26,
+		odds: {
+			home: { probability: 0.82, price: 1.18 },
+			draw: { probability: 0.11, price: 9 },
+			away: { probability: 0.07, price: 13.5 },
+			asOfInMinutes: -180,
+		},
+	},
+	{
+		id: 'pt-2',
+		home: withStanding(MUN(['W', 'W', 'D', 'L', 'W'], 4)),
+		away: withStanding(NEW(['L', 'D', 'W', 'W', 'L'], 9)),
+		kickoffInMinutes: 60 * 28,
+		odds: {
+			home: { probability: 0.51, price: 1.85 },
+			draw: { probability: 0.25, price: 4 },
+			away: { probability: 0.24, price: 3.9 },
+			asOfInMinutes: -180,
+		},
+	},
+	{
+		id: 'pt-3',
+		home: withStanding(CHE(['W', 'D', 'W', 'L', 'D'], 6)),
+		away: withStanding(LIV(['W', 'W', 'L', 'W', 'D'], 2)),
+		kickoffInMinutes: 60 * 31,
+		odds: {
+			home: { probability: 0.33, price: 2.9 },
+			draw: { probability: 0.25, price: 4 },
+			away: { probability: 0.42, price: 2.25 },
+			asOfInMinutes: -180,
+		},
+	},
+]
+
+/** The same three fixtures with every price stripped: the unpriced board. */
+const UNPRICED_FIXTURES: PickTableScenarioFixture[] = PRICED_FIXTURES.map(
+	({ odds: _odds, ...f }) => f,
+)
+
+export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
+	{
+		id: 'table-priced',
+		title: 'Priced — the default board',
+		note: 'Opens safest-first on the market read. Every header is a sort: tap one to re-ask the question by position, points, goals or form; tap it again to flip it.',
+		fixtures: PRICED_FIXTURES,
+	},
+	{
+		id: 'table-unpriced',
+		title: 'No odds for the round',
+		note: 'The one column the board opens on, missing. Each row says "No odds" rather than showing a 0%, the rest of the row is unaffected, and the default sort degrades to the tie-break (team name) instead of inventing an order.',
+		fixtures: UNPRICED_FIXTURES,
+	},
+	{
+		id: 'table-mixed-odds',
+		title: 'Some fixtures priced, some not',
+		note: 'The state the sort rules exist for: the unpriced rows sink to the bottom whichever way the win column is pointed — ascending must not float "we don’t know" above a 7% shot.',
+		fixtures: [PRICED_FIXTURES[0], ...UNPRICED_FIXTURES.slice(1)],
+	},
+	{
+		id: 'table-empty-form',
+		title: 'Season start — nothing played',
+		note: 'Positions carried over, nothing played and no form anywhere. The standings columns show a dash rather than a zero, and the form column says so explicitly.',
+		fixtures: PRICED_FIXTURES.map((f) => ({
+			...f,
+			odds: undefined,
+			home: { ...f.home, form: undefined, standing: { played: 0 } },
+			away: { ...f.away, form: undefined, standing: { played: 0 } },
+		})),
+	},
+	{
+		id: 'table-used-restricted',
+		title: 'Used and restricted teams',
+		note: 'Classic’s spent teams carry the round they went in, and anything else the mode blocks carries its reason. Both stay in the table — "Arsenal, used in GW3" is the answer to the question the player is asking — and neither offers a Pick.',
+		fixtures: PRICED_FIXTURES,
+		usedTeamsByRound: { 't-ars': 'GW3', 't-new': 'GW11' },
+		restrictedTeams: { 't-liv': 'Blocked' },
+		currentTeamId: 't-che',
 	},
 ]
 

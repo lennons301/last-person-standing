@@ -27,6 +27,8 @@ function standing(
 		drawn: 0,
 		lost: 0,
 		points: 6,
+		goalsFor: 5,
+		goalsAgainst: 1,
 		...overrides,
 	}
 }

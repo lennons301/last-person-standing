@@ -4,6 +4,7 @@ import {
 	CUP_CARDS,
 	FORM_PANEL_MARKET,
 	FORM_PANEL_MARKET_LONGSHOT,
+	PICK_TABLE_SCENARIOS,
 	PLANNER_FIXTURES,
 	RANKED_LIST_FIXTURES,
 	ROW_FIXTURES,
@@ -15,6 +16,7 @@ import {
 	PreviewClassicPick,
 	PreviewCupPick,
 	PreviewFixtureRow,
+	PreviewPickTable,
 	PreviewPlannerRound,
 	type PreviewPlannerRoundInput,
 	PreviewRankedList,
@@ -205,6 +207,7 @@ export default function PicksPreviewPage() {
 					usedTeamsByRound: c.usedTeamsByRound,
 					existingPickTeamId: c.existingPickTeamId,
 					existingPickFixtureId: c.existingPickFixtureId,
+					competitionType: c.competitionType,
 					currentRoundClosed: c.currentRoundClosed,
 					summaryInHero: c.summaryInHero,
 					startExpanded: c.startExpanded,
@@ -234,6 +237,61 @@ export default function PicksPreviewPage() {
 							</div>
 							<MobileColumn>
 								<PreviewClassicPick card={card('mobile')} />
+							</MobileColumn>
+						</div>
+					</section>
+				)
+			})}
+
+			<GroupHeading title="Classic — the Table view">
+				The other half of the picker: the same round as a standings board, one row per team the
+				player could pick, sorted safest-first on the market read. Every header sorts, the used and
+				restricted teams stay in the table rather than disappearing from it, and a row commits a
+				pick in one tap. In the app a league opens on this view and a knockout on the fixtures —
+				with no standings behind the round at all, the toggle isn't offered.
+			</GroupHeading>
+
+			{PICK_TABLE_SCENARIOS.map((s) => {
+				const fixtures = s.fixtures.map((f) => ({
+					id: f.id,
+					home: f.home,
+					away: f.away,
+					kickoff: at(now, f.kickoffInMinutes),
+					odds: f.odds
+						? {
+								home: f.odds.home,
+								draw: f.odds.draw,
+								away: f.odds.away,
+								asOf: at(now, f.odds.asOfInMinutes) as string,
+							}
+						: null,
+				}))
+				return (
+					<section key={s.id} className="space-y-2">
+						<header>
+							<h2 className="font-display text-sm font-semibold">{s.title}</h2>
+							{s.note && <p className="text-xs text-muted-foreground">{s.note}</p>}
+						</header>
+						<div className="flex flex-wrap items-start gap-4">
+							<div className="flex-1 min-w-[320px]">
+								<PreviewPickTable
+									fixtures={fixtures}
+									usedTeamsByRound={s.usedTeamsByRound}
+									restrictedTeams={s.restrictedTeams}
+									currentTeamId={s.currentTeamId}
+									readonly={s.readonly}
+								/>
+							</div>
+							{/* 375px: the board doesn't drop columns on a phone, it scrolls —
+							    so this column is where that horizontal scroll is reviewed. */}
+							<MobileColumn>
+								<PreviewPickTable
+									fixtures={fixtures}
+									usedTeamsByRound={s.usedTeamsByRound}
+									restrictedTeams={s.restrictedTeams}
+									currentTeamId={s.currentTeamId}
+									readonly={s.readonly}
+								/>
 							</MobileColumn>
 						</div>
 					</section>

@@ -11,12 +11,20 @@ import { formatDeadline } from '@/lib/format'
 import type { ChainSummary, PlannerRoundInput } from '@/lib/game/classic-planner-view'
 import { formGuidePath } from '@/lib/game/form-guide-link'
 import {
+	buildPickTableRows,
+	defaultPickView,
+	type PickView,
+	pickTableHasStandings,
+} from '@/lib/game/pick-table-view'
+import { cn } from '@/lib/utils'
+import {
 	type FixtureOdds,
 	FixtureRow,
 	type FixtureTeamInfo,
 	type RowFormSheetRenderer,
 } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
+import { PickTable } from './pick-table'
 
 export interface ClassicPickFixture {
 	id: string
@@ -41,8 +49,21 @@ interface ClassicPickProps {
 	deadline: Date | null
 	fixtures: ClassicPickFixture[]
 	usedTeamsByRound: Record<string, string>
+	/**
+	 * teamId → why this team can't be picked, for restrictions that aren't
+	 * "already used" (the World Cup's own classic rules are the case that will
+	 * fill this). Marked in both views; empty on a plain league round.
+	 */
+	restrictedTeams?: Record<string, string>
 	existingPickTeamId: string | null
 	existingPickFixtureId: string | null
+	/**
+	 * Decides which view this round opens on: a league opens on the Table (a
+	 * standings board is how its players already think), a knockout on the
+	 * Fixtures. Either way the toggle is there — unless there are no standings at
+	 * all behind the round, in which case the Table view is hidden entirely.
+	 */
+	competitionType?: 'league' | 'knockout' | 'group_knockout' | null
 	chain?: { slots: ChainSlot[]; summary: ChainSummary }
 	futureRounds?: PlannerRoundInput[]
 	planHandlers?: ClassicPickPlanHandlers
@@ -96,8 +117,10 @@ export function ClassicPick({
 	deadline,
 	fixtures,
 	usedTeamsByRound,
+	restrictedTeams,
 	existingPickTeamId,
 	existingPickFixtureId,
+	competitionType,
 	chain,
 	futureRounds,
 	planHandlers,
@@ -123,6 +146,15 @@ export function ClassicPick({
 	// the fixtures here so changing a pick stays a one-click action.
 	useOnPickEditRequest(() => setExpanded(true))
 
+	// The two views of the same round, derived from the same fixtures: a list of
+	// matches, and a standings board of the teams in them.
+	const tableRows = buildPickTableRows({ fixtures, usedTeamsByRound, restrictedTeams })
+	const tableAvailable = pickTableHasStandings(tableRows)
+	const [view, setView] = useState<PickView>(defaultPickView(competitionType, tableAvailable))
+	// A round whose standings vanish (or a knockout the toggle never offered)
+	// must not strand the player on a hidden view.
+	const activeView: PickView = tableAvailable ? view : 'fixtures'
+
 	function handlePick(fixture: ClassicPickFixture, side: 'home' | 'away') {
 		const teamId = side === 'home' ? fixture.home.id : fixture.away.id
 		if (usedTeamsByRound[teamId]) return
@@ -140,11 +172,22 @@ export function ClassicPick({
 
 	async function handleSubmit() {
 		if (!selection) return
+		await submitPick(selection)
+	}
+
+	/**
+	 * Commit one pick. Takes its selection explicitly rather than reading state
+	 * so the table can commit a row in a single tap: there, the row *is* the
+	 * selection, and routing it through `setSelection` first would need a render
+	 * to land before the submit could see it.
+	 */
+	async function submitPick(sel: PickSelection) {
 		if (onSubmitPick) {
 			setLoading(true)
 			setError(null)
 			try {
-				await onSubmitPick(selection)
+				await onSubmitPick(sel)
+				setSelection(sel)
 				setExpanded(false)
 			} catch (e) {
 				setError(e instanceof Error ? e.message : 'Failed to submit pick')
@@ -158,8 +201,8 @@ export function ClassicPick({
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				teamId: selection.teamId,
-				fixtureId: selection.fixtureId,
+				teamId: sel.teamId,
+				fixtureId: sel.fixtureId,
 				...(actingAs ? { actingAs: actingAs.gamePlayerId } : {}),
 			}),
 		})
@@ -170,6 +213,7 @@ export function ClassicPick({
 			return
 		}
 		// After submission, collapse the fixtures view
+		setSelection(sel)
 		setExpanded(false)
 		router.refresh()
 	}
@@ -275,57 +319,69 @@ export function ClassicPick({
 				</div>
 			)}
 
-			{fixtures.map((fixture) => {
-				const isSelectedFixture = fixture.id === selection?.fixtureId
-				// "Used in another fixture this round": the team has been clicked in a
-				// DIFFERENT fixture in this round. Treats Man City vs Brentford and Man
-				// City vs Crystal Palace as alternate slots for the same team, with one
-				// pick burning the team for the round (Option B + grey-out per UX call).
-				const homeUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.home.id
-				const awayUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.away.id
-				const homeUsedPriorRound = !!usedTeamsByRound[fixture.home.id]
-				const awayUsedPriorRound = !!usedTeamsByRound[fixture.away.id]
+			{tableAvailable && <ViewToggle view={activeView} onChange={setView} />}
 
-				const homeUsed = homeUsedThisRound || homeUsedPriorRound
-				const awayUsed = awayUsedThisRound || awayUsedPriorRound
+			{activeView === 'table' ? (
+				<PickTable
+					rows={tableRows}
+					currentTeamId={existingPickTeamId}
+					// One tap commits: on the board the row *is* the decision, so it
+					// goes straight to the same submit the confirm bar drives.
+					onPick={(row) => submitPick({ fixtureId: row.fixtureId, teamId: row.team.id })}
+				/>
+			) : (
+				fixtures.map((fixture) => {
+					const isSelectedFixture = fixture.id === selection?.fixtureId
+					// "Used in another fixture this round": the team has been clicked in a
+					// DIFFERENT fixture in this round. Treats Man City vs Brentford and Man
+					// City vs Crystal Palace as alternate slots for the same team, with one
+					// pick burning the team for the round (Option B + grey-out per UX call).
+					const homeUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.home.id
+					const awayUsedThisRound = !isSelectedFixture && selection?.teamId === fixture.away.id
+					const homeUsedPriorRound = !!usedTeamsByRound[fixture.home.id]
+					const awayUsedPriorRound = !!usedTeamsByRound[fixture.away.id]
 
-				let usedSide: 'home' | 'away' | 'both' | null = null
-				if (homeUsed && awayUsed) usedSide = 'both'
-				else if (homeUsed) usedSide = 'home'
-				else if (awayUsed) usedSide = 'away'
+					const homeUsed = homeUsedThisRound || homeUsedPriorRound
+					const awayUsed = awayUsedThisRound || awayUsedPriorRound
 
-				const selected = isSelectedFixture
-					? fixture.home.id === selection?.teamId
-						? 'home'
-						: 'away'
-					: null
+					let usedSide: 'home' | 'away' | 'both' | null = null
+					if (homeUsed && awayUsed) usedSide = 'both'
+					else if (homeUsed) usedSide = 'home'
+					else if (awayUsed) usedSide = 'away'
 
-				return (
-					<FixtureRow
-						key={fixture.id}
-						home={fixture.home}
-						away={fixture.away}
-						kickoff={fixture.kickoff ?? undefined}
-						odds={fixture.odds}
-						selectedSide={selected}
-						usedSide={usedSide}
-						usedLabel={usedSide === 'both' ? `Both used` : undefined}
-						onPickHome={() => handlePick(fixture, 'home')}
-						onPickAway={() => handlePick(fixture, 'away')}
-						competitionId={competitionId}
-						roundNumber={roundNumber}
-						renderFormSheet={
-							renderFormSheet
-								? (args) => renderFormSheet({ ...args, home: fixture.home, away: fixture.away })
-								: undefined
-						}
-					/>
-				)
-			})}
+					const selected = isSelectedFixture
+						? fixture.home.id === selection?.teamId
+							? 'home'
+							: 'away'
+						: null
+
+					return (
+						<FixtureRow
+							key={fixture.id}
+							home={fixture.home}
+							away={fixture.away}
+							kickoff={fixture.kickoff ?? undefined}
+							odds={fixture.odds}
+							selectedSide={selected}
+							usedSide={usedSide}
+							usedLabel={usedSide === 'both' ? `Both used` : undefined}
+							onPickHome={() => handlePick(fixture, 'home')}
+							onPickAway={() => handlePick(fixture, 'away')}
+							competitionId={competitionId}
+							roundNumber={roundNumber}
+							renderFormSheet={
+								renderFormSheet
+									? (args) => renderFormSheet({ ...args, home: fixture.home, away: fixture.away })
+									: undefined
+							}
+						/>
+					)
+				})
+			)}
 
 			{error && <p className="text-sm text-[var(--eliminated)] px-2">{error}</p>}
 
-			{selectedTeam && selectedFixture && (
+			{activeView === 'fixtures' && selectedTeam && selectedFixture && (
 				<PickConfirmBar
 					message={`Picking ${selectedTeam.name} vs ${
 						selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name
@@ -429,6 +485,39 @@ export function ClassicPick({
 			{currentRoundClosed ? closedRoundCard : <div>{currentRoundCard}</div>}
 			{planner}
 		</div>
+	)
+}
+
+/**
+ * Fixtures ⇄ Table. Two readings of the same round — the matches, or the teams
+ * in them ranked — so it's a segmented control rather than two links: the
+ * player is switching lens, not navigating.
+ *
+ * Hidden entirely when the round has no standings behind it (see
+ * `pickTableHasStandings`): a Table view of a competition with no table is an
+ * empty board, and an empty board is worse than no toggle.
+ */
+function ViewToggle({ view, onChange }: { view: PickView; onChange: (next: PickView) => void }) {
+	return (
+		<fieldset className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5 mb-2">
+			<legend className="sr-only">Pick view</legend>
+			{(['fixtures', 'table'] as const).map((option) => (
+				<button
+					key={option}
+					type="button"
+					onClick={() => onChange(option)}
+					aria-pressed={view === option}
+					className={cn(
+						'px-3 py-1.5 text-xs font-semibold rounded-md capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+						view === option
+							? 'bg-card text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground',
+					)}
+				>
+					{option}
+				</button>
+			))}
+		</fieldset>
 	)
 }
 

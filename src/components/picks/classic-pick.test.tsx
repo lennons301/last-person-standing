@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/navigation', () => ({
@@ -81,5 +81,80 @@ describe('ClassicPick win probability', () => {
 	it('renders no probability for an unpriced fixture', () => {
 		const { container } = renderPicker()
 		expect(container.textContent).not.toContain('%')
+	})
+})
+
+describe('ClassicPick — Fixtures ⇄ Table', () => {
+	const TABLE_FIXTURES: ClassicPickFixture[] = [
+		{
+			...FIXTURES[0],
+			home: { ...FIXTURES[0].home, standing: { played: 26, points: 55 } },
+			away: { ...FIXTURES[0].away, standing: { played: 26, points: 40 } },
+		},
+	]
+
+	it('offers both views, and each can make the pick', () => {
+		const onSubmitPick = vi.fn().mockResolvedValue(undefined)
+		renderPicker({ fixtures: TABLE_FIXTURES, onSubmitPick })
+
+		// Fixtures first: select a side, then confirm.
+		fireEvent.click(screen.getByText('Manchester United'))
+		fireEvent.click(screen.getByRole('button', { name: /Lock in pick/ }))
+		expect(onSubmitPick).toHaveBeenCalledWith({ fixtureId: 'fx-1', teamId: 't-mun' })
+	})
+
+	it('commits a pick straight from a table row in one tap', () => {
+		const onSubmitPick = vi.fn().mockResolvedValue(undefined)
+		renderPicker({ fixtures: TABLE_FIXTURES, competitionType: 'league', onSubmitPick })
+
+		fireEvent.click(screen.getByRole('button', { name: /^Pick Newcastle United/ }))
+		expect(onSubmitPick).toHaveBeenCalledWith({ fixtureId: 'fx-1', teamId: 't-new' })
+	})
+
+	it('opens a league on the Table and a knockout on the Fixtures', () => {
+		const { unmount } = renderPicker({ fixtures: TABLE_FIXTURES, competitionType: 'league' })
+		expect(screen.getByRole('table')).toBeTruthy()
+		unmount()
+
+		renderPicker({ fixtures: TABLE_FIXTURES, competitionType: 'knockout' })
+		expect(screen.queryByRole('table')).toBeNull()
+		// The toggle is still there — the knockout just doesn't open on it.
+		expect(screen.getByRole('button', { name: 'table' })).toBeTruthy()
+	})
+
+	it('switches views on the toggle', () => {
+		renderPicker({ fixtures: TABLE_FIXTURES, competitionType: 'knockout' })
+		fireEvent.click(screen.getByRole('button', { name: 'table' }))
+		expect(screen.getByRole('table')).toBeTruthy()
+		fireEvent.click(screen.getByRole('button', { name: 'fixtures' }))
+		expect(screen.queryByRole('table')).toBeNull()
+	})
+
+	it('hides the Table view entirely where there are no standings', () => {
+		// A competition with no league table behind it: the board would be all
+		// dashes, which is worse than not offering it.
+		renderPicker({
+			competitionType: 'league',
+			fixtures: [
+				{
+					id: 'fx-cup',
+					home: { id: 't-a', name: 'Ajax', shortName: 'AJA' },
+					away: { id: 't-b', name: 'Benfica', shortName: 'BEN' },
+					kickoff: null,
+				},
+			],
+		})
+		expect(screen.queryByRole('button', { name: 'table' })).toBeNull()
+		expect(screen.queryByRole('table')).toBeNull()
+	})
+
+	it('marks a used team in the table with the round it was used in', () => {
+		renderPicker({
+			fixtures: TABLE_FIXTURES,
+			competitionType: 'league',
+			usedTeamsByRound: { 't-mun': 'GW12' },
+		})
+		expect(screen.getByText('Used GW12')).toBeTruthy()
+		expect(screen.queryByRole('button', { name: /^Pick Manchester United/ })).toBeNull()
 	})
 })

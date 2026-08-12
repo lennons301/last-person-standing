@@ -189,6 +189,21 @@ function fplBadgeUrl(code: number): string {
 	return `https://resources.premierleague.com/premierleague/badges/rb/t${code}.svg`
 }
 
+/**
+ * A believable standings line for a seeded club — the dev stand-in for what the
+ * daily sync writes from football-data. Derived from the club's own seeded
+ * position and strength so the pick selector's Table view sorts into an order
+ * that reads like a real table locally.
+ */
+function syntheticStanding(t: { leaguePosition: number; strength: number }) {
+	return {
+		played: 26,
+		points: Math.max(8, Math.round(70 - t.leaguePosition * 2.8)),
+		goalsFor: Math.round(t.strength * 0.6),
+		goalsAgainst: Math.round((100 - t.strength) * 0.7),
+	}
+}
+
 const DEV_USERS = [
 	{ email: 'dev@example.com', name: 'Sean', password: 'password123' },
 	{ email: 'dave@example.com', name: 'Dave', password: 'password123' },
@@ -271,7 +286,7 @@ async function seed() {
 		.returning()
 	console.log(`Created competition: ${pl.name}`)
 
-	// --- Teams (with FPL badge URLs and league positions) ---
+	// --- Teams (with FPL badge URLs, league positions and a standings line) ---
 	const teams = await db
 		.insert(teamTable)
 		.values(
@@ -282,6 +297,7 @@ async function seed() {
 				badgeUrl: fplBadgeUrl(t.fplCode),
 				externalIds: { fpl: t.fplCode },
 				leaguePosition: t.leaguePosition,
+				...syntheticStanding(t),
 			})),
 		)
 		.returning()

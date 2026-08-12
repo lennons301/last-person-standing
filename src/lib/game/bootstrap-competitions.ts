@@ -283,18 +283,23 @@ function competitionRoundsWithFixtures(competitionId: string) {
 }
 
 /**
- * Write source standings into team.leaguePosition, resolved strictly through
+ * Write the source's standings line onto the team, resolved strictly through
  * the given external-id → team-UUID map (payload-built in syncCompetition,
  * merge-built in mergeFootballDataIds) so writes stay within the competition
  * being synced. Rows whose team is not in the map are skipped. Feeds the
- * pick-UI ordinals and the auto-pick worst-placed-team ordering.
+ * pick-UI ordinals, the pick selector's Table view and the auto-pick
+ * worst-placed-team ordering.
+ *
+ * Position is not written alone: played / points / goals are the rest of the
+ * same line, and a table showing a position sourced from today's sync beside
+ * points left over from an earlier one would be quietly wrong.
  *
  * The same read also lands a per-matchday snapshot (`standings_snapshot`),
  * which is what the form guide's position line is drawn from. It rides this
  * funnel deliberately: one provider read, one place where "the table changed"
  * is known, no second cron.
  */
-async function persistLeaguePositions(
+async function persistStandings(
 	competitionId: string,
 	standings: AdapterStanding[],
 	teamIdByExternalId: Map<string, string>,
@@ -302,7 +307,16 @@ async function persistLeaguePositions(
 	for (const row of standings) {
 		const teamId = teamIdByExternalId.get(row.teamExternalId)
 		if (!teamId) continue
-		await db.update(team).set({ leaguePosition: row.position }).where(eq(team.id, teamId))
+		await db
+			.update(team)
+			.set({
+				leaguePosition: row.position,
+				played: row.played,
+				points: row.points,
+				goalsFor: row.goalsFor,
+				goalsAgainst: row.goalsAgainst,
+			})
+			.where(eq(team.id, teamId))
 	}
 	await recordStandingsSnapshot(competitionId, standings, teamIdByExternalId)
 }
@@ -410,7 +424,7 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// through the football-data ids merged in step 1. The FPL adapter has no
 	// standings source, so this merge step is what makes positions real for
 	// FPL-bootstrapped competitions.
-	await persistLeaguePositions(comp.id, await fdAdapter.fetchStandings(), ourTeamIdByFdId)
+	await persistStandings(comp.id, await fdAdapter.fetchStandings(), ourTeamIdByFdId)
 
 	// 4) Coverage assertion. Self-diagnosing for the next time the FPL/football-
 	// data data shape drifts (likely each August when promoted PL teams arrive).
@@ -517,7 +531,7 @@ export async function syncCompetition(
 	// supports standings. Resolved through the current payload's team list so
 	// updates stay within this competition's own teams.
 	if (typeof adapter.fetchStandings === 'function') {
-		await persistLeaguePositions(comp.id, await adapter.fetchStandings(), teamIdByPayloadId)
+		await persistStandings(comp.id, await adapter.fetchStandings(), teamIdByPayloadId)
 	}
 
 	// Fixture upsert matching is scoped to this competition's own rounds:
