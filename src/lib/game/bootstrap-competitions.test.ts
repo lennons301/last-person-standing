@@ -146,6 +146,23 @@ function insertedValues(): Record<string, unknown>[] {
 		.filter((v): v is Record<string, unknown> => v != null)
 }
 
+/**
+ * Every standings write (`update(team).set({leaguePosition, ...})`), keyed by
+ * the team UUID in its `where` clause — the standings funnel writes one row per
+ * team, so which line landed on which club is the thing worth asserting.
+ */
+function standingsWritesByTeamId(): Record<string, Record<string, unknown>> {
+	const writes: Record<string, Record<string, unknown>> = {}
+	dbUpdateSet.mock.calls.forEach((call, i) => {
+		const payload = call[0]
+		if (!('leaguePosition' in payload)) return
+		const result = dbUpdateSet.mock.results[i]?.value as { where: ReturnType<typeof vi.fn> }
+		const { params } = new PgDialect().sqlToQuery(result.where.mock.calls[0]?.[0] as never)
+		writes[String(params[0])] = payload
+	})
+	return writes
+}
+
 describe('deriveSeasonLabel', () => {
 	it('derives the season label from football-data currentSeason, cross-checked against the FPL GW1 year', () => {
 		expect(
@@ -378,6 +395,17 @@ describe('bootstrapCompetitions', () => {
 	})
 })
 
+/**
+ * A competition with a game already played — the state in which the source's
+ * table is the real one. Mounted on `db.query.round.findMany`, which is how the
+ * standings funnel reads this competition's own fixtures.
+ */
+function seasonUnderway() {
+	dbQueryRoundFindMany.mockResolvedValue([
+		{ id: 'r-1', number: 1, fixtures: [{ id: 'fx-1', status: 'finished', externalIds: {} }] },
+	])
+}
+
 describe('syncCompetition league-position persistence', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
@@ -389,6 +417,7 @@ describe('syncCompetition league-position persistence', () => {
 	})
 
 	it('persists league_position for each standings row resolved through the current payload', async () => {
+		seasonUnderway()
 		fplFetchTeams.mockResolvedValue([
 			{ externalId: '1', name: 'Alder FC', shortName: 'ALD', badgeUrl: 'ald.svg' },
 			{ externalId: '2', name: 'Birch FC', shortName: 'BIR', badgeUrl: 'bir.svg' },
@@ -449,9 +478,65 @@ describe('syncCompetition league-position persistence', () => {
 		)
 	})
 
+	it('persists an opening table — not the source table — while the competition has no finished fixture', async () => {
+		// football-data serves the *previous* season's final table under the new
+		// season's filter right up until the new one kicks off. Our own fixtures
+		// are the arbiter: nothing finished, so nothing has been played, so the
+		// table is the opening one — every club at zero, ordered by the league's
+		// tiebreak chain (points, goal difference, goals scored, name), which at
+		// all-zero resolves to alphabetical. Cedar FC is promoted: absent from
+		// the source table entirely, positioned here from its first day.
+		fplFetchTeams.mockResolvedValue([
+			{ externalId: '1', name: 'Birch FC', shortName: 'BIR', badgeUrl: null },
+			{ externalId: '2', name: 'Alder FC', shortName: 'ALD', badgeUrl: null },
+			{ externalId: '3', name: 'Cedar FC', shortName: 'CED', badgeUrl: null },
+		])
+		fplFetchRounds.mockResolvedValue([])
+		fplFetchStandings.mockResolvedValue([
+			{
+				teamExternalId: '1',
+				position: 1,
+				played: 38,
+				won: 28,
+				drawn: 5,
+				lost: 5,
+				points: 89,
+				goalsFor: 90,
+				goalsAgainst: 30,
+			},
+			{
+				teamExternalId: '2',
+				position: 17,
+				played: 38,
+				won: 9,
+				drawn: 8,
+				lost: 21,
+				points: 35,
+				goalsFor: 30,
+				goalsAgainst: 70,
+			},
+		])
+		dbQueryTeamFindFirst
+			.mockResolvedValueOnce({ id: 'team-birch', name: 'Birch FC', externalIds: {} })
+			.mockResolvedValueOnce({ id: 'team-alder', name: 'Alder FC', externalIds: {} })
+			.mockResolvedValueOnce({ id: 'team-cedar', name: 'Cedar FC', externalIds: {} })
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2026/27' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		expect(standingsWritesByTeamId()).toEqual({
+			'team-alder': { leaguePosition: 1, played: 0, points: 0, goalsFor: 0, goalsAgainst: 0 },
+			'team-birch': { leaguePosition: 2, played: 0, points: 0, goalsFor: 0, goalsAgainst: 0 },
+			'team-cedar': { leaguePosition: 3, played: 0, points: 0, goalsFor: 0, goalsAgainst: 0 },
+		})
+	})
+
 	it('records a per-matchday standings snapshot from the same standings read', async () => {
 		// The snapshot rides the position write rather than a cron of its own —
 		// one provider read, one place that knows the table moved.
+		seasonUnderway()
 		fplFetchTeams.mockResolvedValue([
 			{ externalId: '1', name: 'Alder FC', shortName: 'ALD', badgeUrl: 'ald.svg' },
 		])
@@ -720,6 +805,9 @@ describe('mergeFootballDataIds', () => {
 						id: 'our-fx-1',
 						homeTeamId: 'our-ARS',
 						awayTeamId: 'our-LIV',
+						// Played: the season is underway, so the source's table is the
+						// real one (see the pre-season case below).
+						status: 'finished',
 						externalIds: { fpl: '347' },
 					},
 				],
@@ -794,6 +882,7 @@ describe('mergeFootballDataIds', () => {
 						id: 'our-fx-1',
 						homeTeamId: 'our-ARS',
 						awayTeamId: 'our-ARS',
+						status: 'finished',
 						externalIds: { fpl: '1' },
 					},
 				],

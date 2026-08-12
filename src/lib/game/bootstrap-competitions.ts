@@ -283,12 +283,71 @@ function competitionRoundsWithFixtures(competitionId: string) {
 }
 
 /**
- * Write the source's standings line onto the team, resolved strictly through
- * the given external-id → team-UUID map (payload-built in syncCompetition,
- * merge-built in mergeFootballDataIds) so writes stay within the competition
- * being synced. Rows whose team is not in the map are skipped. Feeds the
- * pick-UI ordinals, the pick selector's Table view and the auto-pick
- * worst-placed-team ordering.
+ * One of the competition's own teams: the source-side id its standings rows
+ * are keyed by, the team row that id resolves to, and the club name the
+ * opening table is ordered by.
+ */
+export interface CompetitionTeamRef {
+	externalId: string
+	teamId: string
+	name: string
+}
+
+/**
+ * The table a competition holds before a ball is kicked: every club on zero,
+ * ordered by the league's own tiebreak chain — points, then goal difference,
+ * then goals scored, then club name. With every value at zero the chain falls
+ * through to the name, so the opening table is alphabetical.
+ *
+ * This exists because the source doesn't serve one. football-data's standings
+ * endpoint answers a new season's filter with the *previous* season's final
+ * table until the new one kicks off, so a faithful sync would show last
+ * season's positions and points all pre-season, and would leave the promoted
+ * clubs — absent from that table — with no position at all.
+ */
+function openingTable(teams: CompetitionTeamRef[]): AdapterStanding[] {
+	const zeroed = teams.map((t) => ({
+		teamExternalId: t.externalId,
+		name: t.name,
+		position: 0,
+		played: 0,
+		won: 0,
+		drawn: 0,
+		lost: 0,
+		points: 0,
+		goalsFor: 0,
+		goalsAgainst: 0,
+	}))
+	zeroed.sort(
+		(a, b) =>
+			b.points - a.points ||
+			b.goalsFor - b.goalsAgainst - (a.goalsFor - a.goalsAgainst) ||
+			b.goalsFor - a.goalsFor ||
+			a.name.localeCompare(b.name, 'en'),
+	)
+	return zeroed.map(({ name: _name, ...row }, index) => ({ ...row, position: index + 1 }))
+}
+
+/** True once any of this competition's fixtures has been played to a finish. */
+async function hasFinishedFixture(competitionId: string): Promise<boolean> {
+	const rounds = await competitionRoundsWithFixtures(competitionId)
+	return rounds.some((r) => r.fixtures.some((f) => f.status === 'finished'))
+}
+
+/**
+ * Write the standings line onto the team, resolved strictly through this
+ * competition's own team set (payload-built in syncCompetition, merge-built in
+ * mergeFootballDataIds) so writes stay within the competition being synced.
+ * Source rows whose team is not in that set are skipped. Feeds the pick-UI
+ * ordinals, the pick selector's Table view and the auto-pick worst-placed-team
+ * ordering.
+ *
+ * Which table gets written depends on the competition's own fixtures, not on
+ * what the source says it is counting: until one of them has finished, nothing
+ * has been played here, so the table is the derived opening one (see
+ * `openingTable`). From the first finished fixture onward the source table is
+ * written verbatim — mid-season points deductions and every other correction
+ * the provider makes are its business, not ours to re-derive.
  *
  * Position is not written alone: played / points / goals are the rest of the
  * same line, and a table showing a position sourced from today's sync beside
@@ -297,14 +356,17 @@ function competitionRoundsWithFixtures(competitionId: string) {
  * The same read also lands a per-matchday snapshot (`standings_snapshot`),
  * which is what the form guide's position line is drawn from. It rides this
  * funnel deliberately: one provider read, one place where "the table changed"
- * is known, no second cron.
+ * is known, no second cron. A pre-season table lands there at `matchday: 0`,
+ * the placeholder point `getPositionLine` already excludes.
  */
 async function persistStandings(
 	competitionId: string,
 	standings: AdapterStanding[],
-	teamIdByExternalId: Map<string, string>,
+	teams: CompetitionTeamRef[],
 ): Promise<void> {
-	for (const row of standings) {
+	const teamIdByExternalId = new Map(teams.map((t) => [t.externalId, t.teamId]))
+	const table = (await hasFinishedFixture(competitionId)) ? standings : openingTable(teams)
+	for (const row of table) {
 		const teamId = teamIdByExternalId.get(row.teamExternalId)
 		if (!teamId) continue
 		await db
@@ -318,7 +380,7 @@ async function persistStandings(
 			})
 			.where(eq(team.id, teamId))
 	}
-	await recordStandingsSnapshot(competitionId, standings, teamIdByExternalId)
+	await recordStandingsSnapshot(competitionId, table, teamIdByExternalId)
 }
 
 /**
@@ -423,8 +485,20 @@ export async function mergeFootballDataIds(comp: CompetitionRow, apiKey: string)
 	// 3) Persist current league standings into team.leaguePosition, resolved
 	// through the football-data ids merged in step 1. The FPL adapter has no
 	// standings source, so this merge step is what makes positions real for
-	// FPL-bootstrapped competitions.
-	await persistStandings(comp.id, await fdAdapter.fetchStandings(), ourTeamIdByFdId)
+	// FPL-bootstrapped competitions. Ordering a pre-season table needs club
+	// names: they come from our own team rows, not football-data's ("Spurs",
+	// not "Tottenham Hotspur FC"), so the alphabetical opening table matches
+	// the names every pick surface shows.
+	const teamNameById = new Map(ourTeams.map((t) => [t.id, t.name]))
+	const compTeamRefs: CompetitionTeamRef[] = Array.from(
+		ourTeamIdByFdId,
+		([externalId, teamId]) => ({
+			externalId,
+			teamId,
+			name: teamNameById.get(teamId) ?? '',
+		}),
+	)
+	await persistStandings(comp.id, await fdAdapter.fetchStandings(), compTeamRefs)
 
 	// 4) Coverage assertion. Self-diagnosing for the next time the FPL/football-
 	// data data shape drifts (likely each August when promoted PL teams arrive).
@@ -491,6 +565,7 @@ export async function syncCompetition(
 	// stored on team rows by an earlier season — a relegated club's stale id
 	// would swallow the promoted club that inherited it.
 	const teamIdByPayloadId = new Map<string, string>()
+	const compTeamRefs: CompetitionTeamRef[] = []
 	for (const at of adapterTeams) {
 		const existing = await db.query.team.findFirst({ where: eq(team.name, at.name) })
 		if (existing) {
@@ -525,13 +600,19 @@ export async function syncCompetition(
 				.returning()
 			teamIdByPayloadId.set(at.externalId, created.id)
 		}
+		compTeamRefs.push({
+			externalId: at.externalId,
+			// biome-ignore lint/style/noNonNullAssertion: set on both branches above
+			teamId: teamIdByPayloadId.get(at.externalId)!,
+			name: at.name,
+		})
 	}
 
 	// Persist latest league standings into team.leaguePosition when the adapter
 	// supports standings. Resolved through the current payload's team list so
 	// updates stay within this competition's own teams.
 	if (typeof adapter.fetchStandings === 'function') {
-		await persistStandings(comp.id, await adapter.fetchStandings(), teamIdByPayloadId)
+		await persistStandings(comp.id, await adapter.fetchStandings(), compTeamRefs)
 	}
 
 	// Fixture upsert matching is scoped to this competition's own rounds:
