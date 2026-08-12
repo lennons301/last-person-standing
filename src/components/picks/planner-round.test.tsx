@@ -63,10 +63,10 @@ describe('PlannerRound — parity with the current-round picker', () => {
 		expect(screen.getByLabelText('Open form details for Newcastle United')).toBeTruthy()
 	})
 
-	it('renders a form-less round as "no form yet" rather than blank', () => {
-		// Season start: no results anywhere, but positions (and the bar itself)
-		// must still read as intentional.
-		renderRound({
+	it('keeps positions on a form-less round, and adds no filler beside them', () => {
+		// Season start: no results anywhere. The positions are what the bar is for,
+		// and they read as an unplayed season without being told so.
+		const { container } = renderRound({
 			fixtures: [
 				{
 					...FIXTURE,
@@ -75,7 +75,7 @@ describe('PlannerRound — parity with the current-round picker', () => {
 				},
 			],
 		})
-		expect(screen.getAllByText('No form yet')).toHaveLength(2)
 		expect(screen.getByText('4th')).toBeTruthy()
+		expect(container.textContent).not.toContain('No form yet')
 	})
 })
