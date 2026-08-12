@@ -15,6 +15,23 @@ import { TeamFormSheet } from './team-form-sheet'
 import { TierPips } from './tier-pips'
 import { CHIP, TYPE } from './type-scale'
 
+/**
+ * The rest of a team's row in the official table, beside the `leaguePosition`
+ * the fixture row already shows. Only the Table view renders these, but they
+ * hang off the team rather than off that view: they're the same sync's writes as
+ * the position, and both pick views read one team shape.
+ *
+ * Every field is independently nullable — a competition with no standings at all
+ * (a cup) carries none of them, and a league before its first round has a
+ * position with nothing played.
+ */
+export interface TeamStandingLine {
+	played?: number | null
+	points?: number | null
+	goalsFor?: number | null
+	goalsAgainst?: number | null
+}
+
 export interface FixtureTeamInfo {
 	id: string
 	name: string
@@ -22,6 +39,8 @@ export interface FixtureTeamInfo {
 	badgeUrl?: string | null
 	form?: FormResult[]
 	leaguePosition?: number | null
+	/** Played / points / goals, for the Table view. Absent where there's no table. */
+	standing?: TeamStandingLine | null
 }
 
 /**

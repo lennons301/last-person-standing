@@ -49,8 +49,28 @@ const mockStandings = {
 		{
 			type: 'TOTAL',
 			table: [
-				{ position: 1, team: { id: 57 }, playedGames: 10, won: 8, draw: 1, lost: 1, points: 25 },
-				{ position: 2, team: { id: 61 }, playedGames: 10, won: 7, draw: 2, lost: 1, points: 23 },
+				{
+					position: 1,
+					team: { id: 57 },
+					playedGames: 10,
+					won: 8,
+					draw: 1,
+					lost: 1,
+					points: 25,
+					goalsFor: 22,
+					goalsAgainst: 9,
+				},
+				{
+					position: 2,
+					team: { id: 61 },
+					playedGames: 10,
+					won: 7,
+					draw: 2,
+					lost: 1,
+					points: 23,
+					goalsFor: 19,
+					goalsAgainst: 8,
+				},
 			],
 		},
 	],
@@ -448,6 +468,8 @@ describe('FootballDataAdapter', () => {
 			drawn: 1,
 			lost: 1,
 			points: 25,
+			goalsFor: 22,
+			goalsAgainst: 9,
 		})
 	})
 

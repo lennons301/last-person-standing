@@ -12,12 +12,14 @@ import { ClassicPick, type ClassicPickFixture } from '@/components/picks/classic
 import { CupPick, type CupPickSlot } from '@/components/picks/cup-pick'
 import type { FixtureTeamInfo, RowFormSheetRenderer } from '@/components/picks/fixture-row'
 import { FixtureRow } from '@/components/picks/fixture-row'
+import { PickTable } from '@/components/picks/pick-table'
 import { type PlannerFixture, PlannerRound, type UsedInfo } from '@/components/picks/planner-round'
 import type { RankedTeam } from '@/components/picks/ranked-item'
 import { RankingList } from '@/components/picks/ranking-list'
 import { TeamFormSheetView } from '@/components/picks/team-form-panel'
 import { TurboPick } from '@/components/picks/turbo-pick'
 import type { PlannerRoundInput } from '@/lib/game/classic-planner-view'
+import { buildPickTableRows, type PickTableFixture } from '@/lib/game/pick-table-view'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
@@ -267,6 +269,7 @@ export interface PreviewClassicCard {
 	currentRoundClosed?: boolean
 	summaryInHero?: boolean
 	startExpanded?: boolean
+	competitionType?: 'league' | 'knockout' | 'group_knockout'
 	planner?: PreviewPlannerRoundInput[]
 }
 
@@ -294,12 +297,46 @@ export function PreviewClassicPick({ card }: { card: PreviewClassicCard }) {
 			existingPickTeamId={pick?.teamId ?? null}
 			existingPickFixtureId={pick?.fixtureId ?? null}
 			futureRounds={card.planner?.map(hydrate)}
+			competitionType={card.competitionType}
 			currentRoundClosed={card.currentRoundClosed}
 			summaryInHero={card.summaryInHero}
 			startExpanded={card.startExpanded}
 			onSubmitPick={async (next) => setPick(next)}
 			planHandlers={{ onLock: async () => {} }}
 			renderFormSheet={previewFormSheet}
+		/>
+	)
+}
+
+/** A Table-view scenario with its clocks already resolved to ISO strings. */
+export interface PreviewPickTableInput {
+	fixtures: PickTableFixture[]
+	usedTeamsByRound?: Record<string, string>
+	restrictedTeams?: Record<string, string>
+	currentTeamId?: string | null
+	readonly?: boolean
+}
+
+/**
+ * The real `PickTable`, driven from fixtures. Sorting is the component's own
+ * state, so every column is live here; picking is stubbed to a local "this is
+ * now your pick" so a row commit is reviewable without the picks API.
+ */
+export function PreviewPickTable({
+	fixtures,
+	usedTeamsByRound,
+	restrictedTeams,
+	currentTeamId,
+	readonly,
+}: PreviewPickTableInput) {
+	const [picked, setPicked] = useState<string | null>(currentTeamId ?? null)
+	const rows = buildPickTableRows({ fixtures, usedTeamsByRound, restrictedTeams })
+	return (
+		<PickTable
+			rows={rows}
+			currentTeamId={picked}
+			readonly={readonly}
+			onPick={(row) => setPicked(row.team.id)}
 		/>
 	)
 }

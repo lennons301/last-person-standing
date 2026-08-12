@@ -396,6 +396,9 @@ export default async function GameDetailPage({
 				roundName={classicPickData.roundName}
 				roundNumber={classicPickData.roundNumber}
 				competitionId={classicPickData.competitionId}
+				// League → the picker opens on the Table view; knockout → on the
+				// fixtures. Either way the toggle is there when standings exist.
+				competitionType={classicPickData.competitionType}
 				deadline={classicPickData.deadline}
 				fixtures={classicPickData.fixtures}
 				usedTeamsByRound={classicPickData.usedTeamsByRound}

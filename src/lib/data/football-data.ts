@@ -121,6 +121,8 @@ interface FdStandingEntry {
 	draw: number
 	lost: number
 	points: number
+	goalsFor: number
+	goalsAgainst: number
 }
 
 export interface StandingRow {
@@ -131,6 +133,8 @@ export interface StandingRow {
 	drawn: number
 	lost: number
 	points: number
+	goalsFor: number
+	goalsAgainst: number
 }
 
 /** The source's explicit current season (e.g. startDate '2026-08-14',
@@ -305,6 +309,8 @@ export class FootballDataAdapter implements CompetitionAdapter {
 			drawn: entry.draw,
 			lost: entry.lost,
 			points: entry.points,
+			goalsFor: entry.goalsFor,
+			goalsAgainst: entry.goalsAgainst,
 		}))
 	}
 
