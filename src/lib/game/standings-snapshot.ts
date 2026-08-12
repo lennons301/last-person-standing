@@ -14,8 +14,9 @@ export interface StandingsSnapshotSummary {
  * Persist one matchday's worth of official standings.
  *
  * Called from the same funnel that writes `team.leaguePosition`
- * (`persistStandings` in bootstrap-competitions), so the snapshot is
- * exactly what the daily sync saw — no second provider read, no second
+ * (`persistStandings` in bootstrap-competitions), so the snapshot is exactly
+ * the table that was persisted — the source's once the season is underway, the
+ * derived opening table before it — with no second provider read and no second
  * schedule. Keyed on the team's own played count, upserted, so:
  *
  * - re-running a sync within one matchday refreshes that point rather than
@@ -29,7 +30,7 @@ export interface StandingsSnapshotSummary {
  * The whole table is recorded, including teams on zero games played — the
  * league always has all its members, so `getTableSize` can count them and the
  * guide can honestly say "of 20" from the opening whistle. A zero-played row
- * carries the source's alphabetical placeholder for its position, so it is
+ * carries an alphabetical placeholder for its position, so it is
  * keyed at `matchday: 0` and excluded by `getPositionLine` at read time: the
  * line never plots that placeholder, so there is no matchday-1 cliff.
  */

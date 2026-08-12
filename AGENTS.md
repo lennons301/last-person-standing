@@ -137,6 +137,14 @@ Recovery surfaces (idempotent safety nets, in case the inline settle missed some
 
 Never add a fifth trigger path — extend an existing one. See `docs/game-modes/README.md` for the full settlement model + state machines.
 
+## Pre-season standings (the opening table)
+
+Until one of a competition's own fixtures has finished, the table `persistStandings` writes is **not** the source's. football-data answers a new season's standings filter with the *previous* season's final table right up to kick-off, so a faithful sync would put last season's positions and points on every pick surface and leave the promoted clubs — absent from that table — with no position at all (which auto-pick reads as worst in the league).
+
+`openingTable` (`src/lib/game/bootstrap-competitions.ts`) derives the competition's own opening table instead: every club at zero, ordered by the league's tiebreak chain — points, goal difference, goals scored, club name — which at all-zero resolves to alphabetical, by *our* club names. From the first finished fixture onward the source table is written verbatim, so mid-season points deductions and every other provider correction stand. The switch is read from `fixture.status = 'finished'` within the competition, nothing else; it needs no repair script and no backfill, because each sync rewrites the whole table.
+
+Two consequences worth knowing: pre-season, auto-pick's worst-placed fallback resolves to the alphabetically-last club in the round (stated in `pickLowestRankedUnusedTeam`), and the snapshot below records the opening table at `matchday: 0`.
+
 ## Standings snapshot
 
 `standings_snapshot` records one row per (competition, team, matchday): the team's place in the official table, plus its W/D/L and points at that point. It's written by `recordStandingsSnapshot`, called from `persistStandings` (`src/lib/game/bootstrap-competitions.ts`) — the same adapter standings read that sets `team.leaguePosition`, so there's one provider request and no second cron. Don't add another writer; extend that funnel.
@@ -144,7 +152,7 @@ Never add a fifth trigger path — extend an existing one. See `docs/game-modes/
 Three properties to keep in mind before building on it:
 
 - **`matchday` is the team's own played count**, not the competition's round number. Postponements leave clubs on different game counts, and "position after N played" is the only x-axis that survives them. A team yet to play lands at `matchday: 0`.
-- **The whole table is recorded, zero-played teams included** — the league always has all its members, so `getTableSize` counts a full table (and the guide can say "of 20") from the opening weekend, rather than a figure that climbs as the first fixtures are played. The `matchday: 0` row carries the source's alphabetical placeholder for position, so **`getPositionLine` excludes it at read time**: the line starts at a team's first actual game and never plots the placeholder. Filter on read, not on write.
+- **The whole table is recorded, zero-played teams included** — the league always has all its members, so `getTableSize` counts a full table (and the guide can say "of 20") from the opening weekend, rather than a figure that climbs as the first fixtures are played. The `matchday: 0` row carries an alphabetical placeholder for position (the opening table's, pre-season; the source's own, once the season is underway), so **`getPositionLine` excludes it at read time**: the line starts at a team's first actual game and never plots the placeholder. Filter on read, not on write.
 - **It accumulates from deployment onward. There is no backfill.** A competition already mid-season starts its line wherever the first post-deploy sync found it. Surfaces must render a short or empty series as the ordinary early state (see `PositionLine`), never as an error or a fabricated flat line.
 - **`(competition, team, matchday)` is the upsert target**, so repeated syncs within one matchday refresh that point rather than duplicating it — the last read of the day is the settled one.
 
