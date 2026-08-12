@@ -264,7 +264,6 @@ export function PickTable({
 								opponentTeamId={sheetRow.opponent.id}
 								beforeRoundNumber={roundNumber}
 								teamPreview={sheetRow.team}
-								opponentPreview={{ shortName: sheetRow.opponent.shortName }}
 							/>
 						))}
 		</>
