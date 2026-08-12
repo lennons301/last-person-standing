@@ -113,14 +113,37 @@ describe('recordStandingsSnapshot', () => {
 		expect(dbInsertFn).not.toHaveBeenCalled()
 	})
 
-	it('stays quiet at season start — a whole table on zero played is not a fault', async () => {
+	it('records a whole zero-played table without warning — that is season start, not a fault', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-		await recordStandingsSnapshot(
+		const summary = await recordStandingsSnapshot(
 			'comp-pl',
-			[standing({ teamExternalId: '65', played: 0, won: 0, points: 0 })],
-			new Map([['65', 'team-mci']]),
+			[
+				standing({
+					teamExternalId: '65',
+					position: 1,
+					played: 0,
+					won: 0,
+					drawn: 0,
+					lost: 0,
+					points: 0,
+				}),
+				standing({
+					teamExternalId: '66',
+					position: 2,
+					played: 0,
+					won: 0,
+					drawn: 0,
+					lost: 0,
+					points: 0,
+				}),
+			],
+			new Map([
+				['65', 'team-mci'],
+				['66', 'team-mun'],
+			]),
 			{ now: NOW },
 		)
+		expect(summary).toEqual({ written: 2, skipped: 0 })
 		expect(warn).not.toHaveBeenCalled()
 		warn.mockRestore()
 	})
@@ -139,14 +162,29 @@ describe('recordStandingsSnapshot', () => {
 		warn.mockRestore()
 	})
 
-	it('skips a team on zero games played — its position is a placeholder, not a data point', async () => {
+	it('records a team on zero games played too, keyed at matchday 0, so the table stays complete', async () => {
 		const summary = await recordStandingsSnapshot(
 			'comp-pl',
-			[standing({ teamExternalId: '65', played: 0, won: 0, points: 0 })],
+			[
+				standing({
+					teamExternalId: '65',
+					position: 14,
+					played: 0,
+					won: 0,
+					drawn: 0,
+					lost: 0,
+					points: 0,
+				}),
+			],
 			new Map([['65', 'team-mci']]),
 			{ now: NOW },
 		)
-		expect(summary).toEqual({ written: 0, skipped: 1 })
-		expect(dbInsertFn).not.toHaveBeenCalled()
+		// Written, not skipped: the league table always has all its teams, so the
+		// whole table is recorded — that is what lets getTableSize say "of 20" on
+		// the opening weekend. getPositionLine, not this writer, keeps the
+		// matchday-0 placeholder out of the line.
+		expect(summary).toEqual({ written: 1, skipped: 0 })
+		const [row] = dbInsertValues.mock.calls.map(([r]) => r)
+		expect(row).toMatchObject({ teamId: 'team-mci', matchday: 0, position: 14, played: 0 })
 	})
 })

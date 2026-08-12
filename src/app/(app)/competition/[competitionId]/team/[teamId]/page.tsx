@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { FormGuideView } from '@/components/picks/form-guide'
 import { requireSession } from '@/lib/auth-helpers'
+import { safeBackHref } from '@/lib/game/form-guide-link'
 import { getTeamFormGuide } from '@/lib/game/team-form-guide'
 
 /**
@@ -29,11 +30,4 @@ export default async function TeamFormGuidePage({
 	if (!guide) notFound()
 
 	return <FormGuideView guide={guide} backHref={safeBackHref(from)} backLabel="Back to game" />
-}
-
-/** Only same-origin, relative paths — never a caller-supplied absolute URL. */
-function safeBackHref(from: string | undefined): string | null {
-	if (!from) return null
-	if (!from.startsWith('/') || from.startsWith('//')) return null
-	return from
 }

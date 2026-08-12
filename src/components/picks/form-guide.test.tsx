@@ -6,6 +6,7 @@ import {
 	EMPTY_GUIDE,
 	FULL_GUIDE,
 	NO_OPPONENT_GUIDE,
+	OPENING_WEEKEND_GUIDE,
 } from '@/app/preview/form-guide/fixtures'
 import { FormGuideView } from './form-guide'
 
@@ -104,5 +105,17 @@ describe('FormGuideView — back link', () => {
 	it('omits it entirely on a directly-visited URL', () => {
 		render(<FormGuideView guide={FULL_GUIDE} />)
 		expect(screen.queryByRole('link', { name: /^Back/ })).toBeNull()
+	})
+})
+
+describe('FormGuideView — header position', () => {
+	it('reads "Nth of <full table>" on the opening weekend, before this team has played', () => {
+		// The bug this guards: getTableSize once counted only teams that already
+		// had a snapshot row, so a team sitting 14th could render "14th of 2" on
+		// the opening weekend. tableSize is now the full table, so it reads "of
+		// 20" even while this team's position line is still empty.
+		const { container } = render(<FormGuideView guide={OPENING_WEEKEND_GUIDE} />)
+		expect(container.textContent).toContain('14th of 20')
+		expect(screen.getByText(/No position history yet/)).toBeTruthy()
 	})
 })

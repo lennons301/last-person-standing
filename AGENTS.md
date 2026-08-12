@@ -143,7 +143,8 @@ Never add a fifth trigger path — extend an existing one. See `docs/game-modes/
 
 Three properties to keep in mind before building on it:
 
-- **`matchday` is the team's own played count**, not the competition's round number. Postponements leave clubs on different game counts, and "position after N played" is the only x-axis that survives them. Teams on zero played are skipped — the source's position there is an alphabetical placeholder.
+- **`matchday` is the team's own played count**, not the competition's round number. Postponements leave clubs on different game counts, and "position after N played" is the only x-axis that survives them. A team yet to play lands at `matchday: 0`.
+- **The whole table is recorded, zero-played teams included** — the league always has all its members, so `getTableSize` counts a full table (and the guide can say "of 20") from the opening weekend, rather than a figure that climbs as the first fixtures are played. The `matchday: 0` row carries the source's alphabetical placeholder for position, so **`getPositionLine` excludes it at read time**: the line starts at a team's first actual game and never plots the placeholder. Filter on read, not on write.
 - **It accumulates from deployment onward. There is no backfill.** A competition already mid-season starts its line wherever the first post-deploy sync found it. Surfaces must render a short or empty series as the ordinary early state (see `PositionLine`), never as an error or a fabricated flat line.
 - **`(competition, team, matchday)` is the upsert target**, so repeated syncs within one matchday refresh that point rather than duplicating it — the last read of the day is the settled one.
 

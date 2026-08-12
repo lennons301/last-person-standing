@@ -3,6 +3,7 @@ import {
 	EMPTY_GUIDE,
 	FULL_GUIDE,
 	NO_OPPONENT_GUIDE,
+	OPENING_WEEKEND_GUIDE,
 } from '@/app/preview/form-guide/fixtures'
 import { FormGuideView } from '@/components/picks/form-guide'
 
@@ -67,6 +68,16 @@ export default function FormGuidePreviewPage() {
 			<FormGuideView guide={EARLY_SEASON_GUIDE} backHref="/game/preview" />
 			<MobileColumn>
 				<FormGuideView guide={EARLY_SEASON_GUIDE} backHref="/game/preview" />
+			</MobileColumn>
+
+			<GroupHeading title="Opening weekend, before this team has played">
+				The league has started but this team hasn't kicked off yet: a real position in a full table
+				("14th of 20", never "14th of 2"), no line yet, a priced opener. The state the per-matchday
+				snapshot ships into on day one.
+			</GroupHeading>
+			<FormGuideView guide={OPENING_WEEKEND_GUIDE} backHref="/game/preview" />
+			<MobileColumn>
+				<FormGuideView guide={OPENING_WEEKEND_GUIDE} backHref="/game/preview" />
 			</MobileColumn>
 
 			<GroupHeading title="Season start, nothing recorded">

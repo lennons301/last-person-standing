@@ -145,6 +145,36 @@ export const EARLY_SEASON_GUIDE: TeamFormGuide = guideFrom([result(2, BUR, true,
 })
 
 /**
+ * Opening weekend, before this team has kicked off. The league has started —
+ * others have played — so the table is full and this team has a real current
+ * position in it, but its own line hasn't begun. The header must read "14th of
+ * 20", never "14th of 2": `getTableSize` counts the whole table, which the
+ * snapshot records even for zero-played teams. The old sparse-snapshot
+ * behaviour, where the "of N" grew as the opening weekend was played, is the
+ * regression this fixture guards.
+ */
+export const OPENING_WEEKEND_GUIDE: TeamFormGuide = guideFrom([], {
+	team: { ...ARS, leaguePosition: 14 },
+	tableSize: 20,
+	positionLine: [],
+	nextFixture: {
+		fixtureId: 'fx-opening',
+		roundNumber: 1,
+		roundLabel: 'GW1',
+		roundName: 'Gameweek 1',
+		kickoff: '2026-08-15T19:00:00.000Z',
+		opponent: EVE,
+		home: true,
+		odds: {
+			home: { probability: 0.48, price: 2.0 },
+			draw: { probability: 0.27, price: 3.5 },
+			away: { probability: 0.25, price: 3.8 },
+			asOf: '2026-08-14T09:00:00.000Z',
+		},
+	},
+})
+
+/**
  * The day the season opens, on a competition the snapshot has never run for:
  * no results, no position history, no odds. Every section has to say what it
  * doesn't know rather than render blank.

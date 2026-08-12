@@ -1,4 +1,4 @@
-import { and, asc, countDistinct, eq } from 'drizzle-orm'
+import { and, asc, countDistinct, eq, gt } from 'drizzle-orm'
 import type { AdapterStanding } from '@/lib/data/types'
 import { db } from '@/lib/db'
 import { standingsSnapshot } from '@/lib/schema/competition'
@@ -26,9 +26,12 @@ export interface StandingsSnapshotSummary {
  *   first post-deploy sync found it. That's the documented shape of this
  *   feature, not a gap to paper over.
  *
- * A team on zero games played is skipped: its "position" is the source's
- * alphabetical placeholder, and plotting it would draw a cliff on matchday 1
- * that never happened.
+ * The whole table is recorded, including teams on zero games played — the
+ * league always has all its members, so `getTableSize` can count them and the
+ * guide can honestly say "of 20" from the opening whistle. A zero-played row
+ * carries the source's alphabetical placeholder for its position, so it is
+ * keyed at `matchday: 0` and excluded by `getPositionLine` at read time: the
+ * line never plots that placeholder, so there is no matchday-1 cliff.
  */
 export async function recordStandingsSnapshot(
 	competitionId: string,
@@ -41,7 +44,7 @@ export async function recordStandingsSnapshot(
 
 	for (const row of standings) {
 		const teamId = teamIdByExternalId.get(row.teamExternalId)
-		if (!teamId || row.played <= 0) {
+		if (!teamId) {
 			summary.skipped++
 			continue
 		}
@@ -73,7 +76,9 @@ export async function recordStandingsSnapshot(
 	// Played matchdays arrived but nothing landed: every row's team failed to
 	// resolve (an id-map mismatch), which shows up only as a position line that
 	// quietly stops growing. Say it here rather than leave it to whoever
-	// notices. A whole table on zero played is season start, not a fault.
+	// notices. Gated on `played > 0` so it stays a signal about the id map: a
+	// table that resolves fine but hasn't kicked off yet writes matchday-0 rows
+	// and is silent, as season start should be.
 	if (summary.written === 0 && standings.some((row) => row.played > 0)) {
 		console.warn(
 			`[recordStandingsSnapshot] ${competitionId}: ${standings.length} standings row(s), none snapshotted`,
@@ -94,6 +99,10 @@ export interface PositionPoint {
  * the first daily sync after this feature deployed — see the accumulation note
  * above; the form guide renders that emptiness as "the line starts once we've
  * seen a matchday", never as a fabricated flat line.
+ *
+ * The `matchday: 0` placeholder row (a team recorded before it had kicked off)
+ * is excluded: its position is the source's alphabetical seeding, not a result,
+ * so the line begins at the team's first actual game.
  */
 export async function getPositionLine(
 	teamId: string,
@@ -107,17 +116,23 @@ export async function getPositionLine(
 		})
 		.from(standingsSnapshot)
 		.where(
-			and(eq(standingsSnapshot.teamId, teamId), eq(standingsSnapshot.competitionId, competitionId)),
+			and(
+				eq(standingsSnapshot.teamId, teamId),
+				eq(standingsSnapshot.competitionId, competitionId),
+				gt(standingsSnapshot.matchday, 0),
+			),
 		)
 		.orderBy(asc(standingsSnapshot.matchday))
 	return rows
 }
 
 /**
- * How many teams the position line is measured against — the size of the table
- * at the latest matchday we have a snapshot for. The chart needs it to scale
- * its axis (1st at the top, last at the bottom) and the guide to say "of 20".
- * Null when nothing has been snapshotted yet.
+ * How many teams are in the competition — the axis floor for the position line
+ * (1st at the top, last at the bottom) and the "of N" in the guide header.
+ * Counts distinct teams across the snapshot, which holds the whole table
+ * (zero-played teams included), so it is the full league size from the first
+ * post-deploy sync — not a figure that climbs as the opening weekend is played.
+ * Null only before any sync has snapshotted this competition.
  */
 export async function getTableSize(competitionId: string): Promise<number | null> {
 	const [row] = await db
