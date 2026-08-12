@@ -24,6 +24,32 @@ export interface HeadToHeadResult {
 	awayScore: number
 }
 
+/**
+ * A team's record over some slice of its season — the whole of it, or just the
+ * matches played at one venue.
+ *
+ * `form` is the venue's own recent-results string (most recent first): a team
+ * can be mid-table on aggregate while unbeaten at home, and that's exactly the
+ * read a picker wants before committing.
+ */
+export interface FormSplit {
+	played: number
+	wins: number
+	draws: number
+	losses: number
+	goalsFor: number
+	goalsAgainst: number
+	/** Most recent results first, capped at `SPLIT_FORM_LIMIT`. */
+	form: Array<'W' | 'D' | 'L'>
+}
+
+/** Overall record plus the home/away halves it decomposes into. */
+export interface TeamFormSplits {
+	overall: FormSplit
+	home: FormSplit
+	away: FormSplit
+}
+
 export interface TeamFormDetail {
 	team: {
 		id: string
@@ -32,9 +58,101 @@ export interface TeamFormDetail {
 		badgeUrl: string | null
 		leaguePosition: number | null
 	}
-	seasonRecord: { wins: number; draws: number; losses: number }
+	/** Season record, split by venue, with goals for and against. */
+	splits: TeamFormSplits
 	recent: TeamFormResult[]
 	headToHead: HeadToHeadResult[] | null
+}
+
+/** How many results each split's `form` string carries. */
+export const SPLIT_FORM_LIMIT = 5
+
+/**
+ * One finished match involving the team, as the queries below select it. Scores
+ * are nullable because `status='finished'` and "has a score" are separate facts
+ * in the fixture table — a finished row with no score is not counted at all.
+ */
+export interface TeamFormMatchRow {
+	homeTeamId: string
+	awayTeamId: string
+	homeScore: number | null
+	awayScore: number | null
+	roundNumber: number
+}
+
+/** Opponent display info, keyed by team id in `summariseTeamForm`. */
+export interface TeamFormOpponent {
+	name: string
+	shortName: string
+	badgeUrl: string | null
+}
+
+export interface TeamFormSummary {
+	splits: TeamFormSplits
+	recent: TeamFormResult[]
+}
+
+function emptySplit(): FormSplit {
+	return { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, form: [] }
+}
+
+/**
+ * The form-detail assembly seam: turn a team's finished matches into the season
+ * splits and recent-results list the form sheet renders. Pure — no database, no
+ * dates, no ordering assumptions beyond the one the caller guarantees.
+ *
+ * `matches` must arrive **most recent first**, which is how both queries in this
+ * file order them. That ordering is what makes `recent` the last N matches and
+ * each split's `form` the last few at that venue.
+ */
+export function summariseTeamForm(input: {
+	teamId: string
+	matches: TeamFormMatchRow[]
+	/** Opponent display info by team id; a missing entry renders as unknown. */
+	opponents?: Map<string, TeamFormOpponent>
+	competitionType: 'league' | 'knockout' | 'group_knockout'
+	/** How many matches `recent` carries. */
+	lastN?: number
+}): TeamFormSummary {
+	const { teamId, matches, opponents, competitionType, lastN = 8 } = input
+	const splits: TeamFormSplits = { overall: emptySplit(), home: emptySplit(), away: emptySplit() }
+	const recent: TeamFormResult[] = []
+
+	for (const row of matches) {
+		if (row.homeScore == null || row.awayScore == null) continue
+		const isHome = row.homeTeamId === teamId
+		const goalsFor = isHome ? row.homeScore : row.awayScore
+		const goalsAgainst = isHome ? row.awayScore : row.homeScore
+		const result: 'W' | 'D' | 'L' =
+			goalsFor > goalsAgainst ? 'W' : goalsFor < goalsAgainst ? 'L' : 'D'
+
+		for (const split of [splits.overall, isHome ? splits.home : splits.away]) {
+			split.played++
+			split.goalsFor += goalsFor
+			split.goalsAgainst += goalsAgainst
+			if (result === 'W') split.wins++
+			else if (result === 'L') split.losses++
+			else split.draws++
+			if (split.form.length < SPLIT_FORM_LIMIT) split.form.push(result)
+		}
+
+		if (recent.length < lastN) {
+			const opponent = opponents?.get(isHome ? row.awayTeamId : row.homeTeamId)
+			recent.push({
+				roundNumber: row.roundNumber,
+				roundLabel: roundLabel(competitionType, row.roundNumber),
+				opponentShortName: opponent?.shortName ?? '???',
+				opponentName: opponent?.name ?? 'Unknown',
+				opponentBadgeUrl: opponent?.badgeUrl ?? null,
+				home: isHome,
+				goalsFor,
+				goalsAgainst,
+				result,
+			})
+		}
+	}
+
+	return { splits, recent }
 }
 
 export async function getTeamFormDetail(
@@ -81,42 +199,18 @@ export async function getTeamFormDetail(
 		: []
 	const opponentMap = new Map(opponentRows.map((t) => [t.id, t]))
 
-	let wins = 0
-	let draws = 0
-	let losses = 0
-	const recent: TeamFormResult[] = []
-	for (const row of finishedRows) {
-		if (row.homeScore == null || row.awayScore == null) continue
-		const isHome = row.homeTeamId === teamId
-		const goalsFor = isHome ? row.homeScore : row.awayScore
-		const goalsAgainst = isHome ? row.awayScore : row.homeScore
-		let result: 'W' | 'D' | 'L'
-		if (goalsFor > goalsAgainst) {
-			result = 'W'
-			wins++
-		} else if (goalsFor < goalsAgainst) {
-			result = 'L'
-			losses++
-		} else {
-			result = 'D'
-			draws++
-		}
-		if (recent.length < lastN) {
-			const opponentId = isHome ? row.awayTeamId : row.homeTeamId
-			const opponent = opponentMap.get(opponentId)
-			recent.push({
-				roundNumber: row.roundNumber,
-				roundLabel: roundLabel(competitionType, row.roundNumber),
-				opponentShortName: opponent?.shortName ?? '???',
-				opponentName: opponent?.name ?? 'Unknown',
-				opponentBadgeUrl: opponent?.badgeUrl ?? null,
-				home: isHome,
-				goalsFor,
-				goalsAgainst,
-				result,
-			})
-		}
-	}
+	const { splits, recent } = summariseTeamForm({
+		teamId,
+		matches: finishedRows,
+		opponents: new Map(
+			opponentRows.map((t) => [
+				t.id,
+				{ name: t.name, shortName: t.shortName, badgeUrl: t.badgeUrl },
+			]),
+		),
+		competitionType,
+		lastN,
+	})
 
 	let headToHead: HeadToHeadResult[] | null = null
 	if (opponentTeamId) {
@@ -176,7 +270,7 @@ export async function getTeamFormDetail(
 			badgeUrl: teamRow.badgeUrl,
 			leaguePosition: teamRow.leaguePosition,
 		},
-		seasonRecord: { wins, draws, losses },
+		splits,
 		recent,
 		headToHead,
 	}

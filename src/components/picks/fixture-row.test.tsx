@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FixtureRow, type FixtureTeamInfo } from './fixture-row'
+import type { FormMarket } from './team-form-panel'
 
 afterEach(cleanup)
 
@@ -117,9 +118,10 @@ describe('FixtureRow type scale', () => {
 })
 
 describe('FixtureRow win probability', () => {
-	// 8/13 and 2/13 — the de-vigged read of a 1.50 / 4.00 / 6.00 market.
+	// 8/13, 3/13 and 2/13 — the de-vigged read of a 1.50 / 4.00 / 6.00 market.
 	const ODDS = {
 		home: { probability: 8 / 13, price: 1.5 },
+		draw: { probability: 3 / 13, price: 4 },
 		away: { probability: 2 / 13, price: 6 },
 		asOf: '2026-08-14T11:30:00Z',
 	}
@@ -144,5 +146,46 @@ describe('FixtureRow win probability', () => {
 		const { container } = render(<FixtureRow home={MUN} away={NEW} />)
 		expect(container.textContent).not.toContain('%')
 		expect(container.textContent).not.toContain('Odds as of')
+	})
+
+	it('hands the form sheet the full market, attributed to the tapped side', () => {
+		// The row shows two win chances; the sheet one tap below shows the whole
+		// 1X2, so the draw the row hides still has to reach it.
+		const markets: Array<FormMarket | null> = []
+		render(
+			<FixtureRow
+				home={{ ...MUN, form: ['W'] }}
+				away={NEW}
+				odds={ODDS}
+				renderFormSheet={({ market }) => {
+					markets.push(market)
+					return null
+				}}
+			/>,
+		)
+		fireEvent.click(screen.getByLabelText('Open form details for Newcastle United'))
+
+		const market = markets.at(-1)
+		expect(market).toMatchObject({
+			home: { shortName: 'MUN', probability: 8 / 13, price: 1.5 },
+			draw: { probability: 3 / 13, price: 4 },
+			away: { shortName: 'NEW', probability: 2 / 13, price: 6 },
+			teamSide: 'away',
+		})
+	})
+
+	it('hands the form sheet no market for an unpriced fixture', () => {
+		const markets: Array<FormMarket | null> = []
+		render(
+			<FixtureRow
+				home={{ ...MUN, form: ['W'] }}
+				away={NEW}
+				renderFormSheet={({ market }) => {
+					markets.push(market)
+					return null
+				}}
+			/>,
+		)
+		expect(markets.at(-1)).toBeNull()
 	})
 })
