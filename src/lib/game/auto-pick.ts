@@ -10,6 +10,23 @@ interface PickLowestRankedInput {
 	teamPositions: Map<string, number>
 }
 
+/**
+ * The fallback pick for a player who missed the deadline: the worst-placed team
+ * in the round they haven't already used — worst placed meaning highest league
+ * position in the table the standings sync last persisted.
+ *
+ * Pre-season that table is the competition's opening one (see `openingTable` in
+ * bootstrap-competitions): every club at zero, so the tiebreak chain resolves to
+ * alphabetical and this returns **the alphabetically-last club in the round** —
+ * West Ham or Wolves, on a full Premier League gameweek. That is arbitrary as
+ * football, but it is deterministic and it is a real team on a real position:
+ * before the opening table existed, an unpositioned club fell to the
+ * Infinity default below and the pick landed on whichever id sorted first.
+ *
+ * Missing positions still default to Infinity — a competition whose sync has
+ * never run has no table to be worst in, and picking a team is better than
+ * eliminating the player.
+ */
 export function pickLowestRankedUnusedTeam({
 	fixtures,
 	usedTeamIds,
