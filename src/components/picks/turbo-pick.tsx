@@ -4,10 +4,19 @@ import { useRouter } from 'next/navigation'
 import type React from 'react'
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+	buildPickTableRows,
+	defaultPickView,
+	type PickTableRow,
+	type PickView,
+	pickTableHasStandings,
+	type RankedFixtureCall,
+} from '@/lib/game/pick-table-view'
 import { cn } from '@/lib/utils'
-import { type FixtureOdds, FixtureRow } from './fixture-row'
-import type { FormResult } from './form-dots'
+import { type FixtureOdds, FixtureRow, type FixtureTeamInfo } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
+import { PickTable } from './pick-table'
+import { PickViewToggle } from './pick-view-toggle'
 import { PicksSubmittedNotice } from './picks-submitted-notice'
 import { type Prediction, PredictionButtons } from './prediction-buttons'
 import type { RankedPick } from './ranked-item'
@@ -17,22 +26,13 @@ import { SECTION_HEADING, TYPE } from './type-scale'
 
 export interface TurboPickFixture {
 	id: string
-	home: {
-		id: string
-		name: string
-		shortName: string
-		badgeUrl?: string | null
-		form?: FormResult[]
-		leaguePosition?: number | null
-	}
-	away: {
-		id: string
-		name: string
-		shortName: string
-		badgeUrl?: string | null
-		form?: FormResult[]
-		leaguePosition?: number | null
-	}
+	/**
+	 * The shared team shape both pick views read — the standings line included,
+	 * which is what the Table view's columns are made of. Absent on a competition
+	 * with no table behind it, in which case turbo never offers the view.
+	 */
+	home: FixtureTeamInfo
+	away: FixtureTeamInfo
 	kickoff: string | null
 	/** Indicative win-probabilities. Absent for fixtures we have no odds for. */
 	odds?: FixtureOdds | null
@@ -67,6 +67,13 @@ interface TurboPickProps {
 	 * drifted from the submitted one.
 	 */
 	initialRanking?: TurboPickEntry[]
+	/**
+	 * Decides which view the remaining fixtures open in: a league opens on the
+	 * Table (its players already think in a standings board), anything else on
+	 * the fixture rows. The toggle is offered either way — unless the round has no
+	 * standings behind it at all, in which case there is no Table to show.
+	 */
+	competitionType?: 'league' | 'knockout' | 'group_knockout' | null
 	/**
 	 * Overrides how the form-detail sheet is rendered for one side of one
 	 * fixture — ranked or remaining. The default path resolves it through a
@@ -105,6 +112,7 @@ export function TurboPick({
 	numberOfPicks,
 	actingAs,
 	initialRanking,
+	competitionType,
 	renderFormSheet,
 }: TurboPickProps) {
 	const router = useRouter()
@@ -137,13 +145,39 @@ export function TurboPick({
 	const rankedFixtureIds = new Set(ranked.map((r) => r.fixtureId))
 	const remaining = fixtures.filter((f) => !rankedFixtureIds.has(f.id))
 
+	// The same round as a standings board. Built from *every* fixture, not just
+	// the remaining ones: a team already in the ranking is marked with the rank it
+	// holds rather than dropped, so the board stays the whole round to compare on.
+	const rankedFixtures: Record<string, RankedFixtureCall> = {}
+	for (const r of ranked) {
+		rankedFixtures[r.fixtureId] = {
+			rank: r.rank,
+			teamId:
+				r.prediction === 'home_win'
+					? r.homeTeam.id
+					: r.prediction === 'away_win'
+						? r.awayTeam.id
+						: null,
+		}
+	}
+	const tableRows = buildPickTableRows({ fixtures, rankedFixtures })
+	const tableAvailable = pickTableHasStandings(tableRows)
+	const [view, setView] = useState<PickView>(defaultPickView(competitionType, tableAvailable))
+	// A round whose standings vanish (or a cup the toggle never offered) must not
+	// strand the player on a view that isn't there.
+	const activeView: PickView = tableAvailable ? view : 'fixtures'
+
 	function handlePredictionChange(fixtureId: string, prediction: Prediction) {
 		setPendingPredictions({ ...pendingPredictions, [fixtureId]: prediction })
 	}
 
-	function handleAddToRanked(fixture: TurboPickFixture) {
-		const prediction = pendingPredictions[fixture.id]
-		if (!prediction) return
+	/**
+	 * Append one call to the confidence set. Both views end up here — the fixture
+	 * row's "add to predictions" and the table's "Rank #N" — so a ranking built
+	 * across the two is one list in one order, whichever view made each entry.
+	 */
+	function addToRanked(fixture: TurboPickFixture, prediction: Prediction) {
+		if (rankedFixtureIds.has(fixture.id)) return
 		setRanked([
 			...ranked,
 			{
@@ -165,8 +199,35 @@ export function TurboPick({
 				prediction,
 			},
 		])
+	}
+
+	function handleAddToRanked(fixture: TurboPickFixture) {
+		const prediction = pendingPredictions[fixture.id]
+		if (!prediction) return
+		addToRanked(fixture, prediction)
 		const { [fixture.id]: _removed, ...rest } = pendingPredictions
 		setPendingPredictions(rest)
+	}
+
+	/**
+	 * Rank a team from the board: the row is a team, so the call it makes is
+	 * "this team wins". The draw is the one prediction the Table view can't
+	 * express — it belongs to a fixture, not a team — and stays the fixture row's.
+	 */
+	function handleRankFromTable(row: PickTableRow) {
+		const fixture = fixtures.find((f) => f.id === row.fixtureId)
+		if (!fixture) return
+		addToRanked(fixture, row.side === 'home' ? 'home_win' : 'away_win')
+	}
+
+	/** Move a ranked row one place up or down the confidence order. */
+	function handleMoveFromTable(row: PickTableRow, direction: 'up' | 'down') {
+		const index = ranked.findIndex((r) => r.fixtureId === row.fixtureId)
+		const target = direction === 'up' ? index - 1 : index + 1
+		if (index < 0 || target < 0 || target >= ranked.length) return
+		const next = [...ranked]
+		;[next[index], next[target]] = [next[target], next[index]]
+		setRanked(next.map((r, i) => ({ ...r, rank: i + 1 })))
 	}
 
 	function handleRemove(id: string) {
@@ -233,62 +294,81 @@ export function TurboPick({
 			{remaining.length > 0 && (
 				<div className="mt-6 pt-4 border-t">
 					<SectionHeading
-						title="Remaining fixtures"
+						title={activeView === 'table' ? 'All teams' : 'Remaining fixtures'}
 						aside={`${remaining.length} left`}
-						hint="Predict a result to add it to your ranking."
+						hint={
+							activeView === 'table'
+								? 'Tap Rank to back a team to win. Sort any column to compare.'
+								: 'Predict a result to add it to your ranking.'
+						}
 					/>
 
-					<div className="space-y-2">
-						{remaining.map((fix) => {
-							const hasPrediction = !!pendingPredictions[fix.id]
-							return (
-								<FixtureRow
-									key={fix.id}
-									home={{
-										id: fix.home.id,
-										name: fix.home.name,
-										shortName: fix.home.shortName,
-										badgeUrl: fix.home.badgeUrl,
-										form: fix.home.form,
-										leaguePosition: fix.home.leaguePosition,
-									}}
-									away={{
-										id: fix.away.id,
-										name: fix.away.name,
-										shortName: fix.away.shortName,
-										badgeUrl: fix.away.badgeUrl,
-										form: fix.away.form,
-										leaguePosition: fix.away.leaguePosition,
-									}}
-									kickoff={fix.kickoff}
-									odds={fix.odds}
-									competitionId={competitionId}
-									roundNumber={roundNumber}
-									renderFormSheet={
-										renderFormSheet
-											? (args) => renderFormSheet({ fixtureId: fix.id, ...args })
-											: undefined
-									}
-								>
-									<div className="px-4 py-3 border-t border-border bg-muted/20">
-										<PredictionButtons
-											value={pendingPredictions[fix.id]}
-											onChange={(p) => handlePredictionChange(fix.id, p)}
-										/>
-										{hasPrediction && (
-											<button
-												type="button"
-												onClick={() => handleAddToRanked(fix)}
-												className="mt-2.5 text-sm font-semibold text-[var(--accent)] w-full text-center py-1.5 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-											>
-												↑ Add to predictions as #{ranked.length + 1}
-											</button>
-										)}
-									</div>
-								</FixtureRow>
-							)
-						})}
-					</div>
+					{tableAvailable && <PickViewToggle view={activeView} onChange={setView} />}
+
+					{activeView === 'table' ? (
+						<PickTable
+							rows={tableRows}
+							ranking={{
+								count: ranked.length,
+								target: numberOfPicks,
+								onAdd: handleRankFromTable,
+								onMove: handleMoveFromTable,
+								onRemove: (row) => handleRemove(row.fixtureId),
+							}}
+						/>
+					) : (
+						<div className="space-y-2">
+							{remaining.map((fix) => {
+								const hasPrediction = !!pendingPredictions[fix.id]
+								return (
+									<FixtureRow
+										key={fix.id}
+										home={{
+											id: fix.home.id,
+											name: fix.home.name,
+											shortName: fix.home.shortName,
+											badgeUrl: fix.home.badgeUrl,
+											form: fix.home.form,
+											leaguePosition: fix.home.leaguePosition,
+										}}
+										away={{
+											id: fix.away.id,
+											name: fix.away.name,
+											shortName: fix.away.shortName,
+											badgeUrl: fix.away.badgeUrl,
+											form: fix.away.form,
+											leaguePosition: fix.away.leaguePosition,
+										}}
+										kickoff={fix.kickoff}
+										odds={fix.odds}
+										competitionId={competitionId}
+										roundNumber={roundNumber}
+										renderFormSheet={
+											renderFormSheet
+												? (args) => renderFormSheet({ fixtureId: fix.id, ...args })
+												: undefined
+										}
+									>
+										<div className="px-4 py-3 border-t border-border bg-muted/20">
+											<PredictionButtons
+												value={pendingPredictions[fix.id]}
+												onChange={(p) => handlePredictionChange(fix.id, p)}
+											/>
+											{hasPrediction && (
+												<button
+													type="button"
+													onClick={() => handleAddToRanked(fix)}
+													className="mt-2.5 text-sm font-semibold text-[var(--accent)] w-full text-center py-1.5 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+												>
+													↑ Add to predictions as #{ranked.length + 1}
+												</button>
+											)}
+										</div>
+									</FixtureRow>
+								)
+							})}
+						</div>
+					)}
 				</div>
 			)}
 

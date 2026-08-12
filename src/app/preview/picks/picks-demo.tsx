@@ -19,7 +19,11 @@ import { RankingList } from '@/components/picks/ranking-list'
 import { TeamFormSheetView } from '@/components/picks/team-form-panel'
 import { TurboPick } from '@/components/picks/turbo-pick'
 import type { PlannerRoundInput } from '@/lib/game/classic-planner-view'
-import { buildPickTableRows, type PickTableFixture } from '@/lib/game/pick-table-view'
+import {
+	buildPickTableRows,
+	type PickTableFixture,
+	type RankedFixtureCall,
+} from '@/lib/game/pick-table-view'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
@@ -150,6 +154,7 @@ export function PreviewTurboPick({
 			numberOfPicks={scenario.numberOfPicks}
 			existingPicks={scenario.existingPicks}
 			initialRanking={scenario.initialRanking}
+			competitionType={scenario.competitionType}
 			fixtures={scenario.fixtures.map((f) => ({
 				id: f.id,
 				home: f.home,
@@ -337,6 +342,56 @@ export function PreviewPickTable({
 			currentTeamId={picked}
 			readonly={readonly}
 			onPick={(row) => setPicked(row.team.id)}
+		/>
+	)
+}
+
+/** A turbo ranking-board scenario, clocks already resolved to ISO strings. */
+export interface PreviewTurboPickTableInput {
+	fixtures: PickTableFixture[]
+	numberOfPicks: number
+	/** Most confident first; `teamId` null is a draw call, made in the other view. */
+	ranking: Array<{ fixtureId: string; teamId: string | null }>
+	readonly?: boolean
+}
+
+/**
+ * The real `PickTable` in turbo's ranking mode. The confidence set is local
+ * state here — in the picker it's `TurboPick`'s, shared with the ranked list and
+ * the fixture rows — so adding, ordering and removing are all live, and nothing
+ * reaches the picks API.
+ */
+export function PreviewTurboPickTable({
+	fixtures,
+	numberOfPicks,
+	ranking,
+	readonly,
+}: PreviewTurboPickTableInput) {
+	const [calls, setCalls] = useState(ranking)
+	const rankedFixtures: Record<string, RankedFixtureCall> = {}
+	calls.forEach((c, i) => {
+		rankedFixtures[c.fixtureId] = { rank: i + 1, teamId: c.teamId }
+	})
+
+	return (
+		<PickTable
+			rows={buildPickTableRows({ fixtures, rankedFixtures })}
+			readonly={readonly}
+			ranking={{
+				count: calls.length,
+				target: numberOfPicks,
+				onAdd: (row) => setCalls((c) => [...c, { fixtureId: row.fixtureId, teamId: row.team.id }]),
+				onMove: (row, direction) =>
+					setCalls((c) => {
+						const index = c.findIndex((x) => x.fixtureId === row.fixtureId)
+						const target = direction === 'up' ? index - 1 : index + 1
+						if (index < 0 || target < 0 || target >= c.length) return c
+						const next = [...c]
+						;[next[index], next[target]] = [next[target], next[index]]
+						return next
+					}),
+				onRemove: (row) => setCalls((c) => c.filter((x) => x.fixtureId !== row.fixtureId)),
+			}}
 		/>
 	)
 }
