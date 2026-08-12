@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { roundLabel } from '@/lib/game/round-label'
 import { competition, fixture, round, team } from '@/lib/schema/competition'
@@ -13,15 +13,6 @@ export interface TeamFormResult {
 	goalsFor: number
 	goalsAgainst: number
 	result: 'W' | 'D' | 'L'
-}
-
-export interface HeadToHeadResult {
-	roundNumber: number
-	roundLabel: string
-	homeTeamShortName: string
-	awayTeamShortName: string
-	homeScore: number
-	awayScore: number
 }
 
 /**
@@ -61,7 +52,6 @@ export interface TeamFormDetail {
 	/** Season record, split by venue, with goals for and against. */
 	splits: TeamFormSplits
 	recent: TeamFormResult[]
-	headToHead: HeadToHeadResult[] | null
 }
 
 /** How many results each split's `form` string carries. */
@@ -155,10 +145,15 @@ export function summariseTeamForm(input: {
 	return { splits, recent }
 }
 
+/**
+ * The form sheet's data path. Deliberately opponent-blind: the sheet shows one
+ * team's own season, and head-to-head — which within a single competition can
+ * only ever be this season's meetings — belongs to the form-guide page, where
+ * previous seasons are in scope.
+ */
 export async function getTeamFormDetail(
 	teamId: string,
 	competitionId: string,
-	opponentTeamId?: string,
 	beforeRoundNumber?: number,
 	lastN = 8,
 ): Promise<TeamFormDetail | null> {
@@ -197,7 +192,6 @@ export async function getTeamFormDetail(
 	const opponentRows = opponentIds.size
 		? await db.query.team.findMany({ where: inArray(team.id, Array.from(opponentIds)) })
 		: []
-	const opponentMap = new Map(opponentRows.map((t) => [t.id, t]))
 
 	const { splits, recent } = summariseTeamForm({
 		teamId,
@@ -212,56 +206,6 @@ export async function getTeamFormDetail(
 		lastN,
 	})
 
-	let headToHead: HeadToHeadResult[] | null = null
-	if (opponentTeamId) {
-		const h2hRows = await db
-			.select({
-				homeTeamId: fixture.homeTeamId,
-				awayTeamId: fixture.awayTeamId,
-				homeScore: fixture.homeScore,
-				awayScore: fixture.awayScore,
-				roundNumber: round.number,
-			})
-			.from(fixture)
-			.innerJoin(round, eq(round.id, fixture.roundId))
-			.where(
-				and(
-					eq(round.competitionId, competitionId),
-					eq(fixture.status, 'finished'),
-					or(
-						and(eq(fixture.homeTeamId, teamId), eq(fixture.awayTeamId, opponentTeamId)),
-						and(eq(fixture.homeTeamId, opponentTeamId), eq(fixture.awayTeamId, teamId)),
-					),
-				),
-			)
-			.orderBy(desc(round.number))
-			.limit(5)
-
-		const teamShortNames = new Map<string, string>()
-		teamShortNames.set(teamRow.id, teamRow.shortName)
-		const opp = opponentMap.get(opponentTeamId)
-		if (opp) teamShortNames.set(opp.id, opp.shortName)
-		// Fallback for opponent not in the loaded set (unlikely but defensive).
-		if (!teamShortNames.has(opponentTeamId)) {
-			const oppRow = await db.query.team.findFirst({ where: eq(team.id, opponentTeamId) })
-			if (oppRow) teamShortNames.set(oppRow.id, oppRow.shortName)
-		}
-
-		headToHead = h2hRows
-			.filter((r) => r.homeScore != null && r.awayScore != null)
-			.map((r) => ({
-				roundNumber: r.roundNumber,
-				roundLabel: roundLabel(competitionType, r.roundNumber),
-				homeTeamShortName: teamShortNames.get(r.homeTeamId) ?? '???',
-				awayTeamShortName: teamShortNames.get(r.awayTeamId) ?? '???',
-				homeScore: r.homeScore as number,
-				awayScore: r.awayScore as number,
-			}))
-	}
-
-	// Suppress unused-var lint when ascending pulls aren't needed; asc imported for symmetry with detail-queries.ts patterns.
-	void asc
-
 	return {
 		team: {
 			id: teamRow.id,
@@ -272,6 +216,5 @@ export async function getTeamFormDetail(
 		},
 		splits,
 		recent,
-		headToHead,
 	}
 }

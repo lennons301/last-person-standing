@@ -225,7 +225,6 @@ export function RankedItem({
 							opponentTeamId={sheetOpponent.id}
 							beforeRoundNumber={roundNumber}
 							teamPreview={sheetTeam}
-							opponentPreview={{ shortName: sheetOpponent.shortName }}
 						/>
 					)}
 		</>

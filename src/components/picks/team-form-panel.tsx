@@ -57,8 +57,6 @@ export interface TeamFormPanelProps {
 	market?: FormMarket | null
 	/** Header content available before `detail` resolves, so the sheet never pops in empty. */
 	teamPreview: { name: string; shortName: string; badgeUrl?: string | null }
-	/** When set, the head-to-head section renders against this opponent. */
-	opponentPreview?: { shortName: string }
 	/**
 	 * Element used for the team name heading. Inside the sheet this must be
 	 * Radix's `SheetTitle` (the dialog needs an accessible name); rendered
@@ -80,7 +78,6 @@ export function TeamFormPanel({
 	error = null,
 	market = null,
 	teamPreview,
-	opponentPreview,
 	titleComponent: Title = PlainTitle,
 	formGuideHref,
 }: TeamFormPanelProps) {
@@ -149,43 +146,6 @@ export function TeamFormPanel({
 								)}
 							</ul>
 						</section>
-
-						{detail.headToHead && opponentPreview && (
-							<section className="border-t pt-4">
-								<SectionLabel>
-									vs {opponentPreview.shortName} · last {detail.headToHead.length} meetings
-								</SectionLabel>
-								{detail.headToHead.length === 0 ? (
-									<p className="text-sm text-muted-foreground">No previous meetings this season.</p>
-								) : (
-									<ul className="space-y-1.5">
-										{detail.headToHead.map((r) => (
-											<li
-												key={r.roundNumber}
-												className="flex items-center gap-3 text-sm tabular-nums"
-											>
-												<span className="font-mono text-xs text-muted-foreground">
-													{r.roundLabel}
-												</span>
-												<span
-													className={cn(r.homeTeamShortName === display.shortName && 'font-bold')}
-												>
-													{r.homeTeamShortName}
-												</span>
-												<span className="font-semibold">
-													{r.homeScore}–{r.awayScore}
-												</span>
-												<span
-													className={cn(r.awayTeamShortName === display.shortName && 'font-bold')}
-												>
-													{r.awayTeamShortName}
-												</span>
-											</li>
-										))}
-									</ul>
-								)}
-							</section>
-						)}
 					</>
 				)}
 

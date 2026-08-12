@@ -480,12 +480,11 @@ const FORM_PANEL_STATES: Array<{
 	{
 		id: 'enriched',
 		label: 'Loaded — split, goals, full 1X2',
-		note: 'Everything the picker gets before committing: the venue split (this team is a fortress at home and ordinary away, which the aggregate row hides), goals for and against per venue, the last matches, the head-to-head, and the whole market including the draw — the outcome that eliminates a classic picker.',
+		note: 'Everything the picker gets before committing: the venue split (this team is a fortress at home and ordinary away, which the aggregate row hides), goals for and against per venue, the last matches, and the whole market including the draw — the outcome that eliminates a classic picker.',
 		props: {
 			detail: TEAM_FORM_DETAIL,
 			market: FORM_PANEL_MARKET,
 			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
-			opponentPreview: { shortName: 'NEW' },
 		},
 	},
 	{
@@ -495,7 +494,6 @@ const FORM_PANEL_STATES: Array<{
 		props: {
 			detail: TEAM_FORM_DETAIL,
 			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
-			opponentPreview: { shortName: 'NEW' },
 		},
 	},
 	{
@@ -506,7 +504,6 @@ const FORM_PANEL_STATES: Array<{
 			detail: TEAM_FORM_DETAIL_EMPTY,
 			market: FORM_PANEL_MARKET_LONGSHOT,
 			teamPreview: { name: 'Wolverhampton Wanderers', shortName: 'WOL' },
-			opponentPreview: { shortName: 'ARS' },
 		},
 	},
 	{
@@ -518,7 +515,6 @@ const FORM_PANEL_STATES: Array<{
 			loading: true,
 			market: FORM_PANEL_MARKET,
 			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
-			opponentPreview: { shortName: 'NEW' },
 		},
 	},
 	{
@@ -530,7 +526,6 @@ const FORM_PANEL_STATES: Array<{
 			error: 'Could not load team form',
 			market: FORM_PANEL_MARKET,
 			teamPreview: { name: 'Manchester United', shortName: 'MUN' },
-			opponentPreview: { shortName: 'NEW' },
 		},
 	},
 ]

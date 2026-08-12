@@ -311,11 +311,6 @@ export function FixtureRow({
 							opponentTeamId={activeSheetSide === 'home' ? away.id : home.id}
 							beforeRoundNumber={roundNumber}
 							teamPreview={activeSheetSide === 'home' ? home : away}
-							opponentPreview={
-								activeSheetSide === 'home'
-									? { shortName: away.shortName }
-									: { shortName: home.shortName }
-							}
 						/>
 					)}
 		</div>

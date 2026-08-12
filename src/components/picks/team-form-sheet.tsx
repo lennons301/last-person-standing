@@ -12,6 +12,11 @@ interface TeamFormSheetProps {
 	onOpenChange: (open: boolean) => void
 	teamId: string
 	competitionId: string
+	/**
+	 * The other side of the fixture the sheet was opened from. The sheet itself
+	 * shows one team's own season — this only travels on to the form guide, which
+	 * is where head-to-head lives.
+	 */
 	opponentTeamId?: string
 	beforeRoundNumber?: number
 	/**
@@ -21,7 +26,6 @@ interface TeamFormSheetProps {
 	market?: FormMarket | null
 	// Used for the loading-state header so the sheet doesn't pop in empty.
 	teamPreview: { name: string; shortName: string; badgeUrl?: string | null }
-	opponentPreview?: { shortName: string }
 }
 
 /**
@@ -40,7 +44,6 @@ export function TeamFormSheet({
 	beforeRoundNumber,
 	market = null,
 	teamPreview,
-	opponentPreview,
 }: TeamFormSheetProps) {
 	// The page the sheet was opened from, so the guide can offer a way back to
 	// it. The guide itself stays game-agnostic — this is the only place that
@@ -55,7 +58,7 @@ export function TeamFormSheet({
 		let cancelled = false
 		setLoading(true)
 		setError(null)
-		loadTeamFormDetail({ teamId, competitionId, opponentTeamId, beforeRoundNumber })
+		loadTeamFormDetail({ teamId, competitionId, beforeRoundNumber })
 			.then((result) => {
 				if (cancelled) return
 				if (!result) setError('Could not load team form')
@@ -70,7 +73,7 @@ export function TeamFormSheet({
 		return () => {
 			cancelled = true
 		}
-	}, [open, teamId, competitionId, opponentTeamId, beforeRoundNumber])
+	}, [open, teamId, competitionId, beforeRoundNumber])
 
 	return (
 		<TeamFormSheetView
@@ -81,7 +84,6 @@ export function TeamFormSheet({
 			error={error}
 			market={market}
 			teamPreview={teamPreview}
-			opponentPreview={opponentPreview}
 			formGuideHref={formGuidePath(competitionId, teamId, {
 				opponent: opponentTeamId,
 				from: pathname,
