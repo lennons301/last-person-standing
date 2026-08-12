@@ -12,8 +12,9 @@ import { getTeamFormGuide } from '@/lib/game/team-form-guide'
  * Two optional search params carry the context the caller had:
  * - `opponent` — the other team in the fixture the guide was opened from. The
  *   only thing that brings out head-to-head.
- * - `from` — an in-app path to return to (the game page). Validated as a
- *   relative path so the back link can't be pointed off-site.
+ * - `from` — an in-app path to return to (the game page). Narrowed by
+ *   `safeBackHref` to a same-origin relative path so the back link can't be
+ *   pointed off-site.
  */
 export default async function TeamFormGuidePage({
 	params,

@@ -81,8 +81,8 @@ export default function FormGuidePreviewPage() {
 			</MobileColumn>
 
 			<GroupHeading title="Season start, nothing recorded">
-				No results, no snapshot, no position, no odds, no kickoff time. Every section states what it
-				doesn't know instead of rendering blank.
+				No results, no snapshot, no position, no odds — only the opening fixture itself. Every
+				section states what it doesn't know instead of rendering blank.
 			</GroupHeading>
 			<FormGuideView guide={EMPTY_GUIDE} />
 		</div>

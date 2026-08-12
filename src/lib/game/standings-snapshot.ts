@@ -129,10 +129,15 @@ export async function getPositionLine(
 /**
  * How many teams are in the competition — the axis floor for the position line
  * (1st at the top, last at the bottom) and the "of N" in the guide header.
- * Counts distinct teams across the snapshot, which holds the whole table
- * (zero-played teams included), so it is the full league size from the first
- * post-deploy sync — not a figure that climbs as the opening weekend is played.
  * Null only before any sync has snapshotted this competition.
+ *
+ * Counted across every matchday held, not just the latest, so the count can
+ * only grow and the chart's floor never moves under a line already drawn. That
+ * used to come at a cost at the other end: a team entered the count on the
+ * matchday it first appeared, so the opening weekend could read "3rd of 18"
+ * while the league held 20. It no longer can — the snapshot records the whole
+ * table including teams on zero played, so this is the full league size from
+ * the first post-deploy sync.
  */
 export async function getTableSize(competitionId: string): Promise<number | null> {
 	const [row] = await db

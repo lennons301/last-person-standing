@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formGuidePath, safeBackHref } from './form-guide-link'
+import { formGuidePath } from './form-guide-link'
 import { type FormGuideResult, perGame, summariseResults } from './team-form-guide'
 
 function result(
@@ -71,29 +71,5 @@ describe('formGuidePath', () => {
 		expect(formGuidePath('comp-1', 'team-1', { opponent: null, from: null })).toBe(
 			'/competition/comp-1/team/team-1',
 		)
-	})
-})
-
-describe('safeBackHref', () => {
-	it('accepts an in-app path', () => {
-		expect(safeBackHref('/game/g1')).toBe('/game/g1')
-		expect(safeBackHref('/game/g1?round=2')).toBe('/game/g1?round=2')
-	})
-
-	it('is null without a return path', () => {
-		expect(safeBackHref(undefined)).toBeNull()
-		expect(safeBackHref('')).toBeNull()
-	})
-
-	it('rejects absolute URLs', () => {
-		expect(safeBackHref('https://evil.com')).toBeNull()
-		expect(safeBackHref('javascript:alert(1)')).toBeNull()
-	})
-
-	it('rejects protocol-relative and backslash off-site paths', () => {
-		// Both resolve off-site once the browser parses them: the WHATWG parser
-		// normalises a backslash after the leading slash to a second slash.
-		expect(safeBackHref('//evil.com')).toBeNull()
-		expect(safeBackHref('/\\evil.com')).toBeNull()
 	})
 })

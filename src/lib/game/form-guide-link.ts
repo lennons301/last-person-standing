@@ -23,17 +23,30 @@ export function formGuidePath(
 	return `/competition/${competitionId}/team/${teamId}${suffix}`
 }
 
+/** ASCII control characters, which URL parsers strip before resolving. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g
+
 /**
- * A caller-supplied return path, accepted only if it's a same-origin relative
- * path. The leading character must be "/", and the character after it must not
- * be "/" or "\": the WHATWG URL parser normalises "\" to "/" after a leading
- * slash for special schemes, so `<a href="/\evil.com">` resolves off-site just
- * as `//evil.com` does. Returns null for anything else, so the guide simply
- * omits the back link rather than opening a redirect.
+ * The inverse of the `from` above: a caller-supplied value narrowed to
+ * something safe to render as a link. Same-origin relative paths only — never
+ * an absolute URL, and never a protocol-relative one.
+ *
+ * "Starts with a slash" is not enough on its own. A browser resolves both
+ * `//evil.com` and `/\evil.com` against the current origin's *scheme* rather
+ * than its host, so either navigates a logged-in player off-site; and the URL
+ * parser strips ASCII control characters before resolving, so a tab in
+ * `/<TAB>/evil.com` disappears and leaves `//evil.com` behind. Strip the
+ * control characters first, then reject anything whose second character is a
+ * slash in either direction.
+ *
+ * Returns null for anything rejected, so the back link is simply absent. That
+ * matters twice over: the guide threads its own `backHref` into every
+ * results-row link, so one unsanitised value would spread across the page.
  */
-export function safeBackHref(from: string | undefined | null): string | null {
+export function safeBackHref(from: string | null | undefined): string | null {
 	if (!from) return null
-	if (!from.startsWith('/')) return null
-	if (from[1] === '/' || from[1] === '\\') return null
-	return from
+	const cleaned = from.replace(CONTROL_CHARS, '')
+	if (!cleaned.startsWith('/') || /^\/[/\\]/.test(cleaned)) return null
+	return cleaned
 }
