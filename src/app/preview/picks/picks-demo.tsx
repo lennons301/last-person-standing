@@ -323,9 +323,10 @@ export interface PreviewPickTableInput {
 }
 
 /**
- * The real `PickTable`, driven from fixtures. Sorting is the component's own
- * state, so every column is live here; picking is stubbed to a local "this is
- * now your pick" so a row commit is reviewable without the picks API.
+ * The real `PickTable`, driven from fixtures. Sorting and the form sheet are the
+ * component's own state, so both are live here; selection is local, so the row's
+ * select-then-confirm gesture is reviewable without the picks API. The confirm
+ * bar itself belongs to `ClassicPick` — the picker sections above cover it.
  */
 export function PreviewPickTable({
 	fixtures,
@@ -334,14 +335,16 @@ export function PreviewPickTable({
 	currentTeamId,
 	readonly,
 }: PreviewPickTableInput) {
-	const [picked, setPicked] = useState<string | null>(currentTeamId ?? null)
+	const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
 	const rows = buildPickTableRows({ fixtures, usedTeamsByRound, restrictedTeams })
 	return (
 		<PickTable
 			rows={rows}
-			currentTeamId={picked}
+			currentTeamId={currentTeamId}
+			selectedRowId={selectedRowId}
 			readonly={readonly}
-			onPick={(row) => setPicked(row.team.id)}
+			onSelect={(row) => setSelectedRowId((id) => (id === row.id ? null : row.id))}
+			renderFormSheet={previewFormSheet}
 		/>
 	)
 }
@@ -377,6 +380,7 @@ export function PreviewTurboPickTable({
 		<PickTable
 			rows={buildPickTableRows({ fixtures, rankedFixtures })}
 			readonly={readonly}
+			renderFormSheet={previewFormSheet}
 			ranking={{
 				count: calls.length,
 				target: numberOfPicks,

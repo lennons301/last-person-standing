@@ -103,11 +103,16 @@ describe('ClassicPick — Fixtures ⇄ Table', () => {
 		expect(onSubmitPick).toHaveBeenCalledWith({ fixtureId: 'fx-1', teamId: 't-mun' })
 	})
 
-	it('commits a pick straight from a table row in one tap', () => {
+	it('selects from a table row and commits on the same confirm bar', () => {
 		const onSubmitPick = vi.fn().mockResolvedValue(undefined)
 		renderPicker({ fixtures: TABLE_FIXTURES, competitionType: 'league', onSubmitPick })
 
-		fireEvent.click(screen.getByRole('button', { name: /^Pick Newcastle United/ }))
+		fireEvent.click(screen.getByRole('button', { name: /^Select Newcastle United/ }))
+		// One tap selects and nothing more — the board and the fixtures view share
+		// the same select-then-confirm contract.
+		expect(onSubmitPick).not.toHaveBeenCalled()
+
+		fireEvent.click(screen.getByRole('button', { name: /Lock in pick/ }))
 		expect(onSubmitPick).toHaveBeenCalledWith({ fixtureId: 'fx-1', teamId: 't-new' })
 	})
 
@@ -155,6 +160,6 @@ describe('ClassicPick — Fixtures ⇄ Table', () => {
 			usedTeamsByRound: { 't-mun': 'GW12' },
 		})
 		expect(screen.getByText('Used GW12')).toBeTruthy()
-		expect(screen.queryByRole('button', { name: /^Pick Manchester United/ })).toBeNull()
+		expect(screen.queryByRole('button', { name: /^Select Manchester United/ })).toBeNull()
 	})
 })

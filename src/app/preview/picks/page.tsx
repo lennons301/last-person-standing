@@ -25,6 +25,7 @@ import {
 	PreviewTurboPickTable,
 } from '@/app/preview/picks/picks-demo'
 import { TeamFormPanel } from '@/components/picks/team-form-panel'
+import { cn } from '@/lib/utils'
 
 // Fixtures are relative to render time, so never cache this page.
 export const dynamic = 'force-dynamic'
@@ -44,12 +45,31 @@ function GroupHeading({ title, children }: { title: string; children: React.Reac
 	)
 }
 
-/** The phone column: 375px of viewport minus the game page's own `px-4`. */
-function MobileColumn({ children }: { children: React.ReactNode }) {
+/**
+ * The phone column: a viewport width minus the game page's own `px-4`.
+ *
+ * 375px is the common iPhone width and the default here; 360px is the narrowest
+ * Android in real use, and the Table view is reviewed at both because it now
+ * has to fit without scrolling sideways.
+ */
+const PHONE_WIDTHS = { 375: 'w-[375px]', 360: 'w-[360px]' } as const
+
+function MobileColumn({
+	children,
+	width = 375,
+}: {
+	children: React.ReactNode
+	width?: keyof typeof PHONE_WIDTHS
+}) {
 	return (
-		<div className="w-[375px] max-w-full shrink-0 rounded-lg border border-dashed border-border/70 p-1">
+		<div
+			className={cn(
+				PHONE_WIDTHS[width],
+				'max-w-full shrink-0 rounded-lg border border-dashed border-border/70 p-1',
+			)}
+		>
 			<div className="text-2xs uppercase tracking-wide text-muted-foreground/70 mb-1 px-1">
-				375px
+				{width}px
 			</div>
 			<div className="px-4">{children}</div>
 		</div>
@@ -75,9 +95,11 @@ export default function PicksPreviewPage() {
 					directly above the picker and owns both.
 				</p>
 				<p>
-					Every row renders twice: full page width, then in a 375px column. The narrow column is a
-					<em> width</em> constraint, so it catches truncation and overflow — to also get the mobile
-					type step and short team codes, set the browser viewport itself to 375px.
+					Every row renders twice: full page width, then in a 375px column — and the two Table views
+					a third time at 360px, the narrowest phone they have to fit without scrolling sideways.
+					The narrow columns are a <em>width</em> constraint, so they catch truncation and overflow
+					— to also get the mobile type step and short team codes, set the browser viewport itself
+					to that width.
 				</p>
 			</div>
 
@@ -247,10 +269,13 @@ export default function PicksPreviewPage() {
 
 			<GroupHeading title="Classic — the Table view">
 				The other half of the picker: the same round as a standings board, one row per team the
-				player could pick, sorted safest-first on the market read. Every header sorts, the used and
-				restricted teams stay in the table rather than disappearing from it, and a row commits a
-				pick in one tap. In the app a league opens on this view and a knockout on the fixtures —
-				with no standings behind the round at all, the toggle isn't offered.
+				player could pick, five columns wide and opening in league order. Team and win chance
+				re-sort it; form and next opponent are labels, because neither carries an order a player
+				asks for. The used and restricted teams stay in the table rather than disappearing from it,
+				a row tap <em>selects</em> a team (the picker's confirm bar commits it — see the cards
+				above), and the form cell's chevron taps through to the same sheet the Fixtures view opens.
+				In the app a league opens on this view and a knockout on the fixtures — with no standings
+				behind the round at all, the toggle isn't offered.
 			</GroupHeading>
 
 			{PICK_TABLE_SCENARIOS.map((s) => {
@@ -284,17 +309,20 @@ export default function PicksPreviewPage() {
 									readonly={s.readonly}
 								/>
 							</div>
-							{/* 375px: the board doesn't drop columns on a phone, it scrolls —
-							    so this column is where that horizontal scroll is reviewed. */}
-							<MobileColumn>
-								<PreviewPickTable
-									fixtures={fixtures}
-									usedTeamsByRound={s.usedTeamsByRound}
-									restrictedTeams={s.restrictedTeams}
-									currentTeamId={s.currentTeamId}
-									readonly={s.readonly}
-								/>
-							</MobileColumn>
+							{/* Both phone widths: the board fits five columns with no
+							    horizontal scroll and no pinned column, so this is where that
+							    is measured — 360px is the one that has to hold. */}
+							{([375, 360] as const).map((width) => (
+								<MobileColumn key={width} width={width}>
+									<PreviewPickTable
+										fixtures={fixtures}
+										usedTeamsByRound={s.usedTeamsByRound}
+										restrictedTeams={s.restrictedTeams}
+										currentTeamId={s.currentTeamId}
+										readonly={s.readonly}
+									/>
+								</MobileColumn>
+							))}
 						</div>
 					</section>
 				)
@@ -382,16 +410,19 @@ export default function PicksPreviewPage() {
 									readonly={s.readonly}
 								/>
 							</div>
-							{/* 375px: the rank chip and three controls land on a row that
-							    already scrolls sideways — this is where that is reviewed. */}
-							<MobileColumn>
-								<PreviewTurboPickTable
-									fixtures={fixtures}
-									numberOfPicks={s.numberOfPicks}
-									ranking={s.ranking}
-									readonly={s.readonly}
-								/>
-							</MobileColumn>
+							{/* Both phone widths: turbo's board carries a sixth column the
+							    rank chip and three controls live in, so it's the tightest
+							    the board gets. */}
+							{([375, 360] as const).map((width) => (
+								<MobileColumn key={width} width={width}>
+									<PreviewTurboPickTable
+										fixtures={fixtures}
+										numberOfPicks={s.numberOfPicks}
+										ranking={s.ranking}
+										readonly={s.readonly}
+									/>
+								</MobileColumn>
+							))}
 						</div>
 					</section>
 				)

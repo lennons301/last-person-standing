@@ -13,6 +13,7 @@ import { formGuidePath } from '@/lib/game/form-guide-link'
 import {
 	buildPickTableRows,
 	defaultPickView,
+	type PickTableRow,
 	type PickView,
 	pickTableHasStandings,
 } from '@/lib/game/pick-table-view'
@@ -155,17 +156,29 @@ export function ClassicPick({
 	// must not strand the player on a hidden view.
 	const activeView: PickView = tableAvailable ? view : 'fixtures'
 
+	/**
+	 * Select from the Table view. The same select-then-confirm contract the
+	 * fixtures view uses — a row tap moves the selection, the confirm bar below
+	 * commits it — so a single tap never writes a pick from either view.
+	 */
+	function handleSelectRow(row: PickTableRow) {
+		select(row.fixtureId, row.team.id)
+	}
+
 	function handlePick(fixture: ClassicPickFixture, side: 'home' | 'away') {
-		const teamId = side === 'home' ? fixture.home.id : fixture.away.id
+		select(fixture.id, side === 'home' ? fixture.home.id : fixture.away.id)
+	}
+
+	function select(fixtureId: string, teamId: string) {
 		if (usedTeamsByRound[teamId]) return
 		// Toggle off if clicking the same team in the same fixture; otherwise move
 		// the selection to (this fixture, this team). Picking a different fixture
 		// for the same team still moves the selection — the team isn't "used"
 		// against itself, just relocated.
-		if (selection?.fixtureId === fixture.id && selection?.teamId === teamId) {
+		if (selection?.fixtureId === fixtureId && selection?.teamId === teamId) {
 			setSelection(null)
 		} else {
-			setSelection({ fixtureId: fixture.id, teamId })
+			setSelection({ fixtureId, teamId })
 		}
 		setError(null)
 	}
@@ -175,12 +188,7 @@ export function ClassicPick({
 		await submitPick(selection)
 	}
 
-	/**
-	 * Commit one pick. Takes its selection explicitly rather than reading state
-	 * so the table can commit a row in a single tap: there, the row *is* the
-	 * selection, and routing it through `setSelection` first would need a render
-	 * to land before the submit could see it.
-	 */
+	/** Commit one pick. Takes its selection explicitly rather than reading state. */
 	async function submitPick(sel: PickSelection) {
 		if (onSubmitPick) {
 			setLoading(true)
@@ -229,6 +237,12 @@ export function ClassicPick({
 			? 'home'
 			: 'away'
 		: undefined
+	// The same selection, as the board identifies it: one row per (fixture, side),
+	// so a team appearing in two fixtures this round marks only the one selected.
+	const selectedRowId = selection
+		? (tableRows.find((r) => r.fixtureId === selection.fixtureId && r.team.id === selection.teamId)
+				?.id ?? null)
+		: null
 
 	// Find the fixture for the existing (locked) pick
 	const lockedFixture = existingPickFixtureId
@@ -325,9 +339,17 @@ export function ClassicPick({
 				<PickTable
 					rows={tableRows}
 					currentTeamId={existingPickTeamId}
-					// One tap commits: on the board the row *is* the decision, so it
-					// goes straight to the same submit the confirm bar drives.
-					onPick={(row) => submitPick({ fixtureId: row.fixtureId, teamId: row.team.id })}
+					selectedRowId={selectedRowId}
+					onSelect={handleSelectRow}
+					competitionId={competitionId}
+					roundNumber={roundNumber}
+					// The board's rows know their fixture; this renderer is keyed on the
+					// two teams, exactly as the fixture rows' is.
+					renderFormSheet={
+						renderFormSheet
+							? ({ fixtureId: _fixtureId, ...args }) => renderFormSheet(args)
+							: undefined
+					}
 				/>
 			) : (
 				fixtures.map((fixture) => {
@@ -381,7 +403,9 @@ export function ClassicPick({
 
 			{error && <p className="text-sm text-[var(--eliminated)] px-2">{error}</p>}
 
-			{activeView === 'fixtures' && selectedTeam && selectedFixture && (
+			{/* One confirm bar, both views: the board selects a team exactly as the
+			    fixture rows do, and this is what commits it. */}
+			{selectedTeam && selectedFixture && (
 				<PickConfirmBar
 					message={`Picking ${selectedTeam.name} vs ${
 						selectedSide === 'home' ? selectedFixture.away.name : selectedFixture.home.name

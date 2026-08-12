@@ -4,7 +4,6 @@ import {
 	buildPickTableRows,
 	DEFAULT_PICK_TABLE_SORT,
 	defaultPickView,
-	formPoints,
 	nextPickTableSort,
 	type PickTableFixture,
 	pickTableHasStandings,
@@ -92,6 +91,16 @@ describe('buildPickTableRows', () => {
 		const chelsea = rows.find((r) => r.team.id === 't-che')
 		expect(chelsea?.winProbability).toBeNull()
 		expect(chelsea?.price).toBeNull()
+		expect(chelsea?.fixtureOdds).toBeNull()
+	})
+
+	it('carries the fixture’s whole market, for the sheet a row taps through to', () => {
+		const rows = buildPickTableRows({ fixtures: FIXTURES })
+		// Both of the fixture's rows carry the full 1X2 — the sheet shows the draw
+		// too, whichever side the player opened it from.
+		for (const id of ['t-ars', 't-bur']) {
+			expect(rows.find((r) => r.team.id === id)?.fixtureOdds).toEqual(FIXTURES[0].odds)
+		}
 	})
 
 	it('marks a used team with the round it was used in, and keeps it in the table', () => {
@@ -183,7 +192,8 @@ describe('buildPickTableRows — turbo’s ranking', () => {
 			fixtures: FIXTURES,
 			rankedFixtures: { 'fx-2': { rank: 1, teamId: 't-che' } },
 		})
-		// Chelsea is ranked #1 but unpriced, so safest-first still sinks it.
+		// Chelsea is ranked #1 but sits 6th, so the board's default order still
+		// leads with the team at the top of the table.
 		expect(ids(sortPickTableRows(rows, DEFAULT_PICK_TABLE_SORT))[0]).toBe('ARS')
 	})
 })
@@ -191,17 +201,19 @@ describe('buildPickTableRows — turbo’s ranking', () => {
 describe('sortPickTableRows', () => {
 	const rows = buildPickTableRows({ fixtures: FIXTURES })
 
-	it('defaults to safest-first: win-probability, descending', () => {
-		expect(DEFAULT_PICK_TABLE_SORT).toEqual({ column: 'winProbability', direction: 'desc' })
-		expect(ids(sortPickTableRows(rows, DEFAULT_PICK_TABLE_SORT)).slice(0, 2)).toEqual([
+	it('defaults to the league table: position, ascending', () => {
+		expect(DEFAULT_PICK_TABLE_SORT).toEqual({ column: 'position', direction: 'asc' })
+		expect(ids(sortPickTableRows(rows, DEFAULT_PICK_TABLE_SORT))).toEqual([
 			'ARS',
+			'CHE',
+			'EVE',
 			'BUR',
 		])
 	})
 
 	it('sinks rows with no value to the bottom in BOTH directions', () => {
-		// Ascending win-probability must not float the two unpriced teams to the
-		// top of a board that promises safest-first — "no odds" isn't zero.
+		// Ascending win-probability must not float the two unpriced teams above a
+		// 7% shot — "no odds" isn't zero.
 		const asc = ids(sortPickTableRows(rows, { column: 'winProbability', direction: 'asc' }))
 		expect(asc.slice(0, 2)).toEqual(['BUR', 'ARS'])
 		expect(asc.slice(2).sort()).toEqual(['CHE', 'EVE'])
@@ -210,40 +222,18 @@ describe('sortPickTableRows', () => {
 		expect(desc.slice(2).sort()).toEqual(['CHE', 'EVE'])
 	})
 
-	it('sorts by league position, played, points and goal difference', () => {
-		expect(ids(sortPickTableRows(rows, { column: 'position', direction: 'asc' }))).toEqual([
-			'ARS',
-			'CHE',
-			'EVE',
+	it('sorts by league position both ways, and by team name A–Z', () => {
+		expect(ids(sortPickTableRows(rows, { column: 'position', direction: 'desc' }))).toEqual([
 			'BUR',
+			'EVE',
+			'CHE',
+			'ARS',
 		])
-		expect(ids(sortPickTableRows(rows, { column: 'points', direction: 'desc' }))).toEqual([
+		expect(ids(sortPickTableRows(rows, { column: 'team', direction: 'asc' }))).toEqual([
 			'ARS',
+			'BUR',
 			'CHE',
 			'EVE',
-			'BUR',
-		])
-		expect(ids(sortPickTableRows(rows, { column: 'goalDifference', direction: 'desc' }))).toEqual([
-			'ARS',
-			'CHE',
-			'EVE',
-			'BUR',
-		])
-		expect(
-			ids(sortPickTableRows(rows, { column: 'played', direction: 'asc' })).slice(0, 1),
-		).toEqual(['EVE'])
-	})
-
-	it('sorts by form points and by the opponent name', () => {
-		expect(ids(sortPickTableRows(rows, { column: 'form', direction: 'desc' })).slice(0, 1)).toEqual(
-			['ARS'],
-		)
-		// Opponents A–Z: Arsenal (BUR's opponent) … Everton (CHE's).
-		expect(ids(sortPickTableRows(rows, { column: 'opponent', direction: 'asc' }))).toEqual([
-			'BUR',
-			'ARS',
-			'EVE',
-			'CHE',
 		])
 	})
 
@@ -251,16 +241,16 @@ describe('sortPickTableRows', () => {
 		const levelFixtures: PickTableFixture[] = [
 			{
 				id: 'fx-level',
-				home: team('t-z', 'Zebra FC', { standing: { points: 30 } }),
-				away: team('t-a', 'Albion FC', { standing: { points: 30 } }),
+				home: team('t-z', 'Zebra FC', { leaguePosition: 9 }),
+				away: team('t-a', 'Albion FC', { leaguePosition: 9 }),
 			},
 		]
 		const level = buildPickTableRows({ fixtures: levelFixtures })
-		expect(ids(sortPickTableRows(level, { column: 'points', direction: 'desc' }))).toEqual([
+		expect(ids(sortPickTableRows(level, { column: 'position', direction: 'desc' }))).toEqual([
 			'ALB',
 			'ZEB',
 		])
-		expect(ids(sortPickTableRows(level, { column: 'points', direction: 'asc' }))).toEqual([
+		expect(ids(sortPickTableRows(level, { column: 'position', direction: 'asc' }))).toEqual([
 			'ALB',
 			'ZEB',
 		])
@@ -268,7 +258,7 @@ describe('sortPickTableRows', () => {
 
 	it('does not mutate the rows it was given', () => {
 		const original = [...rows]
-		sortPickTableRows(rows, { column: 'points', direction: 'asc' })
+		sortPickTableRows(rows, { column: 'position', direction: 'asc' })
 		expect(rows).toEqual(original)
 	})
 
@@ -276,7 +266,7 @@ describe('sortPickTableRows', () => {
 		const bare = buildPickTableRows({
 			fixtures: [{ id: 'fx-bare', home: team('t-x', 'Ajax'), away: team('t-y', 'Benfica') }],
 		})
-		expect(ids(sortPickTableRows(bare, { column: 'points', direction: 'desc' }))).toEqual([
+		expect(ids(sortPickTableRows(bare, { column: 'position', direction: 'desc' }))).toEqual([
 			'AJA',
 			'BEN',
 		])
@@ -285,29 +275,21 @@ describe('sortPickTableRows', () => {
 
 describe('nextPickTableSort', () => {
 	it('flips the direction when the sorted column is tapped again', () => {
-		expect(nextPickTableSort({ column: 'points', direction: 'desc' }, 'points')).toEqual({
-			column: 'points',
-			direction: 'asc',
+		expect(nextPickTableSort({ column: 'position', direction: 'asc' }, 'position')).toEqual({
+			column: 'position',
+			direction: 'desc',
 		})
 	})
 
 	it('starts a new column at the end of it the player is looking for', () => {
-		expect(nextPickTableSort(DEFAULT_PICK_TABLE_SORT, 'position')).toEqual({
-			column: 'position',
-			direction: 'asc',
-		})
-		expect(nextPickTableSort(DEFAULT_PICK_TABLE_SORT, 'points')).toEqual({
-			column: 'points',
+		expect(nextPickTableSort(DEFAULT_PICK_TABLE_SORT, 'winProbability')).toEqual({
+			column: 'winProbability',
 			direction: 'desc',
 		})
-	})
-})
-
-describe('formPoints', () => {
-	it('scores the last five results, and reports nothing for a season not started', () => {
-		expect(formPoints(['W', 'D', 'L'])).toBe(4)
-		expect(formPoints([])).toBeNull()
-		expect(formPoints(undefined)).toBeNull()
+		expect(nextPickTableSort(DEFAULT_PICK_TABLE_SORT, 'team')).toEqual({
+			column: 'team',
+			direction: 'asc',
+		})
 	})
 })
 

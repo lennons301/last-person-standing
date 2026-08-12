@@ -298,7 +298,7 @@ export function TurboPick({
 						aside={`${remaining.length} left`}
 						hint={
 							activeView === 'table'
-								? 'Tap Rank to back a team to win. Sort any column to compare.'
+								? 'Tap Rank to back a team to win. Sort by position, team or win chance.'
 								: 'Predict a result to add it to your ranking.'
 						}
 					/>
@@ -308,6 +308,16 @@ export function TurboPick({
 					{activeView === 'table' ? (
 						<PickTable
 							rows={tableRows}
+							competitionId={competitionId}
+							roundNumber={roundNumber}
+							// The board's renderer is keyed on the row's fixture, which is what
+							// turbo's own renderer wants — so it passes straight through.
+							renderFormSheet={
+								renderFormSheet
+									? ({ fixtureId, side, open, onClose, market }) =>
+											renderFormSheet({ fixtureId, side, open, onClose, market })
+									: undefined
+							}
 							ranking={{
 								count: ranked.length,
 								target: numberOfPicks,
