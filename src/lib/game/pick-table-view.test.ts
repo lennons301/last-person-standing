@@ -106,10 +106,12 @@ describe('buildPickTableRows', () => {
 	it('marks a used team with the round it was used in, and keeps it in the table', () => {
 		const rows = buildPickTableRows({
 			fixtures: FIXTURES,
-			usedTeamsByRound: { 't-ars': 'GW3' },
+			usedTeamsByRound: { 't-ars': { label: 'GW3', longLabel: 'Gameweek 3' } },
 		})
 		const arsenal = rows.find((r) => r.team.id === 't-ars')
-		expect(arsenal?.state).toEqual({ kind: 'used', label: 'GW3' })
+		// Both forms reach the row: the chip shows the short one, a screen reader
+		// gets the long one.
+		expect(arsenal?.state).toEqual({ kind: 'used', label: 'GW3', longLabel: 'Gameweek 3' })
 		expect(arsenal?.pickable).toBe(false)
 		expect(rows).toHaveLength(4)
 	})
@@ -128,10 +130,14 @@ describe('buildPickTableRows', () => {
 	it('prefers "used" over "restricted" when a team is both — it names the round', () => {
 		const rows = buildPickTableRows({
 			fixtures: FIXTURES,
-			usedTeamsByRound: { 't-ars': 'GW3' },
+			usedTeamsByRound: { 't-ars': { label: 'GW3', longLabel: 'Gameweek 3' } },
 			restrictedTeams: { 't-ars': 'Already through' },
 		})
-		expect(rows.find((r) => r.team.id === 't-ars')?.state).toEqual({ kind: 'used', label: 'GW3' })
+		expect(rows.find((r) => r.team.id === 't-ars')?.state).toEqual({
+			kind: 'used',
+			label: 'GW3',
+			longLabel: 'Gameweek 3',
+		})
 	})
 })
 

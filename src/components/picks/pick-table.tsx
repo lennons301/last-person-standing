@@ -402,7 +402,14 @@ function Row({
 							<span className="hidden sm:inline">{team.name}</span>
 						</span>
 						{state.kind === 'used' && (
-							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>Used {state.label}</span>
+							// Short on screen — the chip sits under a team name in a
+							// five-column board, and "Used Gameweek 3" spelled out the part
+							// the player already knows. A reader gets the long round name,
+							// which is the form that survives being heard.
+							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>
+								<span aria-hidden>Used {state.label}</span>
+								<span className="sr-only">Used {state.longLabel}</span>
+							</span>
 						)}
 						{state.kind === 'restricted' && (
 							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>{state.reason}</span>
@@ -498,8 +505,11 @@ function FormCell({
 	if (!form?.length) {
 		return (
 			<td className={CELL}>
-				{/* Same wording the fixture row uses at season start: an explicit
-				    "nothing yet" rather than a blank that reads as half-loaded. */}
+				{/* The board says what it doesn't know, cell by cell — the same reason
+				    the position column shows a dash and the win column says "No odds".
+				    A blank cell in a labelled column reads as a gap; the fixture row
+				    (an unlabelled strip, where the position carries the reading) needs
+				    no such filler and no longer has one. */}
 				<span className={cn(TYPE.chip, 'font-normal text-muted-foreground/70 whitespace-nowrap')}>
 					No form yet
 				</span>
@@ -651,7 +661,7 @@ function UnavailableNote({ row }: { row: PickTableRow }) {
 	return (
 		<span className="sr-only">
 			{state.kind === 'used'
-				? `${team.name} used in ${state.label}`
+				? `${team.name} used in ${state.longLabel}`
 				: state.kind === 'restricted'
 					? `${team.name} unavailable: ${state.reason}`
 					: `${team.name} locked`}

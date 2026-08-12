@@ -9,6 +9,8 @@ import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
 import type { RankedPick } from '@/components/picks/ranked-item'
 import type { FormMarket } from '@/components/picks/team-form-panel'
 import type { TurboPickEntry } from '@/components/picks/turbo-pick'
+import type { UsedRoundLabel } from '@/lib/game/pick-table-view'
+import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import type { FormSplit, TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
@@ -36,6 +38,18 @@ function team(
 	leaguePosition?: number,
 ): FixtureTeamInfo {
 	return { id, name, shortName, form, leaguePosition: leaguePosition ?? null }
+}
+
+/**
+ * A used team's round, in the two forms the chip needs — built the way
+ * `getClassicPickData` builds them, from the league's own labels, so the gallery
+ * shows the short chip and the long announcement a real round produces.
+ */
+function usedIn(roundNumber: number): UsedRoundLabel {
+	return {
+		label: roundLabel('league', roundNumber),
+		longLabel: roundLabelLong('league', roundNumber),
+	}
 }
 
 /**
@@ -120,7 +134,7 @@ export const ROW_FIXTURES: RowFixture[] = [
 	{
 		id: 'row-empty-form',
 		title: 'Season start — position, no form',
-		note: 'Nobody has played yet. Position must still render (it used to disappear with the form bar), and the empty half says so rather than going blank.',
+		note: 'Nobody has played yet — the pre-season row. Position must still render (it used to disappear with the form bar), and it now stands alone: no "No form yet" filler beside it, because a position with nothing next to it already reads as a season that has not started.',
 		home: WOL(undefined, 14),
 		away: BHA(undefined, 7),
 		kickoffInMinutes: 60 * 50,
@@ -128,7 +142,7 @@ export const ROW_FIXTURES: RowFixture[] = [
 	{
 		id: 'row-no-form-no-position',
 		title: 'No form, no position',
-		note: 'What cup mode passes (it sources neither). The bottom bar stands down entirely rather than claiming "no form yet" about teams the row knows nothing about.',
+		note: 'What cup mode passes (it sources neither). The bottom bar stands down entirely — there is nothing for it to hold, and nothing worth tapping through to.',
 		home: WOL(),
 		away: BHA(),
 		kickoffInMinutes: 60 * 72,
@@ -424,7 +438,7 @@ export const CLASSIC_SIDE_STATES: RowFixture[] = [
 	{
 		id: 'classic-state-empty-form',
 		title: 'empty form — GW1, nothing played',
-		note: 'Season start reads as intentional rather than half-loaded: positions still render and each form half says "No form yet".',
+		note: 'Season start, inside the card: positions still render and each form half carries its position alone — the filler that used to sit beside it said only what the empty half already says.',
 		home: WOL(undefined, 14),
 		away: BHA(undefined, 7),
 		kickoffInMinutes: 60 * 26,
@@ -451,8 +465,8 @@ export interface ClassicCardFixture {
 		away: FixtureTeamInfo
 		kickoffInMinutes: number | null
 	}>
-	/** teamId → round label, as `getClassicPickData` builds it. */
-	usedTeamsByRound: Record<string, string>
+	/** teamId → the round it was spent in, as `getClassicPickData` builds it. */
+	usedTeamsByRound: Record<string, UsedRoundLabel>
 	existingPickTeamId: string | null
 	existingPickFixtureId: string | null
 	currentRoundClosed?: boolean
@@ -500,7 +514,7 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		roundNumber: 27,
 		deadlineInMinutes: 60 * 22,
 		fixtures: CLASSIC_CARD_FIXTURES,
-		usedTeamsByRound: { 't-tot': 'GW12' },
+		usedTeamsByRound: { 't-tot': usedIn(12) },
 		existingPickTeamId: null,
 		existingPickFixtureId: null,
 	},
@@ -512,7 +526,7 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		roundNumber: 27,
 		deadlineInMinutes: 60 * 22,
 		fixtures: CLASSIC_CARD_FIXTURES,
-		usedTeamsByRound: { 't-tot': 'GW12' },
+		usedTeamsByRound: { 't-tot': usedIn(12) },
 		existingPickTeamId: 't-mun',
 		existingPickFixtureId: 'cf-1',
 		startExpanded: true,
@@ -525,7 +539,7 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		roundNumber: 27,
 		deadlineInMinutes: 60 * 22,
 		fixtures: CLASSIC_CARD_FIXTURES,
-		usedTeamsByRound: { 't-tot': 'GW12' },
+		usedTeamsByRound: { 't-tot': usedIn(12) },
 		existingPickTeamId: 't-mun',
 		existingPickFixtureId: 'cf-1',
 		summaryInHero: true,
@@ -538,7 +552,7 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		roundNumber: 27,
 		deadlineInMinutes: 60 * 22,
 		fixtures: CLASSIC_CARD_FIXTURES,
-		usedTeamsByRound: { 't-tot': 'GW12' },
+		usedTeamsByRound: { 't-tot': usedIn(12) },
 		existingPickTeamId: 't-mun',
 		existingPickFixtureId: 'cf-1',
 	},
@@ -550,7 +564,7 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		roundNumber: 27,
 		deadlineInMinutes: 60 * 22,
 		fixtures: CLASSIC_CARD_FIXTURES,
-		usedTeamsByRound: { 't-tot': 'GW12' },
+		usedTeamsByRound: { 't-tot': usedIn(12) },
 		existingPickTeamId: null,
 		existingPickFixtureId: null,
 		competitionType: 'league',
@@ -563,7 +577,7 @@ export const CLASSIC_CARDS: ClassicCardFixture[] = [
 		roundNumber: 27,
 		deadlineInMinutes: -45,
 		fixtures: CLASSIC_CARD_FIXTURES,
-		usedTeamsByRound: { 't-tot': 'GW12' },
+		usedTeamsByRound: { 't-tot': usedIn(12) },
 		existingPickTeamId: 't-mun',
 		existingPickFixtureId: 'cf-1',
 		currentRoundClosed: true,
@@ -588,7 +602,7 @@ export interface PickTableScenario {
 	note?: string
 	fixtures: PickTableScenarioFixture[]
 	/** teamId → the round it was spent in, as classic's pick data builds it. */
-	usedTeamsByRound?: Record<string, string>
+	usedTeamsByRound?: Record<string, UsedRoundLabel>
 	/** teamId → why it can't be picked, for restrictions that aren't "used". */
 	restrictedTeams?: Record<string, string>
 	currentTeamId?: string | null
@@ -660,7 +674,7 @@ export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
 		title: 'Phone width — a used chip and a team with no form',
 		note: 'The state the five columns exist for, and the one to measure at 375px and 360px: no horizontal scroll and no pinned column, with the widest thing a row carries (a used-team chip) under one name and a team that hasn’t played yet on the row above. The win column keeps its decimal price at both widths — it stacks under the percentage rather than being dropped.',
 		fixtures: ONE_TEAM_NO_FORM,
-		usedTeamsByRound: { 't-new': 'GW11' },
+		usedTeamsByRound: { 't-new': usedIn(11) },
 	},
 	{
 		id: 'table-unpriced',
@@ -690,7 +704,7 @@ export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
 		title: 'Used and restricted teams',
 		note: 'Classic’s spent teams carry the round they went in, and anything else the mode blocks carries its reason. Both stay in the table — "Arsenal, used in GW3" is the answer to the question the player is asking — and neither can be selected. Nor can the round’s current pick: it is marked, not re-offered.',
 		fixtures: PRICED_FIXTURES,
-		usedTeamsByRound: { 't-ars': 'GW3', 't-new': 'GW11' },
+		usedTeamsByRound: { 't-ars': usedIn(3), 't-new': usedIn(11) },
 		restrictedTeams: { 't-liv': 'Blocked' },
 		currentTeamId: 't-che',
 	},
@@ -954,7 +968,7 @@ export const TURBO_SCENARIOS: TurboScenario[] = [
 	{
 		id: 'turbo-empty-form',
 		title: 'Turbo — season start, no form anywhere',
-		note: 'Gameweek 1. Every remaining row says "No form yet" and keeps its league position, and the ranked row still taps through — to a form sheet that reports an unplayed season rather than an empty one.',
+		note: 'Gameweek 1. Every remaining row keeps its league position and shows it alone — no form, and no filler where the form would be — and the ranked row still taps through, to a form sheet that reports an unplayed season rather than an empty one.',
 		numberOfPicks: 2,
 		fixtures: TURBO_ROUND_NO_FORM,
 		existingPicks: [],

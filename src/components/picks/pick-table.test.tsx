@@ -208,11 +208,20 @@ describe('PickTable', () => {
 		)
 	})
 
-	it('marks a used team with its round and refuses to offer it', () => {
+	it('marks a used team with its round — short on the chip, long for a reader', () => {
 		render(
-			<PickTable rows={rowsFor({ usedTeamsByRound: { 't-ars': 'GW3' } })} onSelect={vi.fn()} />,
+			<PickTable
+				rows={rowsFor({
+					usedTeamsByRound: { 't-ars': { label: 'GW3', longLabel: 'Gameweek 3' } },
+				})}
+				onSelect={vi.fn()}
+			/>,
 		)
+		// The chip is short: it sits under a team name in a five-column board, and
+		// the player already knows what "GW" stands for.
 		expect(screen.getByText('Used GW3')).toBeTruthy()
+		// A screen reader hears the round spelled out — "GW3" is not a word.
+		expect(screen.getByText('Used Gameweek 3')).toBeTruthy()
 		expect(screen.getByText('Arsenal')).toBeTruthy()
 		expect(screen.queryByRole('button', { name: /^Select Arsenal/ })).toBeNull()
 	})

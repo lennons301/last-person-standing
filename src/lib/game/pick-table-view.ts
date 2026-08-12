@@ -20,10 +20,23 @@ export interface PickTableFixture {
 	odds?: FixtureOdds | null
 }
 
+/**
+ * The round a team was spent in, in both of the forms a surface needs: the short
+ * label a chip shows and the long one a screen reader announces. "GW3" is what a
+ * player scanning a five-column board wants beside a team name; "Gameweek 3" is
+ * what a reader hearing the row needs, since "GW" is not a word.
+ */
+export interface UsedRoundLabel {
+	/** Short form, e.g. "GW3" / "MD1" / "R16". */
+	label: string
+	/** Long form, e.g. "Gameweek 3" / "Matchday 1" / "Round of 16". */
+	longLabel: string
+}
+
 export type PickTableRowState =
 	| { kind: 'available' }
-	/** Classic: spent in an earlier round. `label` is that round. */
-	| { kind: 'used'; label: string }
+	/** Classic: spent in an earlier round, named short and long. */
+	| ({ kind: 'used' } & UsedRoundLabel)
 	/** Unavailable for any other reason the mode imposes. */
 	| { kind: 'restricted'; reason: string }
 	/** Turbo: this team *is* the player's ranked call, at this confidence rank. */
@@ -75,8 +88,8 @@ export interface RankedFixtureCall {
 
 export interface BuildPickTableInput {
 	fixtures: PickTableFixture[]
-	/** teamId → round label, as classic's pick data builds it. */
-	usedTeamsByRound?: Record<string, string>
+	/** teamId → the round it was spent in, as classic's pick data builds it. */
+	usedTeamsByRound?: Record<string, UsedRoundLabel>
 	/** teamId → why this team can't be picked (mode rules other than "used"). */
 	restrictedTeams?: Record<string, string>
 	/**
@@ -110,11 +123,11 @@ export function buildPickTableRows({
 			// more specific fact (it names the round) and the one classic owns.
 			// Both outrank the ranking: a team the mode has blocked can't be in a
 			// confidence set, and if it somehow is, the block is what needs saying.
-			const usedLabel = usedTeamsByRound[team.id]
+			const usedRound = usedTeamsByRound[team.id]
 			const restrictedReason = restrictedTeams[team.id]
 			const ranked = rankedFixtures[fixture.id]
-			const state: PickTableRowState = usedLabel
-				? { kind: 'used', label: usedLabel }
+			const state: PickTableRowState = usedRound
+				? { kind: 'used', ...usedRound }
 				: restrictedReason
 					? { kind: 'restricted', reason: restrictedReason }
 					: ranked
