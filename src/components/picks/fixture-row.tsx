@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { FormDots, type FormResult } from './form-dots'
 import { HeartIcon } from './heart-icon'
 import { ODDS_AS_OF_FORMAT } from './odds-format'
+import { ordinal } from './ordinal'
 import { PlusNBadge } from './plus-n-badge'
 import { TeamBadge } from './team-badge'
 import type { FormMarket } from './team-form-panel'
@@ -585,10 +586,4 @@ function sideChip(state?: SideState): React.ReactNode {
 		case 'planned-elsewhere':
 			return <span className={cn(CHIP, 'bg-muted text-muted-foreground')}>{state.label}</span>
 	}
-}
-
-function ordinal(n: number): string {
-	const s = ['th', 'st', 'nd', 'rd']
-	const v = n % 100
-	return n + (s[(v - 20) % 10] || s[v] || s[0])
 }

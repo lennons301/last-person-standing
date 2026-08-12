@@ -9,6 +9,7 @@ import { PlannerRound } from '@/components/picks/planner-round'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
 import type { ChainSummary, PlannerRoundInput } from '@/lib/game/classic-planner-view'
+import { formGuidePath } from '@/lib/game/form-guide-link'
 import {
 	buildPickTableRows,
 	defaultPickView,
@@ -263,7 +264,14 @@ export function ClassicPick({
 			<div className="rounded-lg border border-[var(--alive)]/40 bg-[var(--alive-bg)] p-4">
 				<div className="flex items-center justify-between flex-wrap gap-3">
 					<div className="flex items-center gap-3">
-						<TeamBadge shortName={lockedTeam.shortName} size="lg" />
+						<TeamBadge
+							shortName={lockedTeam.shortName}
+							size="lg"
+							href={formGuidePath(competitionId, lockedTeam.id, {
+								opponent: lockedOpponent.id,
+								from: `/game/${gameId}`,
+							})}
+						/>
 						<div>
 							<div className="text-xs uppercase tracking-wide text-[var(--alive)] font-semibold">
 								{roundName} · picks locked
@@ -427,7 +435,14 @@ export function ClassicPick({
 		<div className="rounded-lg border border-border bg-card p-4">
 			{existingPickTeamId && lockedTeam && lockedOpponent ? (
 				<div className="flex items-center gap-3">
-					<TeamBadge shortName={lockedTeam.shortName} size="lg" />
+					<TeamBadge
+						shortName={lockedTeam.shortName}
+						size="lg"
+						href={formGuidePath(competitionId, lockedTeam.id, {
+							opponent: lockedOpponent.id,
+							from: `/game/${gameId}`,
+						})}
+					/>
 					<div>
 						<div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">
 							{roundName} · picks locked

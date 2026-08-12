@@ -41,6 +41,9 @@ const {
 	const insertFn = vi.fn(() => ({
 		values: vi.fn(() => ({
 			returning: vi.fn().mockResolvedValue([{ id: 'new', externalId: 'WC' }]),
+			// The standings funnel upserts a per-matchday snapshot alongside
+			// team.leaguePosition (see persistStandings).
+			onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
 		})),
 	}))
 	const updateFn = vi.fn(() => ({ set: updateSet }))
@@ -444,6 +447,38 @@ describe('syncCompetition league-position persistence', () => {
 				expect.objectContaining({ leaguePosition: 4, played: 10, points: 20 }),
 			]),
 		)
+	})
+
+	it('records a per-matchday standings snapshot from the same standings read', async () => {
+		// The snapshot rides the position write rather than a cron of its own —
+		// one provider read, one place that knows the table moved.
+		fplFetchTeams.mockResolvedValue([
+			{ externalId: '1', name: 'Alder FC', shortName: 'ALD', badgeUrl: 'ald.svg' },
+		])
+		fplFetchRounds.mockResolvedValue([])
+		fplFetchStandings.mockResolvedValue([
+			{ teamExternalId: '1', position: 3, played: 12, won: 7, drawn: 2, lost: 3, points: 23 },
+		])
+		dbQueryTeamFindFirst.mockResolvedValueOnce({
+			id: 'team-1-uuid',
+			name: 'Alder FC',
+			externalIds: { fpl: '1' },
+		})
+
+		await syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+
+		expect(insertedValues().filter((row) => 'matchday' in row)).toEqual([
+			expect.objectContaining({
+				competitionId: 'comp-1',
+				teamId: 'team-1-uuid',
+				matchday: 12,
+				position: 3,
+				points: 23,
+			}),
+		])
 	})
 
 	it('ignores standings rows whose team is absent from the current payload, even when a stale team row holds that id', async () => {

@@ -202,6 +202,51 @@ export const fixtureOdds = pgTable(
 	(table) => [uniqueIndex('fixture_odds_fixture_idx').on(table.fixtureId)],
 )
 
+/**
+ * One team's place in the official table at one matchday — the per-matchday
+ * standings snapshot the form guide draws its position line from.
+ *
+ * `matchday` is the team's OWN played count at the moment of capture, not the
+ * competition's round number: postponements leave clubs on different game
+ * counts, and "position after N games played" is the only x-axis that stays
+ * honest across them.
+ *
+ * Written by the daily sync, from the same adapter standings read that sets
+ * `team.leaguePosition` (see `persistStandings`). It **accumulates from
+ * deployment onward** — there is no historical backfill, so a competition
+ * mid-season starts its line at whatever matchday the first sync after deploy
+ * observed. `(competition, team, matchday)` is the upsert target, so repeated
+ * syncs within one matchday refresh that point rather than duplicating it.
+ */
+export const standingsSnapshot = pgTable(
+	'standings_snapshot',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		competitionId: uuid('competition_id')
+			.notNull()
+			.references(() => competition.id),
+		teamId: uuid('team_id')
+			.notNull()
+			.references(() => team.id),
+		/** The team's played count at capture. See the table comment. */
+		matchday: integer('matchday').notNull(),
+		position: integer('position').notNull(),
+		played: integer('played').notNull(),
+		won: integer('won').notNull(),
+		drawn: integer('drawn').notNull(),
+		lost: integer('lost').notNull(),
+		points: integer('points').notNull(),
+		capturedAt: timestamp('captured_at').defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex('standings_snapshot_comp_team_matchday_idx').on(
+			table.competitionId,
+			table.teamId,
+			table.matchday,
+		),
+	],
+)
+
 // -- Relations --
 
 export const competitionRelations = relations(competition, ({ many }) => ({
@@ -225,6 +270,14 @@ export const fixtureRelations = relations(fixture, ({ one }) => ({
 
 export const fixtureOddsRelations = relations(fixtureOdds, ({ one }) => ({
 	fixture: one(fixture, { fields: [fixtureOdds.fixtureId], references: [fixture.id] }),
+}))
+
+export const standingsSnapshotRelations = relations(standingsSnapshot, ({ one }) => ({
+	team: one(team, { fields: [standingsSnapshot.teamId], references: [team.id] }),
+	competition: one(competition, {
+		fields: [standingsSnapshot.competitionId],
+		references: [competition.id],
+	}),
 }))
 
 export const teamFormRelations = relations(teamForm, ({ one }) => ({

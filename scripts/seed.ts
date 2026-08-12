@@ -7,6 +7,7 @@ import {
 	competition,
 	fixture,
 	round as roundTable,
+	standingsSnapshot,
 	team as teamTable,
 } from '../src/lib/schema/competition'
 import { game, gamePlayer, pick } from '../src/lib/schema/game'
@@ -433,6 +434,62 @@ async function seed() {
 		}
 	}
 	console.log(`Created ${allFixtures.length} fixtures`)
+
+	// --- Standings snapshots: the table after each completed matchday ---
+	// In production these accumulate one matchday at a time from the daily sync
+	// (no backfill). Locally there's no sync to wait for, so replay the seeded
+	// results into the same shape — otherwise the form guide's position line has
+	// nothing to draw and every dev sees only its empty state.
+	const table = new Map<
+		string,
+		{ played: number; won: number; drawn: number; lost: number; gd: number; points: number }
+	>()
+	for (const t of teams) {
+		table.set(t.id, { played: 0, won: 0, drawn: 0, lost: 0, gd: 0, points: 0 })
+	}
+	let snapshotRows = 0
+	for (const r of rounds.filter((x) => x.status === 'completed')) {
+		for (const f of allFixtures.filter((x) => x.roundId === r.id)) {
+			if (f.homeScore == null || f.awayScore == null) continue
+			const home = table.get(f.homeTeamId)
+			const away = table.get(f.awayTeamId)
+			if (!home || !away) continue
+			home.played++
+			away.played++
+			home.gd += f.homeScore - f.awayScore
+			away.gd += f.awayScore - f.homeScore
+			if (f.homeScore > f.awayScore) {
+				home.won++
+				home.points += 3
+				away.lost++
+			} else if (f.homeScore < f.awayScore) {
+				away.won++
+				away.points += 3
+				home.lost++
+			} else {
+				home.drawn++
+				away.drawn++
+				home.points++
+				away.points++
+			}
+		}
+		const ranked = [...table.entries()].sort(([, a], [, b]) => b.points - a.points || b.gd - a.gd)
+		await db.insert(standingsSnapshot).values(
+			ranked.map(([teamId, row], index) => ({
+				competitionId: pl.id,
+				teamId,
+				matchday: row.played,
+				position: index + 1,
+				played: row.played,
+				won: row.won,
+				drawn: row.drawn,
+				lost: row.lost,
+				points: row.points,
+			})),
+		)
+		snapshotRows += ranked.length
+	}
+	console.log(`Created ${snapshotRows} standings snapshot rows`)
 
 	const fixturesByRound = new Map<string, FixtureRow[]>()
 	for (const f of allFixtures) {

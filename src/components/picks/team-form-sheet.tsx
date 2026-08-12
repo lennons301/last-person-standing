@@ -1,7 +1,9 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { loadTeamFormDetail } from '@/app/actions/team-form'
+import { formGuidePath } from '@/lib/game/form-guide-link'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 import { type FormMarket, TeamFormSheetView } from './team-form-panel'
 
@@ -40,6 +42,10 @@ export function TeamFormSheet({
 	teamPreview,
 	opponentPreview,
 }: TeamFormSheetProps) {
+	// The page the sheet was opened from, so the guide can offer a way back to
+	// it. The guide itself stays game-agnostic — this is the only place that
+	// knows where the player came from.
+	const pathname = usePathname()
 	const [detail, setDetail] = useState<TeamFormDetail | null>(null)
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -76,6 +82,10 @@ export function TeamFormSheet({
 			market={market}
 			teamPreview={teamPreview}
 			opponentPreview={opponentPreview}
+			formGuideHref={formGuidePath(competitionId, teamId, {
+				opponent: opponentTeamId,
+				from: pathname,
+			})}
 		/>
 	)
 }
