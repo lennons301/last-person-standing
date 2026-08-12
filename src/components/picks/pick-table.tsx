@@ -41,7 +41,8 @@ import { CHIP, TYPE } from './type-scale'
  * stay reachable in the form sheet's home/away split, one tap from the form
  * cell. The win column keeps its decimal price at every width (the price is what
  * explains the percentage) by stacking it under the percentage on a phone rather
- * than dropping it.
+ * than dropping it. How the width is *divided* is declared, not discovered — see
+ * `COLUMNS`.
  */
 
 /**
@@ -120,15 +121,80 @@ interface ColumnSpec {
 	/** Spelled out for screen readers, where "#" is not a word. */
 	longLabel: string
 	align: 'left' | 'right'
+	/** Declared share of the five-column board. See `COLUMNS`. */
+	width: string
+	/** Declared share once turbo's rank column is on the board too. */
+	rankingWidth: string
 }
 
+/**
+ * The columns, and the share of the board each one is *given* rather than takes.
+ *
+ * Left to size themselves the columns are sized by their widest content, and the
+ * team column — the widest of them, because of the used-team chip that sits
+ * under a name — then absorbs whatever width is left over. A spent team
+ * therefore opened a gap between its chip and the right-aligned league position
+ * while form and the win chance were squeezed into their minimums. Declaring the
+ * shares makes the board's proportions a decision: the team column gets a name
+ * and a chip and no more (a longer name truncates rather than widening it), and
+ * what that frees goes to the two columns the player is actually reading.
+ *
+ * Each column carries two of them, because the `sm` breakpoint changes what a
+ * team cell holds — the three-letter short name below it, the club's full name
+ * above — and a third pair for the board turbo puts a rank column on.
+ *
+ * The shares are declared on `<col>` under *automatic* layout, deliberately: a
+ * column whose content genuinely can't shrink to its share (turbo's rank
+ * controls are three icon buttons, a pixel measurement) still takes the width it
+ * needs, so the board degrades the way it does today instead of spilling its
+ * cells. What the declaration buys is the other direction — no column is handed
+ * width it hasn't asked for.
+ */
 const COLUMNS: ColumnSpec[] = [
-	{ key: 'team', label: 'Team', longLabel: 'Team', align: 'left' },
-	{ key: 'position', label: '#', longLabel: 'League position', align: 'right' },
-	{ key: null, label: 'Form', longLabel: 'Recent form', align: 'left' },
-	{ key: null, label: 'Next', longLabel: 'Next opponent', align: 'left' },
-	{ key: 'winProbability', label: 'Win', longLabel: 'Win probability', align: 'right' },
+	{
+		key: 'team',
+		label: 'Team',
+		longLabel: 'Team',
+		align: 'left',
+		width: 'w-[34%] sm:w-[40%]',
+		rankingWidth: 'w-[27%] sm:w-[33%]',
+	},
+	{
+		key: 'position',
+		label: '#',
+		longLabel: 'League position',
+		align: 'right',
+		width: 'w-[9%] sm:w-[7%]',
+		rankingWidth: 'w-[8%] sm:w-[6%]',
+	},
+	{
+		key: null,
+		label: 'Form',
+		longLabel: 'Recent form',
+		align: 'left',
+		width: 'w-[24%] sm:w-[20%]',
+		rankingWidth: 'w-[20%] sm:w-[17%]',
+	},
+	{
+		key: null,
+		label: 'Next',
+		longLabel: 'Next opponent',
+		align: 'left',
+		width: 'w-[17%] sm:w-[16%]',
+		rankingWidth: 'w-[14%]',
+	},
+	{
+		key: 'winProbability',
+		label: 'Win',
+		longLabel: 'Win probability',
+		align: 'right',
+		width: 'w-[16%] sm:w-[17%]',
+		rankingWidth: 'w-[14%]',
+	},
 ]
+
+/** Turbo's rank column, which has no header content to spec. See `COLUMNS`. */
+const RANK_COLUMN_WIDTH = 'w-[17%] sm:w-[16%]'
 
 /**
  * How many of a team's results the form cell shows. Six fitted a board that
@@ -183,6 +249,12 @@ export function PickTable({
 		<>
 			<div className="rounded-lg border border-border bg-card">
 				<table className="w-full table-auto text-left border-collapse">
+					<colgroup>
+						{COLUMNS.map((col) => (
+							<col key={col.label} className={ranking ? col.rankingWidth : col.width} />
+						))}
+						{ranking && <col className={RANK_COLUMN_WIDTH} />}
+					</colgroup>
 					<caption className="sr-only">
 						{ranking
 							? `Teams available to rank, ${ranking.count} of ${ranking.target} ranked`
@@ -396,7 +468,12 @@ function Row({
 				<div className="flex items-center gap-2 min-w-0">
 					<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="sm" />
 					<div className="flex flex-col gap-0.5 min-w-0">
-						<span className={cn(TYPE.name, 'text-sm sm:text-base whitespace-nowrap')}>
+						{/* Truncates rather than widening: a long club name gives up its
+						    tail instead of taking space off the form and win columns —
+						    which is also what holds the team column to its declared
+						    share, since a name that can't shrink would otherwise be the
+						    one thing on the board able to overrule it. */}
+						<span className={cn(TYPE.name, 'text-sm sm:text-base truncate')}>
 							<span className="sm:hidden">{team.shortName}</span>
 							<span className="hidden sm:inline">{team.name}</span>
 						</span>
@@ -487,8 +564,17 @@ function Row({
  * same marker and gesture the Fixtures view's form bar uses, so the chevron
  * means the same thing in both views.
  *
- * A team with no form has nothing to tap: the cell says the season hasn't
- * started rather than offering a sheet with no results in it.
+ * The tap-through is offered whenever the sheet is available, form or no form.
+ * It used to be gated on having results ("nothing to tap"), which pre-dated the
+ * form-guide page: the sheet carries the team's league position, its season
+ * record, the next fixture's odds and the link onward to the guide, none of
+ * which need a played match — and with the gate on, a pre-season board had no
+ * way through to any of it. The Fixtures view already behaves this way, opening
+ * on a league position alone.
+ *
+ * What a form-less cell keeps is its wording: a blank cell in a labelled column
+ * reads as a gap, so it still says the season hasn't started, and now says
+ * where to look as well.
  */
 function FormCell({
 	row,
@@ -500,28 +586,20 @@ function FormCell({
 	onOpenSheet: () => void
 }) {
 	const form = row.team.form?.slice(0, FORM_RESULTS_SHOWN)
-
-	if (!form?.length) {
-		return (
-			<td className={CELL}>
-				{/* The board says what it doesn't know, cell by cell — the same reason
-				    the position column shows a dash and the win column says "No odds".
-				    A blank cell in a labelled column reads as a gap; the fixture row
-				    (an unlabelled strip, where the position carries the reading) needs
-				    no such filler and no longer has one. */}
-				<span className={cn(TYPE.chip, 'font-normal text-muted-foreground/70 whitespace-nowrap')}>
-					No form yet
-				</span>
-			</td>
-		)
-	}
+	const content = form?.length ? (
+		<FormDots results={form} size="sm" />
+	) : (
+		// The board says what it doesn't know, cell by cell — the same reason the
+		// position column shows a dash and the win column says "No odds". The
+		// fixture row (an unlabelled strip, where the position carries the reading)
+		// needs no such filler and no longer has one.
+		<span className={cn(TYPE.chip, 'font-normal text-muted-foreground/70 whitespace-nowrap')}>
+			No form yet
+		</span>
+	)
 
 	if (!sheetEnabled) {
-		return (
-			<td className={CELL}>
-				<FormDots results={form} size="sm" />
-			</td>
-		)
+		return <td className={CELL}>{content}</td>
 	}
 
 	return (
@@ -533,7 +611,7 @@ function FormCell({
 				// Above the row's stretched select button, which covers this cell too.
 				className="relative z-20 -mx-1 inline-flex items-center gap-0.5 rounded px-1 py-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 			>
-				<FormDots results={form} size="sm" />
+				{content}
 				<ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/60" aria-hidden />
 			</button>
 		</td>
