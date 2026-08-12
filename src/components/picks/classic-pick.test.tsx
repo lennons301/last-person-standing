@@ -157,9 +157,10 @@ describe('ClassicPick — Fixtures ⇄ Table', () => {
 		renderPicker({
 			fixtures: TABLE_FIXTURES,
 			competitionType: 'league',
-			usedTeamsByRound: { 't-mun': 'GW12' },
+			usedTeamsByRound: { 't-mun': { label: 'GW12', longLabel: 'Gameweek 12' } },
 		})
 		expect(screen.getByText('Used GW12')).toBeTruthy()
+		expect(screen.getByText('Used Gameweek 12')).toBeTruthy()
 		expect(screen.queryByRole('button', { name: /^Select Manchester United/ })).toBeNull()
 	})
 })

@@ -23,6 +23,7 @@ import {
 	buildPickTableRows,
 	type PickTableFixture,
 	type RankedFixtureCall,
+	type UsedRoundLabel,
 } from '@/lib/game/pick-table-view'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 
@@ -262,7 +263,7 @@ export interface PreviewClassicCard {
 	roundNumber: number
 	deadline: string | null
 	fixtures: ClassicPickFixture[]
-	usedTeamsByRound: Record<string, string>
+	usedTeamsByRound: Record<string, UsedRoundLabel>
 	existingPickTeamId: string | null
 	existingPickFixtureId: string | null
 	currentRoundClosed?: boolean
@@ -310,7 +311,7 @@ export function PreviewClassicPick({ card }: { card: PreviewClassicCard }) {
 /** A Table-view scenario with its clocks already resolved to ISO strings. */
 export interface PreviewPickTableInput {
 	fixtures: PickTableFixture[]
-	usedTeamsByRound?: Record<string, string>
+	usedTeamsByRound?: Record<string, UsedRoundLabel>
 	restrictedTeams?: Record<string, string>
 	currentTeamId?: string | null
 	readonly?: boolean

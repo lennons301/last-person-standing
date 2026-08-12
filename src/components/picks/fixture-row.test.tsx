@@ -25,13 +25,19 @@ describe('FixtureRow league position', () => {
 		expect(screen.getByText('9th')).toBeTruthy()
 	})
 
-	it('labels a form-less side explicitly rather than leaving it blank', () => {
-		render(<FixtureRow home={{ ...MUN, leaguePosition: 4 }} away={NEW} competitionId="c1" />)
-		expect(screen.getAllByText('No form yet')).toHaveLength(2)
+	it('shows a form-less side its position alone, with no filler beside it', () => {
+		// The row used to say "No form yet" here. A position with nothing next to it
+		// already reads as a season that hasn't started, and the filler only
+		// collided with the position it sat beside.
+		const { container } = render(
+			<FixtureRow home={{ ...MUN, leaguePosition: 4 }} away={NEW} competitionId="c1" />,
+		)
+		expect(screen.getByText('4th')).toBeTruthy()
+		expect(container.textContent).not.toContain('No form yet')
 	})
 
 	it('still renders form alongside position', () => {
-		render(
+		const { container } = render(
 			<FixtureRow
 				home={{ ...MUN, leaguePosition: 4, form: ['W', 'D'] }}
 				away={NEW}
@@ -39,16 +45,15 @@ describe('FixtureRow league position', () => {
 			/>,
 		)
 		expect(screen.getByText('4th')).toBeTruthy()
-		// One dot per result on the home side, plus the away side's placeholder.
+		// One dot per result on the home side; the away side simply shows nothing.
 		expect(screen.getAllByText('W')).toHaveLength(1)
-		expect(screen.getAllByText('No form yet')).toHaveLength(1)
+		expect(container.textContent).not.toContain('No form yet')
 	})
 
 	it('drops the bottom bar entirely when the row has neither form nor position', () => {
-		// Cup fixtures carry neither, and an unconditional "No form yet" there would
-		// assert something about the teams the row has no basis for.
-		const { container } = render(<FixtureRow home={MUN} away={NEW} competitionId="c1" />)
-		expect(container.textContent).not.toContain('No form yet')
+		// Cup fixtures carry neither, so there's nothing for the bar to hold and no
+		// sheet worth tapping through to.
+		render(<FixtureRow home={MUN} away={NEW} competitionId="c1" />)
 		expect(screen.queryByLabelText(/Open form details/)).toBeNull()
 	})
 })
