@@ -273,8 +273,9 @@ export default function PicksPreviewPage() {
 				re-sort it; form and next opponent are labels, because neither carries an order a player
 				asks for. The used and restricted teams stay in the table rather than disappearing from it,
 				a row tap <em>selects</em> a team (the picker's confirm bar commits it — see the cards
-				above), and the form cell's chevron taps through to the same sheet the Fixtures view opens.
-				In the app a league opens on this view and a knockout on the fixtures — with no standings
+				above), and the form cell's chevron taps through to the same sheet the Fixtures view opens —
+				on every row, played or not, since the sheet answers plenty a team with no results yet. In
+				the app a league opens on this view and a knockout on the fixtures — with no standings
 				behind the round at all, the toggle isn't offered.
 			</GroupHeading>
 

@@ -651,8 +651,10 @@ const UNPRICED_FIXTURES: PickTableScenarioFixture[] = PRICED_FIXTURES.map(
 
 /**
  * The same board with one team's form removed — a promoted club with nothing
- * recorded yet, sitting beside teams that have played. Paired with a used-team
- * chip in the scenario below, this is the widest a row gets on a phone.
+ * recorded yet, sitting beside teams that have played. That club is also the
+ * longest name in the set (Wolverhampton Wanderers), and the scenario below
+ * spends it, so one row carries the three things that used to fight for width:
+ * the longest name, a used chip under it and an empty form cell.
  */
 const ONE_TEAM_NO_FORM: PickTableScenarioFixture[] = PRICED_FIXTURES.map((f, i) =>
 	i === 0 ? { ...f, away: { ...f.away, form: undefined } } : f,
@@ -667,10 +669,10 @@ export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
 	},
 	{
 		id: 'table-narrow',
-		title: 'Phone width — a used chip and a team with no form',
-		note: 'The state the five columns exist for, and the one to measure at 375px and 360px: no horizontal scroll and no pinned column, with the widest thing a row carries (a used-team chip) under one name and a team that hasn’t played yet on the row above. The win column keeps its decimal price at both widths — it stacks under the percentage rather than being dropped.',
+		title: 'Phone width — a used chip, a long name and no form, on one row',
+		note: 'The state the five columns exist for, and the one to measure at 375px and 360px: no horizontal scroll and no pinned column, with the widest things a row carries stacked on a single row — the longest club name in the league, a used-team chip under it and a team that hasn’t kicked off yet. None of them sets a column’s width: the board’s proportions are declared, so the team column takes a name and a chip and no more, the name gives up its tail rather than the columns beside it giving up space, and what that frees goes to form and the win chance. The win column keeps its decimal price at both widths — it stacks under the percentage rather than being dropped.',
 		fixtures: ONE_TEAM_NO_FORM,
-		usedTeamsByRound: { 't-new': usedIn(11) },
+		usedTeamsByRound: { 't-wol': usedIn(2), 't-new': usedIn(11) },
 	},
 	{
 		id: 'table-unpriced',
@@ -686,8 +688,8 @@ export const PICK_TABLE_SCENARIOS: PickTableScenario[] = [
 	},
 	{
 		id: 'table-empty-form',
-		title: 'Season start — nothing played',
-		note: 'Positions carried over, nothing played and no form anywhere. Every form cell says so explicitly rather than rendering blank — and none of them is tappable, because there is no form to open.',
+		title: 'Pre-season — nothing played, every row still taps through',
+		note: 'Opening positions, nothing played and no form anywhere. Every form cell says so explicitly rather than rendering blank — and every one of them still opens the sheet, which carries the position, the season record, the next fixture’s odds and the link on to the form guide, none of which need a played match. Gate the tap on having results and this board is the one with no way through to any of it.',
 		fixtures: PRICED_FIXTURES.map((f) => ({
 			...f,
 			odds: undefined,

@@ -159,11 +159,57 @@ describe('PickTable', () => {
 		expect(args?.market).toMatchObject({ teamSide: 'home', draw: { price: 9 } })
 	})
 
-	it('leaves a row with no form untappable, and says the season has not started', () => {
-		render(<PickTable rows={rowsFor()} renderFormSheet={() => null} />)
-		// Burnley alone has no form in these fixtures.
+	it('taps through on a row with no form, and still says the season has not started', () => {
+		const renderFormSheet = vi.fn<PickTableFormSheetRenderer>(() => null)
+		render(<PickTable rows={rowsFor()} renderFormSheet={renderFormSheet} />)
+		// Burnley alone has no form in these fixtures. A labelled column reads a
+		// blank cell as a gap, so the wording stays — the cell is tappable anyway.
 		expect(screen.getAllByText('No form yet')).toHaveLength(1)
-		expect(screen.queryByRole('button', { name: 'Open form details for Burnley' })).toBeNull()
+
+		fireEvent.click(screen.getByRole('button', { name: 'Open form details for Burnley' }))
+		expect(renderFormSheet.mock.lastCall?.[0]).toMatchObject({
+			fixtureId: 'fx-1',
+			side: 'away',
+			open: true,
+		})
+	})
+
+	it('reaches the form sheet from a board where nothing has been played', () => {
+		const preSeason: PickTableFixture[] = FIXTURES.map((f) => ({
+			...f,
+			home: { ...f.home, form: undefined },
+			away: { ...f.away, form: undefined },
+		}))
+		render(
+			<PickTable rows={buildPickTableRows({ fixtures: preSeason })} renderFormSheet={() => null} />,
+		)
+		// Every row: the form-guide page behind the sheet is reachable from the
+		// Table in a round where no fixture has been played.
+		expect(screen.getAllByRole('button', { name: /^Open form details/ })).toHaveLength(4)
+		expect(screen.getAllByText('No form yet')).toHaveLength(4)
+	})
+
+	it('declares its column widths rather than letting the used chip set them', () => {
+		render(
+			<PickTable
+				rows={rowsFor({
+					usedTeamsByRound: { 't-ars': { label: 'GW3', longLabel: 'Gameweek 3' } },
+				})}
+			/>,
+		)
+		// One declared share per column, rather than the widest content taking
+		// what it likes and the team column absorbing the rest.
+		const cols = Array.from(screen.getByRole('table').querySelectorAll('colgroup col'))
+		expect(cols.map((c) => c.className)).toEqual([
+			'w-[34%] sm:w-[40%]',
+			'w-[9%] sm:w-[7%]',
+			'w-[24%] sm:w-[20%]',
+			'w-[17%] sm:w-[16%]',
+			'w-[16%] sm:w-[17%]',
+		])
+		// A long name gives up its tail instead of widening the column — without
+		// which the name would be the one thing able to overrule the share.
+		expect(screen.getByText('Arsenal').parentElement?.className).toContain('truncate')
 	})
 
 	it('renders no form sheet for a board with no way to open one', () => {
@@ -269,6 +315,15 @@ describe('PickTable — ranking mode (turbo)', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Sort by Win probability' }))
 		expect(renderedTeams()[0]).toContain('Arsenal')
 		expect(screen.queryByRole('button', { name: /^Select / })).toBeNull()
+	})
+
+	it('re-declares the shares once the rank column is on the board', () => {
+		render(<PickTable rows={rowsFor()} ranking={ranking()} />)
+		const cols = Array.from(screen.getByRole('table').querySelectorAll('colgroup col'))
+		// Six columns, and the team column gives up the most for the sixth.
+		expect(cols).toHaveLength(6)
+		expect(cols[0].className).toBe('w-[27%] sm:w-[33%]')
+		expect(cols[5].className).toBe('w-[17%] sm:w-[16%]')
 	})
 
 	it('adds a team to the confidence set at the next rank, one tap', () => {
