@@ -6,14 +6,8 @@ import { getTeamFormDetail, type TeamFormDetail } from '@/lib/game/team-form-det
 export async function loadTeamFormDetail(input: {
 	teamId: string
 	competitionId: string
-	opponentTeamId?: string
 	beforeRoundNumber?: number
 }): Promise<TeamFormDetail | null> {
 	await requireSession()
-	return getTeamFormDetail(
-		input.teamId,
-		input.competitionId,
-		input.opponentTeamId,
-		input.beforeRoundNumber,
-	)
+	return getTeamFormDetail(input.teamId, input.competitionId, input.beforeRoundNumber)
 }

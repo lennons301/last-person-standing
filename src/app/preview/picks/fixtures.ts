@@ -1201,16 +1201,6 @@ export const TEAM_FORM_DETAIL: TeamFormDetail = {
 			result: 'L',
 		},
 	],
-	headToHead: [
-		{
-			roundNumber: 26,
-			roundLabel: 'GW26',
-			homeTeamShortName: 'MUN',
-			awayTeamShortName: 'NEW',
-			homeScore: 3,
-			awayScore: 1,
-		},
-	],
 }
 
 /** Nothing played, at any venue. Zeroes, not gaps. */
@@ -1239,7 +1229,6 @@ export const TEAM_FORM_DETAIL_EMPTY: TeamFormDetail = {
 		away: EMPTY_SPLIT,
 	},
 	recent: [],
-	headToHead: [],
 }
 
 /**

@@ -44,7 +44,6 @@ const DETAIL: TeamFormDetail = {
 		},
 	},
 	recent: [],
-	headToHead: null,
 }
 
 const MARKET: FormMarket = {
@@ -88,6 +87,20 @@ describe('TeamFormPanel home/away split', () => {
 		render(<TeamFormPanel detail={nothingAway} teamPreview={PREVIEW} />)
 
 		expect(screen.getByText('—')).toBeTruthy()
+	})
+})
+
+describe('TeamFormPanel head-to-head', () => {
+	it('shows no head-to-head section — that lives on the form guide', () => {
+		// Scoped to one competition, the sheet could only ever show this season's
+		// meetings, which isn't what a player means by head-to-head. The guide
+		// (#165) has previous seasons in scope; the sheet doesn't even query it.
+		const { container } = render(
+			<TeamFormPanel detail={DETAIL} market={MARKET} teamPreview={PREVIEW} formGuideHref={HREF} />,
+		)
+
+		expect(container.textContent).not.toContain('meetings')
+		expect(container.textContent).not.toContain('No previous meetings this season')
 	})
 })
 

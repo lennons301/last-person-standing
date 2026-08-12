@@ -58,7 +58,6 @@ function detailForTeam(t: FixtureTeamInfo | RankedTeam): TeamFormDetail {
 /** The one form-sheet renderer every row in this gallery shares. */
 const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClose, market }) => {
 	const team = side === 'home' ? home : away
-	const opponent = side === 'home' ? away : home
 	return (
 		<TeamFormSheetView
 			open={open}
@@ -71,7 +70,6 @@ const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClos
 			// one to a sheet with no market block at all.
 			market={market}
 			teamPreview={team}
-			opponentPreview={{ shortName: opponent.shortName }}
 		/>
 	)
 }
@@ -166,7 +164,6 @@ export function PreviewTurboPick({
 				const fixture = byId.get(fixtureId)
 				if (!fixture) return null
 				const team = side === 'home' ? fixture.home : fixture.away
-				const opponent = side === 'home' ? fixture.away : fixture.home
 				return (
 					<TeamFormSheetView
 						open={open}
@@ -176,7 +173,6 @@ export function PreviewTurboPick({
 						detail={detailForTeam(team)}
 						market={market ?? null}
 						teamPreview={team}
-						opponentPreview={{ shortName: opponent.shortName }}
 					/>
 				)
 			}}
@@ -203,7 +199,6 @@ export function PreviewRankedList({ fixture }: { fixture: RankedListFixture }) {
 			renderFormSheet={(pick) =>
 				({ side, open, onClose }) => {
 					const team = side === 'home' ? pick.homeTeam : pick.awayTeam
-					const opponent = side === 'home' ? pick.awayTeam : pick.homeTeam
 					return (
 						<TeamFormSheetView
 							open={open}
@@ -212,7 +207,6 @@ export function PreviewRankedList({ fixture }: { fixture: RankedListFixture }) {
 							}}
 							detail={detailForTeam(team)}
 							teamPreview={team}
-							opponentPreview={{ shortName: opponent.shortName }}
 						/>
 					)
 				}}
