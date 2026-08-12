@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildPickTableRows, type PickTableFixture } from '@/lib/game/pick-table-view'
-import { PickTable } from './pick-table'
+import { PickTable, type PickTableRanking } from './pick-table'
 
 afterEach(cleanup)
 
@@ -149,5 +149,89 @@ describe('PickTable', () => {
 		render(<PickTable rows={rowsFor()} />)
 		// Burnley alone has no form in these fixtures.
 		expect(screen.getAllByText('No form yet')).toHaveLength(1)
+	})
+})
+
+describe('PickTable — ranking mode (turbo)', () => {
+	function ranking(overrides: Partial<PickTableRanking> = {}): PickTableRanking {
+		return {
+			count: 0,
+			target: 3,
+			onAdd: vi.fn(),
+			onMove: vi.fn(),
+			onRemove: vi.fn(),
+			...overrides,
+		}
+	}
+
+	it('offers the same board and the same sorting, with rank in place of pick', () => {
+		render(<PickTable rows={rowsFor()} ranking={ranking()} />)
+		expect(screen.getAllByRole('row')).toHaveLength(5) // header + four teams
+		// Every column still sorts, and the board still opens safest-first.
+		expect(renderedTeams()[0]).toContain('Arsenal')
+		fireEvent.click(screen.getByRole('button', { name: 'Sort by League position' }))
+		expect(renderedTeams()[0]).toContain('Arsenal')
+		expect(screen.queryByRole('button', { name: /^Pick / })).toBeNull()
+	})
+
+	it('adds a team to the confidence set at the next rank, one tap', () => {
+		const onAdd = vi.fn()
+		render(<PickTable rows={rowsFor()} ranking={ranking({ count: 2, onAdd })} />)
+
+		fireEvent.click(
+			screen.getByRole('button', { name: 'Rank Chelsea to beat Everton at number 3' }),
+		)
+		expect(onAdd).toHaveBeenCalledTimes(1)
+		expect(onAdd.mock.calls[0][0]).toMatchObject({ fixtureId: 'fx-2', side: 'home' })
+		expect(onAdd.mock.calls[0][0].team.id).toBe('t-che')
+	})
+
+	it('carries the rank a team already holds, and orders it from the row', () => {
+		const onMove = vi.fn()
+		const rows = rowsFor({ rankedFixtures: { 'fx-1': { rank: 2, teamId: 't-ars' } } })
+		render(<PickTable rows={rows} ranking={ranking({ count: 3, onMove })} />)
+
+		expect(screen.getByText('Ranked #2')).toBeTruthy()
+		expect(screen.queryByRole('button', { name: /^Rank Arsenal/ })).toBeNull()
+
+		fireEvent.click(screen.getByRole('button', { name: 'Move Arsenal up to number 1' }))
+		fireEvent.click(screen.getByRole('button', { name: 'Move Arsenal down to number 3' }))
+		expect(onMove.mock.calls.map((c) => c[1])).toEqual(['up', 'down'])
+		expect(onMove.mock.calls[0][0].team.id).toBe('t-ars')
+	})
+
+	it('stands the move controls down at the ends of the ranking', () => {
+		const rows = rowsFor({ rankedFixtures: { 'fx-1': { rank: 1, teamId: 't-ars' } } })
+		render(<PickTable rows={rows} ranking={ranking({ count: 1 })} />)
+		expect(screen.getByRole('button', { name: /Move Arsenal up/ })).toHaveProperty('disabled', true)
+		expect(screen.getByRole('button', { name: /Move Arsenal down/ })).toHaveProperty(
+			'disabled',
+			true,
+		)
+	})
+
+	it('drops a ranked team back out of the set', () => {
+		const onRemove = vi.fn()
+		const rows = rowsFor({ rankedFixtures: { 'fx-1': { rank: 1, teamId: 't-ars' } } })
+		render(<PickTable rows={rows} ranking={ranking({ count: 1, onRemove })} />)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Remove Arsenal from your predictions' }))
+		expect(onRemove).toHaveBeenCalledTimes(1)
+		expect(onRemove.mock.calls[0][0].team.id).toBe('t-ars')
+	})
+
+	it('marks the other side of a ranked fixture with the call, and offers it nothing', () => {
+		const rows = rowsFor({ rankedFixtures: { 'fx-1': { rank: 1, teamId: 't-ars' } } })
+		render(<PickTable rows={rows} ranking={ranking({ count: 1 })} />)
+		expect(screen.getByText('#1: ARS')).toBeTruthy()
+		expect(screen.queryByRole('button', { name: /^Rank Burnley/ })).toBeNull()
+	})
+
+	it('offers nothing to tap once the round is read-only', () => {
+		const rows = rowsFor({ rankedFixtures: { 'fx-1': { rank: 1, teamId: 't-ars' } } })
+		render(<PickTable rows={rows} ranking={ranking({ count: 1 })} readonly />)
+		expect(screen.queryByRole('button', { name: /^Rank / })).toBeNull()
+		expect(screen.queryByRole('button', { name: /^Move / })).toBeNull()
+		expect(screen.queryByRole('button', { name: /^Remove / })).toBeNull()
 	})
 })

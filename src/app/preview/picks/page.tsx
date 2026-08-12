@@ -11,6 +11,7 @@ import {
 	TEAM_FORM_DETAIL,
 	TEAM_FORM_DETAIL_EMPTY,
 	TURBO_SCENARIOS,
+	TURBO_TABLE_SCENARIOS,
 } from '@/app/preview/picks/fixtures'
 import {
 	PreviewClassicPick,
@@ -21,6 +22,7 @@ import {
 	type PreviewPlannerRoundInput,
 	PreviewRankedList,
 	PreviewTurboPick,
+	PreviewTurboPickTable,
 } from '@/app/preview/picks/picks-demo'
 import { TeamFormPanel } from '@/components/picks/team-form-panel'
 
@@ -64,9 +66,9 @@ export default function PicksPreviewPage() {
 					The pick selector's shared foundation: <code>FixtureRow</code> — imported by classic,
 					turbo, cup and the classic planner — in every state the modes can put it in, plus the
 					form-detail panel that hangs off it. Then a section per mode: classic's planner, side
-					states and picker card, turbo's whole picker — its ranked list, its remaining-fixtures
-					list, and each state of its submission — and cup's picker card. Hand-built fixtures, no
-					auth, no database.
+					states, picker card and Table view, turbo's whole picker — its ranked list, its
+					remaining-fixtures list, each state of its submission, and the Table view as its ranking
+					board — and cup's picker card. Hand-built fixtures, no auth, no database.
 				</p>
 				<p>
 					Nothing here renders a round title or a deadline: on the real page the game hero sits
@@ -341,6 +343,59 @@ export default function PicksPreviewPage() {
 					</div>
 				</section>
 			))}
+
+			<GroupHeading title="Turbo — ranking from the Table">
+				The other half of turbo's picker: the same board classic picks from, with the last column
+				asking a different question — a tap adds the team to the confidence set at the next rank,
+				and a row already in the set carries the controls for its place in it. The confidence list
+				stays above the board (it owns drag-reorder, the prediction change and the draw, which a
+				board of teams can't express); what's here is the board, at the width it has to survive.
+			</GroupHeading>
+
+			{TURBO_TABLE_SCENARIOS.map((s) => {
+				const fixtures = s.fixtures.map((f) => ({
+					id: f.id,
+					home: f.home,
+					away: f.away,
+					kickoff: at(now, f.kickoffInMinutes),
+					odds: f.odds
+						? {
+								home: f.odds.home,
+								draw: f.odds.draw,
+								away: f.odds.away,
+								asOf: at(now, f.odds.asOfInMinutes) as string,
+							}
+						: null,
+				}))
+				return (
+					<section key={s.id} className="space-y-2">
+						<header>
+							<h2 className="font-display text-sm font-semibold">{s.title}</h2>
+							{s.note && <p className="text-xs text-muted-foreground">{s.note}</p>}
+						</header>
+						<div className="flex flex-wrap items-start gap-4">
+							<div className="flex-1 min-w-[320px]">
+								<PreviewTurboPickTable
+									fixtures={fixtures}
+									numberOfPicks={s.numberOfPicks}
+									ranking={s.ranking}
+									readonly={s.readonly}
+								/>
+							</div>
+							{/* 375px: the rank chip and three controls land on a row that
+							    already scrolls sideways — this is where that is reviewed. */}
+							<MobileColumn>
+								<PreviewTurboPickTable
+									fixtures={fixtures}
+									numberOfPicks={s.numberOfPicks}
+									ranking={s.ranking}
+									readonly={s.readonly}
+								/>
+							</MobileColumn>
+						</div>
+					</section>
+				)
+			})}
 
 			<GroupHeading title="Cup — the picker card">
 				<code>CupPick</code>, which reaches the shared row through the same <code>FixtureRow</code>{' '}

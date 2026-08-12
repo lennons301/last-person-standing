@@ -529,6 +529,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 			badgeUrl: f.homeTeam.badgeUrl,
 			form: formMap.get(f.homeTeamId),
 			leaguePosition: f.homeTeam.leaguePosition,
+			standing: toStandingLine(f.homeTeam),
 		},
 		away: {
 			id: f.awayTeamId,
@@ -537,6 +538,7 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 			badgeUrl: f.awayTeam.badgeUrl,
 			form: formMap.get(f.awayTeamId),
 			leaguePosition: f.awayTeam.leaguePosition,
+			standing: toStandingLine(f.awayTeam),
 		},
 		kickoff: f.kickoff ? f.kickoff.toISOString() : null,
 		odds: toFixtureOddsView(f.odds),
@@ -548,6 +550,8 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 		// no longer repeats either.
 		roundNumber: roundData.number,
 		competitionId: roundData.competitionId,
+		// Which view the remaining fixtures open on: a league opens on the Table.
+		competitionType: roundData.competition.type,
 		fixtures,
 		existingPicks: existingPicks.map((p) => ({
 			fixtureId: p.fixtureId ?? '',

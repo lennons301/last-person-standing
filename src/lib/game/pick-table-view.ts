@@ -27,6 +27,16 @@ export type PickTableRowState =
 	| { kind: 'used'; label: string }
 	/** Unavailable for any other reason the mode imposes. */
 	| { kind: 'restricted'; reason: string }
+	/** Turbo: this team *is* the player's ranked call, at this confidence rank. */
+	| { kind: 'ranked'; rank: number }
+	/**
+	 * Turbo: the fixture is already ranked, but on a different outcome — the
+	 * opponent to win, or the draw, which `call` names. One prediction per
+	 * fixture, so this row can't be added on top of it; it's marked rather than
+	 * dropped so "Liverpool — you've already called this one for Chelsea" is
+	 * readable from the board the player is comparing on.
+	 */
+	| { kind: 'fixture-ranked'; rank: number; call: string }
 
 export interface PickTableRow {
 	/** Stable across re-sorts: one row per (fixture, side). */
@@ -46,12 +56,29 @@ export interface PickTableRow {
 	pickable: boolean
 }
 
+/**
+ * One entry in turbo's confidence set, as the table reads it: which fixture is
+ * ranked, where, and which outcome the ranking calls. `teamId` is the team
+ * backed to win, or null for a draw — the one prediction the board can't offer,
+ * since a row is a team.
+ */
+export interface RankedFixtureCall {
+	rank: number
+	teamId: string | null
+}
+
 export interface BuildPickTableInput {
 	fixtures: PickTableFixture[]
 	/** teamId → round label, as classic's pick data builds it. */
 	usedTeamsByRound?: Record<string, string>
 	/** teamId → why this team can't be picked (mode rules other than "used"). */
 	restrictedTeams?: Record<string, string>
+	/**
+	 * Turbo: fixtureId → the confidence call already made on it. Both of the
+	 * fixture's rows are marked from it — the backed team as `ranked`, the other
+	 * side as `fixture-ranked`.
+	 */
+	rankedFixtures?: Record<string, RankedFixtureCall>
 }
 
 /**
@@ -65,6 +92,7 @@ export function buildPickTableRows({
 	fixtures,
 	usedTeamsByRound = {},
 	restrictedTeams = {},
+	rankedFixtures = {},
 }: BuildPickTableInput): PickTableRow[] {
 	const rows: PickTableRow[] = []
 	for (const fixture of fixtures) {
@@ -74,13 +102,24 @@ export function buildPickTableRows({
 			const sideOdds = side === 'home' ? fixture.odds?.home : fixture.odds?.away
 			// "Used" wins over "restricted" when a team is somehow both: it's the
 			// more specific fact (it names the round) and the one classic owns.
+			// Both outrank the ranking: a team the mode has blocked can't be in a
+			// confidence set, and if it somehow is, the block is what needs saying.
 			const usedLabel = usedTeamsByRound[team.id]
 			const restrictedReason = restrictedTeams[team.id]
+			const ranked = rankedFixtures[fixture.id]
 			const state: PickTableRowState = usedLabel
 				? { kind: 'used', label: usedLabel }
 				: restrictedReason
 					? { kind: 'restricted', reason: restrictedReason }
-					: { kind: 'available' }
+					: ranked
+						? ranked.teamId === team.id
+							? { kind: 'ranked', rank: ranked.rank }
+							: {
+									kind: 'fixture-ranked',
+									rank: ranked.rank,
+									call: ranked.teamId === opponent.id ? opponent.shortName : 'Draw',
+								}
+						: { kind: 'available' }
 			rows.push({
 				id: `${fixture.id}:${side}`,
 				fixtureId: fixture.id,
@@ -198,6 +237,10 @@ function sortValue(row: PickTableRow, column: PickTableSortColumn): number | str
  * to team name, so the order is total and a re-sort never shuffles equals.
  *
  * Pure and non-mutating: the caller keeps its own row array.
+ *
+ * Turbo's ranked rows are not lifted out of the sort: the board is sorted by the
+ * column the player chose, and their confidence order is the list above it.
+ * A ranked row stays where its numbers put it, marked with the rank it holds.
  */
 export function sortPickTableRows(rows: PickTableRow[], sort: PickTableSort): PickTableRow[] {
 	const factor = sort.direction === 'asc' ? 1 : -1

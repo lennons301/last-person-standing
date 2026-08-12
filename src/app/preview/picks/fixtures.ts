@@ -825,15 +825,22 @@ export interface TurboScenario {
 	existingPicks: TurboPickEntry[]
 	/** What the list starts on, when that differs from the submission. */
 	initialRanking?: TurboPickEntry[]
+	/**
+	 * Which view the remaining fixtures open on. A league opens on the Table —
+	 * the ranking board — and anything else on the fixture rows; the toggle is
+	 * offered either way, because these rounds all carry standings.
+	 */
+	competitionType?: 'league' | 'knockout' | 'group_knockout'
 }
 
+/** Teams carry their league row: the picker's Table view is made of those columns. */
 function turboFixture(
 	id: string,
 	home: FixtureTeamInfo,
 	away: FixtureTeamInfo,
 	kickoffInMinutes: number,
 ): TurboScenario['fixtures'][number] {
-	return { id, home, away, kickoffInMinutes }
+	return { id, home: withStanding(home), away: withStanding(away), kickoffInMinutes }
 }
 
 /** Five fixtures with form and positions everywhere — the everyday turbo round. */
@@ -875,7 +882,13 @@ const TURBO_ROUND_NO_FORM: TurboScenario['fixtures'] = [
 	turboFixture('tfe-1', WOL(undefined, 14), BHA(undefined, 7), 60 * 50),
 	turboFixture('tfe-2', NFO(undefined, 13), ARS(undefined, 1), 60 * 52),
 	turboFixture('tfe-3', CHE(undefined, 8), LIV(undefined, 2), 60 * 54),
-]
+	// Nothing played yet, so the league row is an empty one rather than last
+	// season's — the state the Table view's dashes exist for.
+].map((f) => ({
+	...f,
+	home: { ...f.home, standing: { played: 0 } },
+	away: { ...f.away, standing: { played: 0 } },
+}))
 
 const THREE_SUBMITTED: TurboPickEntry[] = [
 	{ fixtureId: 'tf-2', confidenceRank: 1, predictedResult: 'home_win' },
@@ -930,6 +943,98 @@ export const TURBO_SCENARIOS: TurboScenario[] = [
 		fixtures: TURBO_ROUND_NO_FORM,
 		existingPicks: [],
 		initialRanking: [{ fixtureId: 'tfe-2', confidenceRank: 1, predictedResult: 'away_win' }],
+	},
+	{
+		id: 'turbo-table-view',
+		title: 'Turbo — the picker opened on the Table view',
+		note: 'A league round, so the picker opens on the board instead of the fixture rows: rank a team straight off the standings, and the confidence list above stays the ranking — it owns the drag-reorder, the prediction change, and the draw, which a board of teams cannot express. Toggle back to the fixtures and the same two calls are there.',
+		numberOfPicks: 3,
+		competitionType: 'league',
+		fixtures: TURBO_ROUND,
+		existingPicks: [],
+		initialRanking: [
+			{ fixtureId: 'tf-2', confidenceRank: 1, predictedResult: 'home_win' },
+			{ fixtureId: 'tf-1', confidenceRank: 2, predictedResult: 'draw' },
+		],
+	},
+]
+
+/* ------------------------------------------- turbo: ranking from the Table */
+
+/**
+ * The ranking board on its own, at both widths.
+ *
+ * The picker scenarios above cover it in context (at full width, where the
+ * confirm bar behaves); this is the board itself, which is the half that has to
+ * survive 375px — eight columns, a rank chip and three controls on a row that
+ * scrolls sideways with the team column pinned.
+ */
+export interface TurboTableScenario {
+	id: string
+	title: string
+	note?: string
+	/** How many the round asks for — what the add button counts towards. */
+	numberOfPicks: number
+	fixtures: PickTableScenarioFixture[]
+	/**
+	 * The confidence set, most confident first. `teamId` is the team backed to
+	 * win; null is a draw, which only the Fixtures view can call.
+	 */
+	ranking: Array<{ fixtureId: string; teamId: string | null }>
+	readonly?: boolean
+}
+
+export const TURBO_TABLE_SCENARIOS: TurboTableScenario[] = [
+	{
+		id: 'turbo-table-empty',
+		title: 'Nothing ranked yet',
+		note: 'The same board classic picks from, with the last column asking a different question: every row offers "Rank #1", and every header still sorts.',
+		numberOfPicks: 3,
+		fixtures: PRICED_FIXTURES,
+		ranking: [],
+	},
+	{
+		id: 'turbo-table-part-ranked',
+		title: 'Part-ranked — a team call and a draw',
+		note: 'Two of three called. Arsenal carries "Ranked #1" and the controls that order it; Wolves, its opponent, is marked "#1: ARS" and offers nothing — one prediction per fixture. The draw on Chelsea v Liverpool marks both of that fixture’s rows, because no team wins it: it can be changed or removed from the confidence list above the board, never from a row.',
+		numberOfPicks: 3,
+		fixtures: PRICED_FIXTURES,
+		ranking: [
+			{ fixtureId: 'pt-1', teamId: 't-ars' },
+			{ fixtureId: 'pt-3', teamId: null },
+		],
+	},
+	{
+		id: 'turbo-table-full',
+		title: 'Ranked to the round’s count',
+		note: 'Three of three. The board still offers a fourth — the Fixtures view does too, and the confirm bar is what holds the line by arming only on exactly the round’s count — so what to look at here is the ends of the ranking: #1 cannot move up and #3 cannot move down.',
+		numberOfPicks: 3,
+		fixtures: PRICED_FIXTURES,
+		ranking: [
+			{ fixtureId: 'pt-1', teamId: 't-ars' },
+			{ fixtureId: 'pt-2', teamId: 't-mun' },
+			{ fixtureId: 'pt-3', teamId: 't-liv' },
+		],
+	},
+	{
+		id: 'turbo-table-unpriced',
+		title: 'No odds for the round',
+		note: 'The column the board opens on, missing, with a ranking already on it. Each row says "No odds" rather than a 0%, the ranking is untouched, and the sort degrades to the tie-break — ranking from a board is not a market feature.',
+		numberOfPicks: 3,
+		fixtures: UNPRICED_FIXTURES,
+		ranking: [{ fixtureId: 'pt-2', teamId: 't-new' }],
+	},
+	{
+		id: 'turbo-table-readonly',
+		title: 'Read-only — past the deadline',
+		note: 'The board still reads and still sorts; nothing adds, moves or removes.',
+		numberOfPicks: 3,
+		fixtures: PRICED_FIXTURES,
+		ranking: [
+			{ fixtureId: 'pt-1', teamId: 't-ars' },
+			{ fixtureId: 'pt-2', teamId: 't-mun' },
+		],
+		readonly: true,
 	},
 ]
 
