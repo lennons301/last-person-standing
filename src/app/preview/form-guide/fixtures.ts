@@ -158,7 +158,10 @@ export const EMPTY_GUIDE: TeamFormGuide = guideFrom([], {
 		roundNumber: 1,
 		roundLabel: 'GW1',
 		roundName: 'Gameweek 1',
-		kickoff: null,
+		// A real kickoff, even here: `loadNextFixture` filters on
+		// `kickoff >= now`, so a null-kickoff fixture is never the next one and
+		// the gallery would be reviewing a state the page can't be in.
+		kickoff: '2026-08-15T19:00:00.000Z',
 		opponent: EVE,
 		home: true,
 		odds: null,

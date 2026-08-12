@@ -114,10 +114,17 @@ export async function getPositionLine(
 }
 
 /**
- * How many teams the position line is measured against — the size of the table
- * at the latest matchday we have a snapshot for. The chart needs it to scale
- * its axis (1st at the top, last at the bottom) and the guide to say "of 20".
- * Null when nothing has been snapshotted yet.
+ * How many teams the position line is measured against. The chart needs it to
+ * scale its axis (1st at the top, last at the bottom) and the guide to say
+ * "of 20". Null when nothing has been snapshotted yet.
+ *
+ * Counted across every matchday held for the competition, not just the latest
+ * one, deliberately: the count can then only grow, so the chart's floor never
+ * moves under a line that is already drawn. The cost is at the other end —
+ * a team enters the count on the matchday it first appears, so in the opening
+ * weeks (or after a round with a postponement) this is the number of clubs
+ * that have played at least once, and a guide can read "3rd of 18" while the
+ * league holds 20. It corrects itself as the stragglers play.
  */
 export async function getTableSize(competitionId: string): Promise<number | null> {
 	const [row] = await db
