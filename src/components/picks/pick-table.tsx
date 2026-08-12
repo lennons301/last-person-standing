@@ -374,18 +374,28 @@ function RankCell({
 		if (readonly) {
 			return <span className="sr-only">{`${team.name} ranked number ${state.rank}`}</span>
 		}
+		// At the ends of the ranking the control is dead, so its label names the
+		// move rather than a destination rank that doesn't exist.
+		const atTop = state.rank <= 1
+		const atBottom = state.rank >= ranking.count
 		return (
 			<div className="inline-flex items-center gap-0.5">
 				<RankControl
-					label={`Move ${team.name} up to number ${state.rank - 1}`}
-					disabled={state.rank <= 1}
+					label={
+						atTop ? `Move ${team.name} up` : `Move ${team.name} up to number ${state.rank - 1}`
+					}
+					disabled={atTop}
 					onClick={() => ranking.onMove(row, 'up')}
 				>
 					<ChevronUp className="h-4 w-4" aria-hidden />
 				</RankControl>
 				<RankControl
-					label={`Move ${team.name} down to number ${state.rank + 1}`}
-					disabled={state.rank >= ranking.count}
+					label={
+						atBottom
+							? `Move ${team.name} down`
+							: `Move ${team.name} down to number ${state.rank + 1}`
+					}
+					disabled={atBottom}
 					onClick={() => ranking.onMove(row, 'down')}
 				>
 					<ChevronDown className="h-4 w-4" aria-hidden />
