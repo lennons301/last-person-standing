@@ -860,6 +860,150 @@ describe('mergeFootballDataIds', () => {
 		)
 	})
 
+	it('positions a promoted club from its first day, before the new season has kicked off', async () => {
+		// The PL route: FPL has no standings, so this merge is what positions
+		// every club. Pre-season, football-data's PL table is still last
+		// season's final one — Sunderland, promoted, is not in it at all, and
+		// the champions sit on 38 played. Neither survives into what we write:
+		// the opening table positions all three clubs, ours by our own names.
+		const teamArs = { id: 'our-ARS', shortName: 'ARS', name: 'Arsenal', externalIds: { fpl: '1' } }
+		const teamLiv = {
+			id: 'our-LIV',
+			shortName: 'LIV',
+			name: 'Liverpool',
+			externalIds: { fpl: '12' },
+		}
+		const teamSun = {
+			id: 'our-SUN',
+			shortName: 'SUN',
+			name: 'Sunderland',
+			externalIds: { fpl: '18' },
+		}
+		const merged = [
+			{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } },
+			{ ...teamLiv, externalIds: { fpl: '12', football_data: '64' } },
+			{ ...teamSun, externalIds: { fpl: '18', football_data: '71' } },
+		]
+		dbQueryTeamFindMany.mockResolvedValue(merged).mockResolvedValueOnce([teamArs, teamLiv, teamSun])
+		// Fixtures published, none played. Every club appears in one — the
+		// competition's fixtures are what define its team set.
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-SUN',
+						awayTeamId: 'our-ARS',
+						status: 'scheduled',
+						externalIds: { fpl: '1' },
+					},
+					{
+						id: 'our-fx-2',
+						homeTeamId: 'our-LIV',
+						awayTeamId: 'our-ARS',
+						status: 'scheduled',
+						externalIds: { fpl: '2' },
+					},
+				],
+			},
+		])
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal FC', shortName: 'ARS', badgeUrl: null },
+			{ externalId: '64', name: 'Liverpool FC', shortName: 'LIV', badgeUrl: null },
+			{ externalId: '71', name: 'Sunderland AFC', shortName: 'SUN', badgeUrl: null },
+		])
+		fdFetchRounds.mockResolvedValue([])
+		fdFetchStandings.mockResolvedValue([
+			{
+				teamExternalId: '64',
+				position: 1,
+				played: 38,
+				won: 30,
+				drawn: 5,
+				lost: 3,
+				points: 95,
+				goalsFor: 92,
+				goalsAgainst: 30,
+			},
+			{
+				teamExternalId: '57',
+				position: 2,
+				played: 38,
+				won: 28,
+				drawn: 6,
+				lost: 4,
+				points: 90,
+				goalsFor: 88,
+				goalsAgainst: 32,
+			},
+		])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		expect(standingsWritesByTeamId()).toEqual({
+			'our-ARS': { leaguePosition: 1, played: 0, points: 0, goalsFor: 0, goalsAgainst: 0 },
+			'our-LIV': { leaguePosition: 2, played: 0, points: 0, goalsFor: 0, goalsAgainst: 0 },
+			'our-SUN': { leaguePosition: 3, played: 0, points: 0, goalsFor: 0, goalsAgainst: 0 },
+		})
+	})
+
+	it('writes the source table verbatim once the season is underway, points deduction intact', async () => {
+		// A deducted club's points don't follow from its results — 8 wins and 2
+		// draws is 26, the table says 22. The source owns that correction; a
+		// synced table that re-derived the arithmetic would quietly hand the
+		// points back.
+		const teamArs = { id: 'our-ARS', shortName: 'ARS', name: 'Arsenal', externalIds: { fpl: '1' } }
+		dbQueryTeamFindMany
+			.mockResolvedValueOnce([teamArs])
+			.mockResolvedValueOnce([{ ...teamArs, externalIds: { fpl: '1', football_data: '57' } }])
+		dbQueryRoundFindMany.mockResolvedValue([
+			{
+				id: 'our-r-1',
+				number: 1,
+				fixtures: [
+					{
+						id: 'our-fx-1',
+						homeTeamId: 'our-ARS',
+						awayTeamId: 'our-ARS',
+						status: 'finished',
+						externalIds: { fpl: '1' },
+					},
+				],
+			},
+		])
+		fdFetchTeams.mockResolvedValue([
+			{ externalId: '57', name: 'Arsenal FC', shortName: 'ARS', badgeUrl: null },
+		])
+		fdFetchRounds.mockResolvedValue([])
+		fdFetchStandings.mockResolvedValue([
+			{
+				teamExternalId: '57',
+				position: 9,
+				played: 12,
+				won: 8,
+				drawn: 2,
+				lost: 2,
+				points: 22,
+				goalsFor: 24,
+				goalsAgainst: 14,
+			},
+		])
+
+		await mergeFootballDataIds(
+			{ id: 'comp-pl', dataSource: 'fpl', externalId: null } as never,
+			'fd-key',
+		)
+
+		expect(standingsWritesByTeamId()).toEqual({
+			'our-ARS': { leaguePosition: 9, played: 12, points: 22, goalsFor: 24, goalsAgainst: 14 },
+		})
+	})
+
 	it('ignores standings rows whose team was not merged onto one of this competition teams', async () => {
 		// The standings table carries a club (fd id 999) that never merged onto
 		// one of this competition's team rows — its position must not be written
