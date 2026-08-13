@@ -17,6 +17,8 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 	return {
 		gameId: 'game-1',
 		gameMode: 'classic',
+		competitionId: 'comp-pl',
+		competitionName: 'Premier League 2025/26',
 		season: '2025/26',
 		playerStatus: 'eliminated',
 		...overrides,
@@ -269,6 +271,45 @@ describe('buildMeSummaryView', () => {
 		expect(played(view, 'classic')).toMatchObject({ gamesPlayed: 3, gamesWon: 1, winRate: 1 / 3 })
 		expect(played(view, 'turbo')).toMatchObject({ gamesPlayed: 1, gamesWon: 1, winRate: 1 })
 		expect(played(view, 'cup')).toMatchObject({ gamesPlayed: 2, gamesWon: 1, winRate: 0.5 })
+	})
+
+	it('breaks each mode down by competition, deepest record first', () => {
+		const pl = { competitionId: 'comp-pl', competitionName: 'Premier League 2025/26' }
+		const wc = { competitionId: 'comp-wc', competitionName: 'World Cup 2026' }
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gameMode: 'classic', playerStatus: 'winner', ...pl }),
+					game({ gameId: 'c2', gameMode: 'classic', playerStatus: 'eliminated', ...pl }),
+					game({ gameId: 'c3', gameMode: 'classic', playerStatus: 'eliminated', ...wc }),
+					game({ gameId: 't1', gameMode: 'turbo', playerStatus: 'eliminated', ...pl }),
+				],
+			}),
+		)
+
+		expect(played(view, 'classic').competitions).toEqual([
+			{
+				competitionId: 'comp-pl',
+				name: 'Premier League 2025/26',
+				gamesPlayed: 2,
+				gamesWon: 1,
+				winRate: 0.5,
+			},
+			{ competitionId: 'comp-wc', name: 'World Cup 2026', gamesPlayed: 1, gamesWon: 0, winRate: 0 },
+		])
+		expect(played(view, 'turbo').competitions).toHaveLength(1)
+	})
+
+	it('gives every mode a section, and says so where the player has no history', () => {
+		const view = summary(
+			buildMeSummaryView(input({ games: [game({ gameMode: 'classic' })], picks: [pick('win')] })),
+		)
+
+		expect(view.modes.map((m) => m.mode)).toEqual(['classic', 'turbo', 'cup'])
+		expect(view.modes.filter((m) => m.kind === 'unplayed').map((m) => m.mode)).toEqual([
+			'turbo',
+			'cup',
+		])
 	})
 
 	it('has nothing to show for a season the player did not play', () => {

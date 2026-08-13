@@ -15,6 +15,9 @@ export type SummaryPickResult = 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_
 export interface SummaryGameRow {
 	gameId: string
 	gameMode: SummaryGameMode
+	/** The competition season this game was played in — one mode sub-row per one of these. */
+	competitionId: string
+	competitionName: string
 	/** `competition.season` — null for a competition that records none. */
 	season: string | null
 	/** `game_player.status` for this player. */
@@ -91,6 +94,21 @@ export interface CareerHeadline {
 	mostPickedTeam: MostPickedTeam | null
 }
 
+/**
+ * One mode's record within a single competition season — the sub-row under a
+ * mode section. Kept per season rather than per competition family: a season is
+ * the unit a game is actually played in, and the page's own season filter is
+ * what collapses them.
+ */
+export interface CompetitionRecord {
+	competitionId: string
+	name: string
+	gamesPlayed: number
+	gamesWon: number
+	/** wins ÷ played. Never null — a sub-row exists only where a game was played. */
+	winRate: number
+}
+
 /** Every mode gets a section, in the order the page reads them. */
 export const SUMMARY_MODES: SummaryGameMode[] = ['classic', 'turbo', 'cup']
 
@@ -108,6 +126,8 @@ export type ModeSection =
 			gamesWon: number
 			/** wins ÷ played. Never null — a played section has at least one game. */
 			winRate: number
+			/** The same record split by competition season, deepest first. */
+			competitions: CompetitionRecord[]
 	  }
 
 /**
@@ -174,6 +194,28 @@ function findMostPickedTeam(picks: SummaryPickRow[]): MostPickedTeam | null {
 	return ranked[0] ?? null
 }
 
+function buildCompetitionRecords(games: SummaryGameRow[]): CompetitionRecord[] {
+	const tally = new Map<string, CompetitionRecord>()
+	for (const g of games) {
+		const row = tally.get(g.competitionId) ?? {
+			competitionId: g.competitionId,
+			name: g.competitionName,
+			gamesPlayed: 0,
+			gamesWon: 0,
+			winRate: 0,
+		}
+		row.gamesPlayed += 1
+		if (g.playerStatus === 'winner') row.gamesWon += 1
+		row.winRate = row.gamesWon / row.gamesPlayed
+		tally.set(g.competitionId, row)
+	}
+	// Most-played first, then by name — a stable order that doesn't follow the
+	// order the rows happened to arrive in.
+	return [...tally.values()].sort(
+		(a, b) => b.gamesPlayed - a.gamesPlayed || a.name.localeCompare(b.name),
+	)
+}
+
 function buildModeSection(mode: SummaryGameMode, games: SummaryGameRow[]): ModeSection {
 	const played = games.filter((g) => g.gameMode === mode)
 	if (played.length === 0) return { mode, kind: 'unplayed' }
@@ -184,6 +226,7 @@ function buildModeSection(mode: SummaryGameMode, games: SummaryGameRow[]): ModeS
 		gamesPlayed: played.length,
 		gamesWon,
 		winRate: gamesWon / played.length,
+		competitions: buildCompetitionRecords(played),
 	}
 }
 
