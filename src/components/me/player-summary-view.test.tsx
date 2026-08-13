@@ -112,7 +112,7 @@ describe('PlayerSummaryView', () => {
 		render(<PlayerSummaryView summary={withModes([CLASSIC])} />)
 
 		const classic = section('Classic')
-		expect(stat(classic, 'Round 1 survival')).toBe('75%')
+		expect(stat(classic, 'Opening round survival')).toBe('75%')
 		// Labelled by the pick going down rather than by an exit: with rebuys off,
 		// the starting-round exemption means a lost round one didn't put the player
 		// out at all, so "exits" would be untrue in half the games it counts.
@@ -138,8 +138,8 @@ describe('PlayerSummaryView', () => {
 		render(<PlayerSummaryView summary={withModes([unsettled])} />)
 
 		const classic = section('Classic')
-		expect(stat(classic, 'Round 1 survival')).toBe('—')
-		expect(within(classic).getByText(/no round one has settled/i)).toBeTruthy()
+		expect(stat(classic, 'Opening round survival')).toBe('—')
+		expect(within(classic).getByText(/no opening round has settled/i)).toBeTruthy()
 	})
 
 	it('says a rebuy was never on offer rather than reading as a rebuy the player skipped', () => {

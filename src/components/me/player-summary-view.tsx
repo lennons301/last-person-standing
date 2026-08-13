@@ -93,32 +93,36 @@ function CareerHeadlineCards({ headline }: { headline: CareerHeadline }) {
 }
 
 /**
- * Classic's first hurdle. The rebuy figure carries its own denominator with it,
- * because it isn't over the exits shown beside it: a game with rebuys switched
- * off never offered a way back, so it can't count as one the player passed up.
+ * Classic's first hurdle. "Opening round" rather than "round 1" throughout: a
+ * game's round one is the round it *started* at, which for a game created in
+ * November is gameweek 12 — the player's own first round, not the season's.
+ *
+ * The rebuy figure carries its own denominator with it, because it isn't over
+ * the count shown beside it: a game with rebuys switched off never offered a way
+ * back, so it can't count as one the player passed up.
  */
 function RoundOneStats({ roundOne }: { roundOne: ClassicRoundOne }) {
 	return (
 		<>
 			<Stat
-				label="Round 1 survival"
+				label="Opening round survival"
 				value={percent(roundOne.survivalRate)}
 				note={
 					roundOne.settled === 0
-						? `No round one has settled yet, over ${roundOne.games} ${roundOne.games === 1 ? 'game' : 'games'}`
+						? `No opening round has settled yet, over ${roundOne.games} ${roundOne.games === 1 ? 'game' : 'games'}`
 						: `Your opening pick came off in ${roundOne.survived} of ${roundOne.settled}`
 				}
 			/>
 			{/*
-			 * Labelled by the pick, not by an elimination: with rebuys switched off a
-			 * lost round one doesn't put the player out (the starting-round
-			 * exemption), so "exits" would be untrue for exactly the games the rebuy
-			 * card below already refuses to hold against them.
+			 * Labelled by the pick, not by an elimination: where the starting-round
+			 * exemption applies, a lost opening round doesn't put the player out at
+			 * all, so "exits" would be untrue for exactly the games the rebuy card
+			 * below already refuses to hold against them.
 			 */}
 			<Stat
 				label="Opening pick down"
 				value={roundOne.exits}
-				note="Games your round 1 pick didn't win"
+				note="Games your opening pick didn't win"
 			/>
 			<Stat
 				label="Bought back in"
@@ -126,7 +130,7 @@ function RoundOneStats({ roundOne }: { roundOne: ClassicRoundOne }) {
 				note={
 					roundOne.rebuyable === 0
 						? 'No rebuy on offer'
-						: `${roundOne.rebought} of ${roundOne.rebuyable} round 1 exits`
+						: `${roundOne.rebought} of ${roundOne.rebuyable} opening picks down`
 				}
 			/>
 		</>
