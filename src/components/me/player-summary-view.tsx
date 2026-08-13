@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { MoneySection } from '@/components/me/money-section'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { Button } from '@/components/ui/button'
 import { Disclosure } from '@/components/ui/disclosure'
@@ -397,6 +398,8 @@ export function PlayerSummaryView({ summary }: { summary: MeSummaryView }) {
 			))}
 			{/* Teams sits below the modes: it reads across all of them at once. */}
 			<TeamsSection families={summary.teamRecords} selections={summary.filters.teamSeasons ?? {}} />
+			{/* Money last, and folded shut: the one figure the player opts into. */}
+			<MoneySection money={summary.money} />
 		</div>
 	)
 }

@@ -7,6 +7,8 @@ import {
 	parseTeamSeasonFilters,
 	type SummaryGameMode,
 	type SummaryGameRow,
+	type SummaryPaymentRow,
+	type SummaryPayoutRow,
 	type SummaryPickResult,
 	type SummaryPickRow,
 	type SummaryStreakPickRow,
@@ -20,6 +22,7 @@ function input(overrides: Partial<BuildMeSummaryInput> = {}): BuildMeSummaryInpu
 function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 	return {
 		gameId: 'game-1',
+		gameName: 'Sunday League',
 		gameMode: 'classic',
 		gamePlayerId: 'me',
 		gameStatus: 'completed',
@@ -44,6 +47,27 @@ function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}
 		isAuto: false,
 		...overrides,
 	}
+}
+
+/** One payment row of the player's — an entry, or a rebuy's. */
+function stake(
+	gameId: string,
+	amount: string,
+	status: SummaryPaymentRow['status'] = 'paid',
+): SummaryPaymentRow {
+	return { gameId, amount, status }
+}
+
+/**
+ * One payout row of the player's — what a game paid them. `pending` is the
+ * status every real payout carries, since nothing ever advances one.
+ */
+function won(
+	gameId: string,
+	amount: string,
+	status: SummaryPayoutRow['status'] = 'pending',
+): SummaryPayoutRow {
+	return { gameId, amount, status }
 }
 
 /**
@@ -937,6 +961,137 @@ describe('buildMeSummaryView team records', () => {
 
 		expect(view.teamRecords[0].best.map((t) => t.shortName)).toEqual(['ARS'])
 		expect(view.teamRecords[0].worst).toEqual([])
+	})
+})
+
+describe('buildMeSummaryView money', () => {
+	it('stakes the payment rows that are paid or claimed, as the pot counts them', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'g1' })],
+					payments: [
+						stake('g1', '10.00', 'paid'),
+						stake('g1', '10.00', 'claimed'),
+						// Owed and unpaid: not in the pot, so not staked.
+						stake('g1', '10.00', 'pending'),
+					],
+				}),
+			),
+		)
+
+		expect(view.money.stake).toBe('20.00')
+		expect(view.money.winnings).toBe('0.00')
+		expect(view.money.net).toBe('-20.00')
+	})
+
+	it('counts a payout as winnings whatever its status says', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'g1', playerStatus: 'winner' })],
+					payments: [stake('g1', '10.00')],
+					// Nothing in the app advances a payout past pending, so a summary
+					// that filtered on status would tell every winner they won nothing.
+					payouts: [won('g1', '60.00', 'pending')],
+				}),
+			),
+		)
+
+		expect(view.money.winnings).toBe('60.00')
+		expect(view.money.net).toBe('50.00')
+	})
+
+	it('nets a refunded game to nothing', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'wipeout', gameName: 'Everyone Went Out' })],
+					// A total wipeout refunds every contributing stake — the rebuy's
+					// included — and writes no payout at all.
+					payments: [stake('wipeout', '10.00', 'refunded'), stake('wipeout', '10.00', 'refunded')],
+				}),
+			),
+		)
+
+		expect(view.money.stake).toBe('0.00')
+		expect(view.money.winnings).toBe('0.00')
+		expect(view.money.net).toBe('0.00')
+		expect(view.money.games.map((g) => [g.gameId, g.net])).toEqual([['wipeout', '0.00']])
+	})
+
+	it('stakes a rebuy on top of the entry that came before it', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'g1' })],
+					// Buying back in is a second payment row against the same game.
+					payments: [stake('g1', '10.00'), stake('g1', '10.00')],
+				}),
+			),
+		)
+
+		expect(view.money.stake).toBe('20.00')
+		expect(view.money.net).toBe('-20.00')
+		expect(view.money.games.map((g) => g.stake)).toEqual(['20.00'])
+	})
+
+	it('leaves a free game out of the money while still counting it as played', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'paid-game' }),
+						game({ gameId: 'free-game', gameName: 'Just For Fun' }),
+					],
+					payments: [stake('paid-game', '10.00')],
+				}),
+			),
+		)
+
+		expect(view.headline.gamesPlayed).toBe(2)
+		expect(view.money.stake).toBe('10.00')
+		expect(view.money.net).toBe('-10.00')
+		// No money was ever in the free game, so it has no row to show — a row of
+		// noughts would read as a game that cost nothing to enter and lost.
+		expect(view.money.games.map((g) => g.gameId)).toEqual(['paid-game'])
+		expect(view.money.freeGames).toBe(1)
+	})
+
+	it('breaks the total down into a row per game, biggest loss first', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'g1', gameName: 'Pub Survivor', playerStatus: 'winner' }),
+						game({ gameId: 'g2', gameName: 'The Office Pool' }),
+					],
+					payments: [stake('g1', '5.00'), stake('g2', '10.00')],
+					payouts: [won('g1', '40.00')],
+				}),
+			),
+		)
+
+		expect(view.money.games).toEqual([
+			{
+				gameId: 'g2',
+				name: 'The Office Pool',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'classic',
+				stake: '10.00',
+				winnings: '0.00',
+				net: '-10.00',
+			},
+			{
+				gameId: 'g1',
+				name: 'Pub Survivor',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'classic',
+				stake: '5.00',
+				winnings: '40.00',
+				net: '35.00',
+			},
+		])
 	})
 })
 

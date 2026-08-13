@@ -22,6 +22,8 @@ export type SummaryPickResult = 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_
 /** One game the player has entered. */
 export interface SummaryGameRow {
 	gameId: string
+	/** `game.name` — what the players call it, and how a money row names itself. */
+	gameName: string
 	gameMode: SummaryGameMode
 	/** The player's own `game_player` row — which of a game's players is them. */
 	gamePlayerId: string
@@ -86,6 +88,30 @@ export interface SummaryStreakPickRow {
 	 * (an admin removal, say) can't set the rank a turbo streak starts from.
 	 */
 	playerStatus: 'alive' | 'eliminated' | 'winner'
+}
+
+/**
+ * One `payment` row of the player's: their entry into a game, or a rebuy's
+ * second entry. Amounts are numeric strings, as every money column in this
+ * codebase is.
+ */
+export interface SummaryPaymentRow {
+	gameId: string
+	amount: string
+	status: 'pending' | 'claimed' | 'paid' | 'refunded'
+}
+
+/**
+ * One `payout` row of the player's — what a game paid them for winning it.
+ *
+ * The status is carried and deliberately never read: nothing in the app
+ * advances a payout past `pending`, so a summary that filtered on it would tell
+ * every winner they had won nothing.
+ */
+export interface SummaryPayoutRow {
+	gameId: string
+	amount: string
+	status: 'pending' | 'completed'
 }
 
 /**
@@ -165,6 +191,10 @@ export interface BuildMeSummaryInput {
 	picks: SummaryPickRow[]
 	/** Empty for a player who has only ever played classic. */
 	streakPicks?: SummaryStreakPickRow[]
+	/** Empty for a player who has only ever played free games. */
+	payments?: SummaryPaymentRow[]
+	/** Empty for a player who has never won a game with money in it. */
+	payouts?: SummaryPayoutRow[]
 	filters: SummaryFilters
 }
 
@@ -353,6 +383,46 @@ export type ModeSection =
 	| ({ mode: 'classic'; kind: 'played'; depth: ClassicDepth } & ModeRecord)
 	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
 
+/** What one game cost the player, and what it paid them back. */
+export interface MoneyGameRecord {
+	gameId: string
+	/** `game.name`. */
+	name: string
+	competitionName: string
+	gameMode: SummaryGameMode
+	stake: string
+	winnings: string
+	net: string
+}
+
+/**
+ * What the hobby has cost the player, or paid them.
+ *
+ * Every amount is a fixed-2 string, the same shape as the pot figures a game
+ * page shows, so a player can reconcile the two by eye. `net` is winnings minus
+ * stake, and is negative for most players — which is the whole reason the
+ * section it lives in is folded shut.
+ */
+export interface MoneySummary {
+	/** What the player has put in: payment rows that are paid or claimed. */
+	stake: string
+	/** What games have paid out to them. */
+	winnings: string
+	/** `winnings − stake`. Negative for a player down on the hobby. */
+	net: string
+	/**
+	 * The same figures game by game, biggest loss first. Only games money was
+	 * ever in: see `buildMoney`.
+	 */
+	games: MoneyGameRecord[]
+	/**
+	 * Games in scope with no money in them at all. They contribute nothing to any
+	 * figure above and have no row of their own, so this is what lets the section
+	 * say why its list is shorter than the games played.
+	 */
+	freeGames: number
+}
+
 /**
  * `empty` is a player with no games in scope — the page says so rather than
  * rendering a wall of zeros, which is why it's a variant and not a headline of
@@ -366,6 +436,8 @@ export type MeSummaryView =
 			headline: CareerHeadline
 			/** One block per competition family. Never a career-wide list. */
 			teamRecords: TeamRecordFamily[]
+			/** Profit and loss. Folded shut on the page, never on the model. */
+			money: MoneySummary
 			/** One per mode, always all three, in `SUMMARY_MODES` order. */
 			modes: ModeSection[]
 	  }
@@ -701,6 +773,78 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
 	}
 }
 
+/**
+ * Money is added up in whole pence: pounds as floats drift, and a career total
+ * is a long addition.
+ */
+function pence(amount: string): number {
+	return Math.round(Number.parseFloat(amount) * 100)
+}
+
+function pounds(total: number): string {
+	return (total / 100).toFixed(2)
+}
+
+/**
+ * A payment counts as staked when it is paid or claimed — exactly the rows
+ * `calculatePot` counts, so a player's profit and loss reconciles with the pot
+ * figure their game page shows. That leaves out what they still owe (pending)
+ * and, deliberately, what a game gave back (refunded).
+ */
+function isStaked(row: SummaryPaymentRow): boolean {
+	return row.status === 'paid' || row.status === 'claimed'
+}
+
+function buildMoney(
+	games: SummaryGameRow[],
+	payments: SummaryPaymentRow[],
+	payouts: SummaryPayoutRow[],
+): MoneySummary {
+	const inScope = new Set(games.map((g) => g.gameId))
+	const staked = payments.filter((row) => inScope.has(row.gameId) && isStaked(row))
+	// Every payout row counts, its `status` read nowhere: see `SummaryPayoutRow`.
+	const won = payouts.filter((row) => inScope.has(row.gameId))
+
+	// A game money was never in — a free one — has nothing to report: a row of
+	// noughts would read as a game that cost nothing and lost. It stays in games
+	// played, where it belongs, and is counted here so the section can say how
+	// many games its list leaves out.
+	const withMoney = games.filter(
+		(g) =>
+			payments.some((row) => row.gameId === g.gameId) ||
+			payouts.some((row) => row.gameId === g.gameId),
+	)
+
+	const perGame = withMoney.map((g) => {
+		const gameStake = total(staked.filter((row) => row.gameId === g.gameId))
+		const gameWon = total(won.filter((row) => row.gameId === g.gameId))
+		return {
+			gameId: g.gameId,
+			name: g.gameName,
+			competitionName: g.competitionName,
+			gameMode: g.gameMode,
+			stake: pounds(gameStake),
+			winnings: pounds(gameWon),
+			net: pounds(gameWon - gameStake),
+		}
+	})
+
+	return {
+		stake: pounds(total(staked)),
+		winnings: pounds(total(won)),
+		net: pounds(total(won) - total(staked)),
+		freeGames: games.length - withMoney.length,
+		// Biggest loss first: the figure the section exists to disclose leads, and a
+		// win reads as the exception it is at the bottom. Name settles a tie, so the
+		// order never follows the order rows arrived in.
+		games: perGame.sort((a, b) => pence(a.net) - pence(b.net) || a.name.localeCompare(b.name)),
+	}
+}
+
+function total(rows: { amount: string }[]): number {
+	return rows.reduce((sum, row) => sum + pence(row.amount), 0)
+}
+
 function buildModeSection(
 	mode: SummaryGameMode,
 	games: SummaryGameRow[],
@@ -760,6 +904,7 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
 		teamRecords: buildTeamRecords(games, countedPicks, input.filters.teamSeasons ?? {}),
+		money: buildMoney(games, input.payments ?? [], input.payouts ?? []),
 		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}
 }
