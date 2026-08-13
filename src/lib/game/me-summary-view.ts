@@ -107,6 +107,59 @@ export interface SummaryFilters {
 	teamSeasons?: Record<string, string>
 }
 
+/**
+ * The search-param prefix a family's team-season selection is carried under:
+ * `/me?teams-premier-league=2025%2F26`.
+ *
+ * The URL is where this state lives so the page can stay a server component —
+ * a selection survives a refresh and travels in a link, and nothing on the page
+ * has to fetch anything to honour it.
+ */
+const TEAM_SEASON_PARAM_PREFIX = 'teams-'
+
+/** The parameter one family's selection is carried in. */
+export function teamSeasonParam(familyKey: string): string {
+	return `${TEAM_SEASON_PARAM_PREFIX}${familyKey}`
+}
+
+/**
+ * The team-season selections a request's search params carry, as
+ * `SummaryFilters.teamSeasons` wants them. Anything else in the URL is left
+ * alone, and an empty value reads as no selection rather than as a season no
+ * competition has.
+ */
+export function parseTeamSeasonFilters(
+	searchParams: Record<string, string | string[] | undefined>,
+): Record<string, string> {
+	const selections: Record<string, string> = {}
+	for (const [key, value] of Object.entries(searchParams)) {
+		if (!key.startsWith(TEAM_SEASON_PARAM_PREFIX)) continue
+		const season = Array.isArray(value) ? value[0] : value
+		if (!season) continue
+		selections[key.slice(TEAM_SEASON_PARAM_PREFIX.length)] = season
+	}
+	return selections
+}
+
+/**
+ * The query string for changing one family's season, every other family's
+ * selection carried through — the href behind one option of one block's
+ * control. `null` clears the family, which is what "all seasons" is.
+ */
+export function teamSeasonQuery(
+	selections: Record<string, string>,
+	familyKey: string,
+	season: string | null,
+): string {
+	const next = { ...selections }
+	if (season === null) delete next[familyKey]
+	else next[familyKey] = season
+	const params = new URLSearchParams(
+		Object.entries(next).map(([key, value]) => [teamSeasonParam(key), value]),
+	)
+	return `?${params.toString()}`
+}
+
 export interface BuildMeSummaryInput {
 	games: SummaryGameRow[]
 	picks: SummaryPickRow[]

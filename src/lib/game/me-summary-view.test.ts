@@ -4,11 +4,13 @@ import {
 	type BuildMeSummaryInput,
 	buildMeSummaryView,
 	type MeSummaryView,
+	parseTeamSeasonFilters,
 	type SummaryGameMode,
 	type SummaryGameRow,
 	type SummaryPickResult,
 	type SummaryPickRow,
 	type SummaryStreakPickRow,
+	teamSeasonQuery,
 } from '@/lib/game/me-summary-view'
 
 function input(overrides: Partial<BuildMeSummaryInput> = {}): BuildMeSummaryInput {
@@ -1043,5 +1045,40 @@ describe('buildMeSummaryView team season filter', () => {
 		// of games, and narrowing one team block says nothing about those.
 		expect(filtered.headline).toEqual(career.headline)
 		expect(filtered.modes).toEqual(career.modes)
+	})
+})
+
+describe('team season search params', () => {
+	it('reads one season per family out of the URL and ignores everything else', () => {
+		expect(
+			parseTeamSeasonFilters({
+				'teams-premier-league': '2025/26',
+				'teams-fifa-world-cup': '2026',
+				'teams-premier-league-extra': '',
+				from: '/game/g1',
+			}),
+		).toEqual({ 'premier-league': '2025/26', 'fifa-world-cup': '2026' })
+	})
+
+	it('changes one family and leaves the rest of the URL alone', () => {
+		const selections = { 'premier-league': '2024/25', 'fifa-world-cup': '2026' }
+
+		expect(teamSeasonQuery(selections, 'premier-league', '2025/26')).toBe(
+			'?teams-premier-league=2025%2F26&teams-fifa-world-cup=2026',
+		)
+		// Clearing a family drops its parameter and keeps the other's.
+		expect(teamSeasonQuery(selections, 'premier-league', null)).toBe('?teams-fifa-world-cup=2026')
+		// Nothing selected anywhere is the bare path, not an empty parameter.
+		expect(teamSeasonQuery({ 'premier-league': '2024/25' }, 'premier-league', null)).toBe('?')
+	})
+
+	it('round-trips a selection through the URL', () => {
+		const selections = { 'premier-league': '2024/25' }
+		const query = teamSeasonQuery(selections, 'fifa-world-cup', '2026')
+
+		expect(parseTeamSeasonFilters(Object.fromEntries(new URLSearchParams(query)))).toEqual({
+			'premier-league': '2024/25',
+			'fifa-world-cup': '2026',
+		})
 	})
 })
