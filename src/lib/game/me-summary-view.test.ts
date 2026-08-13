@@ -552,6 +552,67 @@ describe('buildMeSummaryView team records', () => {
 		expect(block.worst.map((t) => t.shortName)).toEqual(['EVE', 'CHE'])
 	})
 
+	it('keeps a team with no rate out of both ends while still listing it', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameMode: 'cup' })],
+					picks: [
+						pick('win', team('BRA', 'Brazil')),
+						pick('loss', team('ENG', 'England')),
+						pick('saved_by_life', team('ITA', 'Italy')),
+					],
+				}),
+			),
+		)
+		const block = view.teamRecords[0]
+
+		// Italy has no rate to rank on, so it is neither a best nor a worst — the
+		// worst end is England, whose pick actually failed.
+		expect(block.best.map((t) => t.shortName)).toEqual(['BRA'])
+		expect(block.worst.map((t) => t.shortName)).toEqual(['ENG'])
+		expect(block.all.map((t) => t.shortName)).toEqual(['BRA', 'ENG', 'ITA'])
+	})
+
+	it('never calls a team one of the worst at the same rate as the best', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameMode: 'cup' })],
+					picks: [
+						pick('win', team('BRA', 'Brazil')),
+						pick('win', team('ARG', 'Argentina')),
+						pick('win', team('ESP', 'Spain')),
+						pick('win', team('FRA', 'France')),
+						pick('loss', team('ENG', 'England')),
+					],
+				}),
+			),
+		)
+		const block = view.teamRecords[0]
+
+		// Four of the five are on 100%. Splitting the ranking down the middle would
+		// have made Spain a worst at the very rate that makes Brazil a best; only
+		// England actually let the player down.
+		expect(block.worst.map((t) => t.shortName)).toEqual(['ENG'])
+		// The four are level on rate and on volume, so the name tiebreak orders them.
+		expect(block.best.map((t) => t.shortName)).toEqual(['ARG', 'BRA', 'FRA'])
+	})
+
+	it('has no worst end at all when every team in the family shares one rate', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game()],
+					picks: [pick('win', team('ARS', 'Arsenal')), pick('win', team('EVE', 'Everton'))],
+				}),
+			),
+		)
+
+		expect(view.teamRecords[0].worst).toEqual([])
+		expect(view.teamRecords[0].best.map((t) => t.shortName)).toEqual(['ARS'])
+	})
+
 	it('puts a family with one team in its best end and nothing in its worst', () => {
 		const view = summary(
 			buildMeSummaryView(input({ games: [game()], picks: [pick('win', team('ARS', 'Arsenal'))] })),

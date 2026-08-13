@@ -142,7 +142,8 @@ export interface TeamRecordFamily {
 	/**
 	 * The teams that have served the player best, best first. At most
 	 * `ENDS_LENGTH`, and never more than the family's better half — so a family
-	 * with four teams surfaces two, and no team is ever in both ends.
+	 * with four teams surfaces two, and no team is ever in both ends. Only teams
+	 * with a rate are eligible for either end.
 	 */
 	best: TeamRecord[]
 	/** The teams that have served the player worst, worst first. */
@@ -279,7 +280,11 @@ function buildTeamRecords(
 				return { ...record, rate: rated === 0 ? null : record.wins / rated }
 			})
 			.sort(byRate)
-		return { familyKey, name: block.name, best: bestOf(all), worst: worstOf(all), all }
+		// Only a team with a rate can be at either end of a ranking by rate: a team
+		// every one of whose picks a life absorbed would otherwise land in the worst
+		// list, which is a verdict its picks never delivered.
+		const ranked = all.filter((record) => record.rate !== null)
+		return { familyKey, name: block.name, best: bestOf(ranked), worst: worstOf(ranked), all }
 	})
 
 	// The family the player has picked in most leads, since that's the record they
@@ -317,9 +322,18 @@ function bestOf(ranked: TeamRecord[]): TeamRecord[] {
 	return ranked.slice(0, Math.min(ENDS_LENGTH, Math.ceil(ranked.length / 2)))
 }
 
+/**
+ * The worst end takes the bottom of the same ranking, but never a team on the
+ * *best* rate in the family: with four teams on 100% and one on nothing, only
+ * the one that lost has served the player worst. That leaves families whose
+ * teams all share a rate with no worst end at all, which is the honest answer —
+ * none of them let the player down more than the others.
+ */
 function worstOf(ranked: TeamRecord[]): TeamRecord[] {
-	const take = Math.min(ENDS_LENGTH, Math.floor(ranked.length / 2))
-	return ranked.slice(ranked.length - take).reverse()
+	const bestRate = ranked[0]?.rate ?? null
+	const candidates = ranked.filter((record) => record.rate !== bestRate)
+	const take = Math.min(ENDS_LENGTH, Math.floor(ranked.length / 2), candidates.length)
+	return candidates.slice(candidates.length - take).reverse()
 }
 
 function pickCount(records: TeamRecord[]): number {
