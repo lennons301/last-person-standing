@@ -3,6 +3,7 @@ import { TeamBadge } from '@/components/picks/team-badge'
 import { Button } from '@/components/ui/button'
 import type {
 	CareerHeadline,
+	ClassicRoundOne,
 	MeSummaryView,
 	ModeSection,
 	SummaryGameMode,
@@ -91,6 +92,37 @@ function CareerHeadlineCards({ headline }: { headline: CareerHeadline }) {
 	)
 }
 
+/**
+ * Classic's first hurdle. The rebuy figure carries its own denominator with it,
+ * because it isn't over the exits shown beside it: a game with rebuys switched
+ * off never offered a way back, so it can't count as one the player passed up.
+ */
+function RoundOneStats({ roundOne }: { roundOne: ClassicRoundOne }) {
+	return (
+		<>
+			<Stat
+				label="Round 1 survival"
+				value={percent(roundOne.survivalRate)}
+				note={`Your opening pick came off in ${roundOne.survived} of ${roundOne.games}`}
+			/>
+			<Stat
+				label="Round 1 exits"
+				value={roundOne.exits}
+				note="Games your opening pick went down in"
+			/>
+			<Stat
+				label="Bought back in"
+				value={roundOne.rebuyable === 0 ? '—' : roundOne.rebought}
+				note={
+					roundOne.rebuyable === 0
+						? 'No rebuy on offer'
+						: `${roundOne.rebought} of ${roundOne.rebuyable} round 1 exits`
+				}
+			/>
+		</>
+	)
+}
+
 /** The mode's competition sub-rows: the same record, one season at a time. */
 function CompetitionRows({ section }: { section: Extract<ModeSection, { kind: 'played' }> }) {
 	return (
@@ -153,6 +185,7 @@ function ModeSectionCard({ section }: { section: ModeSection }) {
 							<>
 								<Stat label="Deepest run" value={`${section.depth.best} rounds`} />
 								<Stat label="Average run" value={`${average(section.depth.average)} rounds`} />
+								<RoundOneStats roundOne={section.roundOne} />
 							</>
 						) : (
 							<>

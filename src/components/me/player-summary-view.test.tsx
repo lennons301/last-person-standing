@@ -100,6 +100,29 @@ describe('PlayerSummaryView', () => {
 		expect(stat(classic, 'Average run')).toBe('4.5 rounds')
 	})
 
+	it('shows the round-one block: survival rate, exits and the games bought back into', () => {
+		render(<PlayerSummaryView summary={withModes([CLASSIC])} />)
+
+		const classic = section('Classic')
+		expect(stat(classic, 'Round 1 survival')).toBe('75%')
+		expect(stat(classic, 'Round 1 exits')).toBe('1')
+		expect(stat(classic, 'Bought back in')).toBe('1')
+		// The rebuy count is only ever over the exits that had a rebuy to take.
+		expect(within(classic).getByText(/1 of 1/)).toBeTruthy()
+	})
+
+	it('says a rebuy was never on offer rather than reading as a rebuy the player skipped', () => {
+		const noRebuys: ModeSection = {
+			...CLASSIC,
+			roundOne: { games: 4, survived: 3, survivalRate: 0.75, exits: 1, rebuyable: 0, rebought: 0 },
+		}
+		render(<PlayerSummaryView summary={withModes([noRebuys])} />)
+
+		const classic = section('Classic')
+		expect(stat(classic, 'Bought back in')).toBe('—')
+		expect(within(classic).getByText(/no rebuy on offer/i)).toBeTruthy()
+	})
+
 	it('shows longest and average streak in a single-round mode', () => {
 		render(<PlayerSummaryView summary={withModes([TURBO])} />)
 
