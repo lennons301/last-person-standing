@@ -1000,6 +1000,40 @@ describe('buildMeSummaryView money', () => {
 		expect(view.money.net).toBe('50.00')
 	})
 
+	it('nets a refunded game to nothing', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'wipeout', gameName: 'Everyone Went Out' })],
+					// A total wipeout refunds every contributing stake — the rebuy's
+					// included — and writes no payout at all.
+					payments: [stake('wipeout', '10.00', 'refunded'), stake('wipeout', '10.00', 'refunded')],
+				}),
+			),
+		)
+
+		expect(view.money.stake).toBe('0.00')
+		expect(view.money.winnings).toBe('0.00')
+		expect(view.money.net).toBe('0.00')
+		expect(view.money.games.map((g) => [g.gameId, g.net])).toEqual([['wipeout', '0.00']])
+	})
+
+	it('stakes a rebuy on top of the entry that came before it', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'g1' })],
+					// Buying back in is a second payment row against the same game.
+					payments: [stake('g1', '10.00'), stake('g1', '10.00')],
+				}),
+			),
+		)
+
+		expect(view.money.stake).toBe('20.00')
+		expect(view.money.net).toBe('-20.00')
+		expect(view.money.games.map((g) => g.stake)).toEqual(['20.00'])
+	})
+
 	it('breaks the total down into a row per game, biggest loss first', () => {
 		const view = summary(
 			buildMeSummaryView(
