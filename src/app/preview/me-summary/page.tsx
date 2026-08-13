@@ -18,19 +18,25 @@ export default function MeSummaryPreviewPage() {
 		<div className="space-y-10">
 			<div className="space-y-2 text-sm text-muted-foreground">
 				<p>
-					The player's own summary page (<code>/me</code>) — the career headline, rendered from a
-					hand-built view model. No auth, no database, and no player id anywhere: the real page
-					reads its player from the session.
+					The player's own summary page (<code>/me</code>) — rendered from a hand-built history run
+					through the real builder, so no figure on the page is hand-totalled. No auth, no database,
+					and no player id anywhere: the real page reads its player from the session.
 				</p>
 			</div>
 
 			<header className="border-t border-border pt-6">
 				<h2 className="font-display text-lg font-semibold">Full history</h2>
 				<p className="text-sm text-muted-foreground">
-					Several seasons in: games played and won, the win rate, pick accuracy over the picks that
-					settled (with the four a cup life absorbed noted rather than counted), and the most-picked
-					club — then a section per mode, each with its competition rows: classic's rounds survived,
-					and turbo's and cup's streaks (the same numbers those games were decided by).
+					Nine games over two Premier League seasons and one World Cup. The headline: games played
+					and won, the win rate, pick accuracy over the picks that settled (with the two a cup life
+					absorbed noted rather than counted), and the most-picked club. Then a section per mode,
+					each with its competition rows: classic's rounds survived, and turbo's and cup's streaks
+					(the same numbers those games were decided by). The Teams section closes the page, one
+					block per competition family — the two league seasons pooled into one ranking (Liverpool's
+					five picks can't come from a single season) and the World Cup standing separately, never
+					merged into it. England carries a pick a life absorbed alongside its rate; Italy, whose
+					only pick a life absorbed, has no rate at all and so appears in neither end while still
+					being listed in the expansion.
 				</p>
 			</header>
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />

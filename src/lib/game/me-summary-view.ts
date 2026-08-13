@@ -12,6 +12,7 @@
  * disagree with the result screen, so it doesn't compute one.
  */
 
+import { COMPETITION_FAMILY_NAMES } from '@/lib/game/competition-family'
 import { resolveWipeout } from '@/lib/game-logic/auto-complete-tiebreakers'
 
 export type SummaryGameMode = 'classic' | 'turbo' | 'cup'
@@ -26,13 +27,23 @@ export interface SummaryGameRow {
 	gamePlayerId: string
 	/** `game.status`. Only a completed game has a streak worth counting. */
 	gameStatus: 'active' | 'completed'
-	/** The competition season this game was played in — one mode sub-row per one of these. */
+	/**
+	 * The competition this game is played on — one *season* of a family, and the
+	 * unit one mode sub-row is reported per.
+	 */
 	competitionId: string
+	/** `competition.name`, season included ("Premier League 2025/26"). */
 	competitionName: string
 	/** `competition.season` — null for a competition that records none. */
 	season: string | null
 	/** `game_player.status` for this player. */
 	playerStatus: 'alive' | 'eliminated' | 'winner'
+	/**
+	 * `competition.family_key` — the family every season of this competition
+	 * shares. Null for a competition that belongs to none, which stands alone
+	 * rather than pooling with every other unfamilied competition.
+	 */
+	competitionFamilyKey: string | null
 }
 
 /** One pick the player made, in whichever game and round. */
@@ -133,6 +144,67 @@ export interface CareerHeadline {
 	mostPickedTeam: MostPickedTeam | null
 }
 
+/** How one team has served the player, within one competition family. */
+export interface TeamRecord {
+	teamId: string
+	name: string
+	shortName: string
+	badgeUrl: string | null
+	/** Every pick of this team that counts — successes, failures, saves alike. */
+	picks: number
+	/**
+	 * Picks that came off: a win in any mode, plus cup's draw — the same rule the
+	 * headline's accuracy uses, so the two figures can't disagree.
+	 */
+	wins: number
+	/**
+	 * Picks a life absorbed. The team still lost, and a team rate measures whether
+	 * the *team* delivered, so these are out of both halves of `rate` and carried
+	 * here on their own.
+	 */
+	savedByLife: number
+	/** wins ÷ (picks − savedByLife). Null when a life absorbed every pick. */
+	rate: number | null
+}
+
+/**
+ * The player's record with the teams of one competition family.
+ *
+ * A family is the only scope a team record means anything in: a World Cup team
+ * set and a Premier League team set are disjoint, so one league table across
+ * both would compare nothing. Seasons *within* the family pool, because one
+ * season yields far too few picks per team for a rate to say anything.
+ */
+export interface TeamRecordFamily {
+	/** `competition.family_key`, or the competition's own id when it has none. */
+	familyKey: string
+	/** What to call the family — never a season. */
+	name: string
+	/**
+	 * How many of the family's seasons the block pooled. Seasons that produced a
+	 * pick, so it's what the ranking is actually built from — nought for a
+	 * competition that records no season at all.
+	 */
+	seasons: number
+	/**
+	 * The teams that have served the player best, best first. At most
+	 * `ENDS_LENGTH`, and never more than the family's better half — so a family
+	 * with four teams surfaces two, and no team is ever in both ends. Only teams
+	 * with a rate are eligible for either end.
+	 */
+	best: TeamRecord[]
+	/** The teams that have served the player worst, worst first. */
+	worst: TeamRecord[]
+	/** Every team the player has picked in this family, best first. */
+	all: TeamRecord[]
+}
+
+/**
+ * How many teams each end of a family surfaces before the expansion takes over.
+ * Three is enough to read as a shortlist on a phone without becoming the list.
+ */
+export const ENDS_LENGTH = 3
+
 /**
  * One mode's record within a single competition season — the sub-row under a
  * mode section. Kept per season rather than per competition family: a season is
@@ -216,6 +288,8 @@ export type MeSummaryView =
 			kind: 'summary'
 			filters: SummaryFilters
 			headline: CareerHeadline
+			/** One block per competition family. Never a career-wide list. */
+			teamRecords: TeamRecordFamily[]
 			/** One per mode, always all three, in `SUMMARY_MODES` order. */
 			modes: ModeSection[]
 	  }
@@ -267,6 +341,132 @@ function findMostPickedTeam(picks: SummaryPickRow[]): MostPickedTeam | null {
 		(a, b) => b.picks - a.picks || a.name.localeCompare(b.name),
 	)
 	return ranked[0] ?? null
+}
+
+/**
+ * The family a game's picks belong to. A competition with no family key can't
+ * pool with anything, so it stands alone under its own id — pooling every
+ * unfamilied competition into one block would compare unrelated team sets,
+ * which is the one thing this section exists to avoid.
+ */
+function familyOf(row: SummaryGameRow): { key: string; name: string } {
+	if (row.competitionFamilyKey === null) {
+		return { key: row.competitionId, name: row.competitionName }
+	}
+	return {
+		key: row.competitionFamilyKey,
+		name: COMPETITION_FAMILY_NAMES[row.competitionFamilyKey] ?? row.competitionName,
+	}
+}
+
+function buildTeamRecords(games: SummaryGameRow[], picks: SummaryPickRow[]): TeamRecordFamily[] {
+	const gameById = new Map(games.map((g) => [g.gameId, g]))
+	const families = new Map<
+		string,
+		{ name: string; teams: Map<string, TeamRecord>; seasons: Set<string> }
+	>()
+
+	for (const row of picks) {
+		const gameRow = gameById.get(row.gameId)
+		if (!gameRow) continue
+		const family = familyOf(gameRow)
+		let block = families.get(family.key)
+		if (!block) {
+			block = { name: family.name, teams: new Map(), seasons: new Set() }
+			families.set(family.key, block)
+		}
+		if (gameRow.season !== null) block.seasons.add(gameRow.season)
+		let record = block.teams.get(row.teamId)
+		if (!record) {
+			record = {
+				teamId: row.teamId,
+				name: row.teamName,
+				shortName: row.teamShortName,
+				badgeUrl: row.teamBadgeUrl,
+				picks: 0,
+				wins: 0,
+				savedByLife: 0,
+				rate: null,
+			}
+			block.teams.set(row.teamId, record)
+		}
+		record.picks += 1
+		if (isSuccess(row, gameRow.gameMode)) record.wins += 1
+		if (row.result === 'saved_by_life') record.savedByLife += 1
+	}
+
+	const blocks = [...families.entries()].map(([familyKey, block]) => {
+		const all = [...block.teams.values()]
+			.map((record) => {
+				const rated = record.picks - record.savedByLife
+				return { ...record, rate: rated === 0 ? null : record.wins / rated }
+			})
+			.sort(byRate)
+		// Only a team with a rate can be at either end of a ranking by rate: a team
+		// every one of whose picks a life absorbed would otherwise land in the worst
+		// list, which is a verdict its picks never delivered.
+		const ranked = all.filter((record) => record.rate !== null)
+		return {
+			familyKey,
+			name: block.name,
+			seasons: block.seasons.size,
+			best: bestOf(ranked),
+			worst: worstOf(ranked),
+			all,
+		}
+	})
+
+	// The family the player has picked in most leads, since that's the record they
+	// came to read. Name breaks a tie, so the order is the player's history and
+	// never the order rows happened to arrive in.
+	return blocks.sort((a, b) => pickCount(b.all) - pickCount(a.all) || a.name.localeCompare(b.name))
+}
+
+/**
+ * Best team first. There is no minimum sample — a team picked once is ranked on
+ * the one pick — so volume breaks a tie: at the same rate the larger sample is
+ * the better-evidenced record and goes above. Name settles the rest, so the
+ * order never depends on which row came back first.
+ *
+ * A team with no rate at all (every pick absorbed by a life) can't be compared
+ * with teams that have one, so it sinks below all of them rather than reading as
+ * the worst of them.
+ */
+function byRate(a: TeamRecord, b: TeamRecord): number {
+	if (a.rate === null || b.rate === null) {
+		if (a.rate !== b.rate) return a.rate === null ? 1 : -1
+	} else if (a.rate !== b.rate) {
+		return b.rate - a.rate
+	}
+	return b.picks - a.picks || a.name.localeCompare(b.name)
+}
+
+/**
+ * The two ends split the ranking down the middle before either is capped, so a
+ * team is never both a best and a worst — with four teams each end takes two,
+ * and only from six upwards do both ends fill. An odd team out goes to the best
+ * end, and a family of one has a best and no worst: one record is not two ends.
+ */
+function bestOf(ranked: TeamRecord[]): TeamRecord[] {
+	return ranked.slice(0, Math.min(ENDS_LENGTH, Math.ceil(ranked.length / 2)))
+}
+
+/**
+ * The worst end takes the bottom of the same ranking, but never a team on the
+ * *best* rate in the family: with four teams on 100% and one on nothing, only
+ * the one that lost has served the player worst. That leaves families whose
+ * teams all share a rate with no worst end at all, which is the honest answer —
+ * none of them let the player down more than the others.
+ */
+function worstOf(ranked: TeamRecord[]): TeamRecord[] {
+	const bestRate = ranked[0]?.rate ?? null
+	const candidates = ranked.filter((record) => record.rate !== bestRate)
+	const take = Math.min(ENDS_LENGTH, Math.floor(ranked.length / 2), candidates.length)
+	return candidates.slice(candidates.length - take).reverse()
+}
+
+function pickCount(records: TeamRecord[]): number {
+	return records.reduce((total, record) => total + record.picks, 0)
 }
 
 function buildCompetitionRecords(games: SummaryGameRow[]): CompetitionRecord[] {
@@ -446,6 +646,7 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			},
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
+		teamRecords: buildTeamRecords(games, countedPicks),
 		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}
 }

@@ -37,6 +37,7 @@ export async function getMeSummary(
 			competitionName: competition.name,
 			season: competition.season,
 			playerStatus: gamePlayer.status,
+			competitionFamilyKey: competition.familyKey,
 		})
 		.from(gamePlayer)
 		.innerJoin(game, eq(gamePlayer.gameId, game.id))
