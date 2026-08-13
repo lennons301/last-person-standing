@@ -38,19 +38,24 @@ function Figure({ label, value, note }: { label: string; value: string; note?: s
 	)
 }
 
-export function MoneyPanel({ money }: { money: MoneySummary }) {
-	const up = Number.parseFloat(money.net) > 0
+/**
+ * Which way the player is, in words. Level is its own answer: a career of free
+ * games, or one whose stakes all came back, is not a player who is down.
+ */
+function direction(net: string): string {
+	const value = Number.parseFloat(net)
+	if (value > 0) return 'Up over these games'
+	if (value < 0) return 'Down over these games'
+	return 'Level over these games'
+}
 
+export function MoneyPanel({ money }: { money: MoneySummary }) {
 	return (
 		<div className="space-y-3 p-4">
 			<div className="grid grid-cols-3 gap-3">
 				{/* Labelled differently from the columns below, which report the same
 				    three figures one game at a time. */}
-				<Figure
-					label="Profit / loss"
-					value={signed(money.net)}
-					note={up ? 'Up over these games' : 'Down over these games'}
-				/>
+				<Figure label="Profit / loss" value={signed(money.net)} note={direction(money.net)} />
 				<Figure label="Total staked" value={pounds(money.stake)} />
 				<Figure label="Total won" value={pounds(money.winnings)} />
 			</div>
