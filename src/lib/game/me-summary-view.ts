@@ -45,12 +45,26 @@ export interface BuildMeSummaryInput {
 	filters: SummaryFilters
 }
 
+/**
+ * How the player's picks have gone. `settled` is the denominator, so it counts
+ * only picks that resolved into a success or a failure.
+ */
+export interface PickAccuracy {
+	/** Picks that came off. */
+	successful: number
+	/** Picks that resolved either way — the denominator. */
+	settled: number
+	/** successful ÷ settled, as a fraction. Null when nothing has settled. */
+	rate: number | null
+}
+
 /** The figures at the top of the page: a career in five numbers. */
 export interface CareerHeadline {
 	gamesPlayed: number
 	gamesWon: number
 	/** wins ÷ played, as a fraction. Null when nothing has been played. */
 	winRate: number | null
+	pickAccuracy: PickAccuracy
 }
 
 /**
@@ -68,6 +82,9 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 
 	const gamesWon = games.filter((g) => g.playerStatus === 'winner').length
 
+	const settledPicks = input.picks.filter((p) => p.result === 'win' || p.result === 'loss')
+	const successful = settledPicks.filter((p) => p.result === 'win').length
+
 	return {
 		kind: 'summary',
 		filters: input.filters,
@@ -75,6 +92,11 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			gamesPlayed: games.length,
 			gamesWon,
 			winRate: gamesWon / games.length,
+			pickAccuracy: {
+				successful,
+				settled: settledPicks.length,
+				rate: settledPicks.length === 0 ? null : successful / settledPicks.length,
+			},
 		},
 	}
 }

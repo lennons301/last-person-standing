@@ -4,6 +4,8 @@ import {
 	buildMeSummaryView,
 	type MeSummaryView,
 	type SummaryGameRow,
+	type SummaryPickResult,
+	type SummaryPickRow,
 } from '@/lib/game/me-summary-view'
 
 function input(overrides: Partial<BuildMeSummaryInput> = {}): BuildMeSummaryInput {
@@ -16,6 +18,18 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 		gameMode: 'classic',
 		season: '2025/26',
 		playerStatus: 'eliminated',
+		...overrides,
+	}
+}
+
+function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}): SummaryPickRow {
+	return {
+		gameId: 'game-1',
+		teamId: 'team-ars',
+		teamName: 'Arsenal',
+		teamShortName: 'ARS',
+		teamBadgeUrl: null,
+		result,
 		...overrides,
 	}
 }
@@ -50,5 +64,22 @@ describe('buildMeSummaryView', () => {
 		expect(view.headline.gamesPlayed).toBe(4)
 		expect(view.headline.gamesWon).toBe(1)
 		expect(view.headline.winRate).toBe(0.25)
+	})
+
+	it('scores pick accuracy as wins over every settled pick', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game()],
+					picks: [pick('win'), pick('win'), pick('win'), pick('loss')],
+				}),
+			),
+		)
+
+		expect(view.headline.pickAccuracy).toMatchObject({
+			successful: 3,
+			settled: 4,
+			rate: 0.75,
+		})
 	})
 })
