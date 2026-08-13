@@ -974,4 +974,34 @@ describe('buildMeSummaryView team season filter', () => {
 		expect(byName.get('World Cup')?.seasonOptions).toEqual(['2026'])
 		expect(byName.get('World Cup')?.selectedSeason).toBeNull()
 	})
+
+	it('narrows one family to a season and leaves every other family whole', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					...threeSeasons(),
+					filters: { season: null, teamSeasons: { [PREMIER_LEAGUE_FAMILY_KEY]: '2025/26' } },
+				}),
+			),
+		)
+		const byName = new Map(view.teamRecords.map((f) => [f.name, f]))
+
+		const league = byName.get('Premier League')
+		expect(league?.selectedSeason).toBe('2025/26')
+		// Only 2025/26's two picks: Liverpool's win and Arsenal's loss. Arsenal's
+		// 2024/25 win is out, so its rate is nought rather than the pooled half.
+		expect(league?.all.map((t) => [t.shortName, t.picks, t.rate])).toEqual([
+			['LIV', 1, 1],
+			['ARS', 1, 0],
+		])
+		expect(league?.seasons).toBe(1)
+		// Everton was only ever picked in the season filtered out.
+		expect(league?.all.map((t) => t.shortName)).not.toContain('EVE')
+		// The control still offers the season it narrowed away from.
+		expect(league?.seasonOptions).toEqual(['2025/26', '2024/25'])
+
+		const worldCup = byName.get('World Cup')
+		expect(worldCup?.selectedSeason).toBeNull()
+		expect(worldCup?.all.map((t) => t.shortName)).toEqual(['BRA'])
+	})
 })
