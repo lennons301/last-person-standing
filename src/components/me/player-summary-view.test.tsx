@@ -268,6 +268,55 @@ describe('PlayerSummaryView teams section', () => {
 		expect(within(teams).getByText(/1 season\./)).toBeTruthy()
 	})
 
+	it("offers each family's own seasons, all of them by default", () => {
+		render(<PlayerSummaryView summary={withTeams([PREMIER_LEAGUE])} />)
+
+		const control = within(section('Teams')).getByRole('navigation', {
+			name: 'Premier League seasons',
+		})
+		const options = within(control).getAllByRole('link')
+
+		expect(options.map((o) => o.textContent)).toEqual(['All seasons', '2025/26', '2024/25'])
+		expect(options[0].getAttribute('aria-current')).toBe('true')
+		expect(options[1].getAttribute('href')).toBe('?teams-premier-league=2025%2F26')
+		expect(options[1].getAttribute('aria-current')).toBeNull()
+	})
+
+	it("carries the other families' seasons through when one block is narrowed", () => {
+		const narrowed = { ...PREMIER_LEAGUE, selectedSeason: '2024/25', seasons: 1 }
+		const worldCup: TeamRecordFamily = {
+			familyKey: 'world-cup',
+			name: 'World Cup',
+			seasons: 1,
+			seasonOptions: ['2026'],
+			selectedSeason: null,
+			best: [ARSENAL],
+			worst: [],
+			all: [ARSENAL],
+		}
+		render(
+			<PlayerSummaryView
+				summary={{
+					...HEADLINE,
+					filters: { season: null, teamSeasons: { 'premier-league': '2024/25' } },
+					teamRecords: [narrowed, worldCup],
+				}}
+			/>,
+		)
+
+		const teams = section('Teams')
+		const league = within(teams).getByRole('navigation', { name: 'Premier League seasons' })
+		// The season in effect is the one marked, and "all seasons" clears it.
+		expect(within(league).getByText('2024/25').getAttribute('aria-current')).toBe('true')
+		expect(within(league).getByText('All seasons').getAttribute('href')).toBe('?')
+
+		// The World Cup's own control moves its block without losing the league's.
+		const cup = within(teams).getByRole('navigation', { name: 'World Cup seasons' })
+		expect(within(cup).getByText('2026').getAttribute('href')).toBe(
+			'?teams-premier-league=2024%2F25&teams-world-cup=2026',
+		)
+	})
+
 	it('has no Teams section at all for a player with no team records', () => {
 		render(<PlayerSummaryView summary={withTeams([])} />)
 
