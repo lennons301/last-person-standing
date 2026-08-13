@@ -1,7 +1,11 @@
+import { eq } from 'drizzle-orm'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
+import { SettingsFold } from '@/components/me/settings-fold'
 import { requireSession } from '@/lib/auth-helpers'
+import { db } from '@/lib/db'
 import { CAREER, getMeSummary } from '@/lib/game/me-summary-query'
 import { parseTeamSeasonFilters } from '@/lib/game/me-summary-view'
+import { user } from '@/lib/schema/auth'
 
 export const metadata = { title: 'Your summary' }
 
@@ -28,5 +32,25 @@ export default async function MySummaryPage({
 		teamSeasons: parseTeamSeasonFilters(await searchParams),
 	})
 
-	return <PlayerSummaryView summary={summary} />
+	// The player's own settings, read straight from their user row rather than
+	// through the summary builder: a payment handle is a setting, not a figure,
+	// and putting it through `buildMeSummaryView` would make that seam a
+	// dumping ground for anything the page happens to show.
+	const [me] = await db
+		.select({ paymentProvider: user.paymentProvider, paymentHandle: user.paymentHandle })
+		.from(user)
+		.where(eq(user.id, session.user.id))
+		.limit(1)
+
+	return (
+		<>
+			<PlayerSummaryView summary={summary} />
+			{/* Below the record, and folded: a player who has only ever joined games
+			    still has somewhere to set the handle they'll be paid on. */}
+			<SettingsFold
+				paymentProvider={me?.paymentProvider ?? null}
+				paymentHandle={me?.paymentHandle ?? null}
+			/>
+		</>
+	)
 }

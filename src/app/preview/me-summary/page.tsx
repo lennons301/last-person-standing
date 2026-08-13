@@ -4,6 +4,7 @@ import {
 	FULL_HISTORY_SUMMARY,
 } from '@/app/preview/me-summary/fixtures'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
+import { SettingsFold } from '@/components/me/settings-fold'
 
 /** The phone column: 375px of viewport minus the page's own `px-4`. */
 function MobileColumn({ children }: { children: React.ReactNode }) {
@@ -77,6 +78,23 @@ export default function MeSummaryPreviewPage() {
 			<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
 			<MobileColumn>
 				<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
+			</MobileColumn>
+
+			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">Settings fold</h2>
+				<p className="text-sm text-muted-foreground">
+					What closes the page: the payment handle's permanent home, so a player who has only ever
+					joined games can still set where they'll be paid. Collapsed as it renders on the page
+					(first), then opened in both states the setting has — a handle saved, and none saved at
+					all, which is the state that says what happens instead. The control inside is the same one
+					the admin Payments panel renders, saving through the same endpoint.
+				</p>
+			</header>
+			<SettingsFold paymentProvider="monzo" paymentHandle="alicejones" />
+			<SettingsFold paymentProvider="monzo" paymentHandle="alicejones" defaultOpen />
+			<SettingsFold paymentProvider={null} paymentHandle={null} defaultOpen />
+			<MobileColumn>
+				<SettingsFold paymentProvider="revolut" paymentHandle="bobsmith" defaultOpen />
 			</MobileColumn>
 		</div>
 	)
