@@ -241,23 +241,33 @@ function TeamRecordFamilyBlock({
 		family.seasons > 0
 			? `${teams} picked across ${family.seasons} ${family.seasons === 1 ? 'season' : 'seasons'}.`
 			: `${teams} picked.`
+	// A block only empties when a season is selected — a family is here because it
+	// has picks. So it says which season came up empty rather than "0 teams",
+	// which would read as a career with nothing in it.
+	const emptySeason = family.all.length === 0
 
 	return (
 		<div className="rounded-lg border border-border bg-card p-4 space-y-3">
 			<div className="space-y-2">
 				<div>
 					<h3 className="font-display text-base font-semibold">{family.name}</h3>
-					<p className="text-xs text-muted-foreground mt-0.5">{pooled}</p>
+					<p className="text-xs text-muted-foreground mt-0.5">
+						{emptySeason ? `No picks in ${family.selectedSeason ?? 'this competition'}.` : pooled}
+					</p>
 				</div>
 				<SeasonControl family={family} selections={selections} />
 			</div>
-			<div className="grid gap-3 sm:grid-cols-2">
-				<TeamRecordEnd label="Best" records={family.best} />
-				<TeamRecordEnd label="Worst" records={family.worst} />
-			</div>
-			<Disclosure title={`All ${teams}`} defaultOpen={false} bordered={false}>
-				<TeamRecordList records={family.all} />
-			</Disclosure>
+			{!emptySeason && (
+				<>
+					<div className="grid gap-3 sm:grid-cols-2">
+						<TeamRecordEnd label="Best" records={family.best} />
+						<TeamRecordEnd label="Worst" records={family.worst} />
+					</div>
+					<Disclosure title={`All ${teams}`} defaultOpen={false} bordered={false}>
+						<TeamRecordList records={family.all} />
+					</Disclosure>
+				</>
+			)}
 		</div>
 	)
 }

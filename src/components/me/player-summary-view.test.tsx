@@ -317,6 +317,26 @@ describe('PlayerSummaryView teams section', () => {
 		)
 	})
 
+	it('says a narrowed block has no picks rather than showing it as no teams', () => {
+		const empty: TeamRecordFamily = {
+			...PREMIER_LEAGUE,
+			selectedSeason: '2024/25',
+			seasons: 0,
+			best: [],
+			worst: [],
+			all: [],
+		}
+		render(<PlayerSummaryView summary={withTeams([empty])} />)
+
+		const teams = section('Teams')
+		expect(within(teams).getByText(/No picks in 2024\/25/)).toBeTruthy()
+		// Nothing to expand, and no claim that the player has picked nought teams.
+		expect(within(teams).queryByRole('button', { name: /teams/ })).toBeNull()
+		expect(within(teams).queryByText(/0 teams/)).toBeNull()
+		// The control is still there — it's the only way back out of the season.
+		expect(within(teams).getByRole('navigation', { name: 'Premier League seasons' })).toBeTruthy()
+	})
+
 	it('has no Teams section at all for a player with no team records', () => {
 		render(<PlayerSummaryView summary={withTeams([])} />)
 
