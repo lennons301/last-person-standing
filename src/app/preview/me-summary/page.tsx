@@ -29,8 +29,10 @@ export default function MeSummaryPreviewPage() {
 				<p className="text-sm text-muted-foreground">
 					Several seasons in: games played and won, the win rate, pick accuracy over the picks that
 					settled (with the four a cup life absorbed noted rather than counted), and the most-picked
-					club — then a section per mode, each with its competition rows: classic's rounds survived,
-					and turbo's and cup's streaks (the same numbers those games were decided by).
+					club — then a section per mode, each with its competition rows: classic's rounds survived
+					and its round one (a survival rate, the exits, and the two of three rebuyable exits they
+					bought back into), and turbo's and cup's streaks (the same numbers those games were
+					decided by).
 				</p>
 			</header>
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
@@ -42,8 +44,9 @@ export default function MeSummaryPreviewPage() {
 				<h2 className="font-display text-lg font-semibold">Classic only, one turbo game in play</h2>
 				<p className="text-sm text-muted-foreground">
 					The absences: cup states that it hasn't been played rather than showing a record of
-					noughts, and turbo has a game behind it but no completed one — so it has a record and no
-					streak to average yet.
+					noughts, turbo has a game behind it but no completed one — so it has a record and no
+					streak to average yet — and classic's round one has never gone down, so its rebuy figure
+					says none was on offer rather than showing a nought.
 				</p>
 			</header>
 			<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />

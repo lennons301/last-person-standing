@@ -4,8 +4,12 @@ import type { MeSummaryView } from '@/lib/game/me-summary-view'
  * A player with a few seasons behind them, viewing their whole career: games
  * won and lost, picks that came off and picks that didn't, a couple of picks a
  * cup life absorbed, and a club they clearly can't leave alone. Every mode has
- * been played, so all three sections are populated — classic with its depth,
- * turbo and cup with their streaks.
+ * been played, so all three sections are populated — classic with its depth and
+ * its round-one block, turbo and cup with their streaks.
+ *
+ * Classic's round one is the rebought state: four of their nine opening picks
+ * went down, three of those games were offering a rebuy, and they took two of
+ * them — so the rebuy figure is read against three exits, not four.
  *
  * Hand-built — the gallery never touches the database.
  */
@@ -98,6 +102,10 @@ export const FULL_HISTORY_SUMMARY: MeSummaryView = {
  * have never touched state their own absence, and the one turbo game that is
  * still being played contributes no streak — the state that shows a section can
  * have games behind it and still have nothing to average.
+ *
+ * Both their opening picks came off, so round one has no exit and no rebuy to
+ * report: the rebuy figure states that none was ever on offer rather than
+ * showing a nought that reads as a chance passed up.
  */
 export const CLASSIC_ONLY_SUMMARY: MeSummaryView = {
 	kind: 'summary',
