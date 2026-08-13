@@ -506,4 +506,58 @@ describe('buildMeSummaryView team records', () => {
 		// worst of them.
 		expect(view.teamRecords[0].all.map((t) => t.shortName)).toEqual(['BRA', 'ENG', 'ITA'])
 	})
+
+	it('surfaces the best and worst ends and keeps every team in the expansion', () => {
+		// Eight clubs on eight distinct rates, 8/8 down to 1/8, so the ranking is
+		// unambiguous and the ends are the top three and bottom three of it.
+		const clubs = ['ARS', 'BOU', 'CHE', 'EVE', 'FUL', 'LEE', 'MCI', 'NEW']
+		const picks = clubs.flatMap((shortName, index) => {
+			const wins = 8 - index
+			return Array.from({ length: 8 }, (_, n) =>
+				pick(n < wins ? 'win' : 'loss', team(shortName, `${shortName} FC`)),
+			)
+		})
+		const view = summary(buildMeSummaryView(input({ games: [game()], picks })))
+		const block = view.teamRecords[0]
+
+		expect(block.all.map((t) => t.shortName)).toEqual(clubs)
+		expect(block.best.map((t) => t.shortName)).toEqual(['ARS', 'BOU', 'CHE'])
+		expect(block.worst.map((t) => t.shortName)).toEqual(['NEW', 'MCI', 'LEE'])
+	})
+
+	it('never puts the same team in both ends of a short list', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game()],
+					picks: [
+						pick('win', team('ARS', 'Arsenal')), // 1 of 1
+						pick('win', team('BOU', 'Bournemouth')), // 2 of 3
+						pick('win', team('BOU', 'Bournemouth')),
+						pick('loss', team('BOU', 'Bournemouth')),
+						pick('win', team('CHE', 'Chelsea')), // 1 of 3
+						pick('loss', team('CHE', 'Chelsea')),
+						pick('loss', team('CHE', 'Chelsea')),
+						pick('loss', team('EVE', 'Everton')), // 0 of 1
+					],
+				}),
+			),
+		)
+		const block = view.teamRecords[0]
+
+		// Four teams split two and two. Taking three from each end would have
+		// claimed Bournemouth and Chelsea for both lists.
+		expect(block.all.map((t) => t.shortName)).toEqual(['ARS', 'BOU', 'CHE', 'EVE'])
+		expect(block.best.map((t) => t.shortName)).toEqual(['ARS', 'BOU'])
+		expect(block.worst.map((t) => t.shortName)).toEqual(['EVE', 'CHE'])
+	})
+
+	it('puts a family with one team in its best end and nothing in its worst', () => {
+		const view = summary(
+			buildMeSummaryView(input({ games: [game()], picks: [pick('win', team('ARS', 'Arsenal'))] })),
+		)
+
+		expect(view.teamRecords[0].best.map((t) => t.shortName)).toEqual(['ARS'])
+		expect(view.teamRecords[0].worst).toEqual([])
+	})
 })

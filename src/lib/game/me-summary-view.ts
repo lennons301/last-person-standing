@@ -139,9 +139,23 @@ export interface TeamRecordFamily {
 	familyKey: string
 	/** What to call the family — never a season. */
 	name: string
+	/**
+	 * The teams that have served the player best, best first. At most
+	 * `ENDS_LENGTH`, and never more than the family's better half — so a family
+	 * with four teams surfaces two, and no team is ever in both ends.
+	 */
+	best: TeamRecord[]
+	/** The teams that have served the player worst, worst first. */
+	worst: TeamRecord[]
 	/** Every team the player has picked in this family, best first. */
 	all: TeamRecord[]
 }
+
+/**
+ * How many teams each end of a family surfaces before the expansion takes over.
+ * Three is enough to read as a shortlist on a phone without becoming the list.
+ */
+export const ENDS_LENGTH = 3
 
 /**
  * `empty` is a player with no games in scope — the page says so rather than
@@ -265,7 +279,7 @@ function buildTeamRecords(
 				return { ...record, rate: rated === 0 ? null : record.wins / rated }
 			})
 			.sort(byRate)
-		return { familyKey, name: block.name, all }
+		return { familyKey, name: block.name, best: bestOf(all), worst: worstOf(all), all }
 	})
 
 	// The family the player has picked in most leads, since that's the record they
@@ -291,6 +305,21 @@ function byRate(a: TeamRecord, b: TeamRecord): number {
 		return b.rate - a.rate
 	}
 	return b.picks - a.picks || a.name.localeCompare(b.name)
+}
+
+/**
+ * The two ends split the ranking down the middle before either is capped, so a
+ * team is never both a best and a worst — with four teams each end takes two,
+ * and only from six upwards do both ends fill. An odd team out goes to the best
+ * end, and a family of one has a best and no worst: one record is not two ends.
+ */
+function bestOf(ranked: TeamRecord[]): TeamRecord[] {
+	return ranked.slice(0, Math.min(ENDS_LENGTH, Math.ceil(ranked.length / 2)))
+}
+
+function worstOf(ranked: TeamRecord[]): TeamRecord[] {
+	const take = Math.min(ENDS_LENGTH, Math.floor(ranked.length / 2))
+	return ranked.slice(ranked.length - take).reverse()
 }
 
 function pickCount(records: TeamRecord[]): number {
