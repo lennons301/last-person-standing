@@ -7,6 +7,7 @@ import {
 	type SummaryGameRow,
 	type SummaryPickResult,
 	type SummaryPickRow,
+	type SummaryStreakPickRow,
 } from '@/lib/game/me-summary-view'
 
 function input(overrides: Partial<BuildMeSummaryInput> = {}): BuildMeSummaryInput {
@@ -17,6 +18,8 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 	return {
 		gameId: 'game-1',
 		gameMode: 'classic',
+		gamePlayerId: 'me',
+		gameStatus: 'completed',
 		competitionId: 'comp-pl',
 		competitionName: 'Premier League 2025/26',
 		season: '2025/26',
@@ -38,6 +41,23 @@ function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}
 	}
 }
 
+/**
+ * One player's picks in a single-round game, listed in confidence-rank order:
+ * `ranks('t1', 'me', ['loss', 'win'])` is rank 1 lost, rank 2 won.
+ */
+function ranks(
+	gameId: string,
+	gamePlayerId: string,
+	results: SummaryPickResult[],
+): SummaryStreakPickRow[] {
+	return results.map((result, index) => ({
+		gameId,
+		gamePlayerId,
+		confidenceRank: index + 1,
+		result,
+	}))
+}
+
 /** Narrows away the empty variant so a test can read the headline. */
 function summary(view: MeSummaryView) {
 	if (view.kind !== 'summary') throw new Error(`expected a populated summary, got ${view.kind}`)
@@ -50,6 +70,13 @@ function played(view: MeSummaryView, mode: SummaryGameMode) {
 	if (!section) throw new Error(`no ${mode} section`)
 	if (section.kind !== 'played') throw new Error(`expected ${mode} to have been played`)
 	return section
+}
+
+/** The same, narrowed to a single-round mode so its streak is readable. */
+function streakOf(view: MeSummaryView, mode: 'turbo' | 'cup') {
+	const section = played(view, mode)
+	if (section.mode === 'classic') throw new Error('unreachable')
+	return section.streak
 }
 
 describe('buildMeSummaryView', () => {
@@ -310,6 +337,39 @@ describe('buildMeSummaryView', () => {
 			'turbo',
 			'cup',
 		])
+	})
+
+	it('counts a turbo streak from the rank the game restarted at, not from rank 1', () => {
+		// Rank 1 was a universal loss, so the game itself restarted at rank 2 —
+		// the player's streak is the two ranks they then got right (2 and 3).
+		const view = buildMeSummaryView(
+			input({
+				games: [game({ gameId: 't1', gameMode: 'turbo', gamePlayerId: 'me-t1' })],
+				streakPicks: [
+					...ranks('t1', 'me-t1', ['loss', 'win', 'win', 'loss']),
+					...ranks('t1', 'rival', ['loss', 'win', 'loss', 'win']),
+				],
+			}),
+		)
+
+		expect(streakOf(view, 'turbo')).toEqual({ longest: 2, average: 2, games: 1 })
+	})
+
+	it('averages a turbo streak over every completed game', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 't1', gameMode: 'turbo', gamePlayerId: 'me-t1' }),
+					game({ gameId: 't2', gameMode: 'turbo', gamePlayerId: 'me-t2' }),
+				],
+				streakPicks: [
+					...ranks('t1', 'me-t1', ['win', 'loss', 'win']),
+					...ranks('t2', 'me-t2', ['win', 'win', 'win', 'loss']),
+				],
+			}),
+		)
+
+		expect(streakOf(view, 'turbo')).toEqual({ longest: 3, average: 2, games: 2 })
 	})
 
 	it('has nothing to show for a season the player did not play', () => {
