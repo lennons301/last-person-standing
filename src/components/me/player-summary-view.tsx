@@ -5,6 +5,8 @@ import { Disclosure } from '@/components/ui/disclosure'
 import type {
 	CareerHeadline,
 	MeSummaryView,
+	ModeSection,
+	SummaryGameMode,
 	TeamRecord,
 	TeamRecordFamily,
 } from '@/lib/game/me-summary-view'
@@ -12,6 +14,30 @@ import type {
 /** A rate as whole percent, or a dash where there's nothing to divide by. */
 function percent(rate: number | null): string {
 	return rate === null ? '—' : `${Math.round(rate * 100)}%`
+}
+
+/** An average to one decimal, without a pointless trailing nought. */
+function average(value: number | null): string {
+	return value === null ? '—' : String(Number(value.toFixed(1)))
+}
+
+const MODE_NAMES: Record<SummaryGameMode, string> = {
+	classic: 'Classic',
+	turbo: 'Turbo',
+	cup: 'Cup',
+}
+
+/** What each mode's section says it measures, in that mode's own terms. */
+const MODE_BLURBS: Record<SummaryGameMode, string> = {
+	classic: 'Rounds survived — the rounds you held a pick in.',
+	turbo: 'Streaks — correct picks in a row, counted the way the game was decided.',
+	cup: 'Streaks — picks you survived in a row, counted the way the game was decided.',
+}
+
+const NEVER_PLAYED: Record<SummaryGameMode, string> = {
+	classic: "You haven't played a classic game yet.",
+	turbo: "You haven't played a turbo game yet.",
+	cup: "You haven't played a cup game yet.",
 }
 
 function Stat({
@@ -97,6 +123,39 @@ function TeamRecordList({ records }: { records: TeamRecord[] }) {
 	)
 }
 
+/** The mode's competition sub-rows: the same record, one season at a time. */
+function CompetitionRows({ section }: { section: Extract<ModeSection, { kind: 'played' }> }) {
+	return (
+		<table className="w-full text-sm">
+			<caption className="sr-only">
+				{MODE_NAMES[section.mode]} record by competition, deepest first
+			</caption>
+			<thead className="sr-only">
+				<tr>
+					<th>Competition</th>
+					<th>Played</th>
+					<th>Won</th>
+					<th>Rate</th>
+				</tr>
+			</thead>
+			<tbody>
+				{section.competitions.map((comp) => (
+					<tr key={comp.competitionId} className="border-t border-border/60">
+						<td className="py-1.5 pr-2 truncate">{comp.name}</td>
+						<td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
+							{comp.gamesPlayed}
+						</td>
+						<td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
+							{comp.gamesWon}
+						</td>
+						<td className="py-1.5 pl-2 text-right tabular-nums">{percent(comp.winRate)}</td>
+					</tr>
+				))}
+			</tbody>
+		</table>
+	)
+}
+
 /**
  * One end of a family's ranking. Absent rather than empty: a family with a
  * single team has a best and no worst, and a labelled empty list would read as
@@ -170,6 +229,58 @@ function TeamsSection({ families }: { families: TeamRecordFamily[] }) {
 }
 
 /**
+ * One mode's section. An unplayed mode says so in its own words: a record of
+ * noughts would read as a bad record rather than as no record at all.
+ */
+function ModeSectionCard({ section }: { section: ModeSection }) {
+	const name = MODE_NAMES[section.mode]
+	const headingId = `mode-${section.mode}`
+
+	return (
+		<section aria-labelledby={headingId} className="space-y-3">
+			<div>
+				<h2 id={headingId} className="font-display text-lg font-semibold">
+					{name}
+				</h2>
+				<p className="text-sm text-muted-foreground">
+					{section.kind === 'played' ? MODE_BLURBS[section.mode] : NEVER_PLAYED[section.mode]}
+				</p>
+			</div>
+
+			{section.kind === 'played' && (
+				<>
+					<div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+						<Stat label="Games played" value={section.gamesPlayed} />
+						<Stat label="Games won" value={section.gamesWon} />
+						<Stat label="Win rate" value={percent(section.winRate)} />
+						{section.mode === 'classic' ? (
+							<>
+								<Stat label="Deepest run" value={`${section.depth.best} rounds`} />
+								<Stat label="Average run" value={`${average(section.depth.average)} rounds`} />
+							</>
+						) : (
+							<>
+								<Stat
+									label="Longest streak"
+									value={section.streak.longest ?? '—'}
+									note={
+										section.streak.games === 0
+											? 'No completed games yet'
+											: `Over ${section.streak.games} completed ${section.streak.games === 1 ? 'game' : 'games'}`
+									}
+								/>
+								<Stat label="Average streak" value={average(section.streak.average)} />
+							</>
+						)}
+					</div>
+					<CompetitionRows section={section} />
+				</>
+			)}
+		</section>
+	)
+}
+
+/**
  * The player's own summary page, rendered straight from
  * `buildMeSummaryView`'s model. Every figure here is decided by the builder —
  * this file only lays it out, which is what keeps the page itself free of
@@ -203,6 +314,10 @@ export function PlayerSummaryView({ summary }: { summary: MeSummaryView }) {
 			</div>
 			<CareerHeadlineCards headline={summary.headline} />
 			<TeamsSection families={summary.teamRecords} />
+			{/* The modes measure different things, so each says its own piece. */}
+			{summary.modes.map((section) => (
+				<ModeSectionCard key={section.mode} section={section} />
+			))}
 		</div>
 	)
 }

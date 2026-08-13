@@ -1,4 +1,4 @@
-import { FULL_HISTORY_SUMMARY } from '@/app/preview/me-summary/fixtures'
+import { CLASSIC_ONLY_SUMMARY, FULL_HISTORY_SUMMARY } from '@/app/preview/me-summary/fixtures'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
 
 /** The phone column: 375px of viewport minus the page's own `px-4`. */
@@ -34,12 +34,27 @@ export default function MeSummaryPreviewPage() {
 					five picks can't come from a single season) and the World Cup standing separately, never
 					merged into it. England carries a pick a life absorbed alongside its rate; Italy, whose
 					only pick a life absorbed, has no rate at all and so appears in neither end while still
-					being listed in the expansion.
+					being listed in the expansion. Then a section per mode, each with its competition rows:
+					classic's rounds survived, and turbo's and cup's streaks (the same numbers those games
+					were decided by).
 				</p>
 			</header>
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
 			<MobileColumn>
 				<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
+			</MobileColumn>
+
+			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">Classic only, one turbo game in play</h2>
+				<p className="text-sm text-muted-foreground">
+					The absences: cup states that it hasn't been played rather than showing a record of
+					noughts, and turbo has a game behind it but no completed one — so it has a record and no
+					streak to average yet.
+				</p>
+			</header>
+			<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
+			<MobileColumn>
+				<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
 			</MobileColumn>
 		</div>
 	)

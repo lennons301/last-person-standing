@@ -5,9 +5,15 @@
  * renderer with no branching of its own — the same split as `buildGameView`.
  * The rows are deliberately dumb: ids, names, enum values. No Drizzle types, no
  * dates that only make sense against a live competition.
+ *
+ * The one thing this file does not work out for itself is a single-round
+ * streak: that comes from `resolveWipeout`, the same function that decides who
+ * won a turbo or cup game. A summary that computed its own streak could
+ * disagree with the result screen, so it doesn't compute one.
  */
 
 import { COMPETITION_FAMILY_NAMES } from '@/lib/game/competition-family'
+import { resolveWipeout } from '@/lib/game-logic/auto-complete-tiebreakers'
 
 export type SummaryGameMode = 'classic' | 'turbo' | 'cup'
 
@@ -17,14 +23,21 @@ export type SummaryPickResult = 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_
 export interface SummaryGameRow {
 	gameId: string
 	gameMode: SummaryGameMode
+	/** The player's own `game_player` row — which of a game's players is them. */
+	gamePlayerId: string
+	/** `game.status`. Only a completed game has a streak worth counting. */
+	gameStatus: 'active' | 'completed'
+	/**
+	 * The competition this game is played on — one *season* of a family, and the
+	 * unit one mode sub-row is reported per.
+	 */
+	competitionId: string
+	/** `competition.name`, season included ("Premier League 2025/26"). */
+	competitionName: string
 	/** `competition.season` — null for a competition that records none. */
 	season: string | null
 	/** `game_player.status` for this player. */
 	playerStatus: 'alive' | 'eliminated' | 'winner'
-	/** The competition this game is played on — one *season* of a family. */
-	competitionId: string
-	/** `competition.name`, season included ("Premier League 2025/26"). */
-	competitionName: string
 	/**
 	 * `competition.family_key` — the family every season of this competition
 	 * shares. Null for a competition that belongs to none, which stands alone
@@ -36,6 +49,8 @@ export interface SummaryGameRow {
 /** One pick the player made, in whichever game and round. */
 export interface SummaryPickRow {
 	gameId: string
+	/** Which round of that game — classic counts its depth in these. */
+	roundId: string
 	teamId: string
 	teamName: string
 	teamShortName: string
@@ -50,6 +65,30 @@ export interface SummaryPickRow {
 }
 
 /**
+ * One settled pick in a single-round game (turbo or cup) — from *any* player in
+ * that game, the summary's owner included.
+ *
+ * Rivals' picks are here because the rank a streak counts from is a
+ * cross-player fact: the game restarts at the lowest rank anybody got right, so
+ * the player's own picks alone can't say where their streak began. Void and
+ * pending picks are left out by the row source, exactly as the engine's own
+ * collectors leave them out.
+ */
+export interface SummaryStreakPickRow {
+	gameId: string
+	gamePlayerId: string
+	/** `pick.confidence_rank` — 1 is the most confident. */
+	confidenceRank: number
+	result: SummaryPickResult
+	/**
+	 * `game_player.status` of whoever made this pick. Turbo's engine resolves
+	 * over the players still standing, so a player the game went on without
+	 * (an admin removal, say) can't set the rank a turbo streak starts from.
+	 */
+	playerStatus: 'alive' | 'eliminated' | 'winner'
+}
+
+/**
  * What the page is scoped to. `season: null` is the career — every game the
  * player has ever entered.
  */
@@ -60,6 +99,8 @@ export interface SummaryFilters {
 export interface BuildMeSummaryInput {
 	games: SummaryGameRow[]
 	picks: SummaryPickRow[]
+	/** Empty for a player who has only ever played classic. */
+	streakPicks?: SummaryStreakPickRow[]
 	filters: SummaryFilters
 }
 
@@ -165,6 +206,78 @@ export interface TeamRecordFamily {
 export const ENDS_LENGTH = 3
 
 /**
+ * One mode's record within a single competition season — the sub-row under a
+ * mode section. Kept per season rather than per competition family: a season is
+ * the unit a game is actually played in, and the page's own season filter is
+ * what collapses them.
+ */
+export interface CompetitionRecord {
+	competitionId: string
+	name: string
+	gamesPlayed: number
+	gamesWon: number
+	/** wins ÷ played. Never null — a sub-row exists only where a game was played. */
+	winRate: number
+}
+
+/**
+ * How long the player's runs of correct picks tend to be in a single-round
+ * mode. Both figures are over completed games only — a game still being played
+ * has no settled streak to contribute, so it can't move the average.
+ */
+export interface StreakStats {
+	/** The best run the player has put together. Null until a game has completed. */
+	longest: number | null
+	/** Mean streak over `games`. Null until a game has completed. */
+	average: number | null
+	/** Completed games behind the two figures. */
+	games: number
+}
+
+/**
+ * How deep the player gets in classic — the mode where surviving *is* the game.
+ *
+ * Depth is the number of rounds the player held a pick in, which is the one
+ * count a rebuy can't distort: buying back in clears the elimination round, so a
+ * player who went out in round 1, rebought and lasted to round 8 has no
+ * elimination round to read a depth of 8 from. Rounds held say it anyway.
+ *
+ * Unlike a streak, a round held is a fact the moment it's picked, so a game
+ * still being played contributes what it has so far.
+ */
+export interface ClassicDepth {
+	/** The deepest single run: the most rounds held in one game. */
+	best: number
+	/** Mean rounds held per classic game. */
+	average: number
+	/** Classic games behind the two figures. */
+	games: number
+}
+
+/** Every mode gets a section, in the order the page reads them. */
+export const SUMMARY_MODES: SummaryGameMode[] = ['classic', 'turbo', 'cup']
+
+/** What every played mode section reports, whichever mode it is. */
+export interface ModeRecord {
+	gamesPlayed: number
+	gamesWon: number
+	/** wins ÷ played. Never null — a played section has at least one game. */
+	winRate: number
+	/** The same record split by competition season, deepest first. */
+	competitions: CompetitionRecord[]
+}
+
+/**
+ * One mode's record. `unplayed` is a mode the player has never entered in this
+ * scope: the section says so in its own words rather than showing a row of
+ * noughts, which would read as a bad record instead of no record.
+ */
+export type ModeSection =
+	| { mode: SummaryGameMode; kind: 'unplayed' }
+	| ({ mode: 'classic'; kind: 'played'; depth: ClassicDepth } & ModeRecord)
+	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
+
+/**
  * `empty` is a player with no games in scope — the page says so rather than
  * rendering a wall of zeros, which is why it's a variant and not a headline of
  * noughts.
@@ -177,6 +290,8 @@ export type MeSummaryView =
 			headline: CareerHeadline
 			/** One block per competition family. Never a career-wide list. */
 			teamRecords: TeamRecordFamily[]
+			/** One per mode, always all three, in `SUMMARY_MODES` order. */
+			modes: ModeSection[]
 	  }
 
 /**
@@ -354,6 +469,151 @@ function pickCount(records: TeamRecord[]): number {
 	return records.reduce((total, record) => total + record.picks, 0)
 }
 
+function buildCompetitionRecords(games: SummaryGameRow[]): CompetitionRecord[] {
+	const tally = new Map<string, CompetitionRecord>()
+	for (const g of games) {
+		const row = tally.get(g.competitionId) ?? {
+			competitionId: g.competitionId,
+			name: g.competitionName,
+			gamesPlayed: 0,
+			gamesWon: 0,
+			winRate: 0,
+		}
+		row.gamesPlayed += 1
+		if (g.playerStatus === 'winner') row.gamesWon += 1
+		row.winRate = row.gamesWon / row.gamesPlayed
+		tally.set(g.competitionId, row)
+	}
+	// Most-played first, then by name — a stable order that doesn't follow the
+	// order the rows happened to arrive in.
+	return [...tally.values()].sort(
+		(a, b) => b.gamesPlayed - a.gamesPlayed || a.name.localeCompare(b.name),
+	)
+}
+
+/**
+ * Did the pick keep the streak alive? Turbo asks only whether the prediction
+ * came in; cup counts a handicapped draw and a pick a life absorbed as survived
+ * — the same three results `checkCupCompletion` feeds the engine.
+ */
+function keepsStreakAlive(result: SummaryPickResult, mode: SummaryGameMode): boolean {
+	if (result === 'win') return true
+	if (mode !== 'cup') return false
+	return result === 'draw' || result === 'saved_by_life'
+}
+
+/**
+ * The player's streak in one completed single-round game, as the engine that
+ * decided that game worked it out.
+ *
+ * `resolveWipeout` is handed every player's picks because the rank the streak
+ * counts from is the lowest rank *anyone* got right. Goals are passed as zero
+ * throughout: they only feed the tiebreaks between players, and the only thing
+ * read back here is the streak length.
+ */
+function streakInGame(
+	game: SummaryGameRow,
+	streakPicks: SummaryStreakPickRow[],
+	mode: SummaryGameMode,
+): number {
+	const byPlayer = new Map<string, SummaryStreakPickRow[]>()
+	// The player themselves always has an entry, even with no picks at all —
+	// a game they sat out is a streak of nothing, not a missing game.
+	byPlayer.set(game.gamePlayerId, [])
+	// Whose picks the engine resolved over: turbo's collector takes the players
+	// still standing, cup's takes every player the game ever had. Matching each
+	// decides the rank the streak counts from, which is the whole point of
+	// reading it from the engine rather than recomputing it. The rule applies to
+	// the player themselves too: a turbo game that finished without them (they
+	// were removed) decided nothing about their streak, so it reads as nothing.
+	const resolvedOver =
+		mode === 'cup' ? streakPicks : streakPicks.filter((row) => row.playerStatus !== 'eliminated')
+	for (const row of resolvedOver) {
+		const existing = byPlayer.get(row.gamePlayerId)
+		if (existing) existing.push(row)
+		else byPlayer.set(row.gamePlayerId, [row])
+	}
+
+	const outcome = resolveWipeout(
+		[...byPlayer.entries()].map(([gamePlayerId, rows]) => ({
+			gamePlayerId,
+			livesRemaining: 0,
+			picks: rows.map((row) => ({
+				rank: row.confidenceRank,
+				correct: keepsStreakAlive(row.result, mode),
+				goals: 0,
+			})),
+		})),
+	)
+	// A total wipeout — nobody got a single pick right — is a streak of zero, not
+	// a game to leave out: the player played it and got nowhere.
+	if (outcome.totalWipeout) return 0
+	return outcome.scores.find((s) => s.gamePlayerId === game.gamePlayerId)?.streak ?? 0
+}
+
+function buildStreakStats(
+	games: SummaryGameRow[],
+	streakPicks: SummaryStreakPickRow[],
+	mode: SummaryGameMode,
+): StreakStats {
+	const completed = games.filter((g) => g.gameStatus === 'completed')
+	if (completed.length === 0) return { longest: null, average: null, games: 0 }
+	const streaks = completed.map((g) =>
+		streakInGame(
+			g,
+			streakPicks.filter((row) => row.gameId === g.gameId),
+			mode,
+		),
+	)
+	const total = streaks.reduce((sum, streak) => sum + streak, 0)
+	return {
+		longest: Math.max(...streaks),
+		average: total / streaks.length,
+		games: streaks.length,
+	}
+}
+
+function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicDepth {
+	// Every pick the player holds counts, whatever became of it: a pick voided by
+	// a cancelled fixture, and a pick still waiting on kick-off, were both a round
+	// the player was in the game for.
+	const roundsHeld = games.map(
+		(g) => new Set(picks.filter((p) => p.gameId === g.gameId).map((p) => p.roundId)).size,
+	)
+	const total = roundsHeld.reduce((sum, rounds) => sum + rounds, 0)
+	return {
+		best: Math.max(...roundsHeld),
+		average: total / roundsHeld.length,
+		games: roundsHeld.length,
+	}
+}
+
+function buildModeSection(
+	mode: SummaryGameMode,
+	games: SummaryGameRow[],
+	picks: SummaryPickRow[],
+	streakPicks: SummaryStreakPickRow[],
+): ModeSection {
+	const played = games.filter((g) => g.gameMode === mode)
+	if (played.length === 0) return { mode, kind: 'unplayed' }
+	const gamesWon = played.filter((g) => g.playerStatus === 'winner').length
+	const record: ModeRecord = {
+		gamesPlayed: played.length,
+		gamesWon,
+		winRate: gamesWon / played.length,
+		competitions: buildCompetitionRecords(played),
+	}
+	if (mode === 'classic') {
+		return { mode, kind: 'played', ...record, depth: buildClassicDepth(played, picks) }
+	}
+	return {
+		mode,
+		kind: 'played',
+		...record,
+		streak: buildStreakStats(played, streakPicks, mode),
+	}
+}
+
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 	const season = input.filters.season
 	const games = season === null ? input.games : input.games.filter((g) => g.season === season)
@@ -365,7 +625,9 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 
 	// A pick belongs to the scope its game does, so filtering the games filters
 	// the picks with them.
-	const countedPicks = input.picks.filter((p) => modeOf.has(p.gameId) && counts(p))
+	const scopedPicks = input.picks.filter((p) => modeOf.has(p.gameId))
+	const countedPicks = scopedPicks.filter(counts)
+	const streakPicks = (input.streakPicks ?? []).filter((p) => modeOf.has(p.gameId))
 	const settledPicks = countedPicks.filter((p) => isSettled(p, modeOf.get(p.gameId)))
 	const successful = settledPicks.filter((p) => isSuccess(p, modeOf.get(p.gameId))).length
 
@@ -385,5 +647,6 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
 		teamRecords: buildTeamRecords(games, countedPicks),
+		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}
 }
