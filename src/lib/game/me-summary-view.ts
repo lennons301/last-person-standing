@@ -100,6 +100,19 @@ export interface SummaryPaymentRow {
 }
 
 /**
+ * One `payout` row of the player's — what a game paid them for winning it.
+ *
+ * The status is carried and deliberately never read: nothing in the app
+ * advances a payout past `pending`, so a summary that filtered on it would tell
+ * every winner they had won nothing.
+ */
+export interface SummaryPayoutRow {
+	gameId: string
+	amount: string
+	status: 'pending' | 'completed'
+}
+
+/**
  * What the page is scoped to. `season: null` is the career — every game the
  * player has ever entered.
  */
@@ -114,6 +127,8 @@ export interface BuildMeSummaryInput {
 	streakPicks?: SummaryStreakPickRow[]
 	/** Empty for a player who has only ever played free games. */
 	payments?: SummaryPaymentRow[]
+	/** Empty for a player who has never won a game with money in it. */
+	payouts?: SummaryPayoutRow[]
 	filters: SummaryFilters
 }
 
@@ -642,13 +657,22 @@ function isStaked(row: SummaryPaymentRow): boolean {
 	return row.status === 'paid' || row.status === 'claimed'
 }
 
-function buildMoney(games: SummaryGameRow[], payments: SummaryPaymentRow[]): MoneySummary {
+function buildMoney(
+	games: SummaryGameRow[],
+	payments: SummaryPaymentRow[],
+	payouts: SummaryPayoutRow[],
+): MoneySummary {
 	const inScope = new Set(games.map((g) => g.gameId))
 	const staked = payments
 		.filter((row) => inScope.has(row.gameId) && isStaked(row))
 		.reduce((total, row) => total + pence(row.amount), 0)
+	// Every payout row counts, `status` included in nothing: see
+	// `SummaryPayoutRow`.
+	const won = payouts
+		.filter((row) => inScope.has(row.gameId))
+		.reduce((total, row) => total + pence(row.amount), 0)
 
-	return { stake: pounds(staked), winnings: pounds(0), net: pounds(-staked) }
+	return { stake: pounds(staked), winnings: pounds(won), net: pounds(won - staked) }
 }
 
 function buildModeSection(
@@ -710,7 +734,7 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
 		teamRecords: buildTeamRecords(games, countedPicks),
-		money: buildMoney(games, input.payments ?? []),
+		money: buildMoney(games, input.payments ?? [], input.payouts ?? []),
 		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}
 }

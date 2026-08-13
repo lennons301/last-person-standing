@@ -7,6 +7,7 @@ import {
 	type SummaryGameMode,
 	type SummaryGameRow,
 	type SummaryPaymentRow,
+	type SummaryPayoutRow,
 	type SummaryPickResult,
 	type SummaryPickRow,
 	type SummaryStreakPickRow,
@@ -51,6 +52,18 @@ function stake(
 	amount: string,
 	status: SummaryPaymentRow['status'] = 'paid',
 ): SummaryPaymentRow {
+	return { gameId, amount, status }
+}
+
+/**
+ * One payout row of the player's — what a game paid them. `pending` is the
+ * status every real payout carries, since nothing ever advances one.
+ */
+function won(
+	gameId: string,
+	amount: string,
+	status: SummaryPayoutRow['status'] = 'pending',
+): SummaryPayoutRow {
 	return { gameId, amount, status }
 }
 
@@ -967,5 +980,22 @@ describe('buildMeSummaryView money', () => {
 		expect(view.money.stake).toBe('20.00')
 		expect(view.money.winnings).toBe('0.00')
 		expect(view.money.net).toBe('-20.00')
+	})
+
+	it('counts a payout as winnings whatever its status says', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'g1', playerStatus: 'winner' })],
+					payments: [stake('g1', '10.00')],
+					// Nothing in the app advances a payout past pending, so a summary
+					// that filtered on status would tell every winner they won nothing.
+					payouts: [won('g1', '60.00', 'pending')],
+				}),
+			),
+		)
+
+		expect(view.money.winnings).toBe('60.00')
+		expect(view.money.net).toBe('50.00')
 	})
 })
