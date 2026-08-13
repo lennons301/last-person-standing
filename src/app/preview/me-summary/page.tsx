@@ -1,7 +1,7 @@
 import {
 	CLASSIC_ONLY_SUMMARY,
 	FULL_HISTORY_SUMMARY,
-	MID_SEASON_START_SUMMARY,
+	UNSETTLED_ROUND_ONE_SUMMARY,
 } from '@/app/preview/me-summary/fixtures'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
 
@@ -59,17 +59,18 @@ export default function MeSummaryPreviewPage() {
 			</MobileColumn>
 
 			<header className="border-t border-border pt-6">
-				<h2 className="font-display text-lg font-semibold">One game, started mid-season</h2>
+				<h2 className="font-display text-lg font-semibold">One game, its opening round to come</h2>
 				<p className="text-sm text-muted-foreground">
 					A game created after gameweek one's deadline starts at the competition's earliest pickable
-					round, so it has no round one — and neither does the record of it. The survival rate is a
-					dash over a game it has nothing to say about, rather than a nought for a hurdle the player
-					was never put to. A round one that hasn't kicked off yet reads the same way.
+					round, so its opening round is gameweek 12 — and it hasn't kicked off. The survival rate
+					is a dash over a game it has nothing to say about yet, rather than a nought for a hurdle
+					the player hasn't been put to; the accuracy rate beside it says the same of the pending
+					pick. A round one a cancelled fixture voided reads the same way.
 				</p>
 			</header>
-			<PlayerSummaryView summary={MID_SEASON_START_SUMMARY} />
+			<PlayerSummaryView summary={UNSETTLED_ROUND_ONE_SUMMARY} />
 			<MobileColumn>
-				<PlayerSummaryView summary={MID_SEASON_START_SUMMARY} />
+				<PlayerSummaryView summary={UNSETTLED_ROUND_ONE_SUMMARY} />
 			</MobileColumn>
 		</div>
 	)

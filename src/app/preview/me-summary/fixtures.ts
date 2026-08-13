@@ -180,30 +180,26 @@ export const CLASSIC_ONLY_SUMMARY: MeSummaryView = {
 }
 
 /**
- * A player whose one classic game was created mid-season. Game creation starts
- * a game at the competition's earliest still-pickable round, so this game has
- * no round one at all — and neither does the player's record of it.
+ * A player one round into their only classic game — a game created mid-season,
+ * so its round one is gameweek 12 rather than gameweek 1, and that round hasn't
+ * kicked off yet.
  *
  * The state proves the round-one block says what it doesn't know: the survival
- * rate is a dash over the game it has nothing to say about, rather than a nought
- * for a hurdle the player was never put to. The same state covers a round one
- * that simply hasn't kicked off yet.
+ * rate is a dash over the game it has nothing to say about yet, rather than a
+ * nought for a hurdle the player hasn't been put to. A round one a cancelled
+ * fixture voided renders identically.
  */
-export const MID_SEASON_START_SUMMARY: MeSummaryView = {
+export const UNSETTLED_ROUND_ONE_SUMMARY: MeSummaryView = {
 	kind: 'summary',
 	filters: { season: null },
 	headline: {
 		gamesPlayed: 1,
 		gamesWon: 0,
 		winRate: 0,
-		pickAccuracy: { successful: 3, settled: 4, rate: 0.75, savedByLife: 0 },
-		mostPickedTeam: {
-			teamId: 'team-new',
-			name: 'Newcastle United',
-			shortName: 'NEW',
-			badgeUrl: null,
-			picks: 2,
-		},
+		// The one pick they hold is still pending, so it counts in neither half of
+		// the accuracy rate and there is no most-picked club to name.
+		pickAccuracy: { successful: 0, settled: 0, rate: null, savedByLife: 0 },
+		mostPickedTeam: null,
 	},
 	modes: [
 		{
@@ -221,7 +217,9 @@ export const MID_SEASON_START_SUMMARY: MeSummaryView = {
 					winRate: 0,
 				},
 			],
-			depth: { best: 4, average: 4, games: 1 },
+			// A round held is a fact the moment it's picked, so the pending pick still
+			// counts as a round.
+			depth: { best: 1, average: 1, games: 1 },
 			roundOne: {
 				games: 1,
 				settled: 0,
