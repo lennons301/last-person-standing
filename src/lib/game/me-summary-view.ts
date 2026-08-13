@@ -33,6 +33,13 @@ export interface SummaryGameRow {
 	season: string | null
 	/** `game_player.status` for this player. */
 	playerStatus: 'alive' | 'eliminated' | 'winner'
+	/**
+	 * `game.mode_config.allowRebuys` — did this game let a round-one casualty buy
+	 * back in? Classic's own flag: it's what decides whether a round-one loss
+	 * eliminates at all, so it's also what decides whether playing on afterwards
+	 * was a rebuy or just the starting-round exemption.
+	 */
+	allowRebuys: boolean
 }
 
 /** One pick the player made, in whichever game and round. */
@@ -205,6 +212,14 @@ export interface ClassicRoundOne {
 	survivalRate: number
 	/** Games whose round-one pick failed — the times the player went out at the first hurdle. */
 	exits: number
+	/**
+	 * Round-one exits in games that had rebuys switched on — the denominator for
+	 * `rebought`. A game that never offered a way back can't be held against the
+	 * player for not taking one.
+	 */
+	rebuyable: number
+	/** Of those, the games the player bought back into. */
+	rebought: number
 }
 
 /** Every mode gets a section, in the order the page reads them. */
@@ -434,13 +449,33 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
 function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
 	let survived = 0
 	let exits = 0
+	let rebuyable = 0
+	let rebought = 0
 	for (const g of games) {
-		const roundOne = picks.find((p) => p.gameId === g.gameId && p.roundNumber === 1)
+		const own = picks.filter((p) => p.gameId === g.gameId)
+		const roundOne = own.find((p) => p.roundNumber === 1)
 		// Classic carries no handicap and no lives: only a win gets you through.
-		if (roundOne?.result === 'win') survived += 1
-		else if (roundOne?.result === 'loss' || roundOne?.result === 'draw') exits += 1
+		if (roundOne?.result === 'win') {
+			survived += 1
+			continue
+		}
+		if (roundOne?.result !== 'loss' && roundOne?.result !== 'draw') continue
+		exits += 1
+		if (!g.allowRebuys) continue
+		rebuyable += 1
+		// A pick after the round they went out in is the rebuy: without one they'd
+		// have had nothing left to pick with. No payment row is consulted, because
+		// a free game has none and a rebuy in one still happened.
+		if (own.some((p) => p.roundNumber > 1)) rebought += 1
 	}
-	return { games: games.length, survived, survivalRate: survived / games.length, exits }
+	return {
+		games: games.length,
+		survived,
+		survivalRate: survived / games.length,
+		exits,
+		rebuyable,
+		rebought,
+	}
 }
 
 function buildModeSection(

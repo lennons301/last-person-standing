@@ -24,6 +24,7 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 		competitionName: 'Premier League 2025/26',
 		season: '2025/26',
 		playerStatus: 'eliminated',
+		allowRebuys: false,
 		...overrides,
 	}
 }
@@ -539,7 +540,12 @@ describe('buildMeSummaryView', () => {
 				games: [
 					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
 					game({ gameId: 'c2', gamePlayerId: 'me-c2' }),
-					game({ gameId: 'c3', gamePlayerId: 'me-c3', gameStatus: 'active', playerStatus: 'alive' }),
+					game({
+						gameId: 'c3',
+						gamePlayerId: 'me-c3',
+						gameStatus: 'active',
+						playerStatus: 'alive',
+					}),
 					game({ gameId: 'c4', gamePlayerId: 'me-c4' }),
 				],
 				picks: [
@@ -554,6 +560,34 @@ describe('buildMeSummaryView', () => {
 		)
 
 		expect(roundOneOf(view)).toMatchObject({ games: 4, survived: 0, exits: 2 })
+	})
+
+	it('counts a game bought back into as a round-one failure the player played on from', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// The rebuy cleared this game's elimination round and reason, so the
+					// player row says nothing: they read as alive and never eliminated.
+					// Only the picks remember round one going down.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						playerStatus: 'alive',
+						allowRebuys: true,
+					}),
+					// Out in round one of a game that offered a rebuy, and didn't take it.
+					game({ gameId: 'c2', gamePlayerId: 'me-c2', allowRebuys: true }),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r3', roundNumber: 3 }),
+					pick('loss', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ exits: 2, rebuyable: 2, rebought: 1 })
 	})
 
 	it('resolves a turbo streak over the players still standing, and a cup streak over everyone', () => {

@@ -37,6 +37,7 @@ export async function getMeSummary(
 			competitionName: competition.name,
 			season: competition.season,
 			playerStatus: gamePlayer.status,
+			modeConfig: game.modeConfig,
 		})
 		.from(gamePlayer)
 		.innerJoin(game, eq(gamePlayer.gameId, game.id))
@@ -45,9 +46,12 @@ export async function getMeSummary(
 
 	// The `where` above already narrows the status; the map is what tells the
 	// type system so, since `game.status` carries setup/open too.
-	const games: BuildMeSummaryInput['games'] = gameRows.map((row) => ({
+	const games: BuildMeSummaryInput['games'] = gameRows.map(({ modeConfig, ...row }) => ({
 		...row,
 		gameStatus: row.gameStatus === 'completed' ? 'completed' : 'active',
+		// Same reading as `isRebuyEligible`: anything short of an explicit true is
+		// a game with no way back in.
+		allowRebuys: modeConfig?.allowRebuys === true,
 	}))
 
 	// Picks come back for every game the player has ever been in; the builder
