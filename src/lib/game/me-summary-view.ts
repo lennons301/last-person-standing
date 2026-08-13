@@ -56,6 +56,12 @@ export interface PickAccuracy {
 	settled: number
 	/** successful ÷ settled, as a fraction. Null when nothing has settled. */
 	rate: number | null
+	/**
+	 * Picks a life absorbed. Neither a success nor a failure — the pick lost but
+	 * the player didn't — so they're out of both halves of the rate and carried
+	 * here on their own.
+	 */
+	savedByLife: number
 }
 
 /** The figures at the top of the page: a career in five numbers. */
@@ -113,6 +119,7 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 				successful,
 				settled: settledPicks.length,
 				rate: settledPicks.length === 0 ? null : successful / settledPicks.length,
+				savedByLife: input.picks.filter((p) => p.result === 'saved_by_life').length,
 			},
 		},
 	}

@@ -106,4 +106,27 @@ describe('buildMeSummaryView', () => {
 			settled: 3,
 		})
 	})
+
+	it('keeps picks saved by a life out of accuracy and counts them separately', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'cup-game', gameMode: 'cup' })],
+					picks: [
+						pick('win', { gameId: 'cup-game' }),
+						pick('loss', { gameId: 'cup-game' }),
+						pick('saved_by_life', { gameId: 'cup-game' }),
+						pick('saved_by_life', { gameId: 'cup-game' }),
+					],
+				}),
+			),
+		)
+
+		expect(view.headline.pickAccuracy).toEqual({
+			successful: 1,
+			settled: 2,
+			rate: 0.5,
+			savedByLife: 2,
+		})
+	})
 })
