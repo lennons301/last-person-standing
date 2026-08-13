@@ -323,7 +323,9 @@ function streakInGame(
 	// Whose picks the engine resolved over: turbo's collector takes the players
 	// still standing, cup's takes every player the game ever had. Matching each
 	// decides the rank the streak counts from, which is the whole point of
-	// reading it from the engine rather than recomputing it.
+	// reading it from the engine rather than recomputing it. The rule applies to
+	// the player themselves too: a turbo game that finished without them (they
+	// were removed) decided nothing about their streak, so it reads as nothing.
 	const resolvedOver =
 		mode === 'cup' ? streakPicks : streakPicks.filter((row) => row.playerStatus !== 'eliminated')
 	for (const row of resolvedOver) {
