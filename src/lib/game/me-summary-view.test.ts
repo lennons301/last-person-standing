@@ -161,4 +161,62 @@ describe('buildMeSummaryView', () => {
 
 		expect(byFallback).toEqual(byHand)
 	})
+
+	it('names the most-picked team, counting every pick that resolved into something', () => {
+		const arsenal = { teamId: 'team-ars', teamName: 'Arsenal', teamShortName: 'ARS' }
+		const everton = {
+			teamId: 'team-eve',
+			teamName: 'Everton',
+			teamShortName: 'EVE',
+			teamBadgeUrl: 'https://example.test/eve.png',
+		}
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameMode: 'cup' })],
+					picks: [
+						pick('win', arsenal),
+						pick('pending', arsenal),
+						pick('void', arsenal),
+						pick('win', everton),
+						pick('saved_by_life', everton),
+					],
+				}),
+			),
+		)
+
+		expect(view.headline.mostPickedTeam).toEqual({
+			teamId: 'team-eve',
+			name: 'Everton',
+			shortName: 'EVE',
+			badgeUrl: 'https://example.test/eve.png',
+			picks: 2,
+		})
+	})
+
+	it('breaks a most-picked tie on club name, not on row order', () => {
+		const picks = [
+			pick('win', { teamId: 'team-eve', teamName: 'Everton', teamShortName: 'EVE' }),
+			pick('loss', { teamId: 'team-ars', teamName: 'Arsenal', teamShortName: 'ARS' }),
+		]
+		const view = summary(buildMeSummaryView(input({ games: [game()], picks })))
+		const reversed = summary(
+			buildMeSummaryView(input({ games: [game()], picks: [...picks].reverse() })),
+		)
+
+		expect(view.headline.mostPickedTeam?.name).toBe('Arsenal')
+		expect(reversed.headline.mostPickedTeam?.name).toBe('Arsenal')
+	})
+
+	it('has no most-picked team and no rates while every pick is still pending', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({ games: [game({ playerStatus: 'alive' })], picks: [pick('pending')] }),
+			),
+		)
+
+		expect(view.headline.mostPickedTeam).toBeNull()
+		expect(view.headline.pickAccuracy.rate).toBeNull()
+		expect(view.headline.winRate).toBe(0)
+	})
 })

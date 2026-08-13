@@ -70,6 +70,16 @@ export interface PickAccuracy {
 	savedByLife: number
 }
 
+/** The club the player keeps going back to. */
+export interface MostPickedTeam {
+	teamId: string
+	name: string
+	shortName: string
+	badgeUrl: string | null
+	/** How many of the player's picks it accounts for. */
+	picks: number
+}
+
 /** The figures at the top of the page: a career in five numbers. */
 export interface CareerHeadline {
 	gamesPlayed: number
@@ -77,6 +87,8 @@ export interface CareerHeadline {
 	/** wins ÷ played, as a fraction. Null when nothing has been played. */
 	winRate: number | null
 	pickAccuracy: PickAccuracy
+	/** Null until the player has a pick that counts. */
+	mostPickedTeam: MostPickedTeam | null
 }
 
 /**
@@ -103,6 +115,40 @@ function isSettled(row: SummaryPickRow, mode: SummaryGameMode | undefined): bool
 	return isSuccess(row, mode) || row.result === 'loss' || row.result === 'draw'
 }
 
+/**
+ * Is the pick part of the player's record at all? A pending pick hasn't
+ * happened yet and a void one never will, so neither says anything about how
+ * the player picks.
+ */
+function counts(row: SummaryPickRow): boolean {
+	return row.result !== 'pending' && row.result !== 'void'
+}
+
+function findMostPickedTeam(picks: SummaryPickRow[]): MostPickedTeam | null {
+	const tally = new Map<string, MostPickedTeam>()
+	for (const row of picks) {
+		const seen = tally.get(row.teamId)
+		if (seen) {
+			seen.picks += 1
+			continue
+		}
+		tally.set(row.teamId, {
+			teamId: row.teamId,
+			name: row.teamName,
+			shortName: row.teamShortName,
+			badgeUrl: row.teamBadgeUrl,
+			picks: 1,
+		})
+	}
+	// Ties fall to the alphabetically-first club — the same last-resort tiebreak
+	// the opening table uses, so the headline reads the same on every render
+	// rather than following row order.
+	const ranked = [...tally.values()].sort(
+		(a, b) => b.picks - a.picks || a.name.localeCompare(b.name),
+	)
+	return ranked[0] ?? null
+}
+
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 	const games = input.games
 	if (games.length === 0) return { kind: 'empty', filters: input.filters }
@@ -111,7 +157,8 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 
 	const modeOf = new Map(games.map((g) => [g.gameId, g.gameMode]))
 
-	const settledPicks = input.picks.filter((p) => isSettled(p, modeOf.get(p.gameId)))
+	const countedPicks = input.picks.filter(counts)
+	const settledPicks = countedPicks.filter((p) => isSettled(p, modeOf.get(p.gameId)))
 	const successful = settledPicks.filter((p) => isSuccess(p, modeOf.get(p.gameId))).length
 
 	return {
@@ -125,8 +172,9 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 				successful,
 				settled: settledPicks.length,
 				rate: settledPicks.length === 0 ? null : successful / settledPicks.length,
-				savedByLife: input.picks.filter((p) => p.result === 'saved_by_life').length,
+				savedByLife: countedPicks.filter((p) => p.result === 'saved_by_life').length,
 			},
+			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
 	}
 }
