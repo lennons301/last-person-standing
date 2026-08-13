@@ -590,6 +590,49 @@ describe('buildMeSummaryView', () => {
 		expect(roundOneOf(view)).toMatchObject({ exits: 2, rebuyable: 2, rebought: 1 })
 	})
 
+	it('holds no rebuy against a game that had rebuys switched off', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [game({ gameId: 'c1', gamePlayerId: 'me-c1', allowRebuys: false })],
+				picks: [
+					// No rebuys means round one can't eliminate — the starting-round
+					// exemption carried the player on. Playing round two was never a
+					// rebuy, so the game is out of the denominator as well as the count.
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('loss', { gameId: 'c1', roundId: 'c1-r3', roundNumber: 3 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ exits: 1, rebuyable: 0, rebought: 0 })
+	})
+
+	it('has nothing to report at the first hurdle for a player who has never gone out in it', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1', allowRebuys: true }),
+					game({ gameId: 'c2', gamePlayerId: 'me-c2', allowRebuys: true }),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('loss', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('win', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toEqual({
+			games: 2,
+			survived: 2,
+			survivalRate: 1,
+			exits: 0,
+			rebuyable: 0,
+			rebought: 0,
+		})
+	})
+
 	it('resolves a turbo streak over the players still standing, and a cup streak over everyone', () => {
 		// Rank 1 was right for one player only — a player turbo's engine never saw,
 		// because they were out of the game by the time it ran. Turbo restarts at
