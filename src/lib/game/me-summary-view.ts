@@ -45,8 +45,36 @@ export interface BuildMeSummaryInput {
 	filters: SummaryFilters
 }
 
-export type MeSummaryView = { kind: 'empty'; filters: SummaryFilters }
+/** The figures at the top of the page: a career in five numbers. */
+export interface CareerHeadline {
+	gamesPlayed: number
+	gamesWon: number
+	/** wins ÷ played, as a fraction. Null when nothing has been played. */
+	winRate: number | null
+}
+
+/**
+ * `empty` is a player with no games in scope — the page says so rather than
+ * rendering a wall of zeros, which is why it's a variant and not a headline of
+ * noughts.
+ */
+export type MeSummaryView =
+	| { kind: 'empty'; filters: SummaryFilters }
+	| { kind: 'summary'; filters: SummaryFilters; headline: CareerHeadline }
 
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
-	return { kind: 'empty', filters: input.filters }
+	const games = input.games
+	if (games.length === 0) return { kind: 'empty', filters: input.filters }
+
+	const gamesWon = games.filter((g) => g.playerStatus === 'winner').length
+
+	return {
+		kind: 'summary',
+		filters: input.filters,
+		headline: {
+			gamesPlayed: games.length,
+			gamesWon,
+			winRate: gamesWon / games.length,
+		},
+	}
 }
