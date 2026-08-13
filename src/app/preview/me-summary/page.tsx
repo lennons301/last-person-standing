@@ -1,4 +1,4 @@
-import { FULL_HISTORY_SUMMARY } from '@/app/preview/me-summary/fixtures'
+import { CLASSIC_ONLY_SUMMARY, FULL_HISTORY_SUMMARY } from '@/app/preview/me-summary/fixtures'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
 
 /** The phone column: 375px of viewport minus the page's own `px-4`. */
@@ -29,12 +29,26 @@ export default function MeSummaryPreviewPage() {
 				<p className="text-sm text-muted-foreground">
 					Several seasons in: games played and won, the win rate, pick accuracy over the picks that
 					settled (with the four a cup life absorbed noted rather than counted), and the most-picked
-					club.
+					club — then a section per mode, each with its competition rows: classic's rounds survived,
+					and turbo's and cup's streaks (the same numbers those games were decided by).
 				</p>
 			</header>
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
 			<MobileColumn>
 				<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
+			</MobileColumn>
+
+			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">Classic only, one turbo game in play</h2>
+				<p className="text-sm text-muted-foreground">
+					The absences: cup states that it hasn't been played rather than showing a record of
+					noughts, and turbo has a game behind it but no completed one — so it has a record and no
+					streak to average yet.
+				</p>
+			</header>
+			<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
+			<MobileColumn>
+				<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
 			</MobileColumn>
 		</div>
 	)
