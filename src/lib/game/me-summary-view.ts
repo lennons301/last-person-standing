@@ -29,6 +29,12 @@ export interface SummaryPickRow {
 	teamShortName: string
 	teamBadgeUrl: string | null
 	result: SummaryPickResult
+	/**
+	 * `pick.is_auto` — the no-pick fallback made this one. Carried so the rule is
+	 * stated rather than implied: a fallback pick counts everywhere an ordinary
+	 * pick does, and nothing downstream of here flags it. Deliberately unread.
+	 */
+	isAuto: boolean
 }
 
 /**
