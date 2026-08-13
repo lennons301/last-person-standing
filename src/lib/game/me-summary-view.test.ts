@@ -31,6 +31,7 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}): SummaryPickRow {
 	return {
 		gameId: 'game-1',
+		roundId: 'round-1',
 		teamId: 'team-ars',
 		teamName: 'Arsenal',
 		teamShortName: 'ARS',
@@ -70,6 +71,13 @@ function played(view: MeSummaryView, mode: SummaryGameMode) {
 	if (!section) throw new Error(`no ${mode} section`)
 	if (section.kind !== 'played') throw new Error(`expected ${mode} to have been played`)
 	return section
+}
+
+/** The classic section, narrowed so its rounds-survived figures are readable. */
+function depthOf(view: MeSummaryView) {
+	const section = played(view, 'classic')
+	if (section.mode !== 'classic') throw new Error('unreachable')
+	return section.depth
 }
 
 /** The same, narrowed to a single-round mode so its streak is readable. */
@@ -449,6 +457,46 @@ describe('buildMeSummaryView', () => {
 		expect(streakOf(view, 'cup').longest).toBe(3)
 		// Turbo has neither handicap nor lives: the prediction either came in or it didn't.
 		expect(streakOf(view, 'turbo').longest).toBe(1)
+	})
+
+	it('measures classic depth in rounds the player held a pick in', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
+					game({ gameId: 'c2', gamePlayerId: 'me-c2' }),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r1' }),
+					pick('loss', { gameId: 'c1', roundId: 'c1-r2' }),
+					pick('win', { gameId: 'c2', roundId: 'c2-r1' }),
+					pick('win', { gameId: 'c2', roundId: 'c2-r2' }),
+					pick('win', { gameId: 'c2', roundId: 'c2-r3' }),
+					pick('loss', { gameId: 'c2', roundId: 'c2-r4' }),
+				],
+			}),
+		)
+
+		expect(depthOf(view)).toEqual({ best: 4, average: 3, games: 2 })
+	})
+
+	it('counts every round a rebought player held a pick in, not the rounds before their first loss', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [game({ gameId: 'c1', gamePlayerId: 'me-c1' })],
+				picks: [
+					// Out in round 1, bought back in, then went three more rounds. The
+					// elimination round a rebuy clears would say one round; the rounds
+					// they actually held a pick in say four.
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1' }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r2' }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r3' }),
+					pick('loss', { gameId: 'c1', roundId: 'c1-r4' }),
+				],
+			}),
+		)
+
+		expect(depthOf(view)).toMatchObject({ best: 4, average: 4 })
 	})
 
 	it('has nothing to show for a season the player did not play', () => {

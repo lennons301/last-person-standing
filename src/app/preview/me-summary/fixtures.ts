@@ -51,6 +51,7 @@ export const FULL_HISTORY_SUMMARY: MeSummaryView = {
 					winRate: 1 / 4,
 				},
 			],
+			depth: { best: 12, average: 47 / 9, games: 9 },
 		},
 		{
 			mode: 'turbo',

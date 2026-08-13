@@ -38,6 +38,8 @@ export interface SummaryGameRow {
 /** One pick the player made, in whichever game and round. */
 export interface SummaryPickRow {
 	gameId: string
+	/** Which round of that game — classic counts its depth in these. */
+	roundId: string
 	teamId: string
 	teamName: string
 	teamShortName: string
@@ -154,14 +156,29 @@ export interface StreakStats {
 	games: number
 }
 
+/**
+ * How deep the player gets in classic — the mode where surviving *is* the game.
+ *
+ * Depth is the number of rounds the player held a pick in, which is the one
+ * count a rebuy can't distort: buying back in clears the elimination round, so a
+ * player who went out in round 1, rebought and lasted to round 8 has no
+ * elimination round to read a depth of 8 from. Rounds held say it anyway.
+ *
+ * Unlike a streak, a round held is a fact the moment it's picked, so a game
+ * still being played contributes what it has so far.
+ */
+export interface ClassicDepth {
+	/** The deepest single run: the most rounds held in one game. */
+	best: number
+	/** Mean rounds held per classic game. */
+	average: number
+	/** Classic games behind the two figures. */
+	games: number
+}
+
 /** Every mode gets a section, in the order the page reads them. */
 export const SUMMARY_MODES: SummaryGameMode[] = ['classic', 'turbo', 'cup']
 
-/**
- * One mode's record. `unplayed` is a mode the player has never entered in this
- * scope: the section says so in its own words rather than showing a row of
- * noughts, which would read as a bad record instead of no record.
- */
 /** What every played mode section reports, whichever mode it is. */
 export interface ModeRecord {
 	gamesPlayed: number
@@ -172,9 +189,14 @@ export interface ModeRecord {
 	competitions: CompetitionRecord[]
 }
 
+/**
+ * One mode's record. `unplayed` is a mode the player has never entered in this
+ * scope: the section says so in its own words rather than showing a row of
+ * noughts, which would read as a bad record instead of no record.
+ */
 export type ModeSection =
 	| { mode: SummaryGameMode; kind: 'unplayed' }
-	| ({ mode: 'classic'; kind: 'played' } & ModeRecord)
+	| ({ mode: 'classic'; kind: 'played'; depth: ClassicDepth } & ModeRecord)
 	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
 
 /**
@@ -337,9 +359,25 @@ function buildStreakStats(
 	}
 }
 
+function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicDepth {
+	// Every pick the player holds counts, whatever became of it: a pick voided by
+	// a cancelled fixture, and a pick still waiting on kick-off, were both a round
+	// the player was in the game for.
+	const roundsHeld = games.map(
+		(g) => new Set(picks.filter((p) => p.gameId === g.gameId).map((p) => p.roundId)).size,
+	)
+	const total = roundsHeld.reduce((sum, rounds) => sum + rounds, 0)
+	return {
+		best: Math.max(...roundsHeld),
+		average: total / roundsHeld.length,
+		games: roundsHeld.length,
+	}
+}
+
 function buildModeSection(
 	mode: SummaryGameMode,
 	games: SummaryGameRow[],
+	picks: SummaryPickRow[],
 	streakPicks: SummaryStreakPickRow[],
 ): ModeSection {
 	const played = games.filter((g) => g.gameMode === mode)
@@ -351,7 +389,9 @@ function buildModeSection(
 		winRate: gamesWon / played.length,
 		competitions: buildCompetitionRecords(played),
 	}
-	if (mode === 'classic') return { mode, kind: 'played', ...record }
+	if (mode === 'classic') {
+		return { mode, kind: 'played', ...record, depth: buildClassicDepth(played, picks) }
+	}
 	return {
 		mode,
 		kind: 'played',
@@ -371,7 +411,8 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 
 	// A pick belongs to the scope its game does, so filtering the games filters
 	// the picks with them.
-	const countedPicks = input.picks.filter((p) => modeOf.has(p.gameId) && counts(p))
+	const scopedPicks = input.picks.filter((p) => modeOf.has(p.gameId))
+	const countedPicks = scopedPicks.filter(counts)
 	const streakPicks = (input.streakPicks ?? []).filter((p) => modeOf.has(p.gameId))
 	const settledPicks = countedPicks.filter((p) => isSettled(p, modeOf.get(p.gameId)))
 	const successful = settledPicks.filter((p) => isSuccess(p, modeOf.get(p.gameId))).length
@@ -391,6 +432,6 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			},
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
-		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, streakPicks)),
+		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}
 }

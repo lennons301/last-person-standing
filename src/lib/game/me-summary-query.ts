@@ -56,6 +56,7 @@ export async function getMeSummary(
 	const picks: BuildMeSummaryInput['picks'] = await db
 		.select({
 			gameId: pick.gameId,
+			roundId: pick.roundId,
 			teamId: team.id,
 			teamName: team.name,
 			teamShortName: team.shortName,
