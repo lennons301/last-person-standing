@@ -3,6 +3,7 @@ import {
 	type BuildMeSummaryInput,
 	buildMeSummaryView,
 	type MeSummaryView,
+	type SummaryGameMode,
 	type SummaryGameRow,
 	type SummaryPickResult,
 	type SummaryPickRow,
@@ -39,6 +40,14 @@ function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}
 function summary(view: MeSummaryView) {
 	if (view.kind !== 'summary') throw new Error(`expected a populated summary, got ${view.kind}`)
 	return view
+}
+
+/** The section for one mode, narrowed to the variant with games behind it. */
+function played(view: MeSummaryView, mode: SummaryGameMode) {
+	const section = summary(view).modes.find((m) => m.mode === mode)
+	if (!section) throw new Error(`no ${mode} section`)
+	if (section.kind !== 'played') throw new Error(`expected ${mode} to have been played`)
+	return section
 }
 
 describe('buildMeSummaryView', () => {
@@ -241,6 +250,25 @@ describe('buildMeSummaryView', () => {
 		expect(view.headline.gamesPlayed).toBe(1)
 		expect(view.headline.gamesWon).toBe(1)
 		expect(view.headline.pickAccuracy).toMatchObject({ successful: 1, settled: 1 })
+	})
+
+	it('splits played, won and the win rate out by mode', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gameMode: 'classic', playerStatus: 'winner' }),
+					game({ gameId: 'c2', gameMode: 'classic', playerStatus: 'eliminated' }),
+					game({ gameId: 'c3', gameMode: 'classic', playerStatus: 'eliminated' }),
+					game({ gameId: 't1', gameMode: 'turbo', playerStatus: 'winner' }),
+					game({ gameId: 'k1', gameMode: 'cup', playerStatus: 'eliminated' }),
+					game({ gameId: 'k2', gameMode: 'cup', playerStatus: 'winner' }),
+				],
+			}),
+		)
+
+		expect(played(view, 'classic')).toMatchObject({ gamesPlayed: 3, gamesWon: 1, winRate: 1 / 3 })
+		expect(played(view, 'turbo')).toMatchObject({ gamesPlayed: 1, gamesWon: 1, winRate: 1 })
+		expect(played(view, 'cup')).toMatchObject({ gamesPlayed: 2, gamesWon: 1, winRate: 0.5 })
 	})
 
 	it('has nothing to show for a season the player did not play', () => {

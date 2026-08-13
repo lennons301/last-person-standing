@@ -91,6 +91,25 @@ export interface CareerHeadline {
 	mostPickedTeam: MostPickedTeam | null
 }
 
+/** Every mode gets a section, in the order the page reads them. */
+export const SUMMARY_MODES: SummaryGameMode[] = ['classic', 'turbo', 'cup']
+
+/**
+ * One mode's record. `unplayed` is a mode the player has never entered in this
+ * scope: the section says so in its own words rather than showing a row of
+ * noughts, which would read as a bad record instead of no record.
+ */
+export type ModeSection =
+	| { mode: SummaryGameMode; kind: 'unplayed' }
+	| {
+			mode: SummaryGameMode
+			kind: 'played'
+			gamesPlayed: number
+			gamesWon: number
+			/** wins ÷ played. Never null — a played section has at least one game. */
+			winRate: number
+	  }
+
 /**
  * `empty` is a player with no games in scope — the page says so rather than
  * rendering a wall of zeros, which is why it's a variant and not a headline of
@@ -98,7 +117,13 @@ export interface CareerHeadline {
  */
 export type MeSummaryView =
 	| { kind: 'empty'; filters: SummaryFilters }
-	| { kind: 'summary'; filters: SummaryFilters; headline: CareerHeadline }
+	| {
+			kind: 'summary'
+			filters: SummaryFilters
+			headline: CareerHeadline
+			/** One per mode, always all three, in `SUMMARY_MODES` order. */
+			modes: ModeSection[]
+	  }
 
 /**
  * Did the pick come off? A win everywhere, plus cup's draw — cup scores a draw
@@ -149,6 +174,19 @@ function findMostPickedTeam(picks: SummaryPickRow[]): MostPickedTeam | null {
 	return ranked[0] ?? null
 }
 
+function buildModeSection(mode: SummaryGameMode, games: SummaryGameRow[]): ModeSection {
+	const played = games.filter((g) => g.gameMode === mode)
+	if (played.length === 0) return { mode, kind: 'unplayed' }
+	const gamesWon = played.filter((g) => g.playerStatus === 'winner').length
+	return {
+		mode,
+		kind: 'played',
+		gamesPlayed: played.length,
+		gamesWon,
+		winRate: gamesWon / played.length,
+	}
+}
+
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 	const season = input.filters.season
 	const games = season === null ? input.games : input.games.filter((g) => g.season === season)
@@ -179,5 +217,6 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			},
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
+		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games)),
 	}
 }
