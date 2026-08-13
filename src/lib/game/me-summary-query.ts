@@ -83,8 +83,10 @@ export async function getMeSummary(
 						gamePlayerId: pick.gamePlayerId,
 						confidenceRank: pick.confidenceRank,
 						result: pick.result,
+						playerStatus: gamePlayer.status,
 					})
 					.from(pick)
+					.innerJoin(gamePlayer, eq(pick.gamePlayerId, gamePlayer.id))
 					.where(inArray(pick.gameId, singleRoundGameIds))
 
 	// Void and pending picks are dropped here exactly as the engine's own

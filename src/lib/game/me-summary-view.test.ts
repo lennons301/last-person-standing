@@ -50,12 +50,14 @@ function ranks(
 	gameId: string,
 	gamePlayerId: string,
 	results: SummaryPickResult[],
+	playerStatus: SummaryStreakPickRow['playerStatus'] = 'alive',
 ): SummaryStreakPickRow[] {
 	return results.map((result, index) => ({
 		gameId,
 		gamePlayerId,
 		confidenceRank: index + 1,
 		result,
+		playerStatus,
 	}))
 }
 
@@ -497,6 +499,30 @@ describe('buildMeSummaryView', () => {
 		)
 
 		expect(depthOf(view)).toMatchObject({ best: 4, average: 4 })
+	})
+
+	it('resolves a turbo streak over the players still standing, and a cup streak over everyone', () => {
+		// Rank 1 was right for one player only — a player turbo's engine never saw,
+		// because they were out of the game by the time it ran. Turbo restarts at
+		// rank 2 without them; cup counts every player it ever had, so it starts at
+		// rank 1 and the same rank-1 loss ends the streak before it begins.
+		const rows = (gameId: string, own: string) => [
+			...ranks(gameId, own, ['loss', 'win', 'win']),
+			...ranks(gameId, 'removed-rival', ['win', 'loss', 'loss'], 'eliminated'),
+			...ranks(gameId, 'rival', ['loss', 'win', 'loss']),
+		]
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 't1', gameMode: 'turbo', gamePlayerId: 'me-t1' }),
+					game({ gameId: 'k1', gameMode: 'cup', gamePlayerId: 'me-k1' }),
+				],
+				streakPicks: [...rows('t1', 'me-t1'), ...rows('k1', 'me-k1')],
+			}),
+		)
+
+		expect(streakOf(view, 'turbo').longest).toBe(2)
+		expect(streakOf(view, 'cup').longest).toBe(0)
 	})
 
 	it('has nothing to show for a season the player did not play', () => {

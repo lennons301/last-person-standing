@@ -69,6 +69,12 @@ export interface SummaryStreakPickRow {
 	/** `pick.confidence_rank` — 1 is the most confident. */
 	confidenceRank: number
 	result: SummaryPickResult
+	/**
+	 * `game_player.status` of whoever made this pick. Turbo's engine resolves
+	 * over the players still standing, so a player the game went on without
+	 * (an admin removal, say) can't set the rank a turbo streak starts from.
+	 */
+	playerStatus: 'alive' | 'eliminated' | 'winner'
 }
 
 /**
@@ -314,7 +320,13 @@ function streakInGame(
 	// The player themselves always has an entry, even with no picks at all —
 	// a game they sat out is a streak of nothing, not a missing game.
 	byPlayer.set(game.gamePlayerId, [])
-	for (const row of streakPicks) {
+	// Whose picks the engine resolved over: turbo's collector takes the players
+	// still standing, cup's takes every player the game ever had. Matching each
+	// decides the rank the streak counts from, which is the whole point of
+	// reading it from the engine rather than recomputing it.
+	const resolvedOver =
+		mode === 'cup' ? streakPicks : streakPicks.filter((row) => row.playerStatus !== 'eliminated')
+	for (const row of resolvedOver) {
 		const existing = byPlayer.get(row.gamePlayerId)
 		if (existing) existing.push(row)
 		else byPlayer.set(row.gamePlayerId, [row])
