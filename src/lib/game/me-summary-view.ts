@@ -42,9 +42,9 @@ export interface SummaryGameRow {
 	eliminatedRoundId: string | null
 	/**
 	 * `game.mode_config.allowRebuys` — did this game let a round-one casualty buy
-	 * back in? Classic's own flag: it's what decides whether a round-one loss
-	 * eliminates at all, so it's also what decides whether playing on afterwards
-	 * was a rebuy or just the starting-round exemption.
+	 * back in? Classic's own flag, and the one that decides whether playing on
+	 * after a lost round one was a rebuy or just the starting-round exemption
+	 * carrying the player forward.
 	 */
 	allowRebuys: boolean
 	/**
@@ -65,8 +65,9 @@ export interface SummaryPickRow {
 	roundId: string
 	/**
 	 * `round.number` — which round of the competition this pick was made in.
-	 * Round one is the one the game turns on: it's the round the engine exempts
-	 * from elimination in a no-rebuys game, and the only round a rebuy follows.
+	 * Compared against the game's own `firstRoundNumber` to tell its round one
+	 * from the rounds a rebuy bought: the two are the same only for a game that
+	 * started at the competition's gameweek one.
 	 */
 	roundNumber: number
 	teamId: string
@@ -215,6 +216,11 @@ export interface ClassicDepth {
  * How the player fares at classic's first hurdle — the question a survivor
  * player asks about themselves before any other.
  *
+ * "Round one" throughout is *the game's* first playable round, not the
+ * competition's gameweek one: a game is created at the earliest still-pickable
+ * round, so one started in November opens at gameweek 12 and that is the round
+ * its players had to survive. `SummaryGameRow.firstRoundNumber` carries it.
+ *
  * Every figure here is read from the player's picks, never from their
  * `game_player` row: a rebuy clears the elimination round and reason, so a
  * rebought game leaves no trace on the player record. The picks survive it.
@@ -225,9 +231,8 @@ export interface ClassicRoundOne {
 	/**
 	 * Games whose round-one pick resolved either way — the survival rate's
 	 * denominator, and the same rule the accuracy rate and the streaks follow: a
-	 * pick still waiting on kick-off, one a cancelled fixture voided, and a game
-	 * that started after gameweek one and has no round one at all are none of
-	 * them a hurdle the player has been put to yet.
+	 * pick still waiting on kick-off, and one a cancelled fixture voided, are
+	 * neither of them a hurdle the player has been put to yet.
 	 */
 	settled: number
 	/** Games whose round-one pick came off. */
@@ -235,10 +240,9 @@ export interface ClassicRoundOne {
 	/** survived ÷ settled. Null until a round one has settled. */
 	survivalRate: number | null
 	/**
-	 * Games whose round-one pick went down. Not the same thing as going out: with
-	 * rebuys switched off a lost round one doesn't eliminate at all (the
-	 * starting-round exemption), so the page labels this by the pick rather than
-	 * by an exit.
+	 * Games whose round-one pick went down. Not the same thing as going out: where
+	 * the starting-round exemption applies, a lost round one doesn't eliminate at
+	 * all, so the page labels this by the pick rather than by an exit.
 	 */
 	exits: number
 	/**
@@ -465,21 +469,22 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
 /**
  * The player's round-one record across their classic games.
  *
- * Round one is `round.number === 1` — the same round the engine exempts from
- * elimination in a no-rebuys game and the only one a rebuy follows, so this
- * agrees with what the game itself did rather than with a second definition of
- * "the first round".
+ * Round one is the round *this game* started at — `firstRoundNumber`, the
+ * lowest round anybody in the game ever picked in — because that is the first
+ * hurdle its players were put to. A game created after gameweek one's deadline
+ * starts at the competition's earliest still-pickable round, so its round one is
+ * gameweek 12 or 24 and is a first round all the same. Note that the engine's
+ * own starting-round exemption (`settleFixture`) and `isRebuyEligible` both key
+ * off the *competition's* gameweek one instead, so for a mid-season game they
+ * behave differently from what this block measures; the block follows the game.
  *
  * A game with no settled round-one pick is neither a survival nor an exit, and
  * is out of the rate's denominator entirely — the picks are all this reads, and
- * they don't say. Three ways that happens, all of them ordinary: round one
- * hasn't kicked off yet, a cancelled fixture voided the pick, or the game was
- * created after gameweek one's deadline and has no round one at all (game
- * creation starts a game at the competition's earliest still-pickable round).
- * Such a game still counts in `games`, so the page can say what the rate is
- * over, but it can't drag the rate down to a nought the player never earned. A
- * fourth way is not ordinary and is the second knowing miss below: a round one
- * the player never picked in at all.
+ * they don't say. Two ways that happens, both ordinary: round one hasn't kicked
+ * off yet, or a cancelled fixture voided the pick. Such a game still counts in
+ * `games`, so the page can say what the rate is over, but it can't drag the rate
+ * down to a nought the player never earned. A third way is not ordinary and is
+ * the second knowing miss below: a round one the player never picked in at all.
  *
  * Two cases this knowingly misses, both of them the price of reading picks
  * rather than payments, and neither of them fixable without a figure that would
@@ -491,17 +496,20 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
  *    `eliminated_reason`, which is only written as `missed_rebuy_pick` when a
  *    second *payment* row exists — so it would miss the free games this whole
  *    block exists to get right. A rebuy nobody picked with reads as no rebuy.
- * 2. A player who missed round one's deadline in a game that had rebuys switched
- *    on went out with no pick row at all: round one deliberately has no
- *    auto-pick fallback, so `handleNoPicks` eliminates them as
- *    `no_pick_no_fallback` and writes nothing (`no-pick-handler.ts`; with rebuys
- *    off the same path leaves them alone, exempt). With no round-one pick to
- *    read, that game is neither a survival nor an exit and sits outside the
- *    rate — it flatters the player by the width of one game. The elimination
- *    round *number* would catch the ones who stayed out, but not the ones who
- *    bought back in (the rebuy clears the round), so counting it would trade a
- *    silent omission for a rebuy figure that states a nought against a player
- *    who did buy back in. The omission is the quieter error of the two.
+ * 2. A player who missed the deadline of a round one that *is* the competition's
+ *    gameweek one, in a game with rebuys switched on, went out with no pick row
+ *    at all: gameweek one deliberately has no auto-pick fallback, so
+ *    `handleNoPicks` eliminates them as `no_pick_no_fallback` and writes nothing
+ *    (`no-pick-handler.ts`; with rebuys off the same path leaves them alone,
+ *    exempt). With no round-one pick to read, that game is neither a survival nor
+ *    an exit and sits outside the rate — it flatters the player by the width of
+ *    one game. A mid-season game's round one doesn't have this hole: a missed
+ *    deadline there takes the ordinary auto-pick fallback, and a fallback pick
+ *    counts exactly as a hand-made one. Reading the elimination round instead
+ *    would catch the ones who stayed out but not the ones who bought back in
+ *    (the rebuy clears it), so counting it would trade a silent omission for a
+ *    rebuy figure that states a nought against a player who did buy back in. The
+ *    omission is the quieter error of the two.
  */
 function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
 	let survived = 0
