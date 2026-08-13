@@ -1,4 +1,8 @@
-import { CLASSIC_ONLY_SUMMARY, FULL_HISTORY_SUMMARY } from '@/app/preview/me-summary/fixtures'
+import {
+	CLASSIC_ONLY_SUMMARY,
+	FILTERED_SEASON_SUMMARY,
+	FULL_HISTORY_SUMMARY,
+} from '@/app/preview/me-summary/fixtures'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
 
 /** The phone column: 375px of viewport minus the page's own `px-4`. */
@@ -42,6 +46,24 @@ export default function MeSummaryPreviewPage() {
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
 			<MobileColumn>
 				<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
+			</MobileColumn>
+
+			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">A season selected, per family</h2>
+				<p className="text-sm text-muted-foreground">
+					The same history, arrived at through a link. Each family block carries its own season
+					control — a league season reads "2025/26" where a World Cup reads "2026", so one control
+					over both would offer seasons that mean nothing to half the teams under it. The league
+					block is narrowed to 2025/26 (Liverpool's five picks drop to that season's three) and
+					still offers the season it narrowed away from; the World Cup is narrowed to an edition
+					this player never played — what a link shared by a player with a different history does —
+					so it names the empty season rather than showing a record of noughts. Above them, the
+					headline and the mode sections are unmoved: they are all-time whatever is selected here.
+				</p>
+			</header>
+			<PlayerSummaryView summary={FILTERED_SEASON_SUMMARY} />
+			<MobileColumn>
+				<PlayerSummaryView summary={FILTERED_SEASON_SUMMARY} />
 			</MobileColumn>
 
 			<header className="border-t border-border pt-6">
