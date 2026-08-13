@@ -178,3 +178,61 @@ export const CLASSIC_ONLY_SUMMARY: MeSummaryView = {
 		{ mode: 'cup', kind: 'unplayed' },
 	],
 }
+
+/**
+ * A player whose one classic game was created mid-season. Game creation starts
+ * a game at the competition's earliest still-pickable round, so this game has
+ * no round one at all — and neither does the player's record of it.
+ *
+ * The state proves the round-one block says what it doesn't know: the survival
+ * rate is a dash over the game it has nothing to say about, rather than a nought
+ * for a hurdle the player was never put to. The same state covers a round one
+ * that simply hasn't kicked off yet.
+ */
+export const MID_SEASON_START_SUMMARY: MeSummaryView = {
+	kind: 'summary',
+	filters: { season: null },
+	headline: {
+		gamesPlayed: 1,
+		gamesWon: 0,
+		winRate: 0,
+		pickAccuracy: { successful: 3, settled: 4, rate: 0.75, savedByLife: 0 },
+		mostPickedTeam: {
+			teamId: 'team-new',
+			name: 'Newcastle United',
+			shortName: 'NEW',
+			badgeUrl: null,
+			picks: 2,
+		},
+	},
+	modes: [
+		{
+			mode: 'classic',
+			kind: 'played',
+			gamesPlayed: 1,
+			gamesWon: 0,
+			winRate: 0,
+			competitions: [
+				{
+					competitionId: 'comp-pl-2526',
+					name: 'Premier League 2025/26',
+					gamesPlayed: 1,
+					gamesWon: 0,
+					winRate: 0,
+				},
+			],
+			depth: { best: 4, average: 4, games: 1 },
+			roundOne: {
+				games: 1,
+				settled: 0,
+				survived: 0,
+				survivalRate: null,
+				exits: 0,
+				rebuyable: 0,
+				rebought: 0,
+			},
+		},
+		{ mode: 'turbo', kind: 'unplayed' },
+		{ mode: 'cup', kind: 'unplayed' },
+	],
+}

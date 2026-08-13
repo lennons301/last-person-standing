@@ -1,4 +1,8 @@
-import { CLASSIC_ONLY_SUMMARY, FULL_HISTORY_SUMMARY } from '@/app/preview/me-summary/fixtures'
+import {
+	CLASSIC_ONLY_SUMMARY,
+	FULL_HISTORY_SUMMARY,
+	MID_SEASON_START_SUMMARY,
+} from '@/app/preview/me-summary/fixtures'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
 
 /** The phone column: 375px of viewport minus the page's own `px-4`. */
@@ -52,6 +56,20 @@ export default function MeSummaryPreviewPage() {
 			<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
 			<MobileColumn>
 				<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
+			</MobileColumn>
+
+			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">One game, started mid-season</h2>
+				<p className="text-sm text-muted-foreground">
+					A game created after gameweek one's deadline starts at the competition's earliest pickable
+					round, so it has no round one — and neither does the record of it. The survival rate is a
+					dash over a game it has nothing to say about, rather than a nought for a hurdle the player
+					was never put to. A round one that hasn't kicked off yet reads the same way.
+				</p>
+			</header>
+			<PlayerSummaryView summary={MID_SEASON_START_SUMMARY} />
+			<MobileColumn>
+				<PlayerSummaryView summary={MID_SEASON_START_SUMMARY} />
 			</MobileColumn>
 		</div>
 	)
