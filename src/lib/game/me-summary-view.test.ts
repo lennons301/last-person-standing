@@ -305,4 +305,95 @@ describe('buildMeSummaryView team records', () => {
 			},
 		])
 	})
+
+	it('never pools two families together, even for the same player', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'league-game' }),
+						game({
+							gameId: 'cup-game',
+							gameMode: 'cup',
+							competitionId: 'comp-wc-2026',
+							competitionName: 'FIFA World Cup 2026',
+							competitionFamilyKey: WORLD_CUP_FAMILY_KEY,
+							season: '2026',
+						}),
+					],
+					picks: [
+						pick('win', { gameId: 'league-game', ...team('ARS', 'Arsenal') }),
+						pick('win', { gameId: 'cup-game', ...team('BRA', 'Brazil') }),
+						pick('loss', { gameId: 'cup-game', ...team('BRA', 'Brazil') }),
+					],
+				}),
+			),
+		)
+
+		const byName = new Map(view.teamRecords.map((f) => [f.name, f]))
+		expect([...byName.keys()].sort()).toEqual(['Premier League', 'World Cup'])
+		expect(byName.get('Premier League')?.all.map((t) => t.shortName)).toEqual(['ARS'])
+		expect(byName.get('World Cup')?.all).toEqual([
+			{
+				teamId: 'team-bra',
+				name: 'Brazil',
+				shortName: 'BRA',
+				badgeUrl: null,
+				picks: 2,
+				wins: 1,
+				savedByLife: 0,
+				rate: 0.5,
+			},
+		])
+	})
+
+	it('keeps a competition with no family out of every other family', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'league-game' }),
+						game({
+							gameId: 'friendly-game',
+							competitionId: 'comp-friendly',
+							competitionName: 'Sunday League',
+							competitionFamilyKey: null,
+						}),
+					],
+					picks: [
+						pick('win', { gameId: 'league-game', ...team('ARS', 'Arsenal') }),
+						pick('win', { gameId: 'friendly-game', ...team('ARS', 'Arsenal') }),
+					],
+				}),
+			),
+		)
+
+		expect(view.teamRecords.map((f) => [f.name, f.all[0]?.picks])).toEqual([
+			['Premier League', 1],
+			['Sunday League', 1],
+		])
+	})
+
+	it('leads with the family the player has picked in most, whatever order the rows arrive in', () => {
+		const games = [
+			game({ gameId: 'league-game' }),
+			game({
+				gameId: 'cup-game',
+				gameMode: 'cup',
+				competitionId: 'comp-wc-2026',
+				competitionName: 'FIFA World Cup 2026',
+				competitionFamilyKey: WORLD_CUP_FAMILY_KEY,
+			}),
+		]
+		const picks = [
+			pick('win', { gameId: 'cup-game', ...team('BRA', 'Brazil') }),
+			pick('win', { gameId: 'league-game', ...team('ARS', 'Arsenal') }),
+			pick('loss', { gameId: 'league-game', ...team('EVE', 'Everton') }),
+		]
+		const view = summary(buildMeSummaryView(input({ games, picks })))
+		const reversed = summary(buildMeSummaryView(input({ games, picks: [...picks].reverse() })))
+
+		expect(view.teamRecords.map((f) => f.name)).toEqual(['Premier League', 'World Cup'])
+		expect(reversed.teamRecords.map((f) => f.name)).toEqual(['Premier League', 'World Cup'])
+	})
 })

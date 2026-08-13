@@ -258,13 +258,22 @@ function buildTeamRecords(
 		if (row.result === 'saved_by_life') record.savedByLife += 1
 	}
 
-	return [...families.entries()].map(([familyKey, block]) => {
+	const blocks = [...families.entries()].map(([familyKey, block]) => {
 		const all = [...block.teams.values()].map((record) => {
 			const rated = record.picks - record.savedByLife
 			return { ...record, rate: rated === 0 ? null : record.wins / rated }
 		})
 		return { familyKey, name: block.name, all }
 	})
+
+	// The family the player has picked in most leads, since that's the record they
+	// came to read. Name breaks a tie, so the order is the player's history and
+	// never the order rows happened to arrive in.
+	return blocks.sort((a, b) => pickCount(b.all) - pickCount(a.all) || a.name.localeCompare(b.name))
+}
+
+function pickCount(records: TeamRecord[]): number {
+	return records.reduce((total, record) => total + record.picks, 0)
 }
 
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
