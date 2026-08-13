@@ -219,4 +219,39 @@ describe('buildMeSummaryView', () => {
 		expect(view.headline.pickAccuracy.rate).toBeNull()
 		expect(view.headline.winRate).toBe(0)
 	})
+
+	it('scopes the headline to one season when the filter names one', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					filters: { season: '2025/26' },
+					games: [
+						game({ gameId: 'this-season', season: '2025/26', playerStatus: 'winner' }),
+						game({ gameId: 'last-season', season: '2024/25', playerStatus: 'winner' }),
+					],
+					picks: [
+						pick('win', { gameId: 'this-season' }),
+						pick('loss', { gameId: 'last-season' }),
+						pick('loss', { gameId: 'last-season' }),
+					],
+				}),
+			),
+		)
+
+		expect(view.headline.gamesPlayed).toBe(1)
+		expect(view.headline.gamesWon).toBe(1)
+		expect(view.headline.pickAccuracy).toMatchObject({ successful: 1, settled: 1 })
+	})
+
+	it('has nothing to show for a season the player did not play', () => {
+		const view = buildMeSummaryView(
+			input({
+				filters: { season: '2024/25' },
+				games: [game({ season: '2025/26' })],
+				picks: [pick('win')],
+			}),
+		)
+
+		expect(view.kind).toBe('empty')
+	})
 })

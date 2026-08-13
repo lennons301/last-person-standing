@@ -150,14 +150,17 @@ function findMostPickedTeam(picks: SummaryPickRow[]): MostPickedTeam | null {
 }
 
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
-	const games = input.games
+	const season = input.filters.season
+	const games = season === null ? input.games : input.games.filter((g) => g.season === season)
 	if (games.length === 0) return { kind: 'empty', filters: input.filters }
 
 	const gamesWon = games.filter((g) => g.playerStatus === 'winner').length
 
 	const modeOf = new Map(games.map((g) => [g.gameId, g.gameMode]))
 
-	const countedPicks = input.picks.filter(counts)
+	// A pick belongs to the scope its game does, so filtering the games filters
+	// the picks with them.
+	const countedPicks = input.picks.filter((p) => modeOf.has(p.gameId) && counts(p))
 	const settledPicks = countedPicks.filter((p) => isSettled(p, modeOf.get(p.gameId)))
 	const successful = settledPicks.filter((p) => isSuccess(p, modeOf.get(p.gameId))).length
 
