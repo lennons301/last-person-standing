@@ -49,6 +49,16 @@ export const competition = pgTable('competition', {
 	dataSource: competitionDataSourceEnum('data_source').notNull(),
 	externalId: varchar('external_id', { length: 100 }),
 	season: varchar('season', { length: 20 }),
+	// The competition *family* this row is one season of: every Premier League
+	// season shares one key, each tournament has its own (see
+	// `src/lib/game/competition-family.ts`). Per-team pick records are meaningless
+	// per-season — classic allows one pick per team per game, so a single season
+	// yields one to three picks per team — so anything spanning seasons needs a
+	// stored key to enumerate a family's seasons from.
+	//
+	// Nullable: manual/dev competitions belong to no family, and rows created
+	// before the key existed keep their null until a backfill claims them.
+	familyKey: varchar('family_key', { length: 100 }),
 	// Lifecycle: 'active' → offered at game creation, synced daily, polled live.
 	// 'archived' → a finished season/tournament kept for history: hidden from
 	// game creation, skipped by every sync/reconcile/poll surface, and never

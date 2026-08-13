@@ -5,6 +5,7 @@ import { enqueuePollScoresAt } from '@/lib/data/qstash'
 import type { AdapterStanding, CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
+import { PREMIER_LEAGUE_FAMILY_KEY, WORLD_CUP_FAMILY_KEY } from '@/lib/game/competition-family'
 import { settleFixture } from '@/lib/game/settle'
 import { recordStandingsSnapshot } from '@/lib/game/standings-snapshot'
 import {
@@ -137,6 +138,11 @@ export async function ensureCurrentPlSeasonCompetition(
 					type: 'league',
 					dataSource: 'fpl',
 					season,
+					// The constant, not the predecessor's value: the new season joins
+					// the existing Premier League family by construction, so a rollover
+					// can't silently start a family of one (which is what a leaderboard
+					// spanning seasons would read as a fresh, empty history).
+					familyKey: PREMIER_LEAGUE_FAMILY_KEY,
 					status: 'active',
 				})
 				.returning()
@@ -170,6 +176,7 @@ export async function bootstrapCompetitions(opts: BootstrapOptions): Promise<voi
 				dataSource: 'football_data',
 				externalId: 'WC',
 				season: '2026',
+				familyKey: WORLD_CUP_FAMILY_KEY,
 				status: 'active',
 			})
 			.returning()

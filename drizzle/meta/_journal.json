@@ -99,6 +99,13 @@
       "when": 1786513078903,
       "tag": "0013_standings_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786611401333,
+      "tag": "0014_add_competition_family_key",
+      "breakpoints": true
     }
   ]
 }

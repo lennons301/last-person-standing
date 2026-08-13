@@ -138,6 +138,7 @@ import {
 	scheduleUpcomingFixturePolls,
 	syncCompetition,
 } from './bootstrap-competitions'
+import { PREMIER_LEAGUE_FAMILY_KEY, WORLD_CUP_FAMILY_KEY } from './competition-family'
 
 /** Every insert(...).values(...) payload captured by the db mock. */
 function insertedValues(): Record<string, unknown>[] {
@@ -250,6 +251,7 @@ describe('ensureCurrentPlSeasonCompetition', () => {
 				type: 'league',
 				dataSource: 'fpl',
 				season: '2031/32',
+				familyKey: PREMIER_LEAGUE_FAMILY_KEY,
 				status: 'active',
 			}),
 		])
@@ -282,6 +284,7 @@ describe('ensureCurrentPlSeasonCompetition', () => {
 			name: 'Premier League 2025/26',
 			dataSource: 'fpl',
 			season: '2025/26',
+			familyKey: PREMIER_LEAGUE_FAMILY_KEY,
 			status: 'active',
 		}
 		// No competition exists yet for the detected season…
@@ -298,6 +301,28 @@ describe('ensureCurrentPlSeasonCompetition', () => {
 		expect(archiveSets).toEqual([expect.objectContaining({ status: 'archived' })])
 		expect(warn).toHaveBeenCalledWith(expect.stringContaining('season rollover'))
 		warn.mockRestore()
+	})
+
+	it('rolls the new season into the SAME family as its predecessor, not a fresh one', async () => {
+		// The rollover's quiet failure mode: a new season with its own family key
+		// starts an empty history instead of continuing the Premier League's.
+		vi.spyOn(console, 'warn').mockImplementation(() => {})
+		mockDetectedSeason(2026)
+		const predecessor = {
+			id: 'comp-old',
+			name: 'Premier League 2025/26',
+			dataSource: 'fpl',
+			season: '2025/26',
+			familyKey: PREMIER_LEAGUE_FAMILY_KEY,
+			status: 'active',
+		}
+		dbQueryCompetitionFindFirst.mockResolvedValue(undefined)
+		dbQueryCompetitionFindMany.mockResolvedValue([predecessor])
+
+		await ensureCurrentPlSeasonCompetition({ footballDataApiKey: 'fd-key' })
+
+		const [created] = insertedValues()
+		expect(created.familyKey).toBe(predecessor.familyKey)
 	})
 
 	it('aborts with zero writes on a season disagreement between the sources', async () => {
@@ -376,6 +401,22 @@ describe('bootstrapCompetitions', () => {
 		expect(plInsert).toEqual(
 			expect.objectContaining({ name: 'Premier League 2027/28', season: '2027/28' }),
 		)
+	})
+
+	it('stamps a family key on the competition it creates, for both data sources', async () => {
+		dbQueryCompetitionFindFirst.mockResolvedValue(undefined)
+
+		await bootstrapCompetitions({ footballDataApiKey: 'fd-key' })
+
+		const competitionInserts = insertedValues().filter((v) => 'dataSource' in v)
+		expect(competitionInserts.find((v) => v.dataSource === 'fpl')).toEqual(
+			expect.objectContaining({ familyKey: PREMIER_LEAGUE_FAMILY_KEY }),
+		)
+		expect(competitionInserts.find((v) => v.dataSource === 'football_data')).toEqual(
+			expect.objectContaining({ externalId: 'WC', familyKey: WORLD_CUP_FAMILY_KEY }),
+		)
+		// The two families are distinct — grouping seasons is the whole point.
+		expect(PREMIER_LEAGUE_FAMILY_KEY).not.toBe(WORLD_CUP_FAMILY_KEY)
 	})
 
 	it('is idempotent when competitions already exist', async () => {
