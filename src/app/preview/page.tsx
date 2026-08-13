@@ -19,6 +19,11 @@ const GALLERIES = [
 			"A team's full form guide: position line, season splits, goals, results, next fixture and head-to-head.",
 	},
 	{
+		href: '/preview/me-summary',
+		title: 'Player summary',
+		description: "The player's own /me page: the career headline from a hand-built view model.",
+	},
+	{
 		href: '/preview/live-scores',
 		title: 'Live scores',
 		description: 'The on-demand scores pop-out and its control, one payload per live scenario.',
