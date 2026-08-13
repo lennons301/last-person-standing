@@ -40,7 +40,7 @@ const CLASSIC: ModeSection = {
 		{ competitionId: 'comp-wc', name: 'World Cup 2026', gamesPlayed: 1, gamesWon: 0, winRate: 0 },
 	],
 	depth: { best: 9, average: 4.5, games: 4 },
-	roundOne: { games: 4, survived: 3, survivalRate: 0.75 },
+	roundOne: { games: 4, survived: 3, survivalRate: 0.75, exits: 1 },
 }
 
 const TURBO: ModeSection = {

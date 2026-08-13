@@ -203,6 +203,8 @@ export interface ClassicRoundOne {
 	survived: number
 	/** survived ÷ games. Never null — the block exists only where a game was played. */
 	survivalRate: number
+	/** Games whose round-one pick failed — the times the player went out at the first hurdle. */
+	exits: number
 }
 
 /** Every mode gets a section, in the order the page reads them. */
@@ -431,12 +433,14 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
  */
 function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
 	let survived = 0
+	let exits = 0
 	for (const g of games) {
 		const roundOne = picks.find((p) => p.gameId === g.gameId && p.roundNumber === 1)
 		// Classic carries no handicap and no lives: only a win gets you through.
 		if (roundOne?.result === 'win') survived += 1
+		else if (roundOne?.result === 'loss' || roundOne?.result === 'draw') exits += 1
 	}
-	return { games: games.length, survived, survivalRate: survived / games.length }
+	return { games: games.length, survived, survivalRate: survived / games.length, exits }
 }
 
 function buildModeSection(

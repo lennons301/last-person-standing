@@ -533,6 +533,29 @@ describe('buildMeSummaryView', () => {
 		expect(roundOneOf(view)).toMatchObject({ games: 4, survived: 2, survivalRate: 0.5 })
 	})
 
+	it('counts a round-one exit for each opening pick that failed, and none for one still pending', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
+					game({ gameId: 'c2', gamePlayerId: 'me-c2' }),
+					game({ gameId: 'c3', gamePlayerId: 'me-c3', gameStatus: 'active', playerStatus: 'alive' }),
+					game({ gameId: 'c4', gamePlayerId: 'me-c4' }),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('draw', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+					// Round one hasn't kicked off in c3, and c4's was voided by a
+					// cancelled fixture — neither is a hurdle the player has failed.
+					pick('pending', { gameId: 'c3', roundId: 'c3-r1', roundNumber: 1 }),
+					pick('void', { gameId: 'c4', roundId: 'c4-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ games: 4, survived: 0, exits: 2 })
+	})
+
 	it('resolves a turbo streak over the players still standing, and a cup streak over everyone', () => {
 		// Rank 1 was right for one player only — a player turbo's engine never saw,
 		// because they were out of the game by the time it ran. Turbo restarts at
