@@ -47,6 +47,15 @@ export interface SummaryGameRow {
 	 * was a rebuy or just the starting-round exemption.
 	 */
 	allowRebuys: boolean
+	/**
+	 * `round.number` of this game's **own** first playable round — its round one.
+	 *
+	 * Not the competition's gameweek one: a game is created at the competition's
+	 * earliest still-pickable round, so a game started in November opens at
+	 * gameweek 12 and gameweek 12 is the first hurdle its players were put to.
+	 * Null for a game with no picks in it at all, which has no round one to read.
+	 */
+	firstRoundNumber: number | null
 }
 
 /** One pick the player made, in whichever game and round. */
@@ -500,8 +509,10 @@ function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]):
 	let rebuyable = 0
 	let rebought = 0
 	for (const g of games) {
+		const firstRound = g.firstRoundNumber
+		if (firstRound === null) continue
 		const own = picks.filter((p) => p.gameId === g.gameId)
-		const roundOne = own.find((p) => p.roundNumber === 1)
+		const roundOne = own.find((p) => p.roundNumber === firstRound)
 		// Classic carries no handicap and no lives: only a win gets you through.
 		if (roundOne?.result === 'win') {
 			survived += 1
@@ -519,7 +530,8 @@ function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]):
 		// delete them when a player goes out, so a locked round-3 pick would
 		// otherwise read as a rebuy the player never took.
 		const stillOutFromRoundOne = g.eliminatedRoundId === roundOne.roundId
-		if (!stillOutFromRoundOne && own.some((p) => p.roundNumber > 1)) rebought += 1
+		const playedOn = own.some((p) => p.roundNumber > firstRound)
+		if (!stillOutFromRoundOne && playedOn) rebought += 1
 	}
 	const settled = survived + exits
 	return {

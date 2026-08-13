@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, min } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	type BuildMeSummaryInput,
@@ -45,6 +45,32 @@ export async function getMeSummary(
 		.innerJoin(competition, eq(game.competitionId, competition.id))
 		.where(and(eq(gamePlayer.userId, userId), inArray(game.status, ['active', 'completed'])))
 
+	// Each game's own first playable round — its round one — as the lowest round
+	// anybody in it ever picked in. A game is created at the competition's
+	// earliest still-pickable round, so a game started in November opens at
+	// gameweek 12; nothing on the game row remembers that afterwards, because
+	// `current_round_id` advances as the game goes on. Every player's picks are
+	// read, not just this one's: a player who missed the opening round has no
+	// pick there to anchor it, and their rivals do. Classic only: it's the one
+	// mode that plays more than one round, so the only one with a round one to
+	// tell from the rest.
+	const classicGameIds = gameRows.filter((row) => row.gameMode === 'classic').map((r) => r.gameId)
+	const firstRoundRows =
+		classicGameIds.length === 0
+			? []
+			: await db
+					.select({ gameId: pick.gameId, firstRoundNumber: min(round.number) })
+					.from(pick)
+					.innerJoin(round, eq(pick.roundId, round.id))
+					.where(inArray(pick.gameId, classicGameIds))
+					.groupBy(pick.gameId)
+	const firstRoundByGame = new Map(
+		firstRoundRows.map((row) => [
+			row.gameId,
+			row.firstRoundNumber === null ? null : Number(row.firstRoundNumber),
+		]),
+	)
+
 	// The `where` above already narrows the status; the map is what tells the
 	// type system so, since `game.status` carries setup/open too.
 	const games: BuildMeSummaryInput['games'] = gameRows.map(({ modeConfig, ...row }) => ({
@@ -53,6 +79,10 @@ export async function getMeSummary(
 		// Same reading as `isRebuyEligible`: anything short of an explicit true is
 		// a game with no way back in.
 		allowRebuys: modeConfig?.allowRebuys === true,
+		// Null for a game nobody has picked in yet — there is no first round to
+		// read, and the round-one block leaves such a game out rather than
+		// guessing at one.
+		firstRoundNumber: firstRoundByGame.get(row.gameId) ?? null,
 	}))
 
 	// Picks come back for every game the player has ever been in; the builder

@@ -26,6 +26,7 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 		playerStatus: 'eliminated',
 		allowRebuys: false,
 		eliminatedRoundId: null,
+		firstRoundNumber: 1,
 		...overrides,
 	}
 }
@@ -559,13 +560,21 @@ describe('buildMeSummaryView', () => {
 		expect(roundOneOf(view)).toMatchObject({ games: 2, settled: 1, survived: 1, survivalRate: 1 })
 	})
 
-	it('has no round-one record for a game that started after gameweek one', () => {
+	it("reads round one as the game's own first round, not the competition's gameweek one", () => {
 		const view = buildMeSummaryView(
 			input({
-				games: [game({ gameId: 'c1', gamePlayerId: 'me-c1', playerStatus: 'winner' })],
-				picks: [
+				games: [
 					// Created mid-season, so the game started at the competition's
-					// earliest still-pickable round and has no round one to survive.
+					// earliest still-pickable round: gameweek 12 is this game's round one,
+					// and the hurdle the player was actually put to.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						playerStatus: 'winner',
+						firstRoundNumber: 12,
+					}),
+				],
+				picks: [
 					pick('win', { gameId: 'c1', roundId: 'c1-r12', roundNumber: 12 }),
 					pick('win', { gameId: 'c1', roundId: 'c1-r13', roundNumber: 13 }),
 				],
@@ -574,13 +583,37 @@ describe('buildMeSummaryView', () => {
 
 		expect(roundOneOf(view)).toEqual({
 			games: 1,
-			settled: 0,
-			survived: 0,
-			survivalRate: null,
+			settled: 1,
+			survived: 1,
+			survivalRate: 1,
 			exits: 0,
 			rebuyable: 0,
 			rebought: 0,
 		})
+	})
+
+	it("counts a rebuy in a mid-season game from that game's own round one", () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// Round one here is gameweek 12. The pick that went down is that one,
+					// and the rebuy is the rounds played after it.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						playerStatus: 'alive',
+						allowRebuys: true,
+						firstRoundNumber: 12,
+					}),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r12', roundNumber: 12 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r13', roundNumber: 13 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ settled: 1, exits: 1, rebuyable: 1, rebought: 1 })
 	})
 
 	it('counts a round-one exit for each opening pick that failed, and none for one still pending', () => {
