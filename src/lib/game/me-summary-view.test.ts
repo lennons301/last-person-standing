@@ -6,6 +6,7 @@ import {
 	type MeSummaryView,
 	type SummaryGameMode,
 	type SummaryGameRow,
+	type SummaryPaymentRow,
 	type SummaryPickResult,
 	type SummaryPickRow,
 	type SummaryStreakPickRow,
@@ -42,6 +43,15 @@ function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}
 		isAuto: false,
 		...overrides,
 	}
+}
+
+/** One payment row of the player's — an entry, or a rebuy's. */
+function stake(
+	gameId: string,
+	amount: string,
+	status: SummaryPaymentRow['status'] = 'paid',
+): SummaryPaymentRow {
+	return { gameId, amount, status }
 }
 
 /**
@@ -935,5 +945,27 @@ describe('buildMeSummaryView team records', () => {
 
 		expect(view.teamRecords[0].best.map((t) => t.shortName)).toEqual(['ARS'])
 		expect(view.teamRecords[0].worst).toEqual([])
+	})
+})
+
+describe('buildMeSummaryView money', () => {
+	it('stakes the payment rows that are paid or claimed, as the pot counts them', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameId: 'g1' })],
+					payments: [
+						stake('g1', '10.00', 'paid'),
+						stake('g1', '10.00', 'claimed'),
+						// Owed and unpaid: not in the pot, so not staked.
+						stake('g1', '10.00', 'pending'),
+					],
+				}),
+			),
+		)
+
+		expect(view.money.stake).toBe('20.00')
+		expect(view.money.winnings).toBe('0.00')
+		expect(view.money.net).toBe('-20.00')
 	})
 })

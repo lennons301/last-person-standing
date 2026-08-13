@@ -89,6 +89,17 @@ export interface SummaryStreakPickRow {
 }
 
 /**
+ * One `payment` row of the player's: their entry into a game, or a rebuy's
+ * second entry. Amounts are numeric strings, as every money column in this
+ * codebase is.
+ */
+export interface SummaryPaymentRow {
+	gameId: string
+	amount: string
+	status: 'pending' | 'claimed' | 'paid' | 'refunded'
+}
+
+/**
  * What the page is scoped to. `season: null` is the career — every game the
  * player has ever entered.
  */
@@ -101,6 +112,8 @@ export interface BuildMeSummaryInput {
 	picks: SummaryPickRow[]
 	/** Empty for a player who has only ever played classic. */
 	streakPicks?: SummaryStreakPickRow[]
+	/** Empty for a player who has only ever played free games. */
+	payments?: SummaryPaymentRow[]
 	filters: SummaryFilters
 }
 
@@ -278,6 +291,23 @@ export type ModeSection =
 	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
 
 /**
+ * What the hobby has cost the player, or paid them.
+ *
+ * Every amount is a fixed-2 string, the same shape as the pot figures a game
+ * page shows, so a player can reconcile the two by eye. `net` is winnings minus
+ * stake, and is negative for most players — which is the whole reason the
+ * section it lives in is folded shut.
+ */
+export interface MoneySummary {
+	/** What the player has put in: payment rows that are paid or claimed. */
+	stake: string
+	/** What games have paid out to them. */
+	winnings: string
+	/** `winnings − stake`. Negative for a player down on the hobby. */
+	net: string
+}
+
+/**
  * `empty` is a player with no games in scope — the page says so rather than
  * rendering a wall of zeros, which is why it's a variant and not a headline of
  * noughts.
@@ -290,6 +320,8 @@ export type MeSummaryView =
 			headline: CareerHeadline
 			/** One block per competition family. Never a career-wide list. */
 			teamRecords: TeamRecordFamily[]
+			/** Profit and loss. Folded shut on the page, never on the model. */
+			money: MoneySummary
 			/** One per mode, always all three, in `SUMMARY_MODES` order. */
 			modes: ModeSection[]
 	  }
@@ -588,6 +620,37 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
 	}
 }
 
+/**
+ * Money is added up in whole pence: pounds as floats drift, and a career total
+ * is a long addition.
+ */
+function pence(amount: string): number {
+	return Math.round(Number.parseFloat(amount) * 100)
+}
+
+function pounds(total: number): string {
+	return (total / 100).toFixed(2)
+}
+
+/**
+ * A payment counts as staked when it is paid or claimed — exactly the rows
+ * `calculatePot` counts, so a player's profit and loss reconciles with the pot
+ * figure their game page shows. That leaves out what they still owe (pending)
+ * and, deliberately, what a game gave back (refunded).
+ */
+function isStaked(row: SummaryPaymentRow): boolean {
+	return row.status === 'paid' || row.status === 'claimed'
+}
+
+function buildMoney(games: SummaryGameRow[], payments: SummaryPaymentRow[]): MoneySummary {
+	const inScope = new Set(games.map((g) => g.gameId))
+	const staked = payments
+		.filter((row) => inScope.has(row.gameId) && isStaked(row))
+		.reduce((total, row) => total + pence(row.amount), 0)
+
+	return { stake: pounds(staked), winnings: pounds(0), net: pounds(-staked) }
+}
+
 function buildModeSection(
 	mode: SummaryGameMode,
 	games: SummaryGameRow[],
@@ -647,6 +710,7 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
 		teamRecords: buildTeamRecords(games, countedPicks),
+		money: buildMoney(games, input.payments ?? []),
 		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}
 }
