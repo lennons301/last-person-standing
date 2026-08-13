@@ -511,7 +511,7 @@ describe('buildMeSummaryView', () => {
 		expect(depthOf(view)).toMatchObject({ best: 4, average: 4 })
 	})
 
-	it('scores round-one survival over every classic game played', () => {
+	it('scores round-one survival over the classic games whose opening pick settled', () => {
 		const view = buildMeSummaryView(
 			input({
 				games: [

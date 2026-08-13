@@ -225,7 +225,12 @@ export interface ClassicRoundOne {
 	survived: number
 	/** survived ÷ settled. Null until a round one has settled. */
 	survivalRate: number | null
-	/** Games whose round-one pick failed — the times the player went out at the first hurdle. */
+	/**
+	 * Games whose round-one pick went down. Not the same thing as going out: with
+	 * rebuys switched off a lost round one doesn't eliminate at all (the
+	 * starting-round exemption), so the page labels this by the pick rather than
+	 * by an exit.
+	 */
 	exits: number
 	/**
 	 * Round-one exits in games that had rebuys switched on — the denominator for
@@ -463,15 +468,31 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
  * created after gameweek one's deadline and has no round one at all (game
  * creation starts a game at the competition's earliest still-pickable round).
  * Such a game still counts in `games`, so the page can say what the rate is
- * over, but it can't drag the rate down to a nought the player never earned.
+ * over, but it can't drag the rate down to a nought the player never earned. A
+ * fourth way is not ordinary and is the second knowing miss below: a round one
+ * the player never picked in at all.
  *
- * One case the rebuy count knowingly misses: a player who bought back in and
- * then never picked again is eliminated in round two as `missed_rebuy_pick`, and
- * leaves no later pick behind to show the rebuy. Reading that off the player row
- * would mean trusting `eliminated_reason`, which is only written as
- * `missed_rebuy_pick` when a second *payment* row exists — so it would miss the
- * free games this whole block exists to get right. A rebuy nobody picked with
- * reads as no rebuy.
+ * Two cases this knowingly misses, both of them the price of reading picks
+ * rather than payments, and neither of them fixable without a figure that would
+ * be wrong in the other direction:
+ *
+ * 1. A player who bought back in and then never picked again is eliminated in
+ *    round two as `missed_rebuy_pick`, and leaves no later pick behind to show
+ *    the rebuy. Reading that off the player row would mean trusting
+ *    `eliminated_reason`, which is only written as `missed_rebuy_pick` when a
+ *    second *payment* row exists — so it would miss the free games this whole
+ *    block exists to get right. A rebuy nobody picked with reads as no rebuy.
+ * 2. A player who missed round one's deadline in a game that had rebuys switched
+ *    on went out with no pick row at all: round one deliberately has no
+ *    auto-pick fallback, so `handleNoPicks` eliminates them as
+ *    `no_pick_no_fallback` and writes nothing (`no-pick-handler.ts`; with rebuys
+ *    off the same path leaves them alone, exempt). With no round-one pick to
+ *    read, that game is neither a survival nor an exit and sits outside the
+ *    rate — it flatters the player by the width of one game. The elimination
+ *    round *number* would catch the ones who stayed out, but not the ones who
+ *    bought back in (the rebuy clears the round), so counting it would trade a
+ *    silent omission for a rebuy figure that states a nought against a player
+ *    who did buy back in. The omission is the quieter error of the two.
  */
 function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
 	let survived = 0
