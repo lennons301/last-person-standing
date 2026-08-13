@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import { auth } from '../src/lib/auth'
 import { db } from '../src/lib/db'
+import { PREMIER_LEAGUE_FAMILY_KEY } from '../src/lib/game/competition-family'
 import { generateInviteCode } from '../src/lib/game/invite-code'
 import { user as userTable } from '../src/lib/schema/auth'
 import {
@@ -282,6 +283,7 @@ async function seed() {
 			type: 'league',
 			dataSource: 'fpl',
 			season: '2025/26',
+			familyKey: PREMIER_LEAGUE_FAMILY_KEY,
 		})
 		.returning()
 	console.log(`Created competition: ${pl.name}`)
