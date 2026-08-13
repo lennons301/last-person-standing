@@ -213,9 +213,12 @@ function TeamsSection({ families }: { families: TeamRecordFamily[] }) {
 	if (families.length === 0) return null
 
 	return (
-		<section className="space-y-3">
+		// Named like every mode section, so the landmark is reachable the same way.
+		<section aria-labelledby="teams" className="space-y-3">
 			<div>
-				<h2 className="font-display text-lg font-semibold">Teams</h2>
+				<h2 id="teams" className="font-display text-lg font-semibold">
+					Teams
+				</h2>
 				<p className="text-sm text-muted-foreground mt-1">
 					How each team you&apos;ve picked has served you, one competition at a time. A pick a cup
 					life absorbed is counted on its own — the team still lost.
@@ -313,11 +316,12 @@ export function PlayerSummaryView({ summary }: { summary: MeSummaryView }) {
 				</p>
 			</div>
 			<CareerHeadlineCards headline={summary.headline} />
-			<TeamsSection families={summary.teamRecords} />
 			{/* The modes measure different things, so each says its own piece. */}
 			{summary.modes.map((section) => (
 				<ModeSectionCard key={section.mode} section={section} />
 			))}
+			{/* Teams sits below the modes: it reads across all of them at once. */}
+			<TeamsSection families={summary.teamRecords} />
 		</div>
 	)
 }

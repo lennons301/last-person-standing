@@ -29,14 +29,14 @@ export default function MeSummaryPreviewPage() {
 				<p className="text-sm text-muted-foreground">
 					Nine games over two Premier League seasons and one World Cup. The headline: games played
 					and won, the win rate, pick accuracy over the picks that settled (with the two a cup life
-					absorbed noted rather than counted), and the most-picked club. Then the Teams section, one
+					absorbed noted rather than counted), and the most-picked club. Then a section per mode,
+					each with its competition rows: classic's rounds survived, and turbo's and cup's streaks
+					(the same numbers those games were decided by). The Teams section closes the page, one
 					block per competition family — the two league seasons pooled into one ranking (Liverpool's
 					five picks can't come from a single season) and the World Cup standing separately, never
 					merged into it. England carries a pick a life absorbed alongside its rate; Italy, whose
 					only pick a life absorbed, has no rate at all and so appears in neither end while still
-					being listed in the expansion. Then a section per mode, each with its competition rows:
-					classic's rounds survived, and turbo's and cup's streaks (the same numbers those games
-					were decided by).
+					being listed in the expansion.
 				</p>
 			</header>
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
