@@ -8,6 +8,7 @@ import {
 } from '@/lib/game/me-summary-view'
 import { competition, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
+import { payment, payout } from '@/lib/schema/payment'
 
 /** The career, unfiltered — every game the player has entered. */
 export const CAREER: SummaryFilters = { season: null }
@@ -100,5 +101,21 @@ export async function getMeSummary(
 		.filter((row) => row.result !== 'void' && row.result !== 'pending')
 		.map((row) => ({ ...row, confidenceRank: row.confidenceRank as number }))
 
-	return buildMeSummaryView({ games, picks, streakPicks, filters })
+	// The player's own money, both directions. Rows come back for every game they
+	// have ever been in and the builder keeps the ones in scope, exactly as it does
+	// with picks. Every status is fetched — which of them counts as staked is the
+	// builder's rule, and the one place it's stated.
+	const payments: BuildMeSummaryInput['payments'] = await db
+		.select({ gameId: payment.gameId, amount: payment.amount, status: payment.status })
+		.from(payment)
+		.where(eq(payment.userId, userId))
+
+	// Payout status is selected but never read: nothing in the app advances a
+	// payout past `pending`, so filtering on it would report every winner as zero.
+	const payouts: BuildMeSummaryInput['payouts'] = await db
+		.select({ gameId: payout.gameId, amount: payout.amount, status: payout.status })
+		.from(payout)
+		.where(eq(payout.userId, userId))
+
+	return buildMeSummaryView({ games, picks, streakPicks, payments, payouts, filters })
 }
