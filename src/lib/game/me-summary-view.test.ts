@@ -4,6 +4,7 @@ import {
 	type BuildMeSummaryInput,
 	buildMeSummaryView,
 	type MeSummaryView,
+	parseTeamSeasonFilters,
 	type SummaryGameMode,
 	type SummaryGameRow,
 	type SummaryPaymentRow,
@@ -11,6 +12,7 @@ import {
 	type SummaryPickResult,
 	type SummaryPickRow,
 	type SummaryStreakPickRow,
+	teamSeasonQuery,
 } from '@/lib/game/me-summary-view'
 
 function input(overrides: Partial<BuildMeSummaryInput> = {}): BuildMeSummaryInput {
@@ -1090,5 +1092,148 @@ describe('buildMeSummaryView money', () => {
 				net: '35.00',
 			},
 		])
+	})
+})
+
+/** Two league seasons and a World Cup — the shape a per-family filter exists for. */
+function threeSeasons(): Pick<BuildMeSummaryInput, 'games' | 'picks'> {
+	return {
+		games: [
+			game({ gameId: 'pl-a', competitionId: 'pl-2425', season: '2024/25' }),
+			game({ gameId: 'pl-b', competitionId: 'pl-2526', season: '2025/26' }),
+			game({
+				gameId: 'wc',
+				gameMode: 'cup',
+				competitionId: 'comp-wc-2026',
+				competitionName: 'FIFA World Cup 2026',
+				competitionFamilyKey: WORLD_CUP_FAMILY_KEY,
+				season: '2026',
+			}),
+		],
+		picks: [
+			pick('win', { gameId: 'pl-a', ...team('ARS', 'Arsenal') }),
+			pick('loss', { gameId: 'pl-a', ...team('EVE', 'Everton') }),
+			pick('loss', { gameId: 'pl-b', ...team('ARS', 'Arsenal') }),
+			pick('win', { gameId: 'pl-b', ...team('LIV', 'Liverpool') }),
+			pick('win', { gameId: 'wc', ...team('BRA', 'Brazil') }),
+		],
+	}
+}
+
+describe('buildMeSummaryView team season filter', () => {
+	it("lists a family's own seasons, most recent first, with none selected by default", () => {
+		const view = summary(buildMeSummaryView(input(threeSeasons())))
+		const byName = new Map(view.teamRecords.map((f) => [f.name, f]))
+
+		expect(byName.get('Premier League')?.seasonOptions).toEqual(['2025/26', '2024/25'])
+		expect(byName.get('Premier League')?.selectedSeason).toBeNull()
+		// A family's seasons are its own vocabulary — the World Cup's never join them.
+		expect(byName.get('World Cup')?.seasonOptions).toEqual(['2026'])
+		expect(byName.get('World Cup')?.selectedSeason).toBeNull()
+	})
+
+	it('narrows one family to a season and leaves every other family whole', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					...threeSeasons(),
+					filters: { season: null, teamSeasons: { [PREMIER_LEAGUE_FAMILY_KEY]: '2025/26' } },
+				}),
+			),
+		)
+		const byName = new Map(view.teamRecords.map((f) => [f.name, f]))
+
+		const league = byName.get('Premier League')
+		expect(league?.selectedSeason).toBe('2025/26')
+		// Only 2025/26's two picks: Liverpool's win and Arsenal's loss. Arsenal's
+		// 2024/25 win is out, so its rate is nought rather than the pooled half.
+		expect(league?.all.map((t) => [t.shortName, t.picks, t.rate])).toEqual([
+			['LIV', 1, 1],
+			['ARS', 1, 0],
+		])
+		expect(league?.seasons).toBe(1)
+		// Everton was only ever picked in the season filtered out.
+		expect(league?.all.map((t) => t.shortName)).not.toContain('EVE')
+		// The control still offers the season it narrowed away from.
+		expect(league?.seasonOptions).toEqual(['2025/26', '2024/25'])
+
+		const worldCup = byName.get('World Cup')
+		expect(worldCup?.selectedSeason).toBeNull()
+		expect(worldCup?.all.map((t) => t.shortName)).toEqual(['BRA'])
+	})
+
+	it('has no records for a season the player made no picks in, and still its control', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					...threeSeasons(),
+					filters: { season: null, teamSeasons: { [PREMIER_LEAGUE_FAMILY_KEY]: '2023/24' } },
+				}),
+			),
+		)
+		const league = view.teamRecords.find((f) => f.familyKey === PREMIER_LEAGUE_FAMILY_KEY)
+
+		// The block stays — with nothing in it, but with every season it has ever
+		// had, so the player can get back out of the season they filtered into.
+		expect(league).toMatchObject({ selectedSeason: '2023/24', seasons: 0 })
+		expect(league?.all).toEqual([])
+		expect(league?.best).toEqual([])
+		expect(league?.worst).toEqual([])
+		expect(league?.seasonOptions).toEqual(['2025/26', '2024/25'])
+	})
+
+	it('leaves the career headline and the mode sections all-time', () => {
+		const career = summary(buildMeSummaryView(input(threeSeasons())))
+		const filtered = summary(
+			buildMeSummaryView(
+				input({
+					...threeSeasons(),
+					filters: {
+						season: null,
+						teamSeasons: { [PREMIER_LEAGUE_FAMILY_KEY]: '2025/26', [WORLD_CUP_FAMILY_KEY]: '2026' },
+					},
+				}),
+			),
+		)
+
+		// A team block is a record of teams; the headline and the modes are a record
+		// of games, and narrowing one team block says nothing about those.
+		expect(filtered.headline).toEqual(career.headline)
+		expect(filtered.modes).toEqual(career.modes)
+	})
+})
+
+describe('team season search params', () => {
+	it('reads one season per family out of the URL and ignores everything else', () => {
+		expect(
+			parseTeamSeasonFilters({
+				'teams-premier-league': '2025/26',
+				'teams-fifa-world-cup': '2026',
+				'teams-premier-league-extra': '',
+				from: '/game/g1',
+			}),
+		).toEqual({ 'premier-league': '2025/26', 'fifa-world-cup': '2026' })
+	})
+
+	it('changes one family and leaves the rest of the URL alone', () => {
+		const selections = { 'premier-league': '2024/25', 'fifa-world-cup': '2026' }
+
+		expect(teamSeasonQuery(selections, 'premier-league', '2025/26')).toBe(
+			'?teams-premier-league=2025%2F26&teams-fifa-world-cup=2026',
+		)
+		// Clearing a family drops its parameter and keeps the other's.
+		expect(teamSeasonQuery(selections, 'premier-league', null)).toBe('?teams-fifa-world-cup=2026')
+		// Nothing selected anywhere is the bare path, not an empty parameter.
+		expect(teamSeasonQuery({ 'premier-league': '2024/25' }, 'premier-league', null)).toBe('?')
+	})
+
+	it('round-trips a selection through the URL', () => {
+		const selections = { 'premier-league': '2024/25' }
+		const query = teamSeasonQuery(selections, 'fifa-world-cup', '2026')
+
+		expect(parseTeamSeasonFilters(Object.fromEntries(new URLSearchParams(query)))).toEqual({
+			'premier-league': '2024/25',
+			'fifa-world-cup': '2026',
+		})
 	})
 })

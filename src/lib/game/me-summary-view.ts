@@ -120,6 +120,70 @@ export interface SummaryPayoutRow {
  */
 export interface SummaryFilters {
 	season: string | null
+	/**
+	 * Which single season each competition family's team block is narrowed to,
+	 * keyed by family key. A family with no entry pools every season it has.
+	 *
+	 * Per family rather than page-wide because families count seasons in
+	 * incompatible vocabularies — "2025/26" means nothing to a World Cup side —
+	 * and because the team blocks are the only part of the page it applies to: the
+	 * career headline and the mode sections are all-time whatever is selected
+	 * here.
+	 */
+	teamSeasons?: Record<string, string>
+}
+
+/**
+ * The search-param prefix a family's team-season selection is carried under:
+ * `/me?teams-premier-league=2025%2F26`.
+ *
+ * The URL is where this state lives so the page can stay a server component —
+ * a selection survives a refresh and travels in a link, and nothing on the page
+ * has to fetch anything to honour it.
+ */
+const TEAM_SEASON_PARAM_PREFIX = 'teams-'
+
+/** The parameter one family's selection is carried in. */
+export function teamSeasonParam(familyKey: string): string {
+	return `${TEAM_SEASON_PARAM_PREFIX}${familyKey}`
+}
+
+/**
+ * The team-season selections a request's search params carry, as
+ * `SummaryFilters.teamSeasons` wants them. Anything else in the URL is left
+ * alone, and an empty value reads as no selection rather than as a season no
+ * competition has.
+ */
+export function parseTeamSeasonFilters(
+	searchParams: Record<string, string | string[] | undefined>,
+): Record<string, string> {
+	const selections: Record<string, string> = {}
+	for (const [key, value] of Object.entries(searchParams)) {
+		if (!key.startsWith(TEAM_SEASON_PARAM_PREFIX)) continue
+		const season = Array.isArray(value) ? value[0] : value
+		if (!season) continue
+		selections[key.slice(TEAM_SEASON_PARAM_PREFIX.length)] = season
+	}
+	return selections
+}
+
+/**
+ * The query string for changing one family's season, every other family's
+ * selection carried through — the href behind one option of one block's
+ * control. `null` clears the family, which is what "all seasons" is.
+ */
+export function teamSeasonQuery(
+	selections: Record<string, string>,
+	familyKey: string,
+	season: string | null,
+): string {
+	const next = { ...selections }
+	if (season === null) delete next[familyKey]
+	else next[familyKey] = season
+	const params = new URLSearchParams(
+		Object.entries(next).map(([key, value]) => [teamSeasonParam(key), value]),
+	)
+	return `?${params.toString()}`
 }
 
 export interface BuildMeSummaryInput {
@@ -216,6 +280,18 @@ export interface TeamRecordFamily {
 	 * competition that records no season at all.
 	 */
 	seasons: number
+	/**
+	 * Every season this family has a pick in, most recent first — the choices its
+	 * own season control offers. Listed per family and never across them: a league
+	 * season reads "2025/26" and a World Cup "2026", so one control over both
+	 * would offer seasons that mean nothing to half the teams under it.
+	 *
+	 * Never narrowed by the selection, so the control can always be changed or
+	 * cleared — including from a season the player made no picks in.
+	 */
+	seasonOptions: string[]
+	/** The season this block is narrowed to. Null is all of them. */
+	selectedSeason: string | null
 	/**
 	 * The teams that have served the player best, best first. At most
 	 * `ENDS_LENGTH`, and never more than the family's better half — so a family
@@ -431,24 +507,18 @@ function familyOf(row: SummaryGameRow): { key: string; name: string } {
 	}
 }
 
-function buildTeamRecords(games: SummaryGameRow[], picks: SummaryPickRow[]): TeamRecordFamily[] {
-	const gameById = new Map(games.map((g) => [g.gameId, g]))
-	const families = new Map<
-		string,
-		{ name: string; teams: Map<string, TeamRecord>; seasons: Set<string> }
-	>()
+/** One pick with the two things about its game a family block reads. */
+interface FamilyPick {
+	row: SummaryPickRow
+	mode: SummaryGameMode
+	season: string | null
+}
 
-	for (const row of picks) {
-		const gameRow = gameById.get(row.gameId)
-		if (!gameRow) continue
-		const family = familyOf(gameRow)
-		let block = families.get(family.key)
-		if (!block) {
-			block = { name: family.name, teams: new Map(), seasons: new Set() }
-			families.set(family.key, block)
-		}
-		if (gameRow.season !== null) block.seasons.add(gameRow.season)
-		let record = block.teams.get(row.teamId)
+/** The teams of one set of picks, ranked. */
+function rankTeams(picks: FamilyPick[]): TeamRecord[] {
+	const teams = new Map<string, TeamRecord>()
+	for (const { row, mode } of picks) {
+		let record = teams.get(row.teamId)
 		if (!record) {
 			record = {
 				teamId: row.teamId,
@@ -460,20 +530,58 @@ function buildTeamRecords(games: SummaryGameRow[], picks: SummaryPickRow[]): Tea
 				savedByLife: 0,
 				rate: null,
 			}
-			block.teams.set(row.teamId, record)
+			teams.set(row.teamId, record)
 		}
 		record.picks += 1
-		if (isSuccess(row, gameRow.gameMode)) record.wins += 1
+		if (isSuccess(row, mode)) record.wins += 1
 		if (row.result === 'saved_by_life') record.savedByLife += 1
+	}
+	return [...teams.values()]
+		.map((record) => {
+			const rated = record.picks - record.savedByLife
+			return { ...record, rate: rated === 0 ? null : record.wins / rated }
+		})
+		.sort(byRate)
+}
+
+/** The seasons a set of picks was made in, most recent first. */
+function seasonsOf(picks: FamilyPick[]): string[] {
+	const seasons = new Set(
+		picks.map((p) => p.season).filter((season): season is string => season !== null),
+	)
+	// Season strings sort by their leading year in both vocabularies, so the most
+	// recent leads without anything here having to parse a season.
+	return [...seasons].sort().reverse()
+}
+
+function buildTeamRecords(
+	games: SummaryGameRow[],
+	picks: SummaryPickRow[],
+	teamSeasons: Record<string, string>,
+): TeamRecordFamily[] {
+	const gameById = new Map(games.map((g) => [g.gameId, g]))
+	const families = new Map<string, { name: string; picks: FamilyPick[] }>()
+
+	for (const row of picks) {
+		const gameRow = gameById.get(row.gameId)
+		if (!gameRow) continue
+		const family = familyOf(gameRow)
+		let block = families.get(family.key)
+		if (!block) {
+			block = { name: family.name, picks: [] }
+			families.set(family.key, block)
+		}
+		block.picks.push({ row, mode: gameRow.gameMode, season: gameRow.season })
 	}
 
 	const blocks = [...families.entries()].map(([familyKey, block]) => {
-		const all = [...block.teams.values()]
-			.map((record) => {
-				const rated = record.picks - record.savedByLife
-				return { ...record, rate: rated === 0 ? null : record.wins / rated }
-			})
-			.sort(byRate)
+		const selectedSeason = teamSeasons[familyKey] ?? null
+		// The selection narrows the records and nothing else: the options come off
+		// every pick the family has, so a block narrowed to a season the player made
+		// no picks in still carries the control that got it there.
+		const scoped =
+			selectedSeason === null ? block.picks : block.picks.filter((p) => p.season === selectedSeason)
+		const all = rankTeams(scoped)
 		// Only a team with a rate can be at either end of a ranking by rate: a team
 		// every one of whose picks a life absorbed would otherwise land in the worst
 		// list, which is a verdict its picks never delivered.
@@ -481,7 +589,9 @@ function buildTeamRecords(games: SummaryGameRow[], picks: SummaryPickRow[]): Tea
 		return {
 			familyKey,
 			name: block.name,
-			seasons: block.seasons.size,
+			seasons: seasonsOf(scoped).length,
+			seasonOptions: seasonsOf(block.picks),
+			selectedSeason,
 			best: bestOf(ranked),
 			worst: worstOf(ranked),
 			all,
@@ -489,9 +599,16 @@ function buildTeamRecords(games: SummaryGameRow[], picks: SummaryPickRow[]): Tea
 	})
 
 	// The family the player has picked in most leads, since that's the record they
-	// came to read. Name breaks a tie, so the order is the player's history and
-	// never the order rows happened to arrive in.
-	return blocks.sort((a, b) => pickCount(b.all) - pickCount(a.all) || a.name.localeCompare(b.name))
+	// came to read. Volume is counted over the family's whole history, so narrowing
+	// one block to a season doesn't shuffle the page under the player. Name breaks
+	// a tie, so the order is the player's history and never the order rows happened
+	// to arrive in.
+	const volume = new Map([...families].map(([key, block]) => [key, block.picks.length]))
+	return blocks.sort(
+		(a, b) =>
+			(volume.get(b.familyKey) ?? 0) - (volume.get(a.familyKey) ?? 0) ||
+			a.name.localeCompare(b.name),
+	)
 }
 
 /**
@@ -535,10 +652,6 @@ function worstOf(ranked: TeamRecord[]): TeamRecord[] {
 	const candidates = ranked.filter((record) => record.rate !== bestRate)
 	const take = Math.min(ENDS_LENGTH, Math.floor(ranked.length / 2), candidates.length)
 	return candidates.slice(candidates.length - take).reverse()
-}
-
-function pickCount(records: TeamRecord[]): number {
-	return records.reduce((total, record) => total + record.picks, 0)
 }
 
 function buildCompetitionRecords(games: SummaryGameRow[]): CompetitionRecord[] {
@@ -790,7 +903,7 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			},
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
-		teamRecords: buildTeamRecords(games, countedPicks),
+		teamRecords: buildTeamRecords(games, countedPicks, input.filters.teamSeasons ?? {}),
 		money: buildMoney(games, input.payments ?? [], input.payouts ?? []),
 		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}

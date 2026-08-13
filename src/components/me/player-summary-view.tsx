@@ -3,13 +3,14 @@ import { MoneySection } from '@/components/me/money-section'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { Button } from '@/components/ui/button'
 import { Disclosure } from '@/components/ui/disclosure'
-import type {
-	CareerHeadline,
-	MeSummaryView,
-	ModeSection,
-	SummaryGameMode,
-	TeamRecord,
-	TeamRecordFamily,
+import {
+	type CareerHeadline,
+	type MeSummaryView,
+	type ModeSection,
+	type SummaryGameMode,
+	type TeamRecord,
+	type TeamRecordFamily,
+	teamSeasonQuery,
 } from '@/lib/game/me-summary-view'
 
 /** A rate as whole percent, or a dash where there's nothing to divide by. */
@@ -173,11 +174,66 @@ function TeamRecordEnd({ label, records }: { label: string; records: TeamRecord[
 }
 
 /**
+ * One family's season control: a link per season plus the way back to all of
+ * them.
+ *
+ * Links rather than a form, because the state lives in the URL — the page stays
+ * a server component, a selection survives a refresh, and every option carries
+ * the *other* families' selections through, so narrowing one block never clears
+ * another.
+ */
+function SeasonControl({
+	family,
+	selections,
+}: {
+	family: TeamRecordFamily
+	selections: Record<string, string>
+}) {
+	if (family.seasonOptions.length === 0) return null
+
+	// "All seasons" first: the default reads as the top of the list rather than as
+	// one more season among them.
+	const options: { key: string; label: string; season: string | null }[] = [
+		{ key: 'all', label: 'All seasons', season: null },
+		...family.seasonOptions.map((season) => ({ key: season, label: season, season })),
+	]
+
+	return (
+		<nav aria-label={`${family.name} seasons`} className="flex flex-wrap gap-1">
+			{options.map((option) => {
+				const current = family.selectedSeason === option.season
+				return (
+					<Link
+						key={option.key}
+						href={teamSeasonQuery(selections, family.familyKey, option.season)}
+						scroll={false}
+						aria-current={current ? 'true' : undefined}
+						className={`rounded-full border px-2.5 py-1 text-2xs font-medium transition-colors ${
+							current
+								? 'border-primary bg-primary text-primary-foreground'
+								: 'border-border text-muted-foreground hover:bg-muted'
+						}`}
+					>
+						{option.label}
+					</Link>
+				)
+			})}
+		</nav>
+	)
+}
+
+/**
  * One competition family's team records: both ends up front, the whole list a
  * tap away. The heading is the family, never a season — the seasons in it are
  * pooled, which is the only way a per-team rate gets a sample worth reading.
  */
-function TeamRecordFamilyBlock({ family }: { family: TeamRecordFamily }) {
+function TeamRecordFamilyBlock({
+	family,
+	selections,
+}: {
+	family: TeamRecordFamily
+	selections: Record<string, string>
+}) {
 	const teams = `${family.all.length} ${family.all.length === 1 ? 'team' : 'teams'}`
 	// What pooled, rather than a claim that something did: one season is the
 	// ordinary case for a tournament, and saying "1 season" is how the two-season
@@ -186,20 +242,33 @@ function TeamRecordFamilyBlock({ family }: { family: TeamRecordFamily }) {
 		family.seasons > 0
 			? `${teams} picked across ${family.seasons} ${family.seasons === 1 ? 'season' : 'seasons'}.`
 			: `${teams} picked.`
+	// A block only empties when a season is selected — a family is here because it
+	// has picks. So it says which season came up empty rather than "0 teams",
+	// which would read as a career with nothing in it.
+	const emptySeason = family.all.length === 0
 
 	return (
 		<div className="rounded-lg border border-border bg-card p-4 space-y-3">
-			<div>
-				<h3 className="font-display text-base font-semibold">{family.name}</h3>
-				<p className="text-xs text-muted-foreground mt-0.5">{pooled}</p>
+			<div className="space-y-2">
+				<div>
+					<h3 className="font-display text-base font-semibold">{family.name}</h3>
+					<p className="text-xs text-muted-foreground mt-0.5">
+						{emptySeason ? `No picks in ${family.selectedSeason ?? 'this competition'}.` : pooled}
+					</p>
+				</div>
+				<SeasonControl family={family} selections={selections} />
 			</div>
-			<div className="grid gap-3 sm:grid-cols-2">
-				<TeamRecordEnd label="Best" records={family.best} />
-				<TeamRecordEnd label="Worst" records={family.worst} />
-			</div>
-			<Disclosure title={`All ${teams}`} defaultOpen={false} bordered={false}>
-				<TeamRecordList records={family.all} />
-			</Disclosure>
+			{!emptySeason && (
+				<>
+					<div className="grid gap-3 sm:grid-cols-2">
+						<TeamRecordEnd label="Best" records={family.best} />
+						<TeamRecordEnd label="Worst" records={family.worst} />
+					</div>
+					<Disclosure title={`All ${teams}`} defaultOpen={false} bordered={false}>
+						<TeamRecordList records={family.all} />
+					</Disclosure>
+				</>
+			)}
 		</div>
 	)
 }
@@ -210,7 +279,13 @@ function TeamRecordFamilyBlock({ family }: { family: TeamRecordFamily }) {
  * single leaderboard over both would rank nothing — which is why there is no
  * career-wide team list here at any width.
  */
-function TeamsSection({ families }: { families: TeamRecordFamily[] }) {
+function TeamsSection({
+	families,
+	selections,
+}: {
+	families: TeamRecordFamily[]
+	selections: Record<string, string>
+}) {
 	if (families.length === 0) return null
 
 	return (
@@ -226,7 +301,7 @@ function TeamsSection({ families }: { families: TeamRecordFamily[] }) {
 				</p>
 			</div>
 			{families.map((family) => (
-				<TeamRecordFamilyBlock key={family.familyKey} family={family} />
+				<TeamRecordFamilyBlock key={family.familyKey} family={family} selections={selections} />
 			))}
 		</section>
 	)
@@ -322,7 +397,7 @@ export function PlayerSummaryView({ summary }: { summary: MeSummaryView }) {
 				<ModeSectionCard key={section.mode} section={section} />
 			))}
 			{/* Teams sits below the modes: it reads across all of them at once. */}
-			<TeamsSection families={summary.teamRecords} />
+			<TeamsSection families={summary.teamRecords} selections={summary.filters.teamSeasons ?? {}} />
 			{/* Money last, and folded shut: the one figure the player opts into. */}
 			<MoneySection money={summary.money} />
 		</div>
