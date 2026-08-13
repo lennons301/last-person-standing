@@ -103,7 +103,11 @@ function RoundOneStats({ roundOne }: { roundOne: ClassicRoundOne }) {
 			<Stat
 				label="Round 1 survival"
 				value={percent(roundOne.survivalRate)}
-				note={`Your opening pick came off in ${roundOne.survived} of ${roundOne.games}`}
+				note={
+					roundOne.settled === 0
+						? `No round one has settled yet, over ${roundOne.games} ${roundOne.games === 1 ? 'game' : 'games'}`
+						: `Your opening pick came off in ${roundOne.survived} of ${roundOne.settled}`
+				}
 			/>
 			<Stat
 				label="Round 1 exits"

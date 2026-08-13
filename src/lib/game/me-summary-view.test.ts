@@ -534,6 +534,54 @@ describe('buildMeSummaryView', () => {
 		expect(roundOneOf(view)).toMatchObject({ games: 4, survived: 2, survivalRate: 0.5 })
 	})
 
+	it('leaves a round one that has not settled out of the survival rate', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
+					game({
+						gameId: 'c2',
+						gamePlayerId: 'me-c2',
+						gameStatus: 'active',
+						playerStatus: 'alive',
+					}),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					// Still waiting on kick-off — it can't be held against the player
+					// any more than a pending pick counts in the accuracy rate.
+					pick('pending', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ games: 2, settled: 1, survived: 1, survivalRate: 1 })
+	})
+
+	it('has no round-one record for a game that started after gameweek one', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [game({ gameId: 'c1', gamePlayerId: 'me-c1', playerStatus: 'winner' })],
+				picks: [
+					// Created mid-season, so the game started at the competition's
+					// earliest still-pickable round and has no round one to survive.
+					pick('win', { gameId: 'c1', roundId: 'c1-r12', roundNumber: 12 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r13', roundNumber: 13 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toEqual({
+			games: 1,
+			settled: 0,
+			survived: 0,
+			survivalRate: null,
+			exits: 0,
+			rebuyable: 0,
+			rebought: 0,
+		})
+	})
+
 	it('counts a round-one exit for each opening pick that failed, and none for one still pending', () => {
 		const view = buildMeSummaryView(
 			input({
@@ -625,6 +673,7 @@ describe('buildMeSummaryView', () => {
 
 		expect(roundOneOf(view)).toEqual({
 			games: 2,
+			settled: 2,
 			survived: 2,
 			survivalRate: 1,
 			exits: 0,

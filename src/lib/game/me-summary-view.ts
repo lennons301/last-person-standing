@@ -204,12 +204,20 @@ export interface ClassicDepth {
  * rebought game leaves no trace on the player record. The picks survive it.
  */
 export interface ClassicRoundOne {
-	/** Classic games in scope — what the survival rate is over. */
+	/** Classic games in scope. Not the rate's denominator — `settled` is. */
 	games: number
+	/**
+	 * Games whose round-one pick resolved either way — the survival rate's
+	 * denominator, and the same rule the accuracy rate and the streaks follow: a
+	 * pick still waiting on kick-off, one a cancelled fixture voided, and a game
+	 * that started after gameweek one and has no round one at all are none of
+	 * them a hurdle the player has been put to yet.
+	 */
+	settled: number
 	/** Games whose round-one pick came off. */
 	survived: number
-	/** survived ÷ games. Never null — the block exists only where a game was played. */
-	survivalRate: number
+	/** survived ÷ settled. Null until a round one has settled. */
+	survivalRate: number | null
 	/** Games whose round-one pick failed — the times the player went out at the first hurdle. */
 	exits: number
 	/**
@@ -441,10 +449,14 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
  * agrees with what the game itself did rather than with a second definition of
  * "the first round".
  *
- * A game with no settled round-one pick — none made, or one a cancelled fixture
- * voided — is neither a survival nor an exit: the picks are all this reads, and
- * they don't say. It stays in `games` all the same, because the rate the ticket
- * asks for is over the classic games played.
+ * A game with no settled round-one pick is neither a survival nor an exit, and
+ * is out of the rate's denominator entirely — the picks are all this reads, and
+ * they don't say. Three ways that happens, all of them ordinary: round one
+ * hasn't kicked off yet, a cancelled fixture voided the pick, or the game was
+ * created after gameweek one's deadline and has no round one at all (game
+ * creation starts a game at the competition's earliest still-pickable round).
+ * Such a game still counts in `games`, so the page can say what the rate is
+ * over, but it can't drag the rate down to a nought the player never earned.
  */
 function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
 	let survived = 0
@@ -468,10 +480,12 @@ function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]):
 		// a free game has none and a rebuy in one still happened.
 		if (own.some((p) => p.roundNumber > 1)) rebought += 1
 	}
+	const settled = survived + exits
 	return {
 		games: games.length,
+		settled,
 		survived,
-		survivalRate: survived / games.length,
+		survivalRate: settled === 0 ? null : survived / settled,
 		exits,
 		rebuyable,
 		rebought,
