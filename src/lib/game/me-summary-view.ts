@@ -22,6 +22,8 @@ export type SummaryPickResult = 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_
 /** One game the player has entered. */
 export interface SummaryGameRow {
 	gameId: string
+	/** `game.name` — what the players call it, and how a money row names itself. */
+	gameName: string
 	gameMode: SummaryGameMode
 	/** The player's own `game_player` row — which of a game's players is them. */
 	gamePlayerId: string
@@ -305,6 +307,18 @@ export type ModeSection =
 	| ({ mode: 'classic'; kind: 'played'; depth: ClassicDepth } & ModeRecord)
 	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
 
+/** What one game cost the player, and what it paid them back. */
+export interface MoneyGameRecord {
+	gameId: string
+	/** `game.name`. */
+	name: string
+	competitionName: string
+	gameMode: SummaryGameMode
+	stake: string
+	winnings: string
+	net: string
+}
+
 /**
  * What the hobby has cost the player, or paid them.
  *
@@ -320,6 +334,11 @@ export interface MoneySummary {
 	winnings: string
 	/** `winnings − stake`. Negative for a player down on the hobby. */
 	net: string
+	/**
+	 * The same figures game by game, biggest loss first. Only games money was
+	 * ever in: see `buildMoney`.
+	 */
+	games: MoneyGameRecord[]
 }
 
 /**
@@ -663,16 +682,37 @@ function buildMoney(
 	payouts: SummaryPayoutRow[],
 ): MoneySummary {
 	const inScope = new Set(games.map((g) => g.gameId))
-	const staked = payments
-		.filter((row) => inScope.has(row.gameId) && isStaked(row))
-		.reduce((total, row) => total + pence(row.amount), 0)
-	// Every payout row counts, `status` included in nothing: see
-	// `SummaryPayoutRow`.
-	const won = payouts
-		.filter((row) => inScope.has(row.gameId))
-		.reduce((total, row) => total + pence(row.amount), 0)
+	const staked = payments.filter((row) => inScope.has(row.gameId) && isStaked(row))
+	// Every payout row counts, its `status` read nowhere: see `SummaryPayoutRow`.
+	const won = payouts.filter((row) => inScope.has(row.gameId))
 
-	return { stake: pounds(staked), winnings: pounds(won), net: pounds(won - staked) }
+	const perGame = games.map((g) => {
+		const gameStake = total(staked.filter((row) => row.gameId === g.gameId))
+		const gameWon = total(won.filter((row) => row.gameId === g.gameId))
+		return {
+			gameId: g.gameId,
+			name: g.gameName,
+			competitionName: g.competitionName,
+			gameMode: g.gameMode,
+			stake: pounds(gameStake),
+			winnings: pounds(gameWon),
+			net: pounds(gameWon - gameStake),
+		}
+	})
+
+	return {
+		stake: pounds(total(staked)),
+		winnings: pounds(total(won)),
+		net: pounds(total(won) - total(staked)),
+		// Biggest loss first: the figure the section exists to disclose leads, and a
+		// win reads as the exception it is at the bottom. Name settles a tie, so the
+		// order never follows the order rows arrived in.
+		games: perGame.sort((a, b) => pence(a.net) - pence(b.net) || a.name.localeCompare(b.name)),
+	}
+}
+
+function total(rows: { amount: string }[]): number {
+	return rows.reduce((sum, row) => sum + pence(row.amount), 0)
 }
 
 function buildModeSection(

@@ -20,6 +20,7 @@ function input(overrides: Partial<BuildMeSummaryInput> = {}): BuildMeSummaryInpu
 function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 	return {
 		gameId: 'game-1',
+		gameName: 'Sunday League',
 		gameMode: 'classic',
 		gamePlayerId: 'me',
 		gameStatus: 'completed',
@@ -997,5 +998,41 @@ describe('buildMeSummaryView money', () => {
 
 		expect(view.money.winnings).toBe('60.00')
 		expect(view.money.net).toBe('50.00')
+	})
+
+	it('breaks the total down into a row per game, biggest loss first', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'g1', gameName: 'Pub Survivor', playerStatus: 'winner' }),
+						game({ gameId: 'g2', gameName: 'The Office Pool' }),
+					],
+					payments: [stake('g1', '5.00'), stake('g2', '10.00')],
+					payouts: [won('g1', '40.00')],
+				}),
+			),
+		)
+
+		expect(view.money.games).toEqual([
+			{
+				gameId: 'g2',
+				name: 'The Office Pool',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'classic',
+				stake: '10.00',
+				winnings: '0.00',
+				net: '-10.00',
+			},
+			{
+				gameId: 'g1',
+				name: 'Pub Survivor',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'classic',
+				stake: '5.00',
+				winnings: '40.00',
+				net: '35.00',
+			},
+		])
 	})
 })

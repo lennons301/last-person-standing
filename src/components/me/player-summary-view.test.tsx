@@ -22,6 +22,7 @@ const HEADLINE = {
 		mostPickedTeam: null,
 	},
 	teamRecords: [],
+	money: { stake: '0.00', winnings: '0.00', net: '0.00', games: [] },
 	modes: [],
 }
 

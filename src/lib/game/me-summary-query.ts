@@ -30,6 +30,7 @@ export async function getMeSummary(
 	const gameRows = await db
 		.select({
 			gameId: game.id,
+			gameName: game.name,
 			gameMode: game.gameMode,
 			gamePlayerId: gamePlayer.id,
 			gameStatus: game.status,

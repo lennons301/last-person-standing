@@ -89,6 +89,7 @@ const ME = { gamePlayerId: 'gp-me' }
 const GAMES: SummaryGameRow[] = [
 	{
 		gameId: 'g1',
+		gameName: 'The Office Pool 24/25',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -97,6 +98,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g2',
+		gameName: 'Sunday Sweepstake',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'winner',
@@ -105,6 +107,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g3',
+		gameName: 'Turbo Tuesday',
 		gameMode: 'turbo',
 		gameStatus: 'completed',
 		playerStatus: 'alive',
@@ -113,6 +116,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g4',
+		gameName: 'The Office Pool 25/26',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -121,6 +125,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g5',
+		gameName: 'Five-a-side Survivors',
 		gameMode: 'classic',
 		gameStatus: 'active',
 		playerStatus: 'alive',
@@ -129,6 +134,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g6',
+		gameName: 'Gameweek Blitz',
 		gameMode: 'turbo',
 		gameStatus: 'completed',
 		playerStatus: 'winner',
@@ -137,6 +143,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g7',
+		gameName: 'Turbo Rematch',
 		gameMode: 'turbo',
 		gameStatus: 'completed',
 		playerStatus: 'alive',
@@ -145,6 +152,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g8',
+		gameName: 'World Cup Knockout',
 		gameMode: 'cup',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -153,6 +161,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g9',
+		gameName: 'World Cup Redemption',
 		gameMode: 'cup',
 		gameStatus: 'completed',
 		playerStatus: 'winner',
@@ -259,6 +268,7 @@ export const FULL_HISTORY_SUMMARY: MeSummaryView = buildMeSummaryView({
 const CLASSIC_ONLY_GAMES: SummaryGameRow[] = [
 	{
 		gameId: 'c1',
+		gameName: 'Work League',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -267,6 +277,7 @@ const CLASSIC_ONLY_GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'c2',
+		gameName: 'Family Survivor',
 		gameMode: 'classic',
 		gameStatus: 'active',
 		playerStatus: 'alive',
@@ -276,6 +287,7 @@ const CLASSIC_ONLY_GAMES: SummaryGameRow[] = [
 	// The turbo game is still being played, so it has a record and no streak.
 	{
 		gameId: 'c3',
+		gameName: 'First Turbo',
 		gameMode: 'turbo',
 		gameStatus: 'active',
 		playerStatus: 'alive',
