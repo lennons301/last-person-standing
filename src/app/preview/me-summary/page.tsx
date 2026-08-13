@@ -34,9 +34,9 @@ export default function MeSummaryPreviewPage() {
 					Several seasons in: games played and won, the win rate, pick accuracy over the picks that
 					settled (with the four a cup life absorbed noted rather than counted), and the most-picked
 					club — then a section per mode, each with its competition rows: classic's rounds survived
-					and its round one (a survival rate, the exits, and the two of three rebuyable exits they
-					bought back into), and turbo's and cup's streaks (the same numbers those games were
-					decided by).
+					and its round one (a survival rate, the opening picks that went down, and the two of the
+					three of those that offered a rebuy they bought back into), and turbo's and cup's streaks
+					(the same numbers those games were decided by).
 				</p>
 			</header>
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />

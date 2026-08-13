@@ -9,7 +9,7 @@ import type { MeSummaryView } from '@/lib/game/me-summary-view'
  *
  * Classic's round one is the rebought state: four of their nine opening picks
  * went down, three of those games were offering a rebuy, and they took two of
- * them — so the rebuy figure is read against three exits, not four.
+ * them — so the rebuy figure is read against three of those four, not all four.
  *
  * Hand-built — the gallery never touches the database.
  */

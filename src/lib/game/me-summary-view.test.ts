@@ -688,6 +688,37 @@ describe('buildMeSummaryView', () => {
 		expect(roundOneOf(view)).toMatchObject({ exits: 1, rebuyable: 0, rebought: 0 })
 	})
 
+	it('has no round-one record for a game the player never picked in — the documented blind spot', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// Missed round one's deadline in a game that offered a rebuy. Round one
+					// has no auto-pick fallback, so `handleNoPicks` eliminated them without
+					// writing a pick — there is nothing here to read the hurdle off. The
+					// second knowing miss at `buildClassicRoundOne`: pinned so that
+					// counting it becomes a decision rather than an accident.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						allowRebuys: true,
+						eliminatedRoundId: 'c1-r1',
+					}),
+				],
+				picks: [],
+			}),
+		)
+
+		expect(roundOneOf(view)).toEqual({
+			games: 1,
+			settled: 0,
+			survived: 0,
+			survivalRate: null,
+			exits: 0,
+			rebuyable: 0,
+			rebought: 0,
+		})
+	})
+
 	it('has nothing to report at the first hurdle for a player who has never gone out in it', () => {
 		const view = buildMeSummaryView(
 			input({
