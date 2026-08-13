@@ -244,11 +244,7 @@ function familyOf(row: SummaryGameRow): { key: string; name: string } {
 	}
 }
 
-function buildTeamRecords(
-	games: SummaryGameRow[],
-	picks: SummaryPickRow[],
-	modeOf: Map<string, SummaryGameMode>,
-): TeamRecordFamily[] {
+function buildTeamRecords(games: SummaryGameRow[], picks: SummaryPickRow[]): TeamRecordFamily[] {
 	const gameById = new Map(games.map((g) => [g.gameId, g]))
 	const families = new Map<
 		string,
@@ -280,7 +276,7 @@ function buildTeamRecords(
 			block.teams.set(row.teamId, record)
 		}
 		record.picks += 1
-		if (isSuccess(row, modeOf.get(row.gameId))) record.wins += 1
+		if (isSuccess(row, gameRow.gameMode)) record.wins += 1
 		if (row.result === 'saved_by_life') record.savedByLife += 1
 	}
 
@@ -388,6 +384,6 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			},
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
-		teamRecords: buildTeamRecords(games, countedPicks, modeOf),
+		teamRecords: buildTeamRecords(games, countedPicks),
 	}
 }
