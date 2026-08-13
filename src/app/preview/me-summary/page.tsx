@@ -1,4 +1,11 @@
-import { CLASSIC_ONLY_SUMMARY, FULL_HISTORY_SUMMARY } from '@/app/preview/me-summary/fixtures'
+import {
+	CLASSIC_ONLY_SUMMARY,
+	FREE_GAMES_ONLY_MONEY,
+	FULL_HISTORY_MONEY,
+	FULL_HISTORY_SUMMARY,
+} from '@/app/preview/me-summary/fixtures'
+import { MoneyPanel } from '@/components/me/money-panel'
+import { MoneySection } from '@/components/me/money-section'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
 
 /** The phone column: 375px of viewport minus the page's own `px-4`. */
@@ -56,6 +63,33 @@ export default function MeSummaryPreviewPage() {
 			<MobileColumn>
 				<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
 			</MobileColumn>
+
+			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">Money, shut and open</h2>
+				<p className="text-sm text-muted-foreground">
+					The fold is closed on both pages above, which is the state a player lands on: most people
+					lose, so the figure is one they ask for. Below it is closed again on its own, then the
+					panel it hides — the presentational half, rendered straight, which is how the opened state
+					gets reviewed without a click. The history's numbers: nine games, £80.00 staked (a rebuy
+					counted twice, an entry only marked paid counted all the same, a wiped-out game's stakes
+					refunded to nothing) against £66.50 won across three wins, two of them shared — so the
+					headline is the loss most players are looking at. The free World Cup game is named as
+					unlisted rather than shown as a game that cost nothing and lost. Then the same panel for a
+					player who has only ever played for nothing.
+				</p>
+			</header>
+			<MoneySection money={FULL_HISTORY_MONEY} />
+			<div className="rounded-lg border border-border bg-card overflow-hidden">
+				<MoneyPanel money={FULL_HISTORY_MONEY} />
+			</div>
+			<MobileColumn>
+				<div className="rounded-lg border border-border bg-card overflow-hidden">
+					<MoneyPanel money={FULL_HISTORY_MONEY} />
+				</div>
+			</MobileColumn>
+			<div className="rounded-lg border border-border bg-card overflow-hidden">
+				<MoneyPanel money={FREE_GAMES_ONLY_MONEY} />
+			</div>
 		</div>
 	)
 }
