@@ -306,6 +306,41 @@ describe('buildMeSummaryView team records', () => {
 		])
 	})
 
+	it('counts how many seasons a family pooled, so the page can say', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'this-season', competitionId: 'pl-2526', season: '2025/26' }),
+						game({ gameId: 'also-this-season', competitionId: 'pl-2526', season: '2025/26' }),
+						game({ gameId: 'last-season', competitionId: 'pl-2425', season: '2024/25' }),
+						game({
+							gameId: 'cup-game',
+							gameMode: 'cup',
+							competitionId: 'comp-wc-2026',
+							competitionName: 'FIFA World Cup 2026',
+							competitionFamilyKey: WORLD_CUP_FAMILY_KEY,
+							season: '2026',
+						}),
+					],
+					picks: [
+						pick('win', { gameId: 'this-season', ...team('ARS', 'Arsenal') }),
+						pick('win', { gameId: 'also-this-season', ...team('ARS', 'Arsenal') }),
+						pick('loss', { gameId: 'last-season', ...team('EVE', 'Everton') }),
+						pick('win', { gameId: 'cup-game', ...team('BRA', 'Brazil') }),
+					],
+				}),
+			),
+		)
+
+		// Three league games but two seasons: the figure is what the block pooled,
+		// not how many games went into it.
+		expect(view.teamRecords.map((f) => [f.name, f.seasons])).toEqual([
+			['Premier League', 2],
+			['World Cup', 1],
+		])
+	})
+
 	it('never pools two families together, even for the same player', () => {
 		const view = summary(
 			buildMeSummaryView(

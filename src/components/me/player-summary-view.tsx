@@ -119,12 +119,19 @@ function TeamRecordEnd({ label, records }: { label: string; records: TeamRecord[
  */
 function TeamRecordFamilyBlock({ family }: { family: TeamRecordFamily }) {
 	const teams = `${family.all.length} ${family.all.length === 1 ? 'team' : 'teams'}`
+	// What pooled, rather than a claim that something did: one season is the
+	// ordinary case for a tournament, and saying "1 season" is how the two-season
+	// block above it reads as the pooling it is.
+	const pooled =
+		family.seasons > 0
+			? `${teams} picked across ${family.seasons} ${family.seasons === 1 ? 'season' : 'seasons'}.`
+			: `${teams} picked.`
 
 	return (
 		<div className="rounded-lg border border-border bg-card p-4 space-y-3">
 			<div>
 				<h3 className="font-display text-base font-semibold">{family.name}</h3>
-				<p className="text-xs text-muted-foreground mt-0.5">{teams} picked, every season pooled.</p>
+				<p className="text-xs text-muted-foreground mt-0.5">{pooled}</p>
 			</div>
 			<div className="grid gap-3 sm:grid-cols-2">
 				<TeamRecordEnd label="Best" records={family.best} />

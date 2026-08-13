@@ -140,6 +140,12 @@ export interface TeamRecordFamily {
 	/** What to call the family — never a season. */
 	name: string
 	/**
+	 * How many of the family's seasons the block pooled. Seasons that produced a
+	 * pick, so it's what the ranking is actually built from — nought for a
+	 * competition that records no season at all.
+	 */
+	seasons: number
+	/**
 	 * The teams that have served the player best, best first. At most
 	 * `ENDS_LENGTH`, and never more than the family's better half — so a family
 	 * with four teams surfaces two, and no team is ever in both ends. Only teams
@@ -243,17 +249,22 @@ function buildTeamRecords(
 	picks: SummaryPickRow[],
 	modeOf: Map<string, SummaryGameMode>,
 ): TeamRecordFamily[] {
-	const familyOfGame = new Map(games.map((g) => [g.gameId, familyOf(g)]))
-	const families = new Map<string, { name: string; teams: Map<string, TeamRecord> }>()
+	const gameById = new Map(games.map((g) => [g.gameId, g]))
+	const families = new Map<
+		string,
+		{ name: string; teams: Map<string, TeamRecord>; seasons: Set<string> }
+	>()
 
 	for (const row of picks) {
-		const family = familyOfGame.get(row.gameId)
-		if (!family) continue
+		const gameRow = gameById.get(row.gameId)
+		if (!gameRow) continue
+		const family = familyOf(gameRow)
 		let block = families.get(family.key)
 		if (!block) {
-			block = { name: family.name, teams: new Map() }
+			block = { name: family.name, teams: new Map(), seasons: new Set() }
 			families.set(family.key, block)
 		}
+		if (gameRow.season !== null) block.seasons.add(gameRow.season)
 		let record = block.teams.get(row.teamId)
 		if (!record) {
 			record = {
@@ -284,7 +295,14 @@ function buildTeamRecords(
 		// every one of whose picks a life absorbed would otherwise land in the worst
 		// list, which is a verdict its picks never delivered.
 		const ranked = all.filter((record) => record.rate !== null)
-		return { familyKey, name: block.name, best: bestOf(ranked), worst: worstOf(ranked), all }
+		return {
+			familyKey,
+			name: block.name,
+			seasons: block.seasons.size,
+			best: bestOf(ranked),
+			worst: worstOf(ranked),
+			all,
+		}
 	})
 
 	// The family the player has picked in most leads, since that's the record they
