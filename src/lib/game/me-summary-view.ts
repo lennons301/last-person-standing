@@ -339,6 +339,12 @@ export interface MoneySummary {
 	 * ever in: see `buildMoney`.
 	 */
 	games: MoneyGameRecord[]
+	/**
+	 * Games in scope with no money in them at all. They contribute nothing to any
+	 * figure above and have no row of their own, so this is what lets the section
+	 * say why its list is shorter than the games played.
+	 */
+	freeGames: number
 }
 
 /**
@@ -686,7 +692,17 @@ function buildMoney(
 	// Every payout row counts, its `status` read nowhere: see `SummaryPayoutRow`.
 	const won = payouts.filter((row) => inScope.has(row.gameId))
 
-	const perGame = games.map((g) => {
+	// A game money was never in — a free one — has nothing to report: a row of
+	// noughts would read as a game that cost nothing and lost. It stays in games
+	// played, where it belongs, and is counted here so the section can say how
+	// many games its list leaves out.
+	const withMoney = games.filter(
+		(g) =>
+			payments.some((row) => row.gameId === g.gameId) ||
+			payouts.some((row) => row.gameId === g.gameId),
+	)
+
+	const perGame = withMoney.map((g) => {
 		const gameStake = total(staked.filter((row) => row.gameId === g.gameId))
 		const gameWon = total(won.filter((row) => row.gameId === g.gameId))
 		return {
@@ -704,6 +720,7 @@ function buildMoney(
 		stake: pounds(total(staked)),
 		winnings: pounds(total(won)),
 		net: pounds(total(won) - total(staked)),
+		freeGames: games.length - withMoney.length,
 		// Biggest loss first: the figure the section exists to disclose leads, and a
 		// win reads as the exception it is at the bottom. Name settles a tie, so the
 		// order never follows the order rows arrived in.

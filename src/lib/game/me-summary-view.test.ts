@@ -1034,6 +1034,28 @@ describe('buildMeSummaryView money', () => {
 		expect(view.money.games.map((g) => g.stake)).toEqual(['20.00'])
 	})
 
+	it('leaves a free game out of the money while still counting it as played', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'paid-game' }),
+						game({ gameId: 'free-game', gameName: 'Just For Fun' }),
+					],
+					payments: [stake('paid-game', '10.00')],
+				}),
+			),
+		)
+
+		expect(view.headline.gamesPlayed).toBe(2)
+		expect(view.money.stake).toBe('10.00')
+		expect(view.money.net).toBe('-10.00')
+		// No money was ever in the free game, so it has no row to show — a row of
+		// noughts would read as a game that cost nothing to enter and lost.
+		expect(view.money.games.map((g) => g.gameId)).toEqual(['paid-game'])
+		expect(view.money.freeGames).toBe(1)
+	})
+
 	it('breaks the total down into a row per game, biggest loss first', () => {
 		const view = summary(
 			buildMeSummaryView(
