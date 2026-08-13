@@ -247,6 +247,28 @@ export const FULL_HISTORY_SUMMARY: MeSummaryView = buildMeSummaryView({
 })
 
 /**
+ * The same history with two of its team blocks narrowed by their own season
+ * controls — the state a link into the page arrives in.
+ *
+ * The league block is narrowed to 2025/26, so its ranking is the one season's
+ * picks (Liverpool's five drop to three) while its control still offers the
+ * season it narrowed away from. The World Cup block is narrowed to an edition
+ * this player never played — a season absent from its own control, which is
+ * exactly what a link shared by a player with a different history does — so it
+ * states the empty season rather than a record of noughts. Everything above the
+ * Teams section is unmoved: the headline and the mode sections are all-time.
+ */
+export const FILTERED_SEASON_SUMMARY: MeSummaryView = buildMeSummaryView({
+	games: GAMES,
+	picks: PICKS,
+	streakPicks: STREAK_PICKS,
+	filters: {
+		season: null,
+		teamSeasons: { [PREMIER_LEAGUE_FAMILY_KEY]: '2025/26', [WORLD_CUP_FAMILY_KEY]: '2022' },
+	},
+})
+
+/**
  * A classic-only player, one game in and still alive in it. The two modes they
  * have never touched state their own absence, and the one turbo game that is
  * still being played contributes no streak — the state that shows a section can
