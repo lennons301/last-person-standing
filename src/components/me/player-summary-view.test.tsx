@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type {
 	MeSummaryView,
 	ModeSection,
+	MoneySummary,
 	TeamRecord,
 	TeamRecordFamily,
 } from '@/lib/game/me-summary-view'
@@ -180,7 +181,7 @@ describe('PlayerSummaryView', () => {
 		expect(within(cup).queryAllByRole('row')).toHaveLength(0)
 	})
 
-	it('puts the Teams section below the mode sections', () => {
+	it('puts the Teams section below the mode sections, and Money below that', () => {
 		render(
 			<PlayerSummaryView
 				summary={{ ...HEADLINE, modes: [CLASSIC], teamRecords: [PREMIER_LEAGUE] }}
@@ -188,7 +189,87 @@ describe('PlayerSummaryView', () => {
 		)
 
 		const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
-		expect(headings).toEqual(['Classic', 'Teams'])
+		expect(headings).toEqual(['Classic', 'Teams', 'Money'])
+	})
+})
+
+describe('PlayerSummaryView money fold', () => {
+	const MONEY: MoneySummary = {
+		stake: '55.00',
+		winnings: '40.00',
+		net: '-15.00',
+		freeGames: 1,
+		games: [
+			{
+				gameId: 'g1',
+				name: 'The Office Pool',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'classic',
+				stake: '45.00',
+				winnings: '0.00',
+				net: '-45.00',
+			},
+			{
+				gameId: 'g2',
+				name: 'Turbo Tuesday',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'turbo',
+				stake: '10.00',
+				winnings: '40.00',
+				net: '30.00',
+			},
+		],
+	}
+
+	function withMoney(): MeSummaryView {
+		return { ...HEADLINE, money: MONEY }
+	}
+
+	/** The fold's own control, which is the only way into the figures. */
+	function foldToggle(scope: HTMLElement): HTMLElement {
+		return within(scope).getByRole('button', { name: /profit and loss/i })
+	}
+
+	it('shows neither the headline nor a game until the player opens the fold', () => {
+		render(<PlayerSummaryView summary={withMoney()} />)
+
+		const money = section('Money')
+		expect(within(money).queryByText('-£15.00')).toBeNull()
+		expect(within(money).queryByText('The Office Pool')).toBeNull()
+	})
+
+	it('opens onto the headline and the per-game breakdown together', () => {
+		render(<PlayerSummaryView summary={withMoney()} />)
+
+		const money = section('Money')
+		fireEvent.click(foldToggle(money))
+
+		expect(stat(money, 'Profit / loss')).toBe('-£15.00')
+		expect(stat(money, 'Total staked')).toBe('£55.00')
+		expect(stat(money, 'Total won')).toBe('£40.00')
+
+		const office = within(money).getByText('The Office Pool').closest('tr')
+		expect(office?.textContent).toContain('-£45.00')
+		const turbo = within(money).getByText('Turbo Tuesday').closest('tr')
+		expect(turbo?.textContent).toContain('+£30.00')
+	})
+
+	it('is shut again on the next visit — the fold remembers nothing', () => {
+		const { unmount } = render(<PlayerSummaryView summary={withMoney()} />)
+		fireEvent.click(foldToggle(section('Money')))
+		expect(within(section('Money')).getByText('-£15.00')).toBeTruthy()
+		unmount()
+
+		render(<PlayerSummaryView summary={withMoney()} />)
+
+		expect(within(section('Money')).queryByText('-£15.00')).toBeNull()
+	})
+
+	it('says how many games had no money in them at all', () => {
+		render(<PlayerSummaryView summary={withMoney()} />)
+		fireEvent.click(foldToggle(section('Money')))
+
+		expect(within(section('Money')).getByText(/1 free game/)).toBeTruthy()
 	})
 })
 
