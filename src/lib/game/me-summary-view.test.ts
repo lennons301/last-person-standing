@@ -372,6 +372,85 @@ describe('buildMeSummaryView', () => {
 		expect(streakOf(view, 'turbo')).toEqual({ longest: 3, average: 2, games: 2 })
 	})
 
+	it('leaves a game still being played out of the streak figures', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 't1', gameMode: 'turbo', gamePlayerId: 'me-t1' }),
+					game({
+						gameId: 't2',
+						gameMode: 'turbo',
+						gamePlayerId: 'me-t2',
+						gameStatus: 'active',
+						playerStatus: 'alive',
+					}),
+				],
+				streakPicks: [
+					...ranks('t1', 'me-t1', ['win', 'win', 'loss']),
+					...ranks('t2', 'me-t2', ['win', 'win', 'win', 'win']),
+				],
+			}),
+		)
+
+		expect(played(view, 'turbo').gamesPlayed).toBe(2)
+		expect(streakOf(view, 'turbo')).toEqual({ longest: 2, average: 2, games: 1 })
+	})
+
+	it('has no streak yet where every single-round game is still in play', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({
+						gameId: 't1',
+						gameMode: 'turbo',
+						gamePlayerId: 'me-t1',
+						gameStatus: 'active',
+						playerStatus: 'alive',
+					}),
+				],
+				streakPicks: ranks('t1', 'me-t1', ['win', 'pending']),
+			}),
+		)
+
+		expect(streakOf(view, 'turbo')).toEqual({ longest: null, average: null, games: 0 })
+	})
+
+	it('counts a total wipeout as a streak of nothing rather than leaving the game out', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 't1', gameMode: 'turbo', gamePlayerId: 'me-t1' }),
+					game({ gameId: 't2', gameMode: 'turbo', gamePlayerId: 'me-t2' }),
+				],
+				streakPicks: [
+					// Nobody in t1 got a single pick right — the game refunded.
+					...ranks('t1', 'me-t1', ['loss', 'loss']),
+					...ranks('t1', 'rival', ['loss', 'loss']),
+					...ranks('t2', 'me-t2', ['win', 'win', 'win', 'loss']),
+				],
+			}),
+		)
+
+		expect(streakOf(view, 'turbo')).toEqual({ longest: 3, average: 1.5, games: 2 })
+	})
+
+	it('keeps a cup streak alive through a handicapped draw and a pick a life absorbed', () => {
+		const results: SummaryPickResult[] = ['win', 'draw', 'saved_by_life', 'loss']
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'k1', gameMode: 'cup', gamePlayerId: 'me-k1' }),
+					game({ gameId: 't1', gameMode: 'turbo', gamePlayerId: 'me-t1' }),
+				],
+				streakPicks: [...ranks('k1', 'me-k1', results), ...ranks('t1', 'me-t1', results)],
+			}),
+		)
+
+		expect(streakOf(view, 'cup').longest).toBe(3)
+		// Turbo has neither handicap nor lives: the prediction either came in or it didn't.
+		expect(streakOf(view, 'turbo').longest).toBe(1)
+	})
+
 	it('has nothing to show for a season the player did not play', () => {
 		const view = buildMeSummaryView(
 			input({
