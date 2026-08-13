@@ -1,6 +1,7 @@
 'use client'
 
-import { Moon, Sun } from 'lucide-react'
+import { Moon, Sun, User } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -45,6 +46,13 @@ export function UserMenu({ name }: UserMenuProps) {
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
+				<DropdownMenuItem asChild>
+					<Link href="/me">
+						<User className="mr-2 h-4 w-4" />
+						Your summary
+					</Link>
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
 				<DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
 					{theme === 'dark' ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
 					Toggle theme
