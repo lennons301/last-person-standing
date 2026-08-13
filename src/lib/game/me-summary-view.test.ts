@@ -1004,4 +1004,44 @@ describe('buildMeSummaryView team season filter', () => {
 		expect(worldCup?.selectedSeason).toBeNull()
 		expect(worldCup?.all.map((t) => t.shortName)).toEqual(['BRA'])
 	})
+
+	it('has no records for a season the player made no picks in, and still its control', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					...threeSeasons(),
+					filters: { season: null, teamSeasons: { [PREMIER_LEAGUE_FAMILY_KEY]: '2023/24' } },
+				}),
+			),
+		)
+		const league = view.teamRecords.find((f) => f.familyKey === PREMIER_LEAGUE_FAMILY_KEY)
+
+		// The block stays — with nothing in it, but with every season it has ever
+		// had, so the player can get back out of the season they filtered into.
+		expect(league).toMatchObject({ selectedSeason: '2023/24', seasons: 0 })
+		expect(league?.all).toEqual([])
+		expect(league?.best).toEqual([])
+		expect(league?.worst).toEqual([])
+		expect(league?.seasonOptions).toEqual(['2025/26', '2024/25'])
+	})
+
+	it('leaves the career headline and the mode sections all-time', () => {
+		const career = summary(buildMeSummaryView(input(threeSeasons())))
+		const filtered = summary(
+			buildMeSummaryView(
+				input({
+					...threeSeasons(),
+					filters: {
+						season: null,
+						teamSeasons: { [PREMIER_LEAGUE_FAMILY_KEY]: '2025/26', [WORLD_CUP_FAMILY_KEY]: '2026' },
+					},
+				}),
+			),
+		)
+
+		// A team block is a record of teams; the headline and the modes are a record
+		// of games, and narrowing one team block says nothing about those.
+		expect(filtered.headline).toEqual(career.headline)
+		expect(filtered.modes).toEqual(career.modes)
+	})
 })
