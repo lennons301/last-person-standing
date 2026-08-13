@@ -187,6 +187,18 @@ export interface TeamRecordFamily {
 	 */
 	seasons: number
 	/**
+	 * Every season this family has a pick in, most recent first — the choices its
+	 * own season control offers. Listed per family and never across them: a league
+	 * season reads "2025/26" and a World Cup "2026", so one control over both
+	 * would offer seasons that mean nothing to half the teams under it.
+	 *
+	 * Never narrowed by the selection, so the control can always be changed or
+	 * cleared — including from a season the player made no picks in.
+	 */
+	seasonOptions: string[]
+	/** The season this block is narrowed to. Null is all of them. */
+	selectedSeason: string | null
+	/**
 	 * The teams that have served the player best, best first. At most
 	 * `ENDS_LENGTH`, and never more than the family's better half — so a family
 	 * with four teams surfaces two, and no team is ever in both ends. Only teams
@@ -410,6 +422,10 @@ function buildTeamRecords(games: SummaryGameRow[], picks: SummaryPickRow[]): Tea
 			familyKey,
 			name: block.name,
 			seasons: block.seasons.size,
+			// Season strings sort by their leading year in both vocabularies, so the
+			// most recent leads without anything here having to parse a season.
+			seasonOptions: [...block.seasons].sort().reverse(),
+			selectedSeason: null,
 			best: bestOf(ranked),
 			worst: worstOf(ranked),
 			all,

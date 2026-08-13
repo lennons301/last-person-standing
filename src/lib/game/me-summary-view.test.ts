@@ -937,3 +937,41 @@ describe('buildMeSummaryView team records', () => {
 		expect(view.teamRecords[0].worst).toEqual([])
 	})
 })
+
+/** Two league seasons and a World Cup — the shape a per-family filter exists for. */
+function threeSeasons(): Pick<BuildMeSummaryInput, 'games' | 'picks'> {
+	return {
+		games: [
+			game({ gameId: 'pl-a', competitionId: 'pl-2425', season: '2024/25' }),
+			game({ gameId: 'pl-b', competitionId: 'pl-2526', season: '2025/26' }),
+			game({
+				gameId: 'wc',
+				gameMode: 'cup',
+				competitionId: 'comp-wc-2026',
+				competitionName: 'FIFA World Cup 2026',
+				competitionFamilyKey: WORLD_CUP_FAMILY_KEY,
+				season: '2026',
+			}),
+		],
+		picks: [
+			pick('win', { gameId: 'pl-a', ...team('ARS', 'Arsenal') }),
+			pick('loss', { gameId: 'pl-a', ...team('EVE', 'Everton') }),
+			pick('loss', { gameId: 'pl-b', ...team('ARS', 'Arsenal') }),
+			pick('win', { gameId: 'pl-b', ...team('LIV', 'Liverpool') }),
+			pick('win', { gameId: 'wc', ...team('BRA', 'Brazil') }),
+		],
+	}
+}
+
+describe('buildMeSummaryView team season filter', () => {
+	it("lists a family's own seasons, most recent first, with none selected by default", () => {
+		const view = summary(buildMeSummaryView(input(threeSeasons())))
+		const byName = new Map(view.teamRecords.map((f) => [f.name, f]))
+
+		expect(byName.get('Premier League')?.seasonOptions).toEqual(['2025/26', '2024/25'])
+		expect(byName.get('Premier League')?.selectedSeason).toBeNull()
+		// A family's seasons are its own vocabulary — the World Cup's never join them.
+		expect(byName.get('World Cup')?.seasonOptions).toEqual(['2026'])
+		expect(byName.get('World Cup')?.selectedSeason).toBeNull()
+	})
+})
