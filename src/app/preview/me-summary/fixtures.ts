@@ -28,4 +28,5 @@ export const FULL_HISTORY_SUMMARY: MeSummaryView = {
 			picks: 17,
 		},
 	},
+	teamRecords: [],
 }

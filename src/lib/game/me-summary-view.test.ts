@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PREMIER_LEAGUE_FAMILY_KEY, WORLD_CUP_FAMILY_KEY } from '@/lib/game/competition-family'
 import {
 	type BuildMeSummaryInput,
 	buildMeSummaryView,
@@ -18,6 +19,9 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 		gameMode: 'classic',
 		season: '2025/26',
 		playerStatus: 'eliminated',
+		competitionId: 'comp-pl-2526',
+		competitionName: 'Premier League 2025/26',
+		competitionFamilyKey: PREMIER_LEAGUE_FAMILY_KEY,
 		...overrides,
 	}
 }
@@ -253,5 +257,52 @@ describe('buildMeSummaryView', () => {
 		)
 
 		expect(view.kind).toBe('empty')
+	})
+})
+
+/** A club, in the fields a pick row carries it in. */
+function team(shortName: string, name: string): Partial<SummaryPickRow> {
+	return { teamId: `team-${shortName.toLowerCase()}`, teamName: name, teamShortName: shortName }
+}
+
+describe('buildMeSummaryView team records', () => {
+	it('pools every season of one competition family into a single block', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'this-season', competitionId: 'pl-2526', season: '2025/26' }),
+						game({
+							gameId: 'last-season',
+							competitionId: 'pl-2425',
+							season: '2024/25',
+							competitionName: 'Premier League 2024/25',
+						}),
+					],
+					picks: [
+						pick('win', { gameId: 'this-season', ...team('ARS', 'Arsenal') }),
+						pick('loss', { gameId: 'last-season', ...team('ARS', 'Arsenal') }),
+					],
+				}),
+			),
+		)
+
+		expect(view.teamRecords).toHaveLength(1)
+		expect(view.teamRecords[0]).toMatchObject({
+			familyKey: PREMIER_LEAGUE_FAMILY_KEY,
+			name: 'Premier League',
+		})
+		expect(view.teamRecords[0].all).toEqual([
+			{
+				teamId: 'team-ars',
+				name: 'Arsenal',
+				shortName: 'ARS',
+				badgeUrl: null,
+				picks: 2,
+				wins: 1,
+				savedByLife: 0,
+				rate: 0.5,
+			},
+		])
 	})
 })

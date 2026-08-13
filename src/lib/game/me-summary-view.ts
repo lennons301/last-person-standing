@@ -7,6 +7,8 @@
  * dates that only make sense against a live competition.
  */
 
+import { COMPETITION_FAMILY_NAMES } from '@/lib/game/competition-family'
+
 export type SummaryGameMode = 'classic' | 'turbo' | 'cup'
 
 export type SummaryPickResult = 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_life' | 'void'
@@ -19,6 +21,16 @@ export interface SummaryGameRow {
 	season: string | null
 	/** `game_player.status` for this player. */
 	playerStatus: 'alive' | 'eliminated' | 'winner'
+	/** The competition this game is played on — one *season* of a family. */
+	competitionId: string
+	/** `competition.name`, season included ("Premier League 2025/26"). */
+	competitionName: string
+	/**
+	 * `competition.family_key` — the family every season of this competition
+	 * shares. Null for a competition that belongs to none, which stands alone
+	 * rather than pooling with every other unfamilied competition.
+	 */
+	competitionFamilyKey: string | null
 }
 
 /** One pick the player made, in whichever game and round. */
@@ -91,6 +103,46 @@ export interface CareerHeadline {
 	mostPickedTeam: MostPickedTeam | null
 }
 
+/** How one team has served the player, within one competition family. */
+export interface TeamRecord {
+	teamId: string
+	name: string
+	shortName: string
+	badgeUrl: string | null
+	/** Every pick of this team that counts — successes, failures, saves alike. */
+	picks: number
+	/**
+	 * Picks that came off: a win in any mode, plus cup's draw — the same rule the
+	 * headline's accuracy uses, so the two figures can't disagree.
+	 */
+	wins: number
+	/**
+	 * Picks a life absorbed. The team still lost, and a team rate measures whether
+	 * the *team* delivered, so these are out of both halves of `rate` and carried
+	 * here on their own.
+	 */
+	savedByLife: number
+	/** wins ÷ (picks − savedByLife). Null when a life absorbed every pick. */
+	rate: number | null
+}
+
+/**
+ * The player's record with the teams of one competition family.
+ *
+ * A family is the only scope a team record means anything in: a World Cup team
+ * set and a Premier League team set are disjoint, so one league table across
+ * both would compare nothing. Seasons *within* the family pool, because one
+ * season yields far too few picks per team for a rate to say anything.
+ */
+export interface TeamRecordFamily {
+	/** `competition.family_key`, or the competition's own id when it has none. */
+	familyKey: string
+	/** What to call the family — never a season. */
+	name: string
+	/** Every team the player has picked in this family, best first. */
+	all: TeamRecord[]
+}
+
 /**
  * `empty` is a player with no games in scope — the page says so rather than
  * rendering a wall of zeros, which is why it's a variant and not a headline of
@@ -98,7 +150,13 @@ export interface CareerHeadline {
  */
 export type MeSummaryView =
 	| { kind: 'empty'; filters: SummaryFilters }
-	| { kind: 'summary'; filters: SummaryFilters; headline: CareerHeadline }
+	| {
+			kind: 'summary'
+			filters: SummaryFilters
+			headline: CareerHeadline
+			/** One block per competition family. Never a career-wide list. */
+			teamRecords: TeamRecordFamily[]
+	  }
 
 /**
  * Did the pick come off? A win everywhere, plus cup's draw — cup scores a draw
@@ -149,6 +207,66 @@ function findMostPickedTeam(picks: SummaryPickRow[]): MostPickedTeam | null {
 	return ranked[0] ?? null
 }
 
+/**
+ * The family a game's picks belong to. A competition with no family key can't
+ * pool with anything, so it stands alone under its own id — pooling every
+ * unfamilied competition into one block would compare unrelated team sets,
+ * which is the one thing this section exists to avoid.
+ */
+function familyOf(row: SummaryGameRow): { key: string; name: string } {
+	if (row.competitionFamilyKey === null) {
+		return { key: row.competitionId, name: row.competitionName }
+	}
+	return {
+		key: row.competitionFamilyKey,
+		name: COMPETITION_FAMILY_NAMES[row.competitionFamilyKey] ?? row.competitionName,
+	}
+}
+
+function buildTeamRecords(
+	games: SummaryGameRow[],
+	picks: SummaryPickRow[],
+	modeOf: Map<string, SummaryGameMode>,
+): TeamRecordFamily[] {
+	const familyOfGame = new Map(games.map((g) => [g.gameId, familyOf(g)]))
+	const families = new Map<string, { name: string; teams: Map<string, TeamRecord> }>()
+
+	for (const row of picks) {
+		const family = familyOfGame.get(row.gameId)
+		if (!family) continue
+		let block = families.get(family.key)
+		if (!block) {
+			block = { name: family.name, teams: new Map() }
+			families.set(family.key, block)
+		}
+		let record = block.teams.get(row.teamId)
+		if (!record) {
+			record = {
+				teamId: row.teamId,
+				name: row.teamName,
+				shortName: row.teamShortName,
+				badgeUrl: row.teamBadgeUrl,
+				picks: 0,
+				wins: 0,
+				savedByLife: 0,
+				rate: null,
+			}
+			block.teams.set(row.teamId, record)
+		}
+		record.picks += 1
+		if (isSuccess(row, modeOf.get(row.gameId))) record.wins += 1
+		if (row.result === 'saved_by_life') record.savedByLife += 1
+	}
+
+	return [...families.entries()].map(([familyKey, block]) => {
+		const all = [...block.teams.values()].map((record) => {
+			const rated = record.picks - record.savedByLife
+			return { ...record, rate: rated === 0 ? null : record.wins / rated }
+		})
+		return { familyKey, name: block.name, all }
+	})
+}
+
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 	const season = input.filters.season
 	const games = season === null ? input.games : input.games.filter((g) => g.season === season)
@@ -179,5 +297,6 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			},
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
+		teamRecords: buildTeamRecords(games, countedPicks, modeOf),
 	}
 }
