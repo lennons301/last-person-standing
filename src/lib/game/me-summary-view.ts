@@ -34,6 +34,13 @@ export interface SummaryGameRow {
 	/** `game_player.status` for this player. */
 	playerStatus: 'alive' | 'eliminated' | 'winner'
 	/**
+	 * `game_player.eliminated_round_id` — the round the player went out in, or
+	 * null while they're still in it. Read for one purpose only: a rebuy clears
+	 * it, so a row still pointing at round one is a player who *didn't* buy back
+	 * in, whatever picks they may have left lying in later rounds.
+	 */
+	eliminatedRoundId: string | null
+	/**
 	 * `game.mode_config.allowRebuys` — did this game let a round-one casualty buy
 	 * back in? Classic's own flag: it's what decides whether a round-one loss
 	 * eliminates at all, so it's also what decides whether playing on afterwards
@@ -457,6 +464,14 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
  * creation starts a game at the competition's earliest still-pickable round).
  * Such a game still counts in `games`, so the page can say what the rate is
  * over, but it can't drag the rate down to a nought the player never earned.
+ *
+ * One case the rebuy count knowingly misses: a player who bought back in and
+ * then never picked again is eliminated in round two as `missed_rebuy_pick`, and
+ * leaves no later pick behind to show the rebuy. Reading that off the player row
+ * would mean trusting `eliminated_reason`, which is only written as
+ * `missed_rebuy_pick` when a second *payment* row exists — so it would miss the
+ * free games this whole block exists to get right. A rebuy nobody picked with
+ * reads as no rebuy.
  */
 function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
 	let survived = 0
@@ -475,10 +490,15 @@ function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]):
 		exits += 1
 		if (!g.allowRebuys) continue
 		rebuyable += 1
-		// A pick after the round they went out in is the rebuy: without one they'd
-		// have had nothing left to pick with. No payment row is consulted, because
-		// a free game has none and a rebuy in one still happened.
-		if (own.some((p) => p.roundNumber > 1)) rebought += 1
+		// A pick after round one is the rebuy showing through: without buying back
+		// in there'd have been nothing left to pick with. No payment row is
+		// consulted, because a free game has none and a rebuy in one still
+		// happened. The elimination round is the cross-check the picks can't make
+		// on their own: classic accepts advance picks for later rounds and doesn't
+		// delete them when a player goes out, so a locked round-3 pick would
+		// otherwise read as a rebuy the player never took.
+		const stillOutFromRoundOne = g.eliminatedRoundId === roundOne.roundId
+		if (!stillOutFromRoundOne && own.some((p) => p.roundNumber > 1)) rebought += 1
 	}
 	const settled = survived + exits
 	return {

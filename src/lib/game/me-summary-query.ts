@@ -37,6 +37,7 @@ export async function getMeSummary(
 			competitionName: competition.name,
 			season: competition.season,
 			playerStatus: gamePlayer.status,
+			eliminatedRoundId: gamePlayer.eliminatedRoundId,
 			modeConfig: game.modeConfig,
 		})
 		.from(gamePlayer)

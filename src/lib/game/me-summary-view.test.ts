@@ -25,6 +25,7 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 		season: '2025/26',
 		playerStatus: 'eliminated',
 		allowRebuys: false,
+		eliminatedRoundId: null,
 		...overrides,
 	}
 }
@@ -624,7 +625,12 @@ describe('buildMeSummaryView', () => {
 						allowRebuys: true,
 					}),
 					// Out in round one of a game that offered a rebuy, and didn't take it.
-					game({ gameId: 'c2', gamePlayerId: 'me-c2', allowRebuys: true }),
+					game({
+						gameId: 'c2',
+						gamePlayerId: 'me-c2',
+						allowRebuys: true,
+						eliminatedRoundId: 'c2-r1',
+					}),
 				],
 				picks: [
 					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
@@ -636,6 +642,32 @@ describe('buildMeSummaryView', () => {
 		)
 
 		expect(roundOneOf(view)).toMatchObject({ exits: 2, rebuyable: 2, rebought: 1 })
+	})
+
+	it('does not read an advance pick locked in before the exit as a rebuy', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// Out in round one and stayed out: the elimination round is still on
+					// the player row, which a rebuy would have cleared.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						allowRebuys: true,
+						eliminatedRoundId: 'c1-r1',
+					}),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					// Classic takes picks for rounds other than the current one, and
+					// nothing deletes them when the player goes out. A pick after round
+					// one is only a rebuy if the player was actually put back in.
+					pick('pending', { gameId: 'c1', roundId: 'c1-r3', roundNumber: 3 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ exits: 1, rebuyable: 1, rebought: 0 })
 	})
 
 	it('holds no rebuy against a game that had rebuys switched off', () => {
