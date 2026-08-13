@@ -259,10 +259,12 @@ function buildTeamRecords(
 	}
 
 	const blocks = [...families.entries()].map(([familyKey, block]) => {
-		const all = [...block.teams.values()].map((record) => {
-			const rated = record.picks - record.savedByLife
-			return { ...record, rate: rated === 0 ? null : record.wins / rated }
-		})
+		const all = [...block.teams.values()]
+			.map((record) => {
+				const rated = record.picks - record.savedByLife
+				return { ...record, rate: rated === 0 ? null : record.wins / rated }
+			})
+			.sort(byRate)
 		return { familyKey, name: block.name, all }
 	})
 
@@ -270,6 +272,25 @@ function buildTeamRecords(
 	// came to read. Name breaks a tie, so the order is the player's history and
 	// never the order rows happened to arrive in.
 	return blocks.sort((a, b) => pickCount(b.all) - pickCount(a.all) || a.name.localeCompare(b.name))
+}
+
+/**
+ * Best team first. There is no minimum sample — a team picked once is ranked on
+ * the one pick — so volume breaks a tie: at the same rate the larger sample is
+ * the better-evidenced record and goes above. Name settles the rest, so the
+ * order never depends on which row came back first.
+ *
+ * A team with no rate at all (every pick absorbed by a life) can't be compared
+ * with teams that have one, so it sinks below all of them rather than reading as
+ * the worst of them.
+ */
+function byRate(a: TeamRecord, b: TeamRecord): number {
+	if (a.rate === null || b.rate === null) {
+		if (a.rate !== b.rate) return a.rate === null ? 1 : -1
+	} else if (a.rate !== b.rate) {
+		return b.rate - a.rate
+	}
+	return b.picks - a.picks || a.name.localeCompare(b.name)
 }
 
 function pickCount(records: TeamRecord[]): number {

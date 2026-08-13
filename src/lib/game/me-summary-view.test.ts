@@ -374,6 +374,51 @@ describe('buildMeSummaryView team records', () => {
 		])
 	})
 
+	it('counts a pick a life saved on the row and out of both sides of the rate', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameMode: 'cup' })],
+					picks: [
+						pick('win', team('BRA', 'Brazil')),
+						pick('loss', team('BRA', 'Brazil')),
+						pick('saved_by_life', team('BRA', 'Brazil')),
+						pick('saved_by_life', team('BRA', 'Brazil')),
+					],
+				}),
+			),
+		)
+
+		// Four picks on the row, two of them absorbed by a life: the team lost both,
+		// so the rate is one win from the two that actually stood — not 1/4, and not
+		// 3/4 either.
+		expect(view.teamRecords[0].all[0]).toMatchObject({
+			shortName: 'BRA',
+			picks: 4,
+			wins: 1,
+			savedByLife: 2,
+			rate: 0.5,
+		})
+	})
+
+	it('has no rate for a team every one of whose picks a life absorbed', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameMode: 'cup' })],
+					picks: [pick('saved_by_life', team('BRA', 'Brazil'))],
+				}),
+			),
+		)
+
+		expect(view.teamRecords[0].all[0]).toMatchObject({
+			picks: 1,
+			wins: 0,
+			savedByLife: 1,
+			rate: null,
+		})
+	})
+
 	it('leads with the family the player has picked in most, whatever order the rows arrive in', () => {
 		const games = [
 			game({ gameId: 'league-game' }),
@@ -395,5 +440,70 @@ describe('buildMeSummaryView team records', () => {
 
 		expect(view.teamRecords.map((f) => f.name)).toEqual(['Premier League', 'World Cup'])
 		expect(reversed.teamRecords.map((f) => f.name)).toEqual(['Premier League', 'World Cup'])
+	})
+
+	it('ranks teams by rate, with no minimum sample', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game()],
+					picks: [
+						// Everton: 1 from 3. Arsenal: 2 from 3. Fulham: 1 from 1.
+						pick('loss', team('EVE', 'Everton')),
+						pick('loss', team('EVE', 'Everton')),
+						pick('win', team('EVE', 'Everton')),
+						pick('win', team('ARS', 'Arsenal')),
+						pick('win', team('ARS', 'Arsenal')),
+						pick('loss', team('ARS', 'Arsenal')),
+						pick('win', team('FUL', 'Fulham')),
+					],
+				}),
+			),
+		)
+
+		expect(view.teamRecords[0].all.map((t) => [t.shortName, t.rate])).toEqual([
+			['FUL', 1],
+			['ARS', 2 / 3],
+			['EVE', 1 / 3],
+		])
+	})
+
+	it('ranks the larger sample above the smaller one when two teams share a rate', () => {
+		const picks = [
+			pick('win', team('ARS', 'Arsenal')),
+			pick('loss', team('ARS', 'Arsenal')),
+			pick('win', team('EVE', 'Everton')),
+			pick('win', team('EVE', 'Everton')),
+			pick('loss', team('EVE', 'Everton')),
+			pick('loss', team('EVE', 'Everton')),
+		]
+		const view = summary(buildMeSummaryView(input({ games: [game()], picks })))
+		const reversed = summary(
+			buildMeSummaryView(input({ games: [game()], picks: [...picks].reverse() })),
+		)
+
+		// Both are on 50%; Everton's four picks say more than Arsenal's two.
+		expect(view.teamRecords[0].all.map((t) => t.shortName)).toEqual(['EVE', 'ARS'])
+		expect(reversed.teamRecords[0].all.map((t) => t.shortName)).toEqual(['EVE', 'ARS'])
+	})
+
+	it('sinks a team with no rate below every team that has one', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [game({ gameMode: 'cup' })],
+					picks: [
+						pick('saved_by_life', team('ITA', 'Italy')),
+						pick('loss', team('ENG', 'England')),
+						pick('win', team('BRA', 'Brazil')),
+					],
+				}),
+			),
+		)
+
+		// A team whose only pick a life absorbed has no rate at all, so it can't be
+		// ranked among the teams that do — it goes last rather than reading as the
+		// worst of them.
+		expect(view.teamRecords[0].all.map((t) => t.shortName)).toEqual(['BRA', 'ENG', 'ITA'])
 	})
 })
