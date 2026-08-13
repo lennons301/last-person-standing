@@ -108,12 +108,15 @@ describe('PlayerSummaryView', () => {
 		expect(stat(classic, 'Average run')).toBe('4.5 rounds')
 	})
 
-	it('shows the round-one block: survival rate, exits and the games bought back into', () => {
+	it('shows the round-one block: survival rate, the opening picks that went down and the games bought back into', () => {
 		render(<PlayerSummaryView summary={withModes([CLASSIC])} />)
 
 		const classic = section('Classic')
 		expect(stat(classic, 'Round 1 survival')).toBe('75%')
-		expect(stat(classic, 'Round 1 exits')).toBe('1')
+		// Labelled by the pick going down rather than by an exit: with rebuys off,
+		// the starting-round exemption means a lost round one didn't put the player
+		// out at all, so "exits" would be untrue in half the games it counts.
+		expect(stat(classic, 'Opening pick down')).toBe('1')
 		expect(stat(classic, 'Bought back in')).toBe('1')
 		// The rebuy count is only ever over the exits that had a rebuy to take.
 		expect(within(classic).getByText(/1 of 1/)).toBeTruthy()

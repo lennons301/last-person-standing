@@ -109,10 +109,16 @@ function RoundOneStats({ roundOne }: { roundOne: ClassicRoundOne }) {
 						: `Your opening pick came off in ${roundOne.survived} of ${roundOne.settled}`
 				}
 			/>
+			{/*
+			 * Labelled by the pick, not by an elimination: with rebuys switched off a
+			 * lost round one doesn't put the player out (the starting-round
+			 * exemption), so "exits" would be untrue for exactly the games the rebuy
+			 * card below already refuses to hold against them.
+			 */}
 			<Stat
-				label="Round 1 exits"
+				label="Opening pick down"
 				value={roundOne.exits}
-				note="Games your opening pick went down in"
+				note="Games your round 1 pick didn't win"
 			/>
 			<Stat
 				label="Bought back in"
