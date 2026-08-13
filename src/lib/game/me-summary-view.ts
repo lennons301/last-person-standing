@@ -40,6 +40,12 @@ export interface SummaryPickRow {
 	gameId: string
 	/** Which round of that game — classic counts its depth in these. */
 	roundId: string
+	/**
+	 * `round.number` — which round of the competition this pick was made in.
+	 * Round one is the one the game turns on: it's the round the engine exempts
+	 * from elimination in a no-rebuys game, and the only round a rebuy follows.
+	 */
+	roundNumber: number
 	teamId: string
 	teamName: string
 	teamShortName: string
@@ -182,6 +188,23 @@ export interface ClassicDepth {
 	games: number
 }
 
+/**
+ * How the player fares at classic's first hurdle — the question a survivor
+ * player asks about themselves before any other.
+ *
+ * Every figure here is read from the player's picks, never from their
+ * `game_player` row: a rebuy clears the elimination round and reason, so a
+ * rebought game leaves no trace on the player record. The picks survive it.
+ */
+export interface ClassicRoundOne {
+	/** Classic games in scope — what the survival rate is over. */
+	games: number
+	/** Games whose round-one pick came off. */
+	survived: number
+	/** survived ÷ games. Never null — the block exists only where a game was played. */
+	survivalRate: number
+}
+
 /** Every mode gets a section, in the order the page reads them. */
 export const SUMMARY_MODES: SummaryGameMode[] = ['classic', 'turbo', 'cup']
 
@@ -202,7 +225,12 @@ export interface ModeRecord {
  */
 export type ModeSection =
 	| { mode: SummaryGameMode; kind: 'unplayed' }
-	| ({ mode: 'classic'; kind: 'played'; depth: ClassicDepth } & ModeRecord)
+	| ({
+			mode: 'classic'
+			kind: 'played'
+			depth: ClassicDepth
+			roundOne: ClassicRoundOne
+	  } & ModeRecord)
 	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
 
 /**
@@ -388,6 +416,29 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
 	}
 }
 
+/**
+ * The player's round-one record across their classic games.
+ *
+ * Round one is `round.number === 1` — the same round the engine exempts from
+ * elimination in a no-rebuys game and the only one a rebuy follows, so this
+ * agrees with what the game itself did rather than with a second definition of
+ * "the first round".
+ *
+ * A game with no settled round-one pick — none made, or one a cancelled fixture
+ * voided — is neither a survival nor an exit: the picks are all this reads, and
+ * they don't say. It stays in `games` all the same, because the rate the ticket
+ * asks for is over the classic games played.
+ */
+function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
+	let survived = 0
+	for (const g of games) {
+		const roundOne = picks.find((p) => p.gameId === g.gameId && p.roundNumber === 1)
+		// Classic carries no handicap and no lives: only a win gets you through.
+		if (roundOne?.result === 'win') survived += 1
+	}
+	return { games: games.length, survived, survivalRate: survived / games.length }
+}
+
 function buildModeSection(
 	mode: SummaryGameMode,
 	games: SummaryGameRow[],
@@ -404,7 +455,13 @@ function buildModeSection(
 		competitions: buildCompetitionRecords(played),
 	}
 	if (mode === 'classic') {
-		return { mode, kind: 'played', ...record, depth: buildClassicDepth(played, picks) }
+		return {
+			mode,
+			kind: 'played',
+			...record,
+			depth: buildClassicDepth(played, picks),
+			roundOne: buildClassicRoundOne(played, picks),
+		}
 	}
 	return {
 		mode,

@@ -6,7 +6,7 @@ import {
 	type MeSummaryView,
 	type SummaryFilters,
 } from '@/lib/game/me-summary-view'
-import { competition, team } from '@/lib/schema/competition'
+import { competition, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
 /** The career, unfiltered — every game the player has entered. */
@@ -57,6 +57,7 @@ export async function getMeSummary(
 		.select({
 			gameId: pick.gameId,
 			roundId: pick.roundId,
+			roundNumber: round.number,
 			teamId: team.id,
 			teamName: team.name,
 			teamShortName: team.shortName,
@@ -67,6 +68,9 @@ export async function getMeSummary(
 		.from(pick)
 		.innerJoin(gamePlayer, eq(pick.gamePlayerId, gamePlayer.id))
 		.innerJoin(team, eq(pick.teamId, team.id))
+		// The round's number, not just its id: which round a pick was made in is
+		// what tells round one from the rounds a rebuy bought.
+		.innerJoin(round, eq(pick.roundId, round.id))
 		.where(eq(gamePlayer.userId, userId))
 
 	// Single-round modes only, and every player's picks in those games — not just

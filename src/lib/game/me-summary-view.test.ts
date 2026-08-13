@@ -32,6 +32,7 @@ function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}
 	return {
 		gameId: 'game-1',
 		roundId: 'round-1',
+		roundNumber: 1,
 		teamId: 'team-ars',
 		teamName: 'Arsenal',
 		teamShortName: 'ARS',
@@ -80,6 +81,13 @@ function depthOf(view: MeSummaryView) {
 	const section = played(view, 'classic')
 	if (section.mode !== 'classic') throw new Error('unreachable')
 	return section.depth
+}
+
+/** The classic section, narrowed to its round-one block. */
+function roundOneOf(view: MeSummaryView) {
+	const section = played(view, 'classic')
+	if (section.mode !== 'classic') throw new Error('unreachable')
+	return section.roundOne
 }
 
 /** The same, narrowed to a single-round mode so its streak is readable. */
@@ -499,6 +507,30 @@ describe('buildMeSummaryView', () => {
 		)
 
 		expect(depthOf(view)).toMatchObject({ best: 4, average: 4 })
+	})
+
+	it('scores round-one survival over every classic game played', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
+					game({ gameId: 'c2', gamePlayerId: 'me-c2' }),
+					game({ gameId: 'c3', gamePlayerId: 'me-c3' }),
+					game({ gameId: 'c4', gamePlayerId: 'me-c4' }),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					// Round 2 says nothing about the first hurdle.
+					pick('loss', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('win', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+					pick('loss', { gameId: 'c3', roundId: 'c3-r1', roundNumber: 1 }),
+					// Classic has no handicap: a draw is a failed pick like any other.
+					pick('draw', { gameId: 'c4', roundId: 'c4-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ games: 4, survived: 2, survivalRate: 0.5 })
 	})
 
 	it('resolves a turbo streak over the players still standing, and a cup streak over everyone', () => {

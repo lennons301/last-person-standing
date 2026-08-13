@@ -54,6 +54,7 @@ export const FULL_HISTORY_SUMMARY: MeSummaryView = {
 				},
 			],
 			depth: { best: 12, average: 47 / 9, games: 9 },
+			roundOne: { games: 9, survived: 5, survivalRate: 5 / 9 },
 		},
 		{
 			mode: 'turbo',
@@ -131,6 +132,7 @@ export const CLASSIC_ONLY_SUMMARY: MeSummaryView = {
 				},
 			],
 			depth: { best: 5, average: 4, games: 2 },
+			roundOne: { games: 2, survived: 2, survivalRate: 1 },
 		},
 		{
 			mode: 'turbo',
