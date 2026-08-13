@@ -76,14 +76,31 @@ export type MeSummaryView =
 	| { kind: 'empty'; filters: SummaryFilters }
 	| { kind: 'summary'; filters: SummaryFilters; headline: CareerHeadline }
 
+/**
+ * Did the pick come off? A win everywhere, plus cup's draw — cup scores a draw
+ * against a higher tier as a result worth having, so the accuracy figure has to
+ * agree with the mode the pick was made in.
+ */
+function isSuccess(row: SummaryPickRow, mode: SummaryGameMode | undefined): boolean {
+	if (row.result === 'win') return true
+	return row.result === 'draw' && mode === 'cup'
+}
+
+/** Did the pick resolve either way? Successes plus outright failures. */
+function isSettled(row: SummaryPickRow, mode: SummaryGameMode | undefined): boolean {
+	return isSuccess(row, mode) || row.result === 'loss' || row.result === 'draw'
+}
+
 export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 	const games = input.games
 	if (games.length === 0) return { kind: 'empty', filters: input.filters }
 
 	const gamesWon = games.filter((g) => g.playerStatus === 'winner').length
 
-	const settledPicks = input.picks.filter((p) => p.result === 'win' || p.result === 'loss')
-	const successful = settledPicks.filter((p) => p.result === 'win').length
+	const modeOf = new Map(games.map((g) => [g.gameId, g.gameMode]))
+
+	const settledPicks = input.picks.filter((p) => isSettled(p, modeOf.get(p.gameId)))
+	const successful = settledPicks.filter((p) => isSuccess(p, modeOf.get(p.gameId))).length
 
 	return {
 		kind: 'summary',

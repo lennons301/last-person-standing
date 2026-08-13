@@ -82,4 +82,28 @@ describe('buildMeSummaryView', () => {
 			rate: 0.75,
 		})
 	})
+
+	it('counts a draw as a success in cup and a failure everywhere else', () => {
+		const view = summary(
+			buildMeSummaryView(
+				input({
+					games: [
+						game({ gameId: 'cup-game', gameMode: 'cup' }),
+						game({ gameId: 'classic-game', gameMode: 'classic' }),
+						game({ gameId: 'turbo-game', gameMode: 'turbo' }),
+					],
+					picks: [
+						pick('draw', { gameId: 'cup-game' }),
+						pick('draw', { gameId: 'classic-game' }),
+						pick('draw', { gameId: 'turbo-game' }),
+					],
+				}),
+			),
+		)
+
+		expect(view.headline.pickAccuracy).toMatchObject({
+			successful: 1,
+			settled: 3,
+		})
+	})
 })
