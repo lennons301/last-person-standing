@@ -1,8 +1,12 @@
 import {
 	CLASSIC_ONLY_SUMMARY,
 	FILTERED_SEASON_SUMMARY,
+	FREE_GAMES_ONLY_MONEY,
+	FULL_HISTORY_MONEY,
 	FULL_HISTORY_SUMMARY,
 } from '@/app/preview/me-summary/fixtures'
+import { MoneyPanel } from '@/components/me/money-panel'
+import { MoneySection } from '@/components/me/money-section'
 import { PlayerSummaryView } from '@/components/me/player-summary-view'
 import { SettingsFold } from '@/components/me/settings-fold'
 
@@ -81,13 +85,41 @@ export default function MeSummaryPreviewPage() {
 			</MobileColumn>
 
 			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">Money, shut and open</h2>
+				<p className="text-sm text-muted-foreground">
+					The fold is closed on every page above, which is the state a player lands on: most people
+					lose, so the figure is one they ask for. Below it is closed again on its own, then the
+					panel it hides — the presentational half, rendered straight, which is how the opened state
+					gets reviewed without a click. The history's numbers: nine games, £80.00 staked (a rebuy
+					counted twice, an entry only marked paid counted all the same, a wiped-out game's stakes
+					refunded to nothing) against £66.50 won across three wins, two of them shared — so the
+					headline is the loss most players are looking at. The free World Cup game is named as
+					unlisted rather than shown as a game that cost nothing and lost. Then the same panel for a
+					player who has only ever played for nothing.
+				</p>
+			</header>
+			<MoneySection money={FULL_HISTORY_MONEY} />
+			<div className="rounded-lg border border-border bg-card overflow-hidden">
+				<MoneyPanel money={FULL_HISTORY_MONEY} />
+			</div>
+			<MobileColumn>
+				<div className="rounded-lg border border-border bg-card overflow-hidden">
+					<MoneyPanel money={FULL_HISTORY_MONEY} />
+				</div>
+			</MobileColumn>
+			<div className="rounded-lg border border-border bg-card overflow-hidden">
+				<MoneyPanel money={FREE_GAMES_ONLY_MONEY} />
+			</div>
+
+			<header className="border-t border-border pt-6">
 				<h2 className="font-display text-lg font-semibold">Settings fold</h2>
 				<p className="text-sm text-muted-foreground">
-					What closes the page: the payment handle's permanent home, so a player who has only ever
-					joined games can still set where they'll be paid. Collapsed as it renders on the page
-					(first), then opened in both states the setting has — a handle saved, and none saved at
-					all, which is the state that says what happens instead. The control inside is the same one
-					the admin Payments panel renders, saving through the same endpoint.
+					What closes the page, below the summary and the money fold alike: the payment handle's
+					permanent home, so a player who has only ever joined games can still set where they'll be
+					paid. Collapsed as it renders on the page (first), then opened in both states the setting
+					has — a handle saved, and none saved at all, which is the state that says what happens
+					instead. The control inside is the same one the admin Payments panel renders, saving
+					through the same endpoint.
 				</p>
 			</header>
 			<SettingsFold paymentProvider="monzo" paymentHandle="alicejones" />

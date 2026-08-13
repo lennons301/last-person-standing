@@ -2,7 +2,10 @@ import { PREMIER_LEAGUE_FAMILY_KEY, WORLD_CUP_FAMILY_KEY } from '@/lib/game/comp
 import {
 	buildMeSummaryView,
 	type MeSummaryView,
+	type MoneySummary,
 	type SummaryGameRow,
+	type SummaryPaymentRow,
+	type SummaryPayoutRow,
 	type SummaryPickResult,
 	type SummaryPickRow,
 	type SummaryStreakPickRow,
@@ -89,6 +92,7 @@ const ME = { gamePlayerId: 'gp-me' }
 const GAMES: SummaryGameRow[] = [
 	{
 		gameId: 'g1',
+		gameName: 'The Office Pool 24/25',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -97,6 +101,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g2',
+		gameName: 'Sunday Sweepstake',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'winner',
@@ -105,6 +110,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g3',
+		gameName: 'Turbo Tuesday',
 		gameMode: 'turbo',
 		gameStatus: 'completed',
 		playerStatus: 'alive',
@@ -113,6 +119,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g4',
+		gameName: 'The Office Pool 25/26',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -121,6 +128,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g5',
+		gameName: 'Five-a-side Survivors',
 		gameMode: 'classic',
 		gameStatus: 'active',
 		playerStatus: 'alive',
@@ -129,6 +137,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g6',
+		gameName: 'Gameweek Blitz',
 		gameMode: 'turbo',
 		gameStatus: 'completed',
 		playerStatus: 'winner',
@@ -137,6 +146,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g7',
+		gameName: 'Turbo Rematch',
 		gameMode: 'turbo',
 		gameStatus: 'completed',
 		playerStatus: 'alive',
@@ -145,6 +155,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g8',
+		gameName: 'World Cup Knockout',
 		gameMode: 'cup',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -153,6 +164,7 @@ const GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'g9',
+		gameName: 'World Cup Redemption',
 		gameMode: 'cup',
 		gameStatus: 'completed',
 		playerStatus: 'winner',
@@ -227,6 +239,43 @@ const STREAK_PICKS: SummaryStreakPickRow[] = GAMES.filter((g) => g.gameMode !== 
 )
 
 /**
+ * What each game cost the player, and what two of them paid back.
+ *
+ * The states the money fold has to survive are all here: an entry paid, an entry
+ * only marked paid (claimed — in the pot all the same), a rebuy as a second row
+ * against one game, a game whose stakes were refunded when everybody went out
+ * (it nets to nothing), and a game with no money in it at all, which contributes
+ * nothing while still counting as played.
+ */
+const PAYMENTS: SummaryPaymentRow[] = [
+	{ gameId: 'g1', amount: '10.00', status: 'paid' },
+	{ gameId: 'g2', amount: '10.00', status: 'paid' },
+	{ gameId: 'g3', amount: '5.00', status: 'paid' },
+	// The rebuy: a second entry against the same game, staked on top of the first.
+	{ gameId: 'g4', amount: '10.00', status: 'paid' },
+	{ gameId: 'g4', amount: '10.00', status: 'paid' },
+	// Marked paid, not yet confirmed by the admin — in the pot, so staked.
+	{ gameId: 'g5', amount: '10.00', status: 'claimed' },
+	{ gameId: 'g6', amount: '5.00', status: 'paid' },
+	// A total wipeout: every stake handed back, so the game nets to nothing.
+	{ gameId: 'g7', amount: '5.00', status: 'refunded' },
+	// g8 has no rows at all — the free game.
+	{ gameId: 'g9', amount: '20.00', status: 'paid' },
+]
+
+/**
+ * The two games that paid out. Both rows are `pending`, which is the only status
+ * a real payout ever carries — nothing in the app advances one — so a summary
+ * that filtered on status would show these winners nothing.
+ */
+const PAYOUTS: SummaryPayoutRow[] = [
+	{ gameId: 'g2', amount: '30.00', status: 'pending' },
+	// Two shared pots: a split payout is the winner's share, not the pot.
+	{ gameId: 'g6', amount: '12.50', status: 'pending' },
+	{ gameId: 'g9', amount: '24.00', status: 'pending' },
+]
+
+/**
  * A player with a few seasons behind them, viewing their whole career: games
  * won and lost, picks that came off and picks that didn't, a couple of picks a
  * cup life absorbed, and a club they clearly can't leave alone. Every mode has
@@ -243,8 +292,22 @@ export const FULL_HISTORY_SUMMARY: MeSummaryView = buildMeSummaryView({
 	games: GAMES,
 	picks: PICKS,
 	streakPicks: STREAK_PICKS,
+	payments: PAYMENTS,
+	payouts: PAYOUTS,
 	filters: { season: null },
 })
+
+/**
+ * The money out of a built summary — what the fold hides. Pulled out so the
+ * gallery can render the *opened* state without a click: the fold's own half
+ * owns whether the panel is on screen, and this is everything it hides.
+ */
+function moneyOf(view: MeSummaryView): MoneySummary {
+	if (view.kind !== 'summary') throw new Error('fixture built no summary to read money from')
+	return view.money
+}
+
+export const FULL_HISTORY_MONEY = moneyOf(FULL_HISTORY_SUMMARY)
 
 /**
  * The same history with two of its team blocks narrowed by their own season
@@ -281,6 +344,7 @@ export const FILTERED_SEASON_SUMMARY: MeSummaryView = buildMeSummaryView({
 const CLASSIC_ONLY_GAMES: SummaryGameRow[] = [
 	{
 		gameId: 'c1',
+		gameName: 'Work League',
 		gameMode: 'classic',
 		gameStatus: 'completed',
 		playerStatus: 'eliminated',
@@ -289,6 +353,7 @@ const CLASSIC_ONLY_GAMES: SummaryGameRow[] = [
 	},
 	{
 		gameId: 'c2',
+		gameName: 'Family Survivor',
 		gameMode: 'classic',
 		gameStatus: 'active',
 		playerStatus: 'alive',
@@ -298,6 +363,7 @@ const CLASSIC_ONLY_GAMES: SummaryGameRow[] = [
 	// The turbo game is still being played, so it has a record and no streak.
 	{
 		gameId: 'c3',
+		gameName: 'First Turbo',
 		gameMode: 'turbo',
 		gameStatus: 'active',
 		playerStatus: 'alive',
@@ -315,5 +381,11 @@ const CLASSIC_ONLY_PICKS: SummaryPickRow[] = [
 export const CLASSIC_ONLY_SUMMARY: MeSummaryView = buildMeSummaryView({
 	games: CLASSIC_ONLY_GAMES,
 	picks: CLASSIC_ONLY_PICKS,
+	// No payment or payout rows anywhere: three free games, so the fold opens onto
+	// noughts and no breakdown at all rather than a list of games that cost
+	// nothing and lost.
 	filters: { season: null },
 })
+
+/** The money of a player who has only ever played for nothing. */
+export const FREE_GAMES_ONLY_MONEY = moneyOf(CLASSIC_ONLY_SUMMARY)
