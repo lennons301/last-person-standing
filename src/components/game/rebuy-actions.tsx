@@ -114,7 +114,7 @@ export function RebuyOfferNotice({
 			<div className="flex-1">
 				<h4 className="text-xs font-bold">You can buy back in</h4>
 				<p className="mt-0.5 text-[11px] text-muted-foreground">
-					You went out in round 1. One rebuy is on offer — it closes{' '}
+					You went out in the opening round. One rebuy is on offer — it closes{' '}
 					<LocalDateTime date={closesAt} />.
 				</p>
 			</div>

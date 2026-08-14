@@ -240,8 +240,8 @@ export function CreateGameForm({
 								<div>
 									<Label htmlFor="allow-rebuys-toggle">Allow paid rebuys</Label>
 									<p className="text-xs text-muted-foreground mt-0.5">
-										If on, round 1 losses eliminate players — and they can pay again to re-enter for
-										round 2.
+										If on, losses in the game's opening round eliminate players — and they can pay
+										again to re-enter for the round after it.
 									</p>
 								</div>
 								<Switch

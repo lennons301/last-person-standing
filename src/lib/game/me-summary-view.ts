@@ -60,7 +60,9 @@ export interface SummaryGameRow {
 	 * Not the competition's gameweek one: a game is created at the competition's
 	 * earliest still-pickable round, so a game started in November opens at
 	 * gameweek 12 and gameweek 12 is the first hurdle its players were put to.
-	 * Null for a game with no picks in it at all, which has no round one to read.
+	 * `game.starting_round_id` records it (#203), so a game nobody has picked in
+	 * yet still has one. Null only for a game with no starting round recorded at
+	 * all, which the round-one block leaves out rather than guessing at.
 	 */
 	firstRoundNumber: number | null
 	/**
@@ -854,20 +856,16 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
 /**
  * The player's round-one record across their classic games.
  *
- * Round one is the round *this game* started at — `firstRoundNumber`, the
- * lowest round anybody in the game ever picked in — because that is the first
- * hurdle its players were put to. A game created after gameweek one's deadline
- * starts at the competition's earliest still-pickable round, so its round one is
- * gameweek 12 or 24 and is a first round all the same.
+ * Round one is the round *this game* started at — `firstRoundNumber`, read off
+ * `game.starting_round_id` — because that is the first hurdle its players were
+ * put to. A game created after gameweek one's deadline starts at the
+ * competition's earliest still-pickable round, so its round one is gameweek 12 or
+ * 24 and is a first round all the same.
  *
- * The engine disagrees with that today, and it is the engine that is wrong:
- * `settleFixture`'s starting-round exemption, both rebuy routes and the deadline
- * lock all key off the *competition's* gameweek one, so a mid-season game gets no
- * exemption and can offer no rebuy however `allowRebuys` is set. Issue #203 is
- * the fix — "the starting round" is the round the game began at. Until it lands,
- * this block's rebuy figure reports the rule as intended rather than as built,
- * and can show a mid-season player a rebuy the engine never actually offered
- * them. Follow the game here: it is the definition #203 moves the engine to.
+ * The engine agrees since #203: `settleFixture`'s starting-round exemption, both
+ * rebuy routes and the deadline lock's opening/second-round branches all key off
+ * that same round (`src/lib/game/starting-round.ts`), so a rebuy this block
+ * counts is a rebuy the engine actually offered.
  *
  * A game with no settled round-one pick is neither a survival nor an exit, and
  * is out of the rate's denominator entirely — the picks are all this reads, and
@@ -887,20 +885,21 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
  *    `eliminated_reason`, which is only written as `missed_rebuy_pick` when a
  *    second *payment* row exists — so it would miss the free games this whole
  *    block exists to get right. A rebuy nobody picked with reads as no rebuy.
- * 2. A player who missed the deadline of a round one that is the competition's
- *    gameweek *one or two*, in a game with rebuys switched on, went out with no
- *    pick row at all: `processDeadlineLock` (`no-pick-handler.ts`) eliminates on
- *    both of those rounds as `no_pick_no_fallback` and writes no fallback pick
- *    (with rebuys off, round one instead leaves them alone, exempt). With no
- *    round-one pick to read, that game is neither a survival nor an exit and sits
- *    outside the rate — it flatters the player by the width of one game. Only a
- *    game starting at the competition's round *three or later* escapes the hole,
- *    where a missed deadline takes the ordinary auto-pick fallback and a fallback
- *    pick counts exactly as a hand-made one. Reading the elimination round instead
- *    would catch the ones who stayed out but not the ones who bought back in
- *    (the rebuy clears it), so counting it would trade a silent omission for a
- *    rebuy figure that states a nought against a player who did buy back in. The
- *    omission is the quieter error of the two.
+ * 2. A player who missed their game's round-one deadline, in a game with rebuys
+ *    switched on, went out with no pick row at all: `processDeadlineLock`
+ *    (`no-pick-handler.ts`) eliminates on the game's own opening round as
+ *    `no_pick_no_fallback` and writes no fallback pick (with rebuys off, that
+ *    round instead leaves them alone, exempt). With no round-one pick to read,
+ *    that game is neither a survival nor an exit and sits outside the rate — it
+ *    flatters the player by the width of one game. Since #203 the branch follows
+ *    the game's own round one rather than the competition's gameweek one, so this
+ *    hole is the same width for every rebuys-on game: there is no longer a
+ *    mid-season game that escapes it by falling through to the auto-pick path,
+ *    which is the price of the rest of the rule being right. Reading the
+ *    elimination round instead would catch the ones who stayed out but not the
+ *    ones who bought back in (the rebuy clears it), so counting it would trade a
+ *    silent omission for a rebuy figure that states a nought against a player who
+ *    did buy back in. The omission is the quieter error of the two.
  */
 function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
 	let survived = 0

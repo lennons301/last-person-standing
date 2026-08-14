@@ -723,12 +723,12 @@ function RebuyBody({
 						<>
 							{eliminatedRoundLabel
 								? `You went out in ${eliminatedRoundLabel}. `
-								: 'You went out in round 1. '}
+								: 'You went out in the opening round. '}
 							One rebuy is on offer
 							{closesAtIso ? (
 								<>
 									{' '}
-									— it closes at the round 2 deadline (<LocalDateTime date={closesAtIso} />)
+									— it closes at the next round's deadline (<LocalDateTime date={closesAtIso} />)
 								</>
 							) : null}
 							.
