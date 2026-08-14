@@ -8,6 +8,7 @@ import {
 } from '@/lib/game/auto-complete'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
+import { isGameStartingRound } from '@/lib/game/starting-round'
 import type { WipeoutPlayerInput } from '@/lib/game-logic/auto-complete-tiebreakers'
 import { determinePickResult } from '@/lib/game-logic/common'
 import { evaluateCupPicks, resolveCupQualifier } from '@/lib/game-logic/cup'
@@ -235,10 +236,13 @@ async function settleClassicPickRow(
 
 	if (result === 'win') return { settled: true, eliminated: false }
 
-	// Starting-round exemption matches the predecessor: round 1 + allowRebuys=false
-	// is the "starting gameweek" — losses/draws don't eliminate.
+	// Starting-round exemption: the game's OWN first round + allowRebuys=false is
+	// the "starting gameweek" — losses/draws don't eliminate. The round is the one
+	// the game was created on (`game.starting_round_id`), not the competition's
+	// gameweek one: a game created in November opens at gameweek 12 and gameweek
+	// 12 is the first hurdle its players are put to. See #203.
 	const allowRebuys = (g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
-	const isStartingRound = fx.round.number === 1 && !allowRebuys
+	const isStartingRound = isGameStartingRound(g, fx.round.id) && !allowRebuys
 	if (isStartingRound) return { settled: true, eliminated: false }
 
 	// Eliminate only if currently alive. Guard makes this race-safe and

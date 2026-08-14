@@ -184,6 +184,12 @@ export async function POST(request: Request) {
 			inviteCode,
 			status: 'active',
 			currentRoundId: firstRound.id,
+			// The round the game begins on is also the round it is played *from* —
+			// its own round one. `currentRoundId` advances from here, so the starting
+			// round is recorded separately or it's lost, and every starting-round rule
+			// (the classic exemption, the rebuy window, the deadline lock's opening
+			// branches) would fall back to the competition's gameweek one. See #203.
+			startingRoundId: firstRound.id,
 		})
 		.returning()
 

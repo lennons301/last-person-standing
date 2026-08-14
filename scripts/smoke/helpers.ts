@@ -159,6 +159,13 @@ export async function makeGame(opts: {
 	competitionId: string
 	gameMode: GameMode
 	currentRoundId: string
+	/**
+	 * The round the game was played *from* — its own round one, which every
+	 * starting-round rule keys off (#203). Defaults to `currentRoundId`, which is
+	 * how the create-game route writes it; pass it explicitly to build a game that
+	 * has already advanced past its start.
+	 */
+	startingRoundId?: string
 	createdBy?: string
 	modeConfig?: Record<string, unknown>
 }): Promise<string> {
@@ -169,6 +176,7 @@ export async function makeGame(opts: {
 			competitionId: opts.competitionId,
 			gameMode: opts.gameMode,
 			currentRoundId: opts.currentRoundId,
+			startingRoundId: opts.startingRoundId ?? opts.currentRoundId,
 			createdBy: opts.createdBy ?? 'smoke-creator',
 			inviteCode: `smoke-${Math.random().toString(36).slice(2, 10)}`,
 			status: 'active',

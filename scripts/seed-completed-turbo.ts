@@ -80,6 +80,8 @@ async function main(): Promise<void> {
 			competitionId: comp.id,
 			gameMode: 'turbo',
 			currentRoundId: r1.id,
+			// Single-round mode: the game starts and finishes on this round.
+			startingRoundId: r1.id,
 			createdBy: winnerUserId,
 			inviteCode: generateInviteCode(),
 			status: 'active',

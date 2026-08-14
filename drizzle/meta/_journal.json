@@ -106,6 +106,13 @@
       "when": 1786611401333,
       "tag": "0014_add_competition_family_key",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786699956293,
+      "tag": "0015_add_game_starting_round",
+      "breakpoints": true
     }
   ]
 }

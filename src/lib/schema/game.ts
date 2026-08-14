@@ -57,6 +57,15 @@ export const game = pgTable('game', {
 	maxPlayers: integer('max_players'),
 	inviteCode: varchar('invite_code', { length: 20 }).notNull().unique(),
 	currentRoundId: uuid('current_round_id').references(() => round.id),
+	// The round this game was played *from* — its own round one, set once at
+	// creation and never moved. `current_round_id` advances as the game goes on,
+	// so it can't answer "was this the starting round?"; a game created in
+	// November opens at gameweek 12 and gameweek 12 is the first hurdle its
+	// players are put to. Every starting-round rule (the classic exemption, both
+	// rebuy routes, the deadline lock's opening-round branches, the progress
+	// grid's marker) keys off this rather than `round.number === 1`. Nullable
+	// only for rows written before it existed; the migration backfills them.
+	startingRoundId: uuid('starting_round_id').references(() => round.id),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
