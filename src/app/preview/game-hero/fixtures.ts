@@ -103,7 +103,11 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 		longLabel: 'Gameweek 7',
 		deadlineIso,
 	})
-	/** Round 1 — the only round the classic starting-round exemption applies to. */
+	/**
+	 * The game's own opening round — the only round the classic starting-round
+	 * exemption applies to. Gameweek 1 here because this game started there; a game
+	 * created in November would carry gameweek 12 in exactly the same state (#203).
+	 */
 	const startingRound = (deadlineIso: string | null): HeroRound => ({
 		number: 1,
 		label: 'GW1',
@@ -357,7 +361,7 @@ export function buildHeroFixtures(now: Date): HeroFixture[] {
 		{
 			id: 'classic-live-starting-round-exempt',
 			title: 'Classic · live (starting round — losing, but exempt)',
-			note: "Round 1 of a no-rebuys game: a non-win doesn't eliminate, so the same scoreline that would read 'Out' in GW7 reads 'Surviving' here — matching the standings below.",
+			note: "The game's own opening round in a no-rebuys game: a non-win doesn't eliminate, so the same scoreline that would read 'Out' in GW7 reads 'Surviving' here — matching the standings below. GW1 because this game started there; a game created in November reads the same on GW12.",
 			hero: {
 				kind: 'live',
 				mode: 'classic',

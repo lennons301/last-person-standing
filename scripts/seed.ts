@@ -1960,6 +1960,27 @@ async function seed() {
 		}
 	}
 
+	// Every seeded game's own starting round — the round it was played from. The
+	// seeds above write games mid-flight (a game sitting on a settled GW6 with
+	// picks back to GW1), so `current_round_id` can't answer it; the lowest round
+	// anybody in the game picked in can, and a game nobody has picked in yet
+	// hasn't moved off the round it started on. Same derivation as the #203
+	// migration's backfill, so dev data gets the starting-round rules production
+	// data gets. See src/lib/game/starting-round.ts.
+	await db.execute(sql`
+		UPDATE "game" SET "starting_round_id" = COALESCE(
+			(
+				SELECT "pick"."round_id"
+				FROM "pick"
+				INNER JOIN "round" ON "round"."id" = "pick"."round_id"
+				WHERE "pick"."game_id" = "game"."id"
+				ORDER BY "round"."number" ASC
+				LIMIT 1
+			),
+			"game"."current_round_id"
+		)
+	`)
+
 	console.log('\nSeed complete!')
 	console.log('\nLog in with any of these (password: password123):')
 	for (const u of DEV_USERS) console.log(`  ${u.email}`)

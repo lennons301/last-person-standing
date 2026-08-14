@@ -35,6 +35,8 @@ function happyPathMocks() {
 		modeConfig: { allowRebuys: true },
 		entryFee: '10.00',
 		competitionId: 'c1',
+		// Created at the competition's gameweek one — the common case.
+		startingRoundId: 'r1',
 	} as never)
 	vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValue({
 		id: 'gp1',
@@ -45,6 +47,8 @@ function happyPathMocks() {
 	vi.mocked(db.query.round.findMany).mockResolvedValue([
 		{ id: 'r1', number: 1, deadline: new Date('2026-05-01') },
 		{ id: 'r2', number: 2, deadline: new Date('2026-05-10T12:00:00Z') },
+		{ id: 'gw12', number: 12, deadline: new Date('2026-05-04') },
+		{ id: 'gw13', number: 13, deadline: new Date('2026-05-11T12:00:00Z') },
 	] as never)
 	vi.mocked(db.query.payment.findMany).mockResolvedValue([
 		{ id: 'p1', userId: 'u1', gameId: 'g1' },
@@ -71,6 +75,7 @@ describe('player rebuy route', () => {
 			modeConfig: { allowRebuys: false },
 			entryFee: '10.00',
 			competitionId: 'c1',
+			startingRoundId: 'r1',
 		} as never)
 		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
 		expect(res.status).toBe(403)
@@ -113,6 +118,40 @@ describe('player rebuy route', () => {
 			{ id: 'p1', userId: 'u1', gameId: 'g1' },
 			{ id: 'p2', userId: 'u1', gameId: 'g1' },
 		] as never)
+		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
+		expect(res.status).toBe(403)
+	})
+
+	/** A game created in November: round one is gameweek 12, round two gameweek 13. */
+	function midSeasonGameMocks() {
+		happyPathMocks()
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			id: 'g1',
+			gameMode: 'classic',
+			modeConfig: { allowRebuys: true },
+			entryFee: '10.00',
+			competitionId: 'c1',
+			startingRoundId: 'gw12',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValue({
+			id: 'gp1',
+			userId: 'u1',
+			status: 'eliminated',
+			eliminatedRoundId: 'gw12',
+		} as never)
+	}
+
+	it("200s for a game that started mid-season, within its own second round's deadline (#203)", async () => {
+		// Before #203 this route wanted the competition's round 1 and its round 2
+		// deadline — months past for a November game — so no rebuy was ever possible.
+		midSeasonGameMocks()
+		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
+		expect(res.status).toBe(200)
+	})
+
+	it("403s once the deadline of the round after the game's opening one has passed", async () => {
+		midSeasonGameMocks()
+		vi.setSystemTime(new Date('2026-05-11T12:00:01Z'))
 		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
 		expect(res.status).toBe(403)
 	})

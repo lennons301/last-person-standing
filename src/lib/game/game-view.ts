@@ -32,6 +32,7 @@
  */
 
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
+import { isGameStartingRound } from '@/lib/game/starting-round'
 
 export type GameMode = 'classic' | 'turbo' | 'cup'
 
@@ -306,6 +307,15 @@ export interface BuildGameViewInput {
 	game: {
 		currentRoundId: string | null
 		currentRoundNumber: number | null
+		/**
+		 * `game.starting_round_id` — the round this game was played from, its own
+		 * round one. The starting-round exemption is read off this rather than off
+		 * `round.number === 1`, so a game created mid-season gets it on the round it
+		 * actually started at (#203). Absent is "not the starting round", which is
+		 * the safe direction: the hero then reads a losing scoreline as a losing
+		 * scoreline.
+		 */
+		startingRoundId?: string | null
 	}
 	/**
 	 * Is the viewer — or the acting-as target — still picking in this game?
@@ -644,16 +654,22 @@ function isTargetEliminated(input: BuildGameViewInput): boolean {
 }
 
 /**
- * Classic's starting-round exemption: in round 1 of a no-rebuys game a loss, a
- * draw and even a missed deadline all leave the player in. It's a rule of the
- * mode (`docs/game-modes/classic.md`), encoded in `settleClassicPickRow`, in
- * `processDeadlineLock`'s round-1 branch, and in the standings' own projection
- * (`projectClassicPlayer`). The hero reads the same scoreboard as those
- * standings, so without this it would announce "Out" directly above a table
- * showing the same player alive.
+ * Classic's starting-round exemption: in the game's own opening round of a
+ * no-rebuys game a loss, a draw and even a missed deadline all leave the player
+ * in. It's a rule of the mode (`docs/game-modes/classic.md`), encoded in
+ * `settleClassicPickRow`, in `processDeadlineLock`'s opening-round branch, and in
+ * the standings' own projection (`projectClassicPlayer`). The hero reads the same
+ * scoreboard as those standings, so without this it would announce "Out" directly
+ * above a table showing the same player alive.
+ *
+ * The round is matched by id against the game's starting round, never by number:
+ * a game created in November starts at gameweek 12 and the exemption is that
+ * game's, not the competition's (#203).
  */
 function isStartingRoundExempt(input: BuildGameViewInput): boolean {
-	return input.gameMode === 'classic' && input.round?.number === 1 && input.allowRebuys !== true
+	if (input.gameMode !== 'classic') return false
+	if (input.allowRebuys === true) return false
+	return isGameStartingRound(input.game, input.round?.id ?? null)
 }
 
 function deriveSurvival(input: BuildGameViewInput, entry: HeroEntry): HeroSurvival {

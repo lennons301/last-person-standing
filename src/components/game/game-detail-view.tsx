@@ -77,7 +77,7 @@ interface GameDetailViewProps {
 	 */
 	rebuy?: {
 		entryFee: string
-		round2Deadline: Date
+		closesAt: Date
 		pendingPayment: { id: string; amount: string } | null
 		creatorName: string
 		/** Pre-filled pay-the-creator link for the rebuy amount (null: no handle). */
@@ -141,7 +141,7 @@ export function GameDetailView({
 					<RebuyOfferNotice
 						gameId={game.id}
 						entryFee={rebuy.entryFee}
-						round2Deadline={rebuy.round2Deadline}
+						closesAt={rebuy.closesAt}
 						creatorName={rebuy.creatorName}
 					/>
 				))}

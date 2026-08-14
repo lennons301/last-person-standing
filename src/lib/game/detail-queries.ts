@@ -16,6 +16,11 @@ import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
+import {
+	isGameStartingRound,
+	resolveRoundAfterStarting,
+	resolveStartingRound,
+} from '@/lib/game/starting-round'
 import { evaluateCupPicks, resolveCupQualifier } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { calculatePot, expectedEntryCount } from '@/lib/game-logic/prizes'
@@ -135,19 +140,21 @@ export async function getGameDetail(gameId: string, userId: string) {
 	}
 
 	// Pre-compute rebuy eligibility per user (used for the admin payments panel).
-	// We need rounds 1 and 2 for this — they are also fetched later for the rebuy
-	// banner, but we do the fetch once here and reuse below.
+	// We need the game's own starting round and the round after it — the whole
+	// competition sequence is fetched because "the round after" is resolved on it,
+	// and the game may have started anywhere in the season (#203). Also reused by
+	// the rebuy banner below, so the fetch happens once.
 	const competitionRounds = await db.query.round.findMany({
-		where: and(eq(round.competitionId, gameData.competition.id), inArray(round.number, [1, 2])),
+		where: eq(round.competitionId, gameData.competition.id),
 	})
-	const round1 = competitionRounds.find((r) => r.number === 1)
-	const round2 = competitionRounds.find((r) => r.number === 2)
+	const startingRound = resolveStartingRound(gameData, competitionRounds)
+	const roundAfterStarting = resolveRoundAfterStarting(gameData, competitionRounds)
 
 	const eligibilityByUser = new Map<string, boolean>()
 	for (const uid of relevantUserIds) {
 		const userPlayer = gameData.players.find((p) => p.userId === uid)
 		const userPaymentRows = payments.filter((p) => p.userId === uid)
-		if (!userPlayer || !round1 || !round2?.deadline) {
+		if (!userPlayer || !startingRound || !roundAfterStarting?.deadline) {
 			eligibilityByUser.set(uid, false)
 			continue
 		}
@@ -162,8 +169,8 @@ export async function getGameDetail(gameId: string, userId: string) {
 					status: userPlayer.status,
 					eliminatedRoundId: userPlayer.eliminatedRoundId,
 				},
-				round1: { id: round1.id },
-				round2: { deadline: round2.deadline },
+				startingRound: { id: startingRound.id },
+				roundAfterStarting: { deadline: roundAfterStarting.deadline },
 				paymentRowCount: userPaymentRows.length,
 				now: new Date(),
 			}),
@@ -231,17 +238,18 @@ export async function getGameDetail(gameId: string, userId: string) {
 
 	const adminPayments = isAdmin ? finalAdminPayments : undefined
 
-	// Rebuy banner: rounds 1 and 2 were already fetched above for eligibility checks.
+	// Rebuy banner: the starting round and the one after it were already resolved
+	// above for the eligibility checks.
 	const viewerGamePlayer = myMembership
 	const viewerPayments = [...(paymentsByUser.get(userId) ?? [])]
 
 	let rebuyBanner: {
 		entryFee: string
-		round2Deadline: Date
+		closesAt: Date
 		pendingPayment: { id: string; amount: string } | null
 	} | null = null
 
-	if (viewerGamePlayer && round1 && round2?.deadline && gameData.entryFee) {
+	if (viewerGamePlayer && startingRound && roundAfterStarting?.deadline && gameData.entryFee) {
 		const eligible = isRebuyEligible({
 			game: {
 				gameMode: gameData.gameMode,
@@ -251,8 +259,8 @@ export async function getGameDetail(gameId: string, userId: string) {
 				status: viewerGamePlayer.status,
 				eliminatedRoundId: viewerGamePlayer.eliminatedRoundId,
 			},
-			round1: { id: round1.id },
-			round2: { deadline: round2.deadline },
+			startingRound: { id: startingRound.id },
+			roundAfterStarting: { deadline: roundAfterStarting.deadline },
 			paymentRowCount: viewerPayments.length,
 			now: new Date(),
 		})
@@ -272,13 +280,13 @@ export async function getGameDetail(gameId: string, userId: string) {
 		if (eligible) {
 			rebuyBanner = {
 				entryFee: gameData.entryFee,
-				round2Deadline: round2.deadline,
+				closesAt: roundAfterStarting.deadline,
 				pendingPayment: null,
 			}
 		} else if (hasPendingRebuy && mostRecent) {
 			rebuyBanner = {
 				entryFee: gameData.entryFee,
-				round2Deadline: round2.deadline,
+				closesAt: roundAfterStarting.deadline,
 				pendingPayment: { id: mostRecent.id, amount: mostRecent.amount },
 			}
 		}
@@ -311,6 +319,10 @@ export async function getGameDetail(gameId: string, userId: string) {
 		status: gameData.status,
 		competition: gameData.competition,
 		currentRound: gameData.currentRound,
+		// The round the game was played from — its own round one. The page hands it
+		// to `buildGameView` for the starting-round exemption; `currentRound` can't
+		// answer it once the game has advanced (#203).
+		startingRoundId: gameData.startingRoundId,
 		entryFee: gameData.entryFee,
 		inviteCode: gameData.inviteCode,
 		pot,
@@ -950,7 +962,9 @@ export async function getProgressGridData(
 		number: r.number,
 		name: r.name ?? roundLabelLong(competitionType, r.number),
 		label: roundLabel(competitionType, r.number),
-		isStartingRound: r.number === 1,
+		// The game's own opening round, not the competition's gameweek one — a game
+		// created in November is marked on gameweek 12 (#203).
+		isStartingRound: isGameStartingRound(gameData, r.id),
 		voidedAt: r.voidedAt ?? null,
 	}))
 
@@ -1039,7 +1053,8 @@ export async function getProgressGridData(
 			}
 
 			// In classic, draws eliminate after the starting round — render them as losses.
-			// The starting round is round number 1 (first gameweek exemption).
+			// The starting round is the round the game began on, whichever gameweek of
+			// the competition that is (#203).
 			//
 			// For in-progress fixtures (pending result but fixture has scores), we
 			// project the cell visuals from the live score — the design decision
@@ -1053,10 +1068,10 @@ export async function getProgressGridData(
 			if (thePick.result === 'void') resultForCell = 'void'
 			else if (thePick.result === 'win') resultForCell = 'win'
 			else if (thePick.result === 'loss') resultForCell = 'loss'
-			else if (thePick.result === 'draw') resultForCell = r.number === 1 ? 'draw_exempt' : 'loss'
+			else if (thePick.result === 'draw') resultForCell = r.isStartingRound ? 'draw_exempt' : 'loss'
 			else if (thePick.result === 'saved_by_life') resultForCell = 'saved'
 			else {
-				resultForCell = projectClassicCellFromFixture(thePick, r.number === 1)
+				resultForCell = projectClassicCellFromFixture(thePick, r.isStartingRound ?? false)
 			}
 
 			let opponentShortName: string | undefined
@@ -1160,7 +1175,10 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		gameMode: gameData.gameMode,
 		competitionType: gameData.competition.type,
 		modeConfig: gameData.modeConfig as { allowRebuys?: boolean; startingLives?: number } | null,
-		roundNumber: gameData.currentRound?.number ?? null,
+		// Whether the round being projected is the game's own opening round —
+		// classic's exemption hangs off it, and a game that started mid-season has
+		// its own (#203).
+		isStartingRound: isGameStartingRound(gameData, gameData.currentRoundId),
 		fixtures: fixturesRaw,
 		picks: picksInRound,
 		players: gameData.players,
@@ -1266,7 +1284,8 @@ function computeLiveProjection(input: {
 	gameMode: 'classic' | 'turbo' | 'cup'
 	competitionType: string
 	modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
-	roundNumber: number | null
+	/** Is the round being projected the game's own starting round? */
+	isStartingRound: boolean
 	fixtures: Array<{
 		id: string
 		homeTeamId: string
@@ -1388,7 +1407,7 @@ function projectClassicPlayer(
 	>,
 	input: {
 		modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
-		roundNumber: number | null
+		isStartingRound: boolean
 	},
 ): { streak: number; lives: number; status: 'alive' | 'eliminated' } {
 	if (player.status === 'eliminated') {
@@ -1396,7 +1415,7 @@ function projectClassicPlayer(
 	}
 	if (playerPicks.length === 0) return { streak: 0, lives: 0, status: 'alive' }
 	const allowRebuys = input.modeConfig?.allowRebuys === true
-	const isStartingRound = input.roundNumber === 1 && !allowRebuys
+	const exemptRound = input.isStartingRound && !allowRebuys
 	// Classic has one pick per round; project elimination if any in-progress
 	// pick is losing/drawing AND not in starting round. Voided picks don't
 	// count — player stays alive on them per the cancellation design.
@@ -1409,7 +1428,7 @@ function projectClassicPlayer(
 		const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
 		const otherScore = pickedHome ? fx.awayScore : fx.homeScore
 		const wouldLose = pickedScore <= otherScore // includes draw
-		if (wouldLose && !isStartingRound) {
+		if (wouldLose && !exemptRound) {
 			return { streak: 0, lives: 0, status: 'eliminated' }
 		}
 	}

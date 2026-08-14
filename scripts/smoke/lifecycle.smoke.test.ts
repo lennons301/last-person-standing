@@ -657,6 +657,170 @@ describe('lifecycle: classic-PL', () => {
 /* classic-WC                                                              */
 /* ────────────────────────────────────────────────────────────────────── */
 
+/* ────────────────────────────────────────────────────────────────────── */
+/* classic: the starting round is the game's own (#203)                    */
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe("lifecycle: classic starting round is the game's own (#203)", () => {
+	/**
+	 * A game created in November: creation attaches it to the competition's
+	 * earliest still-pickable round, so gameweek 12 is its round one and gameweek
+	 * 13 its round two. Every starting-round rule has to follow the game, not the
+	 * competition's gameweek numbering.
+	 */
+	async function midSeasonSetup(opts: { allowRebuys: boolean }) {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', leaguePosition: 4 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', leaguePosition: 8 })
+		const c = await makeTeam({ name: 'C', shortName: 'C', leaguePosition: 12 })
+		const d = await makeTeam({ name: 'D', shortName: 'D', leaguePosition: 16 })
+		const gw12 = await makeRound(compId, { number: 12, status: 'open' })
+		const gw13 = await makeRound(compId, {
+			number: 13,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 86_400_000),
+		})
+		const fxAB = await makeFixture({ roundId: gw12, homeTeamId: a, awayTeamId: b })
+		const fxCD = await makeFixture({ roundId: gw12, homeTeamId: c, awayTeamId: d })
+		const fxAB13 = await makeFixture({ roundId: gw13, homeTeamId: a, awayTeamId: b })
+		// A round beyond gameweek 13, so settling gameweek 13 advances rather than
+		// exhausting the rounds and crowning somebody mid-scenario.
+		await makeRound(compId, {
+			number: 14,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 2 * 86_400_000),
+		})
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: gw12,
+			// What creation writes: the game begins on this round.
+			startingRoundId: gw12,
+			modeConfig: { allowRebuys: opts.allowRebuys },
+		})
+		return { compId, a, b, c, d, gw12, gw13, fxAB, fxCD, fxAB13, gameId }
+	}
+
+	it('exempts a losing and a drawn opening pick in gameweek 12 when rebuys are off', async () => {
+		const { a, b, c, gw12, fxAB, fxCD, gameId } = await midSeasonSetup({ allowRebuys: false })
+		const gpLost = await makePlayer({ gameId, userId: 'u-lost' })
+		const gpDrew = await makePlayer({ gameId, userId: 'u-drew' })
+		const gpWon = await makePlayer({ gameId, userId: 'u-won' })
+		await makePick({ gameId, gamePlayerId: gpLost, roundId: gw12, teamId: a, fixtureId: fxAB })
+		await makePick({ gameId, gamePlayerId: gpWon, roundId: gw12, teamId: b, fixtureId: fxAB })
+		await makePick({ gameId, gamePlayerId: gpDrew, roundId: gw12, teamId: c, fixtureId: fxCD })
+
+		await finishFixture(fxAB, 0, 2)
+		await settleFixture(fxAB)
+		await finishFixture(fxCD, 1, 1)
+		await settleFixture(fxCD)
+
+		const picks = await db.query.pick.findMany({ where: eq(pick.gameId, gameId) })
+		expect(picks.find((p) => p.gamePlayerId === gpLost)?.result).toBe('loss')
+		expect(picks.find((p) => p.gamePlayerId === gpDrew)?.result).toBe('draw')
+
+		// Nobody goes out: this is the game's opening round, exemption in force.
+		const players = await db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, gameId) })
+		expect(players.every((p) => p.status === 'alive')).toBe(true)
+
+		// The grid marks gameweek 12 as the starting round and renders the draw as
+		// exempt rather than as a loss.
+		const grid = await getProgressGridData(gameId, 'u-drew')
+		expect(grid?.rounds.find((r) => r.id === gw12)?.isStartingRound).toBe(true)
+		expect(grid?.players.find((p) => p.id === gpDrew)?.cellsByRoundId[gw12].result).toBe(
+			'draw_exempt',
+		)
+	})
+
+	it('eliminates on a losing opening pick in gameweek 12 when rebuys are on', async () => {
+		const { a, b, c, gw12, fxAB, fxCD, gameId } = await midSeasonSetup({ allowRebuys: true })
+		const gpLost = await makePlayer({ gameId, userId: 'u-lost' })
+		const gpWon = await makePlayer({ gameId, userId: 'u-won' })
+		const gpOther = await makePlayer({ gameId, userId: 'u-other' })
+		await makePick({ gameId, gamePlayerId: gpLost, roundId: gw12, teamId: a, fixtureId: fxAB })
+		await makePick({ gameId, gamePlayerId: gpWon, roundId: gw12, teamId: b, fixtureId: fxAB })
+		await makePick({ gameId, gamePlayerId: gpOther, roundId: gw12, teamId: c, fixtureId: fxCD })
+
+		await finishFixture(fxAB, 0, 2)
+		await settleFixture(fxAB)
+
+		const out = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpLost) })
+		expect(out?.status).toBe('eliminated')
+		expect(out?.eliminatedRoundId).toBe(gw12)
+	})
+
+	it("does not exempt gameweek 13 — the game's second round eliminates as any other", async () => {
+		const { a, b, c, gw12, gw13, fxAB, fxCD, fxAB13, gameId } = await midSeasonSetup({
+			allowRebuys: false,
+		})
+		const gpLost = await makePlayer({ gameId, userId: 'u-lost' })
+		const gpSafe1 = await makePlayer({ gameId, userId: 'u-safe1' })
+		const gpSafe2 = await makePlayer({ gameId, userId: 'u-safe2' })
+		// Everyone survives the opening round, then the game advances to gameweek 13.
+		for (const [gp, team, fx] of [
+			[gpLost, a, fxAB],
+			[gpSafe1, a, fxAB],
+			[gpSafe2, c, fxCD],
+		] as const) {
+			await makePick({ gameId, gamePlayerId: gp, roundId: gw12, teamId: team, fixtureId: fx })
+		}
+		await finishFixture(fxAB, 2, 0)
+		await settleFixture(fxAB)
+		await finishFixture(fxCD, 2, 0)
+		await settleFixture(fxCD)
+		expect((await db.query.game.findFirst({ where: eq(game.id, gameId) }))?.currentRoundId).toBe(
+			gw13,
+		)
+
+		await makePick({ gameId, gamePlayerId: gpLost, roundId: gw13, teamId: b, fixtureId: fxAB13 })
+		await finishFixture(fxAB13, 2, 0)
+		await settleFixture(fxAB13)
+
+		const out = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpLost) })
+		expect(out?.status).toBe('eliminated')
+		expect(out?.eliminatedRoundId).toBe(gw13)
+	})
+
+	it("the deadline lock treats gameweek 12 as the game's round one, not round 3+", async () => {
+		// Rebuys off: an opening-round no-picker is left alone (exempt), and gets no
+		// auto-pick — before #203 a mid-season opening round fell through to the
+		// ordinary auto-pick path.
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', leaguePosition: 4 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', leaguePosition: 18 })
+		const gw12 = await makeRound(compId, {
+			number: 12,
+			status: 'open',
+			deadline: new Date(Date.now() - 60_000),
+		})
+		const fxAB = await makeFixture({
+			roundId: gw12,
+			homeTeamId: a,
+			awayTeamId: b,
+			kickoff: new Date(Date.now() + 2 * 3_600_000),
+		})
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: gw12,
+			startingRoundId: gw12,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpPicked = await makePlayer({ gameId, userId: 'u-picked' })
+		const gpForgot = await makePlayer({ gameId, userId: 'u-forgot' })
+		await makePick({ gameId, gamePlayerId: gpPicked, roundId: gw12, teamId: a, fixtureId: fxAB })
+
+		const result = await processDeadlineLock([gw12])
+		expect(result).toEqual({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 })
+		const forgot = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpForgot) })
+		expect(forgot?.status).toBe('alive')
+		const autoPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpForgot), eq(pick.roundId, gw12)),
+		})
+		expect(autoPick).toBeUndefined()
+	})
+})
+
 describe('lifecycle: classic-WC', () => {
 	it('settles + advances on a WC group-stage fixture', async () => {
 		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })

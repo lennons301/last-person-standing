@@ -159,6 +159,16 @@ export async function makeGame(opts: {
 	competitionId: string
 	gameMode: GameMode
 	currentRoundId: string
+	/**
+	 * The round the game was played *from* — its own round one, which every
+	 * starting-round rule keys off (#203). Left unset by default: most scenarios
+	 * build a game already in flight (picks in earlier rounds, sitting on a later
+	 * one), and no starting round means no starting-round exemption, which is what
+	 * those scenarios are testing around. Pass it to say the game *began* on that
+	 * round — `currentRoundId` for a game on its opening round, exactly as the
+	 * create-game route writes it.
+	 */
+	startingRoundId?: string
 	createdBy?: string
 	modeConfig?: Record<string, unknown>
 }): Promise<string> {
@@ -169,6 +179,7 @@ export async function makeGame(opts: {
 			competitionId: opts.competitionId,
 			gameMode: opts.gameMode,
 			currentRoundId: opts.currentRoundId,
+			startingRoundId: opts.startingRoundId ?? null,
 			createdBy: opts.createdBy ?? 'smoke-creator',
 			inviteCode: `smoke-${Math.random().toString(36).slice(2, 10)}`,
 			status: 'active',

@@ -9,10 +9,12 @@ function base(overrides: Partial<IsRebuyEligibleArgs> = {}): IsRebuyEligibleArgs
 		},
 		gamePlayer: {
 			status: 'eliminated',
-			eliminatedRoundId: 'r1',
+			eliminatedRoundId: 'gw12',
 		},
-		round1: { id: 'r1' },
-		round2: { deadline: new Date('2026-05-10T12:00:00Z') },
+		// The game's own opening round — 'gw12' rather than 'r1', because a game that
+		// started in November is the case this rule has to get right (#203).
+		startingRound: { id: 'gw12' },
+		roundAfterStarting: { deadline: new Date('2026-05-10T12:00:00Z') },
 		paymentRowCount: 1,
 		now: new Date('2026-05-08T12:00:00Z'),
 		...overrides,
@@ -43,13 +45,22 @@ describe('isRebuyEligible', () => {
 		).toBe(false)
 	})
 
-	it('false when eliminated in a round other than round 1', () => {
+	it('false when eliminated in a round other than the starting round', () => {
 		expect(
-			isRebuyEligible(base({ gamePlayer: { status: 'eliminated', eliminatedRoundId: 'r2' } })),
+			isRebuyEligible(base({ gamePlayer: { status: 'eliminated', eliminatedRoundId: 'gw13' } })),
 		).toBe(false)
 	})
 
-	it('false when now >= round 2 deadline', () => {
+	it("false when eliminated in the competition's round 1, which this game never played", () => {
+		// A mid-season game's opening round is gameweek 12. An elimination carrying
+		// the competition's gameweek-1 round can't be an exit from *this* game's
+		// opening round, so it buys nothing back.
+		expect(
+			isRebuyEligible(base({ gamePlayer: { status: 'eliminated', eliminatedRoundId: 'gw1' } })),
+		).toBe(false)
+	})
+
+	it('false when now >= the deadline of the round after the starting round', () => {
 		expect(isRebuyEligible(base({ now: new Date('2026-05-10T12:00:00Z') }))).toBe(false)
 		expect(isRebuyEligible(base({ now: new Date('2026-05-10T12:00:01Z') }))).toBe(false)
 	})

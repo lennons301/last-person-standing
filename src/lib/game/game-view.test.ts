@@ -24,7 +24,9 @@ function baseInput(overrides: Partial<BuildGameViewInput> = {}): BuildGameViewIn
 			label: 'GW7',
 			longLabel: 'Gameweek 7',
 		},
-		game: { currentRoundId: ROUND_ID, currentRoundNumber: 7 },
+		// GW7 is where this game *is*, not where it began — so no starting round of
+		// its own is in scope here, and nothing below gets the exemption for free.
+		game: { currentRoundId: ROUND_ID, currentRoundNumber: 7, startingRoundId: null },
 		isAlive: true,
 		actingAsName: null,
 		pick: null,
@@ -418,17 +420,29 @@ describe('buildGameView — live hero', () => {
  * standings, so a losing pick here must not say "Out" above a table saying alive.
  */
 describe('buildGameView — classic starting-round exemption', () => {
+	// A game created in November: its own round one is gameweek 12, and that is the
+	// round the exemption belongs to (#203). Every case below is stated on a
+	// mid-season game, because "round 1" was the shortcut that got this wrong.
+	const STARTING_ROUND_ID = 'round-12'
 	const STARTING_ROUND: BuildGameViewInput['round'] = {
 		...ACTIVE_ROUND,
-		number: 1,
-		label: 'GW1',
-		longLabel: 'Gameweek 1',
+		id: STARTING_ROUND_ID,
+		number: 12,
+		label: 'GW12',
+		longLabel: 'Gameweek 12',
+	}
+	/** The game whose round one that is. */
+	const STARTED_HERE: BuildGameViewInput['game'] = {
+		currentRoundId: STARTING_ROUND_ID,
+		currentRoundNumber: 12,
+		startingRoundId: STARTING_ROUND_ID,
 	}
 
-	it('keeps a losing round-1 pick surviving when rebuys are off', () => {
+	it('keeps a losing opening pick surviving when rebuys are off', () => {
 		const view = buildGameView(
 			baseInput({
 				round: STARTING_ROUND,
+				game: STARTED_HERE,
 				allowRebuys: false,
 				pick: {
 					...classicPick,
@@ -443,11 +457,12 @@ describe('buildGameView — classic starting-round exemption', () => {
 		})
 	})
 
-	it('keeps a settled round-1 draw and loss surviving when rebuys are off', () => {
+	it('keeps a settled opening draw and loss surviving when rebuys are off', () => {
 		for (const result of ['draw', 'loss'] as const) {
 			const view = buildGameView(
 				baseInput({
 					round: STARTING_ROUND,
+					game: STARTED_HERE,
 					allowRebuys: false,
 					pick: {
 						...classicPick,
@@ -460,9 +475,11 @@ describe('buildGameView — classic starting-round exemption', () => {
 		}
 	})
 
-	it('does not warn a round-1 no-picker that they are out', () => {
-		// `processDeadlineLock` leaves round-1 no-pickers alone in a no-rebuys game.
-		const view = buildGameView(baseInput({ round: STARTING_ROUND, allowRebuys: false, pick: null }))
+	it('does not warn an opening-round no-picker that they are out', () => {
+		// `processDeadlineLock` leaves opening-round no-pickers alone in a no-rebuys game.
+		const view = buildGameView(
+			baseInput({ round: STARTING_ROUND, game: STARTED_HERE, allowRebuys: false, pick: null }),
+		)
 		expect(view.hero).toMatchObject({
 			kind: 'live',
 			survival: 'unknown',
@@ -471,12 +488,13 @@ describe('buildGameView — classic starting-round exemption', () => {
 		})
 	})
 
-	it('still eliminates on a losing round-1 pick when rebuys are on', () => {
-		// With rebuys the exemption doesn't apply: round 1 puts you out, and the
-		// rebuy offer is the way back in.
+	it('still eliminates on a losing opening pick when rebuys are on', () => {
+		// With rebuys the exemption doesn't apply: the opening round puts you out,
+		// and the rebuy offer is the way back in.
 		const view = buildGameView(
 			baseInput({
 				round: STARTING_ROUND,
+				game: STARTED_HERE,
 				allowRebuys: true,
 				pick: {
 					...classicPick,
@@ -512,6 +530,7 @@ describe('buildGameView — classic starting-round exemption', () => {
 					gameMode: mode,
 					picksRequired: 6,
 					round: STARTING_ROUND,
+					game: STARTED_HERE,
 					allowRebuys: false,
 					pick: { picksMade: 6, isAuto: false, team: null, results: ['loss'] },
 				}),
@@ -520,10 +539,59 @@ describe('buildGameView — classic starting-round exemption', () => {
 		}
 	})
 
+	it('exempts a gameweek-one game on gameweek one, as before', () => {
+		const gw1: BuildGameViewInput['round'] = {
+			...ACTIVE_ROUND,
+			id: 'round-1',
+			number: 1,
+			label: 'GW1',
+			longLabel: 'Gameweek 1',
+		}
+		const view = buildGameView(
+			baseInput({
+				round: gw1,
+				game: { currentRoundId: 'round-1', currentRoundNumber: 1, startingRoundId: 'round-1' },
+				allowRebuys: false,
+				pick: { ...classicPick, results: ['loss'], fixture: liveFixture() },
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'surviving',
+			startingRoundExemption: true,
+		})
+	})
+
+	it("does not exempt the competition's gameweek one when the game started later", () => {
+		// The whole bug in one case: a game created in November plays gameweek 12
+		// onwards, so gameweek 1 is not its opening round — and if it somehow renders
+		// that round, a loss there is a loss.
+		const view = buildGameView(
+			baseInput({
+				round: {
+					...ACTIVE_ROUND,
+					id: 'round-1',
+					number: 1,
+					label: 'GW1',
+					longLabel: 'Gameweek 1',
+				},
+				game: { currentRoundId: 'round-1', currentRoundNumber: 1, startingRoundId: 'round-12' },
+				allowRebuys: false,
+				pick: { ...classicPick, results: ['loss'], fixture: liveFixture() },
+			}),
+		)
+		expect(view.hero).toMatchObject({
+			kind: 'live',
+			survival: 'out',
+			startingRoundExemption: false,
+		})
+	})
+
 	it('flags the exemption on the settled round-result hero too', () => {
 		const view = buildGameView(
 			baseInput({
 				round: { ...STARTING_ROUND, status: 'completed' },
+				game: STARTED_HERE,
 				allowRebuys: false,
 				pick: {
 					...classicPick,
