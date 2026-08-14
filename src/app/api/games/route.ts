@@ -51,6 +51,22 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
 	}
 
+	// Say nothing about visibility and the game is public — the people who play
+	// this all play together, so open joining is the expectation. A private game
+	// is reachable by its invite link alone, which is what every game used to be.
+	// A value we don't recognise is rejected rather than defaulted, so a stale
+	// client can't quietly publish a game its creator meant to keep private.
+	const visibility = body.visibility ?? 'public'
+	if (visibility !== 'public' && visibility !== 'private') {
+		return NextResponse.json(
+			{
+				error: 'invalid-visibility',
+				message: "Visibility must be 'public' or 'private'.",
+			},
+			{ status: 400 },
+		)
+	}
+
 	// "Where do players pay you?" rides along with create-game — the creator sets
 	// it once here and it's pre-filled on every later game. Absent keys mean the
 	// request says nothing about it, so the stored handle is left alone; a
@@ -178,6 +194,7 @@ export async function POST(request: Request) {
 			createdBy: session.user.id,
 			competitionId,
 			gameMode,
+			visibility,
 			modeConfig: modeConfig ?? {},
 			entryFee: entryFee ?? null,
 			maxPlayers: maxPlayers ?? null,

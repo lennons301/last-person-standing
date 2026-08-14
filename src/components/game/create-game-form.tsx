@@ -34,6 +34,25 @@ const MODE_DESCRIPTIONS: Record<GameMode, string> = {
 	cup: 'Predict cup fixtures. Lives system with tier handicaps.',
 }
 
+type Visibility = 'public' | 'private'
+
+// Both options are spelled out rather than hidden behind a switch, because what
+// "private" costs (nobody finds the game without the link) is the half a creator
+// needs stated. Every game keeps its invite link either way — public only adds a
+// second way in. Create-time only: there is no later flip.
+const VISIBILITY_OPTIONS: Array<{ value: Visibility; label: string; description: string }> = [
+	{
+		value: 'public',
+		label: 'Public',
+		description: 'Anyone signed in can find this game and join it. The invite link still works.',
+	},
+	{
+		value: 'private',
+		label: 'Private',
+		description: 'Only people you send the invite link to can find this game.',
+	},
+]
+
 export function CreateGameForm({
 	competitions,
 	savedPaymentProvider = null,
@@ -43,6 +62,7 @@ export function CreateGameForm({
 	const [name, setName] = useState('')
 	const [competitionId, setCompetitionId] = useState('')
 	const [mode, setMode] = useState<GameMode | null>(null)
+	const [visibility, setVisibility] = useState<Visibility>('public')
 	const [hasEntryFee, setHasEntryFee] = useState(true)
 	const [entryFee, setEntryFee] = useState(10)
 	// Cup default: 0 lives. Lives are earned by picking underdogs, not given
@@ -87,6 +107,7 @@ export function CreateGameForm({
 				name,
 				competitionId,
 				gameMode: mode,
+				visibility,
 				modeConfig,
 				entryFee: hasEntryFee ? entryFee.toFixed(2) : null,
 				// Only sent when there's a fee to collect — creating a free game has
@@ -190,6 +211,36 @@ export function CreateGameForm({
 
 				{step3Done && (
 					<>
+						<fieldset>
+							<legend className="text-sm font-medium leading-none">Who can join</legend>
+							<div className="grid gap-2 mt-2">
+								{VISIBILITY_OPTIONS.map((option) => (
+									<label
+										key={option.value}
+										htmlFor={`visibility-${option.value}`}
+										className={cn(
+											'block text-left p-3 rounded-lg border-2 transition-all cursor-pointer focus-within:ring-2 focus-within:ring-ring/50',
+											visibility === option.value
+												? 'border-[var(--alive)] bg-[var(--alive-bg)]'
+												: 'border-border hover:border-muted-foreground bg-card',
+										)}
+									>
+										<input
+											id={`visibility-${option.value}`}
+											type="radio"
+											name="visibility"
+											value={option.value}
+											checked={visibility === option.value}
+											onChange={() => setVisibility(option.value)}
+											className="sr-only"
+										/>
+										<div className="font-display font-semibold">{option.label}</div>
+										<div className="text-xs text-muted-foreground mt-0.5">{option.description}</div>
+									</label>
+								))}
+							</div>
+						</fieldset>
+
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
 								<Label htmlFor="entry-fee-toggle">Entry fee</Label>
