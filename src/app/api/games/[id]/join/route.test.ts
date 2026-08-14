@@ -137,6 +137,30 @@ describe('join route', () => {
 		expect(insertedInto).toEqual([])
 	})
 
+	// The rule reads no game mode at all, which is what makes it the same rule for
+	// all three; these pin it from the outside. Turbo and cup are the modes where a
+	// late join is worst — one round, one deadline, so a joiner past it gets nothing
+	// whatsoever for their entry fee.
+	it.each([
+		'classic',
+		'turbo',
+		'cup',
+	] as const)('rejects a late join to a %s game', async (gameMode) => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue(
+			openGame({
+				gameMode,
+				entryFee: '10.00',
+				startingRound: { id: 'gw12', deadline: new Date('2026-08-14T11:00:00Z') },
+			}) as never,
+		)
+
+		const res = await post()
+
+		expect(res.status).toBe(400)
+		expect(await res.json()).toMatchObject({ error: 'game-started' })
+		expect(insertedInto).toEqual([])
+	})
+
 	it('takes no payment row from a rejected join', async () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue(
 			openGame({ entryFee: '10.00', currentRoundId: 'gw13' }) as never,
