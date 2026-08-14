@@ -87,13 +87,13 @@ export const JOIN_BLOCKED_COPY: Record<
 	completed: {
 		code: 'game-completed',
 		heading: 'This game has finished',
-		message: 'It has already been won — there is nothing left to join.',
+		message: 'It has already been played out — there is nothing left to join.',
 	},
 	started: {
 		code: 'game-started',
 		heading: 'This game has already started',
 		message:
-			'Joining from a link closes at the opening round’s deadline. The game’s admin can still add you — ask them to.',
+			'Joining yourself closes at the opening round’s deadline. The game’s admin can still add you — ask them to.',
 	},
 	'not-open': {
 		code: 'game-not-open',
