@@ -133,9 +133,10 @@ See [`docs/superpowers/specs/2026-05-12-fixture-cancellation-handling-design.md`
 - WC group-stage settle + advance.
 - Live projection: in-progress fixture surfaces projected `'alive'` / `'eliminated'` per player + `'winning'` / `'losing'` per pick.
 - Deadline no-pick lock + crown guard (`lifecycle: deadline no-pick lock + crown guard`): the Barry race (pickless finalist with no legal team eliminated before rounds-exhausted can crown), pre-deadline no-op, worst-placed-unused auto-pick at deadline time, idempotency across the QStash trigger / daily-sync fallback / crown-guard invocations.
+- A game that started mid-season (`lifecycle: classic starting round is the game's own (#203)`): a game created on gameweek 12 is exempt *there* with rebuys off (loss and draw both survive, the grid marks gameweek 12 as the starting round and renders the draw `draw_exempt`), eliminates there with rebuys on, eliminates as normal in gameweek 13, and its opening round takes the deadline lock's opening-round branch rather than the auto-pick path.
 - Stuck-pick recovery (`lifecycle: stuck-pick recovery`): reconcile refuses to advance past a deferred pending pick in a data-source-completed round; the daily sweep settles the pick once the winner lands with the elimination in the original round; stranded picks in non-current rounds self-heal without dragging the game's round pointer backwards; a pick left pending on a **cancelled** fixture (missed inline void) pins the game past the per-game reconcile and is voided by the all-rounds sweep, which then advances it; archived competitions are never swept.
 
 Not yet covered (gaps to fill):
 - WC knockout auto-elimination via `computeWcClassicAutoElims`.
 - Mass-extinction tiebreaker.
-- Rebuy from the starting round to the round after it.
+- Rebuy from the starting round to the round after it (the two routes are unit-tested; no end-to-end scenario).
