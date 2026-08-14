@@ -36,6 +36,8 @@ function happyPathMocks() {
 		modeConfig: { allowRebuys: true },
 		entryFee: '10.00',
 		competitionId: 'c1',
+		// Created at the competition's gameweek one — the common case.
+		startingRoundId: 'r1',
 	} as never)
 	vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValue({
 		id: 'gp-target',
@@ -46,6 +48,8 @@ function happyPathMocks() {
 	vi.mocked(db.query.round.findMany).mockResolvedValue([
 		{ id: 'r1', number: 1, deadline: new Date('2026-05-01') },
 		{ id: 'r2', number: 2, deadline: new Date('2026-05-10T12:00:00Z') },
+		{ id: 'gw12', number: 12, deadline: new Date('2026-05-04') },
+		{ id: 'gw13', number: 13, deadline: new Date('2026-05-11T12:00:00Z') },
 	] as never)
 	vi.mocked(db.query.payment.findMany).mockResolvedValue([
 		{ id: 'p1', userId: 'target', gameId: 'g1' },
@@ -74,6 +78,30 @@ describe('admin rebuy route', () => {
 		} as never)
 		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
 		expect(res.status).toBe(403)
+	})
+
+	it('200s for a game that started mid-season, on its own opening round (#203)', async () => {
+		// A game created in November: its round one is gameweek 12 and the window
+		// shuts at the gameweek-13 deadline. Before #203 the route looked for the
+		// competition's round 1 and refused every mid-season game.
+		happyPathMocks()
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			id: 'g1',
+			createdBy: 'admin',
+			gameMode: 'classic',
+			modeConfig: { allowRebuys: true },
+			entryFee: '10.00',
+			competitionId: 'c1',
+			startingRoundId: 'gw12',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValue({
+			id: 'gp-target',
+			userId: 'target',
+			status: 'eliminated',
+			eliminatedRoundId: 'gw12',
+		} as never)
+		const res = await POST(new Request('http://x', { method: 'POST' }), ctx)
+		expect(res.status).toBe(200)
 	})
 
 	it('200s on happy path and flips target to alive', async () => {

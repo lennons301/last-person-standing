@@ -163,7 +163,7 @@ describe('GameDetailView management fold', () => {
 				pickSection={null}
 				rebuy={{
 					entryFee: '10.00',
-					round2Deadline: new Date('2026-08-20T18:00:00Z'),
+					closesAt: new Date('2026-08-20T18:00:00Z'),
 					pendingPayment: null,
 					creatorName: 'Alice',
 				}}
@@ -191,7 +191,7 @@ describe('GameDetailView management fold', () => {
 				pickSection={null}
 				rebuy={{
 					entryFee: '10.00',
-					round2Deadline: new Date('2026-08-20T18:00:00Z'),
+					closesAt: new Date('2026-08-20T18:00:00Z'),
 					pendingPayment: null,
 					creatorName: 'Alice',
 				}}

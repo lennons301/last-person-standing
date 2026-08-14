@@ -4,6 +4,7 @@ import { fixture, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 import { pickLowestRankedUnusedTeam } from './auto-pick'
+import { isGameStartingRound, resolveRoundAfterStarting } from './starting-round'
 
 export async function processDeadlineLock(roundIds: string[]): Promise<{
 	autoPicksInserted: number
@@ -30,7 +31,29 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 			with: { players: true },
 		})
 
+		// Every round of every competition these games play, so each game's own
+		// opening round — and the round after it — can be resolved. A game created
+		// mid-season has its round one at, say, gameweek 12, and gameweek 13 is its
+		// round two; branching on the competition's round numbers put a mid-season
+		// game's opening round on the ordinary auto-pick path (#203).
+		const competitionIds = Array.from(new Set(games.map((g) => g.competitionId)))
+		const competitionRounds =
+			competitionIds.length === 0
+				? []
+				: await db.query.round.findMany({
+						where: inArray(round.competitionId, competitionIds),
+					})
+		const roundsByCompetition = new Map<string, typeof competitionRounds>()
+		for (const r of competitionRounds) {
+			const list = roundsByCompetition.get(r.competitionId) ?? []
+			list.push(r)
+			roundsByCompetition.set(r.competitionId, list)
+		}
+
 		for (const g of games) {
+			const gameRounds = roundsByCompetition.get(g.competitionId) ?? []
+			const isOpeningRound = isGameStartingRound(g, roundId)
+			const isSecondRound = resolveRoundAfterStarting(g, gameRounds)?.id === roundId
 			const activePlayers = g.players.filter((p) => p.status === 'alive')
 			for (const player of activePlayers) {
 				const existingPick = await db.query.pick.findFirst({
@@ -39,7 +62,7 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 				if (existingPick) continue
 
 				if (g.gameMode === 'classic') {
-					if (roundRow.number === 1) {
+					if (isOpeningRound) {
 						const allowRebuys =
 							(g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
 						if (allowRebuys) {
@@ -54,7 +77,7 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 							playersEliminated++
 						}
 						// !allowRebuys: classic.ts exemption applies; no elimination here.
-					} else if (roundRow.number === 2) {
+					} else if (isSecondRound) {
 						const prevPayments = await db.query.payment.findMany({
 							where: and(eq(payment.gameId, g.id), eq(payment.userId, player.userId)),
 						})

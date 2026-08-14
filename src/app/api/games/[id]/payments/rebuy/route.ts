@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { isRebuyEligible } from '@/lib/game/rebuy'
+import { resolveRoundAfterStarting, resolveStartingRound } from '@/lib/game/starting-round'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
@@ -22,12 +23,15 @@ export async function POST(_request: Request, ctx: Ctx): Promise<Response> {
 	})
 	if (!playerRow) return NextResponse.json({ error: 'not-in-game' }, { status: 404 })
 
+	// The rebuy window is the game's own opening round, not the competition's
+	// gameweek one: a game created in November starts at gameweek 12, and it's the
+	// gameweek-12 exit its players can buy back from. See #203.
 	const rounds = await db.query.round.findMany({
 		where: eq(round.competitionId, gameRow.competitionId),
 	})
-	const round1 = rounds.find((r) => r.number === 1)
-	const round2 = rounds.find((r) => r.number === 2)
-	if (!round1 || !round2) {
+	const startingRound = resolveStartingRound(gameRow, rounds)
+	const roundAfterStarting = resolveRoundAfterStarting(gameRow, rounds)
+	if (!startingRound || !roundAfterStarting) {
 		return NextResponse.json({ error: 'rounds-not-set-up' }, { status: 400 })
 	}
 
@@ -44,8 +48,8 @@ export async function POST(_request: Request, ctx: Ctx): Promise<Response> {
 			status: playerRow.status,
 			eliminatedRoundId: playerRow.eliminatedRoundId,
 		},
-		round1: { id: round1.id },
-		round2: { deadline: round2.deadline },
+		startingRound: { id: startingRound.id },
+		roundAfterStarting: { deadline: roundAfterStarting.deadline },
 		paymentRowCount: payments.length,
 		now: new Date(),
 	})

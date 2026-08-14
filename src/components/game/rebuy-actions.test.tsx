@@ -46,7 +46,7 @@ describe('rebuy pay link', () => {
 			<RebuyOfferNotice
 				gameId="g1"
 				entryFee="10.00"
-				round2Deadline={new Date('2026-08-20T18:00:00Z')}
+				closesAt={new Date('2026-08-20T18:00:00Z')}
 				creatorName="Alice"
 			/>,
 		)
@@ -62,7 +62,7 @@ describe('rebuy pay link', () => {
 			<RebuyOfferNotice
 				gameId="g1"
 				entryFee="10.00"
-				round2Deadline={new Date('2026-08-20T18:00:00Z')}
+				closesAt={new Date('2026-08-20T18:00:00Z')}
 				creatorName="Alice"
 			/>,
 		)

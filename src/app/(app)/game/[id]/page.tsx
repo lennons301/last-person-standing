@@ -325,6 +325,11 @@ export default async function GameDetailPage({
 		game: {
 			currentRoundId: heroRound?.id ?? null,
 			currentRoundNumber: heroRound?.number ?? null,
+			// The game's own round one, for the starting-round exemption. Note the
+			// two above are the *hero's* round, which is the game's current round or
+			// the one the viewer is looking at — neither remembers where the game
+			// began (#203).
+			startingRoundId: game.startingRoundId,
 		},
 		isAlive,
 		// `isAlive` is forced true for an acting-as target so the admin gets the
@@ -346,7 +351,7 @@ export default async function GameDetailPage({
 		rebuy: game.rebuyBanner
 			? {
 					entryFee: game.rebuyBanner.entryFee,
-					closesAt: game.rebuyBanner.round2Deadline,
+					closesAt: game.rebuyBanner.closesAt,
 					pendingPayment: game.rebuyBanner.pendingPayment,
 				}
 			: null,
@@ -516,7 +521,7 @@ export default async function GameDetailPage({
 				game.rebuyBanner
 					? {
 							entryFee: game.rebuyBanner.entryFee,
-							round2Deadline: game.rebuyBanner.round2Deadline,
+							closesAt: game.rebuyBanner.closesAt,
 							pendingPayment: game.rebuyBanner.pendingPayment,
 							creatorName: game.creatorName,
 							payUrl: payLinkFor(game.rebuyBanner.pendingPayment?.amount),

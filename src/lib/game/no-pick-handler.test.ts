@@ -5,7 +5,7 @@ import { processDeadlineLock } from './no-pick-handler'
 vi.mock('@/lib/db', () => ({
 	db: {
 		query: {
-			round: { findFirst: vi.fn().mockResolvedValue(undefined) },
+			round: { findFirst: vi.fn().mockResolvedValue(undefined), findMany: vi.fn() },
 			game: { findMany: vi.fn().mockResolvedValue([]) },
 			pick: { findFirst: vi.fn(), findMany: vi.fn() },
 			fixture: { findMany: vi.fn() },
@@ -40,16 +40,46 @@ function makeClassicPlayer(
 	} as never
 }
 
-function makeClassicGame(allowRebuys: boolean, players: object[]) {
+/**
+ * The competition's whole round sequence — what the lock reads to work out which
+ * round is a given game's second. Includes a mid-season pair (gameweek 12/13) for
+ * the games that start there.
+ */
+const COMPETITION_ROUNDS = [
+	{ id: 'r1', number: 1, competitionId: 'comp-1' },
+	{ id: 'r2', number: 2, competitionId: 'comp-1' },
+	{ id: 'r3', number: 3, competitionId: 'comp-1' },
+	{ id: 'gw12', number: 12, competitionId: 'comp-1' },
+	{ id: 'gw13', number: 13, competitionId: 'comp-1' },
+]
+
+/**
+ * `startingRoundId` defaults to 'r1' — a game created at the competition's
+ * gameweek one, the common case. Pass it to build a game that started mid-season.
+ */
+function makeClassicGame(
+	allowRebuys: boolean,
+	players: object[],
+	opts: { startingRoundId?: string } = {},
+) {
 	return {
 		id: 'g1',
 		gameMode: 'classic',
 		modeConfig: allowRebuys ? { allowRebuys: true } : {},
 		status: 'active',
+		competitionId: 'comp-1',
 		currentRoundId: 'r1',
+		startingRoundId: opts.startingRoundId ?? 'r1',
 		players,
 	} as never
 }
+
+// Every test's lock reads the competition's round sequence to tell each game's
+// own opening and second rounds apart. Set here rather than per-test: which round
+// is which is a property of the competition, not of the case under test.
+beforeEach(() => {
+	vi.mocked(db.query.round.findMany).mockResolvedValue(COMPETITION_ROUNDS as never)
+})
 
 describe('processDeadlineLock', () => {
 	it('no-ops when no games use the round', async () => {
@@ -146,6 +176,104 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 			eliminatedReason: 'no_pick_no_fallback',
 			eliminatedRoundId: 'r2',
 		})
+	})
+})
+
+describe('processDeadlineLock — a game that started mid-season (#203)', () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	/** Gameweek 12 — the opening round of a game created in November. */
+	function mockOpeningRound() {
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'gw12',
+			number: 12,
+			deadline: new Date(Date.now() - 60_000),
+		} as never)
+		vi.mocked(db.query.round.findMany).mockResolvedValue(COMPETITION_ROUNDS as never)
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+	}
+
+	it('eliminates a no-picker in the game’s own opening round when allowRebuys=true', async () => {
+		mockOpeningRound()
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(true, [makeClassicPlayer()], { startingRoundId: 'gw12' }),
+		])
+
+		const result = await processDeadlineLock(['gw12'])
+		expect(result.playersEliminated).toBe(1)
+		expect(result.autoPicksInserted).toBe(0)
+
+		const setCall = vi.mocked(db.update).mock.results[0]?.value.set.mock.calls[0]?.[0]
+		expect(setCall).toMatchObject({
+			status: 'eliminated',
+			eliminatedReason: 'no_pick_no_fallback',
+			eliminatedRoundId: 'gw12',
+		})
+	})
+
+	it('leaves a no-picker alone in the game’s own opening round when allowRebuys=false', async () => {
+		// Before #203 this took the ordinary round-3+ path and auto-picked the
+		// worst-placed team — the exemption never reached a mid-season game.
+		mockOpeningRound()
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(false, [makeClassicPlayer()], { startingRoundId: 'gw12' }),
+		])
+
+		const result = await processDeadlineLock(['gw12'])
+		expect(result).toEqual({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 })
+		expect(db.update).not.toHaveBeenCalled()
+		expect(db.insert).not.toHaveBeenCalled()
+	})
+
+	it('treats the round after the opening one as the second round', async () => {
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'gw13',
+			number: 13,
+			deadline: new Date(Date.now() - 60_000),
+		} as never)
+		vi.mocked(db.query.round.findMany).mockResolvedValue(COMPETITION_ROUNDS as never)
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(true, [makeClassicPlayer()], { startingRoundId: 'gw12' }),
+		])
+		vi.mocked(db.query.payment.findMany).mockResolvedValue([
+			{ id: 'pay1' },
+			{ id: 'pay2' },
+		] as never)
+
+		const result = await processDeadlineLock(['gw13'])
+		expect(result.playersEliminated).toBe(1)
+		expect(result.autoPicksInserted).toBe(0)
+
+		const setCall = vi.mocked(db.update).mock.results[0]?.value.set.mock.calls[0]?.[0]
+		expect(setCall).toMatchObject({
+			status: 'eliminated',
+			eliminatedReason: 'missed_rebuy_pick',
+			eliminatedRoundId: 'gw13',
+		})
+	})
+
+	it("does not treat the competition's gameweek one as this game's opening round", async () => {
+		// A game that starts at gameweek 12 has no round of its own at gameweek 1, so
+		// the lock has no opening-round business there at all.
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'r1',
+			number: 1,
+			deadline: new Date(Date.now() - 60_000),
+		} as never)
+		vi.mocked(db.query.round.findMany).mockResolvedValue(COMPETITION_ROUNDS as never)
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+		vi.mocked(db.query.fixture.findMany).mockResolvedValue([] as never)
+		vi.mocked(db.query.team.findMany).mockResolvedValue([] as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(false, [makeClassicPlayer()], { startingRoundId: 'gw12' }),
+		])
+
+		// No fixtures to fall back on, so the ordinary auto-pick path eliminates —
+		// which is the point: it's the ordinary path, not the exemption.
+		const result = await processDeadlineLock(['r1'])
+		expect(result.playersEliminated).toBe(1)
 	})
 })
 

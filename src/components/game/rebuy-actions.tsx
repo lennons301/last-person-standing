@@ -100,12 +100,12 @@ export function RebuyActions({
 export function RebuyOfferNotice({
 	gameId,
 	entryFee,
-	round2Deadline,
+	closesAt,
 	creatorName,
 }: {
 	gameId: string
 	entryFee: string
-	round2Deadline: Date
+	closesAt: Date
 	creatorName: string
 }) {
 	return (
@@ -115,7 +115,7 @@ export function RebuyOfferNotice({
 				<h4 className="text-xs font-bold">You can buy back in</h4>
 				<p className="mt-0.5 text-[11px] text-muted-foreground">
 					You went out in round 1. One rebuy is on offer — it closes{' '}
-					<LocalDateTime date={round2Deadline} />.
+					<LocalDateTime date={closesAt} />.
 				</p>
 			</div>
 			<RebuyActions
