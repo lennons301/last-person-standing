@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/navigation', () => ({
@@ -57,6 +57,56 @@ describe('JoinGameCard pay link', () => {
 
 		const join = screen.getByRole('button', { name: 'Join game' })
 		expect(join.hasAttribute('disabled')).toBe(false)
+	})
+})
+
+describe('JoinGameCard when the join is rejected mid-flight', () => {
+	/**
+	 * The page renders a join button while the game is still open and the deadline
+	 * passes before it's pressed. The route answers with a code in `error` and the
+	 * sentence in `message` — the sentence is what the player has to see.
+	 */
+	it('shows the route’s message rather than its error code', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: false,
+				json: () =>
+					Promise.resolve({
+						error: JOIN_BLOCKED_COPY.started.code,
+						message: JOIN_BLOCKED_COPY.started.message,
+					}),
+			}),
+		)
+
+		render(<JoinGameCard {...baseProps} entryFee={null} payUrl={null} />)
+		fireEvent.click(screen.getByRole('button', { name: 'Join game' }))
+
+		await waitFor(() => {
+			expect(screen.getByText(JOIN_BLOCKED_COPY.started.message)).toBeTruthy()
+		})
+		expect(screen.queryByText(JOIN_BLOCKED_COPY.started.code)).toBeNull()
+
+		vi.unstubAllGlobals()
+	})
+
+	it('keeps the older sentence-shaped errors that carry no message', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: false,
+				json: () => Promise.resolve({ error: 'Game is full' }),
+			}),
+		)
+
+		render(<JoinGameCard {...baseProps} entryFee={null} payUrl={null} />)
+		fireEvent.click(screen.getByRole('button', { name: 'Join game' }))
+
+		await waitFor(() => {
+			expect(screen.getByText('Game is full')).toBeTruthy()
+		})
+
+		vi.unstubAllGlobals()
 	})
 })
 

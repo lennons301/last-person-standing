@@ -51,7 +51,11 @@ export function JoinGameCard({
 		setLoading(false)
 		if (!res.ok) {
 			const body = await res.json().catch(() => ({ error: 'Failed to join' }))
-			setError(body.error ?? 'Failed to join')
+			// `message` where the route sends one (its `error` is a code there —
+			// 'game-started' and friends), the older sentence-shaped `error` otherwise.
+			// The started case reaches here when the deadline passes between this page
+			// rendering and the button being pressed.
+			setError(body.message ?? body.error ?? 'Failed to join')
 			return
 		}
 		router.push(`/game/${gameId}`)
