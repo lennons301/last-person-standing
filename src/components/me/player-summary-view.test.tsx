@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { MeSummaryView, ModeSection } from '@/lib/game/me-summary-view'
+import type {
+	MeSummaryView,
+	ModeSection,
+	MoneySummary,
+	TeamRecord,
+	TeamRecordFamily,
+} from '@/lib/game/me-summary-view'
 import { PlayerSummaryView } from './player-summary-view'
 
 afterEach(cleanup)
@@ -16,11 +22,17 @@ const HEADLINE = {
 		pickAccuracy: { successful: 9, settled: 12, rate: 0.75, savedByLife: 1 },
 		mostPickedTeam: null,
 	},
+	teamRecords: [],
+	money: { stake: '0.00', winnings: '0.00', net: '0.00', games: [], freeGames: 0 },
 	modes: [],
 }
 
 function withModes(modes: ModeSection[]): MeSummaryView {
 	return { ...HEADLINE, modes }
+}
+
+function withTeams(families: TeamRecordFamily[]): MeSummaryView {
+	return { ...HEADLINE, teamRecords: families }
 }
 
 const CLASSIC: ModeSection = {
@@ -69,9 +81,47 @@ const TURBO: ModeSection = {
 	streak: { longest: 5, average: 3.5, games: 2 },
 }
 
-/** The section a mode's heading names. */
+function team(name: string, over: Partial<TeamRecord> = {}): TeamRecord {
+	return {
+		teamId: `team-${name.toLowerCase()}`,
+		name,
+		shortName: name.slice(0, 3).toUpperCase(),
+		badgeUrl: null,
+		picks: 2,
+		wins: 1,
+		savedByLife: 0,
+		rate: 0.5,
+		...over,
+	}
+}
+
+const LIVERPOOL = team('Liverpool', { picks: 4, wins: 3, rate: 0.75 })
+const CHELSEA = team('Chelsea', { picks: 3, wins: 1, savedByLife: 1, rate: 0.5 })
+const ARSENAL = team('Arsenal')
+const EVERTON = team('Everton', { wins: 0, rate: 0 })
+
+/** A family with a best end, a worst end, and two teams only the expansion shows. */
+const PREMIER_LEAGUE: TeamRecordFamily = {
+	familyKey: 'premier-league',
+	name: 'Premier League',
+	seasons: 2,
+	seasonOptions: ['2025/26', '2024/25'],
+	selectedSeason: null,
+	best: [LIVERPOOL],
+	worst: [EVERTON],
+	all: [LIVERPOOL, ARSENAL, CHELSEA, EVERTON],
+}
+
+/** The section a mode's — or the Teams section's — heading names. */
 function section(name: string): HTMLElement {
 	return screen.getByRole('region', { name })
+}
+
+/** One team's row, found by the club name it leads with. */
+function teamRow(scope: HTMLElement, name: string): HTMLElement {
+	const row = within(scope).getAllByText(name)[0].closest('li')
+	if (!row) throw new Error(`no team row for ${name}`)
+	return row
 }
 
 /** The figure shown under one labelled stat. */
@@ -194,5 +244,247 @@ describe('PlayerSummaryView', () => {
 		expect(within(cup).getByText(/haven't played/i)).toBeTruthy()
 		expect(within(cup).queryByText('Games played')).toBeNull()
 		expect(within(cup).queryAllByRole('row')).toHaveLength(0)
+	})
+
+	it('puts the Teams section below the mode sections, and Money below that', () => {
+		render(
+			<PlayerSummaryView
+				summary={{ ...HEADLINE, modes: [CLASSIC], teamRecords: [PREMIER_LEAGUE] }}
+			/>,
+		)
+
+		const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+		expect(headings).toEqual(['Classic', 'Teams', 'Money'])
+	})
+})
+
+describe('PlayerSummaryView money fold', () => {
+	const MONEY: MoneySummary = {
+		stake: '55.00',
+		winnings: '40.00',
+		net: '-15.00',
+		freeGames: 1,
+		games: [
+			{
+				gameId: 'g1',
+				name: 'The Office Pool',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'classic',
+				stake: '45.00',
+				winnings: '0.00',
+				net: '-45.00',
+			},
+			{
+				gameId: 'g2',
+				name: 'Turbo Tuesday',
+				competitionName: 'Premier League 2025/26',
+				gameMode: 'turbo',
+				stake: '10.00',
+				winnings: '40.00',
+				net: '30.00',
+			},
+		],
+	}
+
+	function withMoney(): MeSummaryView {
+		return { ...HEADLINE, money: MONEY }
+	}
+
+	/** The fold's own control, which is the only way into the figures. */
+	function foldToggle(scope: HTMLElement): HTMLElement {
+		return within(scope).getByRole('button', { name: /profit and loss/i })
+	}
+
+	it('shows neither the headline nor a game until the player opens the fold', () => {
+		render(<PlayerSummaryView summary={withMoney()} />)
+
+		const money = section('Money')
+		expect(within(money).queryByText('-£15.00')).toBeNull()
+		expect(within(money).queryByText('The Office Pool')).toBeNull()
+	})
+
+	it('opens onto the headline and the per-game breakdown together', () => {
+		render(<PlayerSummaryView summary={withMoney()} />)
+
+		const money = section('Money')
+		fireEvent.click(foldToggle(money))
+
+		expect(stat(money, 'Profit / loss')).toBe('-£15.00')
+		expect(stat(money, 'Total staked')).toBe('£55.00')
+		expect(stat(money, 'Total won')).toBe('£40.00')
+
+		const office = within(money).getByText('The Office Pool').closest('tr')
+		expect(office?.textContent).toContain('-£45.00')
+		const turbo = within(money).getByText('Turbo Tuesday').closest('tr')
+		expect(turbo?.textContent).toContain('+£30.00')
+	})
+
+	it('is shut again on the next visit — the fold remembers nothing', () => {
+		const { unmount } = render(<PlayerSummaryView summary={withMoney()} />)
+		fireEvent.click(foldToggle(section('Money')))
+		expect(within(section('Money')).getByText('-£15.00')).toBeTruthy()
+		unmount()
+
+		render(<PlayerSummaryView summary={withMoney()} />)
+
+		expect(within(section('Money')).queryByText('-£15.00')).toBeNull()
+	})
+
+	it('says how many games had no money in them at all', () => {
+		render(<PlayerSummaryView summary={withMoney()} />)
+		fireEvent.click(foldToggle(section('Money')))
+
+		expect(within(section('Money')).getByText(/1 free game/)).toBeTruthy()
+	})
+})
+
+describe('PlayerSummaryView teams section', () => {
+	it("states a team's picks, wins and rate, and the picks a life absorbed", () => {
+		render(<PlayerSummaryView summary={withTeams([PREMIER_LEAGUE])} />)
+
+		const teams = section('Teams')
+		const liverpool = teamRow(teams, 'Liverpool')
+		expect(liverpool.textContent).toContain('4 picks')
+		expect(liverpool.textContent).toContain('3 wins')
+		expect(liverpool.textContent).toContain('75%')
+		// Nothing a life absorbed, so the row doesn't mention lives at all.
+		expect(liverpool.textContent).not.toContain('saved by a life')
+
+		expect(within(teams).getByText(/2 seasons/)).toBeTruthy()
+	})
+
+	it('counts a pick a life absorbed on the row, outside the rate', () => {
+		const family = { ...PREMIER_LEAGUE, best: [CHELSEA], worst: [] }
+		render(<PlayerSummaryView summary={withTeams([family])} />)
+
+		// Chelsea won 1 of the 2 picks a life didn't absorb: 50%, not 1-in-3.
+		const chelsea = teamRow(section('Teams'), 'Chelsea')
+		expect(chelsea.textContent).toContain('3 picks')
+		expect(chelsea.textContent).toContain('1 saved by a life')
+		expect(chelsea.textContent).toContain('50%')
+	})
+
+	it('leaves an end out entirely rather than labelling an empty one', () => {
+		const lonely: TeamRecordFamily = {
+			...PREMIER_LEAGUE,
+			best: [LIVERPOOL],
+			worst: [],
+			all: [LIVERPOOL],
+		}
+		render(<PlayerSummaryView summary={withTeams([lonely])} />)
+
+		const teams = section('Teams')
+		expect(within(teams).getByText('Best')).toBeTruthy()
+		expect(within(teams).queryByText('Worst')).toBeNull()
+	})
+
+	it('lists every team once the expansion is opened', () => {
+		render(<PlayerSummaryView summary={withTeams([PREMIER_LEAGUE])} />)
+
+		const teams = section('Teams')
+		// Arsenal and Chelsea are in neither end, so only the expansion has them.
+		expect(within(teams).queryByText('Arsenal')).toBeNull()
+		expect(within(teams).queryByText('Chelsea')).toBeNull()
+
+		fireEvent.click(within(teams).getByRole('button', { name: /All 4 teams/ }))
+
+		for (const name of ['Liverpool', 'Arsenal', 'Chelsea', 'Everton']) {
+			expect(within(teams).getAllByText(name).length).toBeGreaterThan(0)
+		}
+	})
+
+	it('keeps each competition family in its own block', () => {
+		const worldCup: TeamRecordFamily = {
+			familyKey: 'world-cup',
+			name: 'World Cup',
+			seasons: 1,
+			seasonOptions: ['2026'],
+			selectedSeason: null,
+			best: [team('Brazil', { wins: 2, picks: 2, rate: 1 })],
+			worst: [],
+			all: [team('Brazil', { wins: 2, picks: 2, rate: 1 })],
+		}
+		render(<PlayerSummaryView summary={withTeams([PREMIER_LEAGUE, worldCup])} />)
+
+		const teams = section('Teams')
+		expect(within(teams).getByText('Premier League')).toBeTruthy()
+		expect(within(teams).getByText('World Cup')).toBeTruthy()
+		// One season pooled reads as a season, not as pooling that didn't happen.
+		expect(within(teams).getByText(/1 season\./)).toBeTruthy()
+	})
+
+	it("offers each family's own seasons, all of them by default", () => {
+		render(<PlayerSummaryView summary={withTeams([PREMIER_LEAGUE])} />)
+
+		const control = within(section('Teams')).getByRole('navigation', {
+			name: 'Premier League seasons',
+		})
+		const options = within(control).getAllByRole('link')
+
+		expect(options.map((o) => o.textContent)).toEqual(['All seasons', '2025/26', '2024/25'])
+		expect(options[0].getAttribute('aria-current')).toBe('true')
+		expect(options[1].getAttribute('href')).toBe('?teams-premier-league=2025%2F26')
+		expect(options[1].getAttribute('aria-current')).toBeNull()
+	})
+
+	it("carries the other families' seasons through when one block is narrowed", () => {
+		const narrowed = { ...PREMIER_LEAGUE, selectedSeason: '2024/25', seasons: 1 }
+		const worldCup: TeamRecordFamily = {
+			familyKey: 'world-cup',
+			name: 'World Cup',
+			seasons: 1,
+			seasonOptions: ['2026'],
+			selectedSeason: null,
+			best: [ARSENAL],
+			worst: [],
+			all: [ARSENAL],
+		}
+		render(
+			<PlayerSummaryView
+				summary={{
+					...HEADLINE,
+					filters: { season: null, teamSeasons: { 'premier-league': '2024/25' } },
+					teamRecords: [narrowed, worldCup],
+				}}
+			/>,
+		)
+
+		const teams = section('Teams')
+		const league = within(teams).getByRole('navigation', { name: 'Premier League seasons' })
+		// The season in effect is the one marked, and "all seasons" clears it.
+		expect(within(league).getByText('2024/25').getAttribute('aria-current')).toBe('true')
+		expect(within(league).getByText('All seasons').getAttribute('href')).toBe('?')
+
+		// The World Cup's own control moves its block without losing the league's.
+		const cup = within(teams).getByRole('navigation', { name: 'World Cup seasons' })
+		expect(within(cup).getByText('2026').getAttribute('href')).toBe(
+			'?teams-premier-league=2024%2F25&teams-world-cup=2026',
+		)
+	})
+
+	it('says a narrowed block has no picks rather than showing it as no teams', () => {
+		const empty: TeamRecordFamily = {
+			...PREMIER_LEAGUE,
+			selectedSeason: '2024/25',
+			seasons: 0,
+			best: [],
+			worst: [],
+			all: [],
+		}
+		render(<PlayerSummaryView summary={withTeams([empty])} />)
+
+		const teams = section('Teams')
+		expect(within(teams).getByText(/No picks in 2024\/25/)).toBeTruthy()
+		// Nothing to expand, and no claim that the player has picked nought teams.
+		expect(within(teams).queryByRole('button', { name: /teams/ })).toBeNull()
+		expect(within(teams).queryByText(/0 teams/)).toBeNull()
+		// The control is still there — it's the only way back out of the season.
+		expect(within(teams).getByRole('navigation', { name: 'Premier League seasons' })).toBeTruthy()
+	})
+
+	it('has no Teams section at all for a player with no team records', () => {
+		render(<PlayerSummaryView summary={withTeams([])} />)
+
+		expect(screen.queryByRole('region', { name: 'Teams' })).toBeNull()
 	})
 })

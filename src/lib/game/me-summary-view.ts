@@ -12,6 +12,7 @@
  * disagree with the result screen, so it doesn't compute one.
  */
 
+import { COMPETITION_FAMILY_NAMES } from '@/lib/game/competition-family'
 import { resolveWipeout } from '@/lib/game-logic/auto-complete-tiebreakers'
 
 export type SummaryGameMode = 'classic' | 'turbo' | 'cup'
@@ -21,13 +22,19 @@ export type SummaryPickResult = 'pending' | 'win' | 'loss' | 'draw' | 'saved_by_
 /** One game the player has entered. */
 export interface SummaryGameRow {
 	gameId: string
+	/** `game.name` — what the players call it, and how a money row names itself. */
+	gameName: string
 	gameMode: SummaryGameMode
 	/** The player's own `game_player` row — which of a game's players is them. */
 	gamePlayerId: string
 	/** `game.status`. Only a completed game has a streak worth counting. */
 	gameStatus: 'active' | 'completed'
-	/** The competition season this game was played in — one mode sub-row per one of these. */
+	/**
+	 * The competition this game is played on — one *season* of a family, and the
+	 * unit one mode sub-row is reported per.
+	 */
 	competitionId: string
+	/** `competition.name`, season included ("Premier League 2025/26"). */
 	competitionName: string
 	/** `competition.season` — null for a competition that records none. */
 	season: string | null
@@ -56,6 +63,12 @@ export interface SummaryGameRow {
 	 * Null for a game with no picks in it at all, which has no round one to read.
 	 */
 	firstRoundNumber: number | null
+	/**
+	 * `competition.family_key` — the family every season of this competition
+	 * shares. Null for a competition that belongs to none, which stands alone
+	 * rather than pooling with every other unfamilied competition.
+	 */
+	competitionFamilyKey: string | null
 }
 
 /** One pick the player made, in whichever game and round. */
@@ -108,11 +121,99 @@ export interface SummaryStreakPickRow {
 }
 
 /**
+ * One `payment` row of the player's: their entry into a game, or a rebuy's
+ * second entry. Amounts are numeric strings, as every money column in this
+ * codebase is.
+ */
+export interface SummaryPaymentRow {
+	gameId: string
+	amount: string
+	status: 'pending' | 'claimed' | 'paid' | 'refunded'
+}
+
+/**
+ * One `payout` row of the player's — what a game paid them for winning it.
+ *
+ * The status is carried and deliberately never read: nothing in the app
+ * advances a payout past `pending`, so a summary that filtered on it would tell
+ * every winner they had won nothing.
+ */
+export interface SummaryPayoutRow {
+	gameId: string
+	amount: string
+	status: 'pending' | 'completed'
+}
+
+/**
  * What the page is scoped to. `season: null` is the career — every game the
  * player has ever entered.
  */
 export interface SummaryFilters {
 	season: string | null
+	/**
+	 * Which single season each competition family's team block is narrowed to,
+	 * keyed by family key. A family with no entry pools every season it has.
+	 *
+	 * Per family rather than page-wide because families count seasons in
+	 * incompatible vocabularies — "2025/26" means nothing to a World Cup side —
+	 * and because the team blocks are the only part of the page it applies to: the
+	 * career headline and the mode sections are all-time whatever is selected
+	 * here.
+	 */
+	teamSeasons?: Record<string, string>
+}
+
+/**
+ * The search-param prefix a family's team-season selection is carried under:
+ * `/me?teams-premier-league=2025%2F26`.
+ *
+ * The URL is where this state lives so the page can stay a server component —
+ * a selection survives a refresh and travels in a link, and nothing on the page
+ * has to fetch anything to honour it.
+ */
+const TEAM_SEASON_PARAM_PREFIX = 'teams-'
+
+/** The parameter one family's selection is carried in. */
+export function teamSeasonParam(familyKey: string): string {
+	return `${TEAM_SEASON_PARAM_PREFIX}${familyKey}`
+}
+
+/**
+ * The team-season selections a request's search params carry, as
+ * `SummaryFilters.teamSeasons` wants them. Anything else in the URL is left
+ * alone, and an empty value reads as no selection rather than as a season no
+ * competition has.
+ */
+export function parseTeamSeasonFilters(
+	searchParams: Record<string, string | string[] | undefined>,
+): Record<string, string> {
+	const selections: Record<string, string> = {}
+	for (const [key, value] of Object.entries(searchParams)) {
+		if (!key.startsWith(TEAM_SEASON_PARAM_PREFIX)) continue
+		const season = Array.isArray(value) ? value[0] : value
+		if (!season) continue
+		selections[key.slice(TEAM_SEASON_PARAM_PREFIX.length)] = season
+	}
+	return selections
+}
+
+/**
+ * The query string for changing one family's season, every other family's
+ * selection carried through — the href behind one option of one block's
+ * control. `null` clears the family, which is what "all seasons" is.
+ */
+export function teamSeasonQuery(
+	selections: Record<string, string>,
+	familyKey: string,
+	season: string | null,
+): string {
+	const next = { ...selections }
+	if (season === null) delete next[familyKey]
+	else next[familyKey] = season
+	const params = new URLSearchParams(
+		Object.entries(next).map(([key, value]) => [teamSeasonParam(key), value]),
+	)
+	return `?${params.toString()}`
 }
 
 export interface BuildMeSummaryInput {
@@ -120,6 +221,10 @@ export interface BuildMeSummaryInput {
 	picks: SummaryPickRow[]
 	/** Empty for a player who has only ever played classic. */
 	streakPicks?: SummaryStreakPickRow[]
+	/** Empty for a player who has only ever played free games. */
+	payments?: SummaryPaymentRow[]
+	/** Empty for a player who has never won a game with money in it. */
+	payouts?: SummaryPayoutRow[]
 	filters: SummaryFilters
 }
 
@@ -162,6 +267,79 @@ export interface CareerHeadline {
 	/** Null until the player has a pick that counts. */
 	mostPickedTeam: MostPickedTeam | null
 }
+
+/** How one team has served the player, within one competition family. */
+export interface TeamRecord {
+	teamId: string
+	name: string
+	shortName: string
+	badgeUrl: string | null
+	/** Every pick of this team that counts — successes, failures, saves alike. */
+	picks: number
+	/**
+	 * Picks that came off: a win in any mode, plus cup's draw — the same rule the
+	 * headline's accuracy uses, so the two figures can't disagree.
+	 */
+	wins: number
+	/**
+	 * Picks a life absorbed. The team still lost, and a team rate measures whether
+	 * the *team* delivered, so these are out of both halves of `rate` and carried
+	 * here on their own.
+	 */
+	savedByLife: number
+	/** wins ÷ (picks − savedByLife). Null when a life absorbed every pick. */
+	rate: number | null
+}
+
+/**
+ * The player's record with the teams of one competition family.
+ *
+ * A family is the only scope a team record means anything in: a World Cup team
+ * set and a Premier League team set are disjoint, so one league table across
+ * both would compare nothing. Seasons *within* the family pool, because one
+ * season yields far too few picks per team for a rate to say anything.
+ */
+export interface TeamRecordFamily {
+	/** `competition.family_key`, or the competition's own id when it has none. */
+	familyKey: string
+	/** What to call the family — never a season. */
+	name: string
+	/**
+	 * How many of the family's seasons the block pooled. Seasons that produced a
+	 * pick, so it's what the ranking is actually built from — nought for a
+	 * competition that records no season at all.
+	 */
+	seasons: number
+	/**
+	 * Every season this family has a pick in, most recent first — the choices its
+	 * own season control offers. Listed per family and never across them: a league
+	 * season reads "2025/26" and a World Cup "2026", so one control over both
+	 * would offer seasons that mean nothing to half the teams under it.
+	 *
+	 * Never narrowed by the selection, so the control can always be changed or
+	 * cleared — including from a season the player made no picks in.
+	 */
+	seasonOptions: string[]
+	/** The season this block is narrowed to. Null is all of them. */
+	selectedSeason: string | null
+	/**
+	 * The teams that have served the player best, best first. At most
+	 * `ENDS_LENGTH`, and never more than the family's better half — so a family
+	 * with four teams surfaces two, and no team is ever in both ends. Only teams
+	 * with a rate are eligible for either end.
+	 */
+	best: TeamRecord[]
+	/** The teams that have served the player worst, worst first. */
+	worst: TeamRecord[]
+	/** Every team the player has picked in this family, best first. */
+	all: TeamRecord[]
+}
+
+/**
+ * How many teams each end of a family surfaces before the expansion takes over.
+ * Three is enough to read as a shortlist on a phone without becoming the list.
+ */
+export const ENDS_LENGTH = 3
 
 /**
  * One mode's record within a single competition season — the sub-row under a
@@ -283,6 +461,46 @@ export type ModeSection =
 	  } & ModeRecord)
 	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
 
+/** What one game cost the player, and what it paid them back. */
+export interface MoneyGameRecord {
+	gameId: string
+	/** `game.name`. */
+	name: string
+	competitionName: string
+	gameMode: SummaryGameMode
+	stake: string
+	winnings: string
+	net: string
+}
+
+/**
+ * What the hobby has cost the player, or paid them.
+ *
+ * Every amount is a fixed-2 string, the same shape as the pot figures a game
+ * page shows, so a player can reconcile the two by eye. `net` is winnings minus
+ * stake, and is negative for most players — which is the whole reason the
+ * section it lives in is folded shut.
+ */
+export interface MoneySummary {
+	/** What the player has put in: payment rows that are paid or claimed. */
+	stake: string
+	/** What games have paid out to them. */
+	winnings: string
+	/** `winnings − stake`. Negative for a player down on the hobby. */
+	net: string
+	/**
+	 * The same figures game by game, biggest loss first. Only games money was
+	 * ever in: see `buildMoney`.
+	 */
+	games: MoneyGameRecord[]
+	/**
+	 * Games in scope with no money in them at all. They contribute nothing to any
+	 * figure above and have no row of their own, so this is what lets the section
+	 * say why its list is shorter than the games played.
+	 */
+	freeGames: number
+}
+
 /**
  * `empty` is a player with no games in scope — the page says so rather than
  * rendering a wall of zeros, which is why it's a variant and not a headline of
@@ -294,6 +512,10 @@ export type MeSummaryView =
 			kind: 'summary'
 			filters: SummaryFilters
 			headline: CareerHeadline
+			/** One block per competition family. Never a career-wide list. */
+			teamRecords: TeamRecordFamily[]
+			/** Profit and loss. Folded shut on the page, never on the model. */
+			money: MoneySummary
 			/** One per mode, always all three, in `SUMMARY_MODES` order. */
 			modes: ModeSection[]
 	  }
@@ -345,6 +567,169 @@ function findMostPickedTeam(picks: SummaryPickRow[]): MostPickedTeam | null {
 		(a, b) => b.picks - a.picks || a.name.localeCompare(b.name),
 	)
 	return ranked[0] ?? null
+}
+
+/**
+ * The family a game's picks belong to. A competition with no family key can't
+ * pool with anything, so it stands alone under its own id — pooling every
+ * unfamilied competition into one block would compare unrelated team sets,
+ * which is the one thing this section exists to avoid.
+ */
+function familyOf(row: SummaryGameRow): { key: string; name: string } {
+	if (row.competitionFamilyKey === null) {
+		return { key: row.competitionId, name: row.competitionName }
+	}
+	return {
+		key: row.competitionFamilyKey,
+		name: COMPETITION_FAMILY_NAMES[row.competitionFamilyKey] ?? row.competitionName,
+	}
+}
+
+/** One pick with the two things about its game a family block reads. */
+interface FamilyPick {
+	row: SummaryPickRow
+	mode: SummaryGameMode
+	season: string | null
+}
+
+/** The teams of one set of picks, ranked. */
+function rankTeams(picks: FamilyPick[]): TeamRecord[] {
+	const teams = new Map<string, TeamRecord>()
+	for (const { row, mode } of picks) {
+		let record = teams.get(row.teamId)
+		if (!record) {
+			record = {
+				teamId: row.teamId,
+				name: row.teamName,
+				shortName: row.teamShortName,
+				badgeUrl: row.teamBadgeUrl,
+				picks: 0,
+				wins: 0,
+				savedByLife: 0,
+				rate: null,
+			}
+			teams.set(row.teamId, record)
+		}
+		record.picks += 1
+		if (isSuccess(row, mode)) record.wins += 1
+		if (row.result === 'saved_by_life') record.savedByLife += 1
+	}
+	return [...teams.values()]
+		.map((record) => {
+			const rated = record.picks - record.savedByLife
+			return { ...record, rate: rated === 0 ? null : record.wins / rated }
+		})
+		.sort(byRate)
+}
+
+/** The seasons a set of picks was made in, most recent first. */
+function seasonsOf(picks: FamilyPick[]): string[] {
+	const seasons = new Set(
+		picks.map((p) => p.season).filter((season): season is string => season !== null),
+	)
+	// Season strings sort by their leading year in both vocabularies, so the most
+	// recent leads without anything here having to parse a season.
+	return [...seasons].sort().reverse()
+}
+
+function buildTeamRecords(
+	games: SummaryGameRow[],
+	picks: SummaryPickRow[],
+	teamSeasons: Record<string, string>,
+): TeamRecordFamily[] {
+	const gameById = new Map(games.map((g) => [g.gameId, g]))
+	const families = new Map<string, { name: string; picks: FamilyPick[] }>()
+
+	for (const row of picks) {
+		const gameRow = gameById.get(row.gameId)
+		if (!gameRow) continue
+		const family = familyOf(gameRow)
+		let block = families.get(family.key)
+		if (!block) {
+			block = { name: family.name, picks: [] }
+			families.set(family.key, block)
+		}
+		block.picks.push({ row, mode: gameRow.gameMode, season: gameRow.season })
+	}
+
+	const blocks = [...families.entries()].map(([familyKey, block]) => {
+		const selectedSeason = teamSeasons[familyKey] ?? null
+		// The selection narrows the records and nothing else: the options come off
+		// every pick the family has, so a block narrowed to a season the player made
+		// no picks in still carries the control that got it there.
+		const scoped =
+			selectedSeason === null ? block.picks : block.picks.filter((p) => p.season === selectedSeason)
+		const all = rankTeams(scoped)
+		// Only a team with a rate can be at either end of a ranking by rate: a team
+		// every one of whose picks a life absorbed would otherwise land in the worst
+		// list, which is a verdict its picks never delivered.
+		const ranked = all.filter((record) => record.rate !== null)
+		return {
+			familyKey,
+			name: block.name,
+			seasons: seasonsOf(scoped).length,
+			seasonOptions: seasonsOf(block.picks),
+			selectedSeason,
+			best: bestOf(ranked),
+			worst: worstOf(ranked),
+			all,
+		}
+	})
+
+	// The family the player has picked in most leads, since that's the record they
+	// came to read. Volume is counted over the family's whole history, so narrowing
+	// one block to a season doesn't shuffle the page under the player. Name breaks
+	// a tie, so the order is the player's history and never the order rows happened
+	// to arrive in.
+	const volume = new Map([...families].map(([key, block]) => [key, block.picks.length]))
+	return blocks.sort(
+		(a, b) =>
+			(volume.get(b.familyKey) ?? 0) - (volume.get(a.familyKey) ?? 0) ||
+			a.name.localeCompare(b.name),
+	)
+}
+
+/**
+ * Best team first. There is no minimum sample — a team picked once is ranked on
+ * the one pick — so volume breaks a tie: at the same rate the larger sample is
+ * the better-evidenced record and goes above. Name settles the rest, so the
+ * order never depends on which row came back first.
+ *
+ * A team with no rate at all (every pick absorbed by a life) can't be compared
+ * with teams that have one, so it sinks below all of them rather than reading as
+ * the worst of them.
+ */
+function byRate(a: TeamRecord, b: TeamRecord): number {
+	if (a.rate === null || b.rate === null) {
+		if (a.rate !== b.rate) return a.rate === null ? 1 : -1
+	} else if (a.rate !== b.rate) {
+		return b.rate - a.rate
+	}
+	return b.picks - a.picks || a.name.localeCompare(b.name)
+}
+
+/**
+ * The two ends split the ranking down the middle before either is capped, so a
+ * team is never both a best and a worst — with four teams each end takes two,
+ * and only from six upwards do both ends fill. An odd team out goes to the best
+ * end, and a family of one has a best and no worst: one record is not two ends.
+ */
+function bestOf(ranked: TeamRecord[]): TeamRecord[] {
+	return ranked.slice(0, Math.min(ENDS_LENGTH, Math.ceil(ranked.length / 2)))
+}
+
+/**
+ * The worst end takes the bottom of the same ranking, but never a team on the
+ * *best* rate in the family: with four teams on 100% and one on nothing, only
+ * the one that lost has served the player worst. That leaves families whose
+ * teams all share a rate with no worst end at all, which is the honest answer —
+ * none of them let the player down more than the others.
+ */
+function worstOf(ranked: TeamRecord[]): TeamRecord[] {
+	const bestRate = ranked[0]?.rate ?? null
+	const candidates = ranked.filter((record) => record.rate !== bestRate)
+	const take = Math.min(ENDS_LENGTH, Math.floor(ranked.length / 2), candidates.length)
+	return candidates.slice(candidates.length - take).reverse()
 }
 
 function buildCompetitionRecords(games: SummaryGameRow[]): CompetitionRecord[] {
@@ -553,6 +938,78 @@ function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]):
 	}
 }
 
+/**
+ * Money is added up in whole pence: pounds as floats drift, and a career total
+ * is a long addition.
+ */
+function pence(amount: string): number {
+	return Math.round(Number.parseFloat(amount) * 100)
+}
+
+function pounds(total: number): string {
+	return (total / 100).toFixed(2)
+}
+
+/**
+ * A payment counts as staked when it is paid or claimed — exactly the rows
+ * `calculatePot` counts, so a player's profit and loss reconciles with the pot
+ * figure their game page shows. That leaves out what they still owe (pending)
+ * and, deliberately, what a game gave back (refunded).
+ */
+function isStaked(row: SummaryPaymentRow): boolean {
+	return row.status === 'paid' || row.status === 'claimed'
+}
+
+function buildMoney(
+	games: SummaryGameRow[],
+	payments: SummaryPaymentRow[],
+	payouts: SummaryPayoutRow[],
+): MoneySummary {
+	const inScope = new Set(games.map((g) => g.gameId))
+	const staked = payments.filter((row) => inScope.has(row.gameId) && isStaked(row))
+	// Every payout row counts, its `status` read nowhere: see `SummaryPayoutRow`.
+	const won = payouts.filter((row) => inScope.has(row.gameId))
+
+	// A game money was never in — a free one — has nothing to report: a row of
+	// noughts would read as a game that cost nothing and lost. It stays in games
+	// played, where it belongs, and is counted here so the section can say how
+	// many games its list leaves out.
+	const withMoney = games.filter(
+		(g) =>
+			payments.some((row) => row.gameId === g.gameId) ||
+			payouts.some((row) => row.gameId === g.gameId),
+	)
+
+	const perGame = withMoney.map((g) => {
+		const gameStake = total(staked.filter((row) => row.gameId === g.gameId))
+		const gameWon = total(won.filter((row) => row.gameId === g.gameId))
+		return {
+			gameId: g.gameId,
+			name: g.gameName,
+			competitionName: g.competitionName,
+			gameMode: g.gameMode,
+			stake: pounds(gameStake),
+			winnings: pounds(gameWon),
+			net: pounds(gameWon - gameStake),
+		}
+	})
+
+	return {
+		stake: pounds(total(staked)),
+		winnings: pounds(total(won)),
+		net: pounds(total(won) - total(staked)),
+		freeGames: games.length - withMoney.length,
+		// Biggest loss first: the figure the section exists to disclose leads, and a
+		// win reads as the exception it is at the bottom. Name settles a tie, so the
+		// order never follows the order rows arrived in.
+		games: perGame.sort((a, b) => pence(a.net) - pence(b.net) || a.name.localeCompare(b.name)),
+	}
+}
+
+function total(rows: { amount: string }[]): number {
+	return rows.reduce((sum, row) => sum + pence(row.amount), 0)
+}
+
 function buildModeSection(
 	mode: SummaryGameMode,
 	games: SummaryGameRow[],
@@ -617,6 +1074,8 @@ export function buildMeSummaryView(input: BuildMeSummaryInput): MeSummaryView {
 			},
 			mostPickedTeam: findMostPickedTeam(countedPicks),
 		},
+		teamRecords: buildTeamRecords(games, countedPicks, input.filters.teamSeasons ?? {}),
+		money: buildMoney(games, input.payments ?? [], input.payouts ?? []),
 		modes: SUMMARY_MODES.map((mode) => buildModeSection(mode, games, scopedPicks, streakPicks)),
 	}
 }

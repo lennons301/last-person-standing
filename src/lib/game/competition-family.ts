@@ -19,3 +19,17 @@ export const PREMIER_LEAGUE_FAMILY_KEY = 'premier-league'
 
 /** Every FIFA World Cup edition, 2026 included. */
 export const WORLD_CUP_FAMILY_KEY = 'fifa-world-cup'
+
+/**
+ * What to call a family on screen. A lookup on the key, never derived from a
+ * competition's own name — that name carries the season it is one of ("Premier
+ * League 2025/26"), which is exactly what a family heading must not say.
+ *
+ * A key with no entry here has no name to show; callers fall back to something
+ * they have (a competition name), so adding a family without adding its name
+ * degrades rather than breaks.
+ */
+export const COMPETITION_FAMILY_NAMES: Record<string, string> = {
+	[PREMIER_LEAGUE_FAMILY_KEY]: 'Premier League',
+	[WORLD_CUP_FAMILY_KEY]: 'World Cup',
+}
