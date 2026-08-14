@@ -9,6 +9,9 @@ export async function getGameByInviteCode(code: string) {
 		with: {
 			competition: true,
 			players: true,
+			// The invite page's own gate: self-service entry closes at this round's
+			// deadline (see `evaluateJoinability`).
+			startingRound: true,
 		},
 	})
 	if (!g) return null

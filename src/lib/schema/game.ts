@@ -181,6 +181,14 @@ export const gameRelations = relations(game, ({ one, many }) => ({
 		fields: [game.currentRoundId],
 		references: [round.id],
 	}),
+	// The round the game began at, for the surfaces that need only its deadline
+	// (self-service joining) rather than the whole round sequence. Where the
+	// competition's rounds are already loaded, resolve it with
+	// `resolveStartingRound` instead of loading the row twice.
+	startingRound: one(round, {
+		fields: [game.startingRoundId],
+		references: [round.id],
+	}),
 	players: many(gamePlayer),
 	picks: many(pick),
 }))
