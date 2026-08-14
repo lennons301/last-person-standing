@@ -24,6 +24,12 @@ const GALLERIES = [
 		description: "The player's own /me page: the career headline from a hand-built view model.",
 	},
 	{
+		href: '/preview/discover',
+		title: 'Discover games',
+		description:
+			"The home page's public-game sections: the card for a game you're not in, open to join and in progress.",
+	},
+	{
 		href: '/preview/live-scores',
 		title: 'Live scores',
 		description: 'The on-demand scores pop-out and its control, one payload per live scenario.',
