@@ -1,13 +1,24 @@
 import Link from 'next/link'
 import { GameCard } from '@/components/game/game-card'
+import { InProgressGamesSection } from '@/components/game/in-progress-games-section'
+import { OpenGamesSection } from '@/components/game/open-games-section'
 import { PastGamesSection } from '@/components/game/past-games-section'
 import { Button } from '@/components/ui/button'
 import { requireSession } from '@/lib/auth-helpers'
+import { getDiscoverableGames } from '@/lib/game/discover-query'
+import { buildDiscoverView } from '@/lib/game/discover-view'
 import { getMyGames } from '@/lib/game/queries'
 
 export default async function DashboardPage() {
 	const session = await requireSession()
-	const games = await getMyGames(session.user.id)
+	const [games, discoverable] = await Promise.all([
+		getMyGames(session.user.id),
+		getDiscoverableGames(session.user.id),
+	])
+
+	// Public games the viewer isn't in: the ones they can join, and the ones that
+	// have started. Every rule about what's listed lives in the builder.
+	const discover = buildDiscoverView({ games: discoverable, now: new Date() })
 
 	const activeGames = games.filter((g) => g.status !== 'completed' && g.myStatus !== 'eliminated')
 	const inactiveGames = games.filter((g) => g.status === 'completed' || g.myStatus === 'eliminated')
@@ -15,14 +26,31 @@ export default async function DashboardPage() {
 	const firstName = session.user.name.split(' ')[0]
 	const picksNeeded = activeGames.filter((g) => !g.myPickSubmitted).length
 
+	// A player in no games at all lands on the games they could join rather than a
+	// create-a-game dead end — the whole point of making games findable. Creating
+	// one stays on offer below them, and if there is nothing public to show, this
+	// is the old empty state exactly.
 	if (games.length === 0) {
 		return (
-			<div className="max-w-md mx-auto text-center py-12">
-				<h1 className="font-display text-2xl font-semibold mb-2">Welcome, {firstName}</h1>
-				<p className="text-muted-foreground mb-6">You&apos;re not in any games yet.</p>
-				<Button asChild size="lg">
-					<Link href="/game/create">Create your first game</Link>
-				</Button>
+			<div>
+				<div className="max-w-md mx-auto text-center py-8">
+					<h1 className="font-display text-2xl font-semibold mb-2">Welcome, {firstName}</h1>
+					<p className="text-muted-foreground mb-6">
+						{discover.openToJoin.length > 0
+							? "You're not in any games yet — here's what's open."
+							: "You're not in any games yet."}
+					</p>
+					<Button
+						asChild
+						size="lg"
+						variant={discover.openToJoin.length > 0 ? 'outline' : 'default'}
+					>
+						<Link href="/game/create">Create a game</Link>
+					</Button>
+				</div>
+
+				<OpenGamesSection games={discover.openToJoin} />
+				<InProgressGamesSection games={discover.inProgress} />
 			</div>
 		)
 	}
@@ -45,6 +73,8 @@ export default async function DashboardPage() {
 				))}
 			</div>
 
+			<OpenGamesSection games={discover.openToJoin} />
+			<InProgressGamesSection games={discover.inProgress} />
 			<PastGamesSection games={inactiveGames} />
 		</div>
 	)
