@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { evaluateJoinability, JOIN_BLOCKED_COPY } from '@/lib/game/joinability'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -11,20 +12,25 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, id),
-		with: { players: true },
+		with: { players: true, startingRound: true },
 	})
 
 	if (!gameData) {
 		return NextResponse.json({ error: 'Game not found' }, { status: 404 })
 	}
 
-	// Allow joining 'open' and 'active' games. Games are created in 'active'
-	// state directly (the 'open' enum value is currently unused by the
-	// creation flow), so requiring 'open' here would reject every invite-code
-	// join. Only 'completed' (game ended) and 'setup' (admin still configuring)
-	// are blocked.
-	if (gameData.status === 'completed' || gameData.status === 'setup') {
-		return NextResponse.json({ error: 'Game is not accepting new players' }, { status: 400 })
+	// Self-service entry closes as soon as the game starts — see
+	// `evaluateJoinability` for the rule and why it reads the starting round
+	// rather than the status. Past that point the creator adds people through
+	// the admin add-player route, which stays unrestricted.
+	const joinability = evaluateJoinability({
+		game: gameData,
+		startingRound: gameData.startingRound ?? null,
+		now: new Date(),
+	})
+	if (joinability.reason) {
+		const copy = JOIN_BLOCKED_COPY[joinability.reason]
+		return NextResponse.json({ error: copy.code, message: copy.message }, { status: 400 })
 	}
 
 	if (gameData.maxPlayers && gameData.players.length >= gameData.maxPlayers) {
