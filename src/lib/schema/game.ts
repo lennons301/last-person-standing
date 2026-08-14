@@ -22,6 +22,14 @@ export const gameStatusEnum = pgEnum('game_status', ['setup', 'open', 'active', 
 
 export const playerStatusEnum = pgEnum('player_status', ['alive', 'eliminated', 'winner'])
 
+// Who can find a game. `public` is the default because the people who play this
+// all play together — open joining is expected rather than a leak. `private` is
+// the behaviour every game had before this existed: reachable only by someone
+// holding the invite link. Chosen once at creation; there is no later flip.
+// Public adds a second way in, it never replaces the invite code — every game
+// keeps one.
+export const gameVisibilityEnum = pgEnum('game_visibility', ['public', 'private'])
+
 export const pickResultEnum = pgEnum('pick_result', [
 	'pending',
 	'win',
@@ -43,6 +51,10 @@ export const game = pgTable('game', {
 	createdBy: text('created_by').notNull(),
 	status: gameStatusEnum('status').notNull().default('setup'),
 	gameMode: gameModeEnum('game_mode').notNull(),
+	// Set by the creator on the create-game form, public unless they say
+	// otherwise. Pre-existing rows are backfilled to 'public' by the migration's
+	// column default.
+	visibility: gameVisibilityEnum('visibility').notNull().default('public'),
 	modeConfig: jsonb('mode_config')
 		.$type<{
 			startingLives?: number

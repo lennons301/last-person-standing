@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Football survivor picks game — private games where friends pick teams each round, get eliminated if their pick doesn't win, last person standing takes the pot.
+Football survivor picks game — players pick teams each round, get eliminated if their pick doesn't win, last person standing takes the pot. Games are **public by default**: anyone signed in can find and join one. A creator can make a game private at creation, in which case it's reachable only by its invite link — the behaviour every game had before #205. Visibility is a create-time choice with no later flip, and every game keeps an invite code either way (public adds a second way in, it doesn't replace the link).
 
 ## Tech Stack
 

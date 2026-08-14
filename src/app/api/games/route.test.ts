@@ -10,14 +10,14 @@ vi.mock('@/lib/game/round-lifecycle', () => ({
 	openRoundForGame: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { dbMock, insertReturning, updateSet, updateWhere } = vi.hoisted(() => {
+const { dbMock, insertReturning, insertValues, updateSet, updateWhere } = vi.hoisted(() => {
 	const insertReturning = vi.fn().mockResolvedValue([{ id: 'new-game' }])
 	const updateWhere = vi.fn().mockResolvedValue(undefined)
 	const updateSet = vi.fn(() => ({ where: updateWhere }))
 	// db.insert(...).values(...) is awaited directly for gamePlayer/payment rows
 	// and chained with .returning() for the game row — mirror drizzle's thenable
 	// builder shape.
-	const insertValues = vi.fn(() => {
+	const insertValues = vi.fn((_values: Record<string, unknown>) => {
 		const thenable = Promise.resolve(undefined) as Promise<undefined> & {
 			returning: typeof insertReturning
 		}
@@ -26,6 +26,7 @@ const { dbMock, insertReturning, updateSet, updateWhere } = vi.hoisted(() => {
 	})
 	return {
 		insertReturning,
+		insertValues,
 		updateSet,
 		updateWhere,
 		dbMock: {
@@ -100,6 +101,61 @@ describe('POST /api/games', () => {
 		expect(res.status).toBe(201)
 		expect((await res.json()).id).toBe('new-game')
 		expect(openRoundForGame).toHaveBeenCalledWith('r1')
+	})
+})
+
+describe('POST /api/games — visibility', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		insertReturning.mockResolvedValue([{ id: 'new-game' }])
+		dbMock.query.competition.findFirst.mockResolvedValue({
+			id: 'c1',
+			type: 'league',
+			status: 'active',
+		} as never)
+		dbMock.query.round.findMany.mockResolvedValue([
+			{ id: 'r1', number: 1, status: 'upcoming', deadline: new Date(Date.now() + 86_400_000) },
+		] as never)
+	})
+
+	// The game row is the first insert the handler makes; the creator's
+	// game_player row and any payment row follow it.
+	const gameRow = () => insertValues.mock.calls[0][0]
+
+	it('is public when the request expresses no preference', async () => {
+		const res = await POST(req(createBody))
+
+		expect(res.status).toBe(201)
+		expect(gameRow().visibility).toBe('public')
+	})
+
+	it('persists the creator’s private choice', async () => {
+		const res = await POST(req({ ...createBody, visibility: 'private' }))
+
+		expect(res.status).toBe(201)
+		expect(gameRow().visibility).toBe('private')
+	})
+
+	it('persists an explicit public choice', async () => {
+		const res = await POST(req({ ...createBody, visibility: 'public' }))
+
+		expect(res.status).toBe(201)
+		expect(gameRow().visibility).toBe('public')
+	})
+
+	it('gives a public game an invite code all the same', async () => {
+		await POST(req({ ...createBody, visibility: 'public' }))
+
+		// Public adds a second way in; it never replaces the link.
+		expect(gameRow().inviteCode).toMatch(/^[A-Z0-9]+$/)
+	})
+
+	it('rejects an unrecognised visibility with 400 and creates nothing', async () => {
+		const res = await POST(req({ ...createBody, visibility: 'unlisted' }))
+
+		expect(res.status).toBe(400)
+		expect((await res.json()).error).toBe('invalid-visibility')
+		expect(dbMock.insert).not.toHaveBeenCalled()
 	})
 })
 
