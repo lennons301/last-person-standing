@@ -30,6 +30,9 @@ function game(overrides: Partial<SummaryGameRow> = {}): SummaryGameRow {
 		competitionName: 'Premier League 2025/26',
 		season: '2025/26',
 		playerStatus: 'eliminated',
+		allowRebuys: false,
+		eliminatedRoundId: null,
+		firstRoundNumber: 1,
 		competitionFamilyKey: PREMIER_LEAGUE_FAMILY_KEY,
 		...overrides,
 	}
@@ -39,6 +42,7 @@ function pick(result: SummaryPickResult, overrides: Partial<SummaryPickRow> = {}
 	return {
 		gameId: 'game-1',
 		roundId: 'round-1',
+		roundNumber: 1,
 		teamId: 'team-ars',
 		teamName: 'Arsenal',
 		teamShortName: 'ARS',
@@ -108,6 +112,13 @@ function depthOf(view: MeSummaryView) {
 	const section = played(view, 'classic')
 	if (section.mode !== 'classic') throw new Error('unreachable')
 	return section.depth
+}
+
+/** The classic section, narrowed to its round-one block. */
+function roundOneOf(view: MeSummaryView) {
+	const section = played(view, 'classic')
+	if (section.mode !== 'classic') throw new Error('unreachable')
+	return section.roundOne
 }
 
 /** The same, narrowed to a single-round mode so its streak is readable. */
@@ -527,6 +538,273 @@ describe('buildMeSummaryView', () => {
 		)
 
 		expect(depthOf(view)).toMatchObject({ best: 4, average: 4 })
+	})
+
+	it('scores round-one survival over the classic games whose opening pick settled', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
+					game({ gameId: 'c2', gamePlayerId: 'me-c2' }),
+					game({ gameId: 'c3', gamePlayerId: 'me-c3' }),
+					game({ gameId: 'c4', gamePlayerId: 'me-c4' }),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					// Round 2 says nothing about the first hurdle.
+					pick('loss', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('win', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+					pick('loss', { gameId: 'c3', roundId: 'c3-r1', roundNumber: 1 }),
+					// Classic has no handicap: a draw is a failed pick like any other.
+					pick('draw', { gameId: 'c4', roundId: 'c4-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ games: 4, survived: 2, survivalRate: 0.5 })
+	})
+
+	it('leaves a round one that has not settled out of the survival rate', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
+					game({
+						gameId: 'c2',
+						gamePlayerId: 'me-c2',
+						gameStatus: 'active',
+						playerStatus: 'alive',
+					}),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					// Still waiting on kick-off — it can't be held against the player
+					// any more than a pending pick counts in the accuracy rate.
+					pick('pending', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ games: 2, settled: 1, survived: 1, survivalRate: 1 })
+	})
+
+	it("reads round one as the game's own first round, not the competition's gameweek one", () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// Created mid-season, so the game started at the competition's
+					// earliest still-pickable round: gameweek 12 is this game's round one,
+					// and the hurdle the player was actually put to.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						playerStatus: 'winner',
+						firstRoundNumber: 12,
+					}),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r12', roundNumber: 12 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r13', roundNumber: 13 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toEqual({
+			games: 1,
+			settled: 1,
+			survived: 1,
+			survivalRate: 1,
+			exits: 0,
+			rebuyable: 0,
+			rebought: 0,
+		})
+	})
+
+	it("counts a rebuy in a mid-season game from that game's own round one", () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// Round one here is gameweek 12. The pick that went down is that one,
+					// and the rebuy is the rounds played after it.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						playerStatus: 'alive',
+						allowRebuys: true,
+						firstRoundNumber: 12,
+					}),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r12', roundNumber: 12 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r13', roundNumber: 13 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ settled: 1, exits: 1, rebuyable: 1, rebought: 1 })
+	})
+
+	it('counts a round-one exit for each opening pick that failed, and none for one still pending', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1' }),
+					game({ gameId: 'c2', gamePlayerId: 'me-c2' }),
+					game({
+						gameId: 'c3',
+						gamePlayerId: 'me-c3',
+						gameStatus: 'active',
+						playerStatus: 'alive',
+					}),
+					game({ gameId: 'c4', gamePlayerId: 'me-c4' }),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('draw', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+					// Round one hasn't kicked off in c3, and c4's was voided by a
+					// cancelled fixture — neither is a hurdle the player has failed.
+					pick('pending', { gameId: 'c3', roundId: 'c3-r1', roundNumber: 1 }),
+					pick('void', { gameId: 'c4', roundId: 'c4-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ games: 4, survived: 0, exits: 2 })
+	})
+
+	it('counts a game bought back into as a round-one failure the player played on from', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// The rebuy cleared this game's elimination round and reason, so the
+					// player row says nothing: they read as alive and never eliminated.
+					// Only the picks remember round one going down.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						playerStatus: 'alive',
+						allowRebuys: true,
+					}),
+					// Out in round one of a game that offered a rebuy, and didn't take it.
+					game({
+						gameId: 'c2',
+						gamePlayerId: 'me-c2',
+						allowRebuys: true,
+						eliminatedRoundId: 'c2-r1',
+					}),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r3', roundNumber: 3 }),
+					pick('loss', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ exits: 2, rebuyable: 2, rebought: 1 })
+	})
+
+	it('does not read an advance pick locked in before the exit as a rebuy', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// Out in round one and stayed out: the elimination round is still on
+					// the player row, which a rebuy would have cleared.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						allowRebuys: true,
+						eliminatedRoundId: 'c1-r1',
+					}),
+				],
+				picks: [
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					// Classic takes picks for rounds other than the current one, and
+					// nothing deletes them when the player goes out. A pick after round
+					// one is only a rebuy if the player was actually put back in.
+					pick('pending', { gameId: 'c1', roundId: 'c1-r3', roundNumber: 3 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ exits: 1, rebuyable: 1, rebought: 0 })
+	})
+
+	it('holds no rebuy against a game that had rebuys switched off', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [game({ gameId: 'c1', gamePlayerId: 'me-c1', allowRebuys: false })],
+				picks: [
+					// No rebuys means round one can't eliminate — the starting-round
+					// exemption carried the player on. Playing round two was never a
+					// rebuy, so the game is out of the denominator as well as the count.
+					pick('loss', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('win', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('loss', { gameId: 'c1', roundId: 'c1-r3', roundNumber: 3 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toMatchObject({ exits: 1, rebuyable: 0, rebought: 0 })
+	})
+
+	it('has no round-one record for a game the player never picked in — the documented blind spot', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					// Missed round one's deadline in a game that offered a rebuy. Neither of
+					// the competition's first two rounds has an auto-pick fallback, so
+					// `processDeadlineLock` eliminated them without writing a pick — there
+					// is nothing here to read the hurdle off. The
+					// second knowing miss at `buildClassicRoundOne`: pinned so that
+					// counting it becomes a decision rather than an accident.
+					game({
+						gameId: 'c1',
+						gamePlayerId: 'me-c1',
+						allowRebuys: true,
+						eliminatedRoundId: 'c1-r1',
+					}),
+				],
+				picks: [],
+			}),
+		)
+
+		expect(roundOneOf(view)).toEqual({
+			games: 1,
+			settled: 0,
+			survived: 0,
+			survivalRate: null,
+			exits: 0,
+			rebuyable: 0,
+			rebought: 0,
+		})
+	})
+
+	it('has nothing to report at the first hurdle for a player who has never gone out in it', () => {
+		const view = buildMeSummaryView(
+			input({
+				games: [
+					game({ gameId: 'c1', gamePlayerId: 'me-c1', allowRebuys: true }),
+					game({ gameId: 'c2', gamePlayerId: 'me-c2', allowRebuys: true }),
+				],
+				picks: [
+					pick('win', { gameId: 'c1', roundId: 'c1-r1', roundNumber: 1 }),
+					pick('loss', { gameId: 'c1', roundId: 'c1-r2', roundNumber: 2 }),
+					pick('win', { gameId: 'c2', roundId: 'c2-r1', roundNumber: 1 }),
+				],
+			}),
+		)
+
+		expect(roundOneOf(view)).toEqual({
+			games: 2,
+			settled: 2,
+			survived: 2,
+			survivalRate: 1,
+			exits: 0,
+			rebuyable: 0,
+			rebought: 0,
+		})
 	})
 
 	it('resolves a turbo streak over the players still standing, and a cup streak over everyone', () => {

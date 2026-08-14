@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, min } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
 	type BuildMeSummaryInput,
@@ -6,7 +6,7 @@ import {
 	type MeSummaryView,
 	type SummaryFilters,
 } from '@/lib/game/me-summary-view'
-import { competition, team } from '@/lib/schema/competition'
+import { competition, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment, payout } from '@/lib/schema/payment'
 
@@ -39,6 +39,8 @@ export async function getMeSummary(
 			competitionName: competition.name,
 			season: competition.season,
 			playerStatus: gamePlayer.status,
+			eliminatedRoundId: gamePlayer.eliminatedRoundId,
+			modeConfig: game.modeConfig,
 			competitionFamilyKey: competition.familyKey,
 		})
 		.from(gamePlayer)
@@ -46,11 +48,44 @@ export async function getMeSummary(
 		.innerJoin(competition, eq(game.competitionId, competition.id))
 		.where(and(eq(gamePlayer.userId, userId), inArray(game.status, ['active', 'completed'])))
 
+	// Each game's own first playable round — its round one — as the lowest round
+	// anybody in it ever picked in. A game is created at the competition's
+	// earliest still-pickable round, so a game started in November opens at
+	// gameweek 12; nothing on the game row remembers that afterwards, because
+	// `current_round_id` advances as the game goes on. Every player's picks are
+	// read, not just this one's: a player who missed the opening round has no
+	// pick there to anchor it, and their rivals do. Classic only: it's the one
+	// mode that plays more than one round, so the only one with a round one to
+	// tell from the rest.
+	const classicGameIds = gameRows.filter((row) => row.gameMode === 'classic').map((r) => r.gameId)
+	const firstRoundRows =
+		classicGameIds.length === 0
+			? []
+			: await db
+					.select({ gameId: pick.gameId, firstRoundNumber: min(round.number) })
+					.from(pick)
+					.innerJoin(round, eq(pick.roundId, round.id))
+					.where(inArray(pick.gameId, classicGameIds))
+					.groupBy(pick.gameId)
+	const firstRoundByGame = new Map(
+		firstRoundRows.map((row) => [
+			row.gameId,
+			row.firstRoundNumber === null ? null : Number(row.firstRoundNumber),
+		]),
+	)
+
 	// The `where` above already narrows the status; the map is what tells the
 	// type system so, since `game.status` carries setup/open too.
-	const games: BuildMeSummaryInput['games'] = gameRows.map((row) => ({
+	const games: BuildMeSummaryInput['games'] = gameRows.map(({ modeConfig, ...row }) => ({
 		...row,
 		gameStatus: row.gameStatus === 'completed' ? 'completed' : 'active',
+		// Same reading as `isRebuyEligible`: anything short of an explicit true is
+		// a game with no way back in.
+		allowRebuys: modeConfig?.allowRebuys === true,
+		// Null for a game nobody has picked in yet — there is no first round to
+		// read, and the round-one block leaves such a game out rather than
+		// guessing at one.
+		firstRoundNumber: firstRoundByGame.get(row.gameId) ?? null,
 	}))
 
 	// Picks come back for every game the player has ever been in; the builder
@@ -60,6 +95,7 @@ export async function getMeSummary(
 		.select({
 			gameId: pick.gameId,
 			roundId: pick.roundId,
+			roundNumber: round.number,
 			teamId: team.id,
 			teamName: team.name,
 			teamShortName: team.shortName,
@@ -70,6 +106,9 @@ export async function getMeSummary(
 		.from(pick)
 		.innerJoin(gamePlayer, eq(pick.gamePlayerId, gamePlayer.id))
 		.innerJoin(team, eq(pick.teamId, team.id))
+		// The round's number, not just its id: which round a pick was made in is
+		// what tells round one from the rounds a rebuy bought.
+		.innerJoin(round, eq(pick.roundId, round.id))
 		.where(eq(gamePlayer.userId, userId))
 
 	// Single-round modes only, and every player's picks in those games — not just

@@ -52,6 +52,15 @@ const CLASSIC: ModeSection = {
 		{ competitionId: 'comp-wc', name: 'World Cup 2026', gamesPlayed: 1, gamesWon: 0, winRate: 0 },
 	],
 	depth: { best: 9, average: 4.5, games: 4 },
+	roundOne: {
+		games: 4,
+		settled: 4,
+		survived: 3,
+		survivalRate: 0.75,
+		exits: 1,
+		rebuyable: 1,
+		rebought: 1,
+	},
 }
 
 const TURBO: ModeSection = {
@@ -147,6 +156,60 @@ describe('PlayerSummaryView', () => {
 		expect(within(classic).getByText(/rounds you held a pick in/i)).toBeTruthy()
 		expect(stat(classic, 'Deepest run')).toBe('9 rounds')
 		expect(stat(classic, 'Average run')).toBe('4.5 rounds')
+	})
+
+	it('shows the round-one block: survival rate, the opening picks that went down and the games bought back into', () => {
+		render(<PlayerSummaryView summary={withModes([CLASSIC])} />)
+
+		const classic = section('Classic')
+		expect(stat(classic, 'Opening round survival')).toBe('75%')
+		// Labelled by the pick going down rather than by an exit: with rebuys off,
+		// the starting-round exemption means a lost round one didn't put the player
+		// out at all, so "exits" would be untrue in half the games it counts.
+		expect(stat(classic, 'Opening pick down')).toBe('1')
+		expect(stat(classic, 'Bought back in')).toBe('1')
+		// The rebuy count is only ever over the exits that had a rebuy to take.
+		expect(within(classic).getByText(/1 of 1/)).toBeTruthy()
+	})
+
+	it('has no survival rate to show until a round one has settled', () => {
+		const unsettled: ModeSection = {
+			...CLASSIC,
+			roundOne: {
+				games: 2,
+				settled: 0,
+				survived: 0,
+				survivalRate: null,
+				exits: 0,
+				rebuyable: 0,
+				rebought: 0,
+			},
+		}
+		render(<PlayerSummaryView summary={withModes([unsettled])} />)
+
+		const classic = section('Classic')
+		expect(stat(classic, 'Opening round survival')).toBe('—')
+		expect(within(classic).getByText(/no opening round has settled/i)).toBeTruthy()
+	})
+
+	it('says a rebuy was never on offer rather than reading as a rebuy the player skipped', () => {
+		const noRebuys: ModeSection = {
+			...CLASSIC,
+			roundOne: {
+				games: 4,
+				settled: 4,
+				survived: 3,
+				survivalRate: 0.75,
+				exits: 1,
+				rebuyable: 0,
+				rebought: 0,
+			},
+		}
+		render(<PlayerSummaryView summary={withModes([noRebuys])} />)
+
+		const classic = section('Classic')
+		expect(stat(classic, 'Bought back in')).toBe('—')
+		expect(within(classic).getByText(/no rebuy on offer/i)).toBeTruthy()
 	})
 
 	it('shows longest and average streak in a single-round mode', () => {

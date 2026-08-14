@@ -4,6 +4,7 @@ import {
 	FREE_GAMES_ONLY_MONEY,
 	FULL_HISTORY_MONEY,
 	FULL_HISTORY_SUMMARY,
+	UNSETTLED_ROUND_ONE_SUMMARY,
 } from '@/app/preview/me-summary/fixtures'
 import { MoneyPanel } from '@/components/me/money-panel'
 import { MoneySection } from '@/components/me/money-section'
@@ -39,13 +40,15 @@ export default function MeSummaryPreviewPage() {
 					Nine games over two Premier League seasons and one World Cup. The headline: games played
 					and won, the win rate, pick accuracy over the picks that settled (with the two a cup life
 					absorbed noted rather than counted), and the most-picked club. Then a section per mode,
-					each with its competition rows: classic's rounds survived, and turbo's and cup's streaks
-					(the same numbers those games were decided by). The Teams section closes the page, one
-					block per competition family — the two league seasons pooled into one ranking (Liverpool's
-					five picks can't come from a single season) and the World Cup standing separately, never
-					merged into it. England carries a pick a life absorbed alongside its rate; Italy, whose
-					only pick a life absorbed, has no rate at all and so appears in neither end while still
-					being listed in the expansion.
+					each with its competition rows: classic's rounds survived and its round one — a survival
+					rate, the opening picks that went down, and the one of the two of those offering a rebuy
+					that was bought back into — and turbo's and cup's streaks (the same numbers those games
+					were decided by). The Teams section closes the page, one block per competition family —
+					the two league seasons pooled into one ranking (Liverpool's five picks can't come from a
+					single season) and the World Cup standing separately, never merged into it. England
+					carries a pick a life absorbed alongside its rate; Italy, whose only pick a life absorbed,
+					has no rate at all and so appears in neither end while still being listed in the
+					expansion.
 				</p>
 			</header>
 			<PlayerSummaryView summary={FULL_HISTORY_SUMMARY} />
@@ -75,13 +78,29 @@ export default function MeSummaryPreviewPage() {
 				<h2 className="font-display text-lg font-semibold">Classic only, one turbo game in play</h2>
 				<p className="text-sm text-muted-foreground">
 					The absences: cup states that it hasn't been played rather than showing a record of
-					noughts, and turbo has a game behind it but no completed one — so it has a record and no
-					streak to average yet.
+					noughts, turbo has a game behind it but no completed one — so it has a record and no
+					streak to average yet — and classic's round one has never gone down, so its rebuy figure
+					says none was ever on offer rather than showing a nought that reads as a chance passed up.
 				</p>
 			</header>
 			<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
 			<MobileColumn>
 				<PlayerSummaryView summary={CLASSIC_ONLY_SUMMARY} />
+			</MobileColumn>
+
+			<header className="border-t border-border pt-6">
+				<h2 className="font-display text-lg font-semibold">One game, its opening round to come</h2>
+				<p className="text-sm text-muted-foreground">
+					A game created after gameweek one's deadline starts at the competition's earliest pickable
+					round, so its opening round is gameweek 12 — and it hasn't kicked off. The survival rate
+					is a dash over a game it has nothing to say about yet, rather than a nought for a hurdle
+					the player hasn't been put to; the accuracy rate beside it says the same of the pending
+					pick. A round one a cancelled fixture voided reads the same way.
+				</p>
+			</header>
+			<PlayerSummaryView summary={UNSETTLED_ROUND_ONE_SUMMARY} />
+			<MobileColumn>
+				<PlayerSummaryView summary={UNSETTLED_ROUND_ONE_SUMMARY} />
 			</MobileColumn>
 
 			<header className="border-t border-border pt-6">

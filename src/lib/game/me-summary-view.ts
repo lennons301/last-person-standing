@@ -41,6 +41,29 @@ export interface SummaryGameRow {
 	/** `game_player.status` for this player. */
 	playerStatus: 'alive' | 'eliminated' | 'winner'
 	/**
+	 * `game_player.eliminated_round_id` — the round the player went out in, or
+	 * null while they're still in it. Read for one purpose only: a rebuy clears
+	 * it, so a row still pointing at round one is a player who *didn't* buy back
+	 * in, whatever picks they may have left lying in later rounds.
+	 */
+	eliminatedRoundId: string | null
+	/**
+	 * `game.mode_config.allowRebuys` — did this game let a round-one casualty buy
+	 * back in? Classic's own flag, and the one that decides whether playing on
+	 * after a lost round one was a rebuy or just the starting-round exemption
+	 * carrying the player forward.
+	 */
+	allowRebuys: boolean
+	/**
+	 * `round.number` of this game's **own** first playable round — its round one.
+	 *
+	 * Not the competition's gameweek one: a game is created at the competition's
+	 * earliest still-pickable round, so a game started in November opens at
+	 * gameweek 12 and gameweek 12 is the first hurdle its players were put to.
+	 * Null for a game with no picks in it at all, which has no round one to read.
+	 */
+	firstRoundNumber: number | null
+	/**
 	 * `competition.family_key` — the family every season of this competition
 	 * shares. Null for a competition that belongs to none, which stands alone
 	 * rather than pooling with every other unfamilied competition.
@@ -53,6 +76,13 @@ export interface SummaryPickRow {
 	gameId: string
 	/** Which round of that game — classic counts its depth in these. */
 	roundId: string
+	/**
+	 * `round.number` — which round of the competition this pick was made in.
+	 * Compared against the game's own `firstRoundNumber` to tell its round one
+	 * from the rounds a rebuy bought: the two are the same only for a game that
+	 * started at the competition's gameweek one.
+	 */
+	roundNumber: number
 	teamId: string
 	teamName: string
 	teamShortName: string
@@ -360,6 +390,49 @@ export interface ClassicDepth {
 	games: number
 }
 
+/**
+ * How the player fares at classic's first hurdle — the question a survivor
+ * player asks about themselves before any other.
+ *
+ * "Round one" throughout is *the game's* first playable round, not the
+ * competition's gameweek one: a game is created at the earliest still-pickable
+ * round, so one started in November opens at gameweek 12 and that is the round
+ * its players had to survive. `SummaryGameRow.firstRoundNumber` carries it.
+ *
+ * Every figure here is read from the player's picks, never from their
+ * `game_player` row: a rebuy clears the elimination round and reason, so a
+ * rebought game leaves no trace on the player record. The picks survive it.
+ */
+export interface ClassicRoundOne {
+	/** Classic games in scope. Not the rate's denominator — `settled` is. */
+	games: number
+	/**
+	 * Games whose round-one pick resolved either way — the survival rate's
+	 * denominator, and the same rule the accuracy rate and the streaks follow: a
+	 * pick still waiting on kick-off, and one a cancelled fixture voided, are
+	 * neither of them a hurdle the player has been put to yet.
+	 */
+	settled: number
+	/** Games whose round-one pick came off. */
+	survived: number
+	/** survived ÷ settled. Null until a round one has settled. */
+	survivalRate: number | null
+	/**
+	 * Games whose round-one pick went down. Not the same thing as going out: where
+	 * the starting-round exemption applies, a lost round one doesn't eliminate at
+	 * all, so the page labels this by the pick rather than by an exit.
+	 */
+	exits: number
+	/**
+	 * Round-one exits in games that had rebuys switched on — the denominator for
+	 * `rebought`. A game that never offered a way back can't be held against the
+	 * player for not taking one.
+	 */
+	rebuyable: number
+	/** Of those, the games the player bought back into. */
+	rebought: number
+}
+
 /** Every mode gets a section, in the order the page reads them. */
 export const SUMMARY_MODES: SummaryGameMode[] = ['classic', 'turbo', 'cup']
 
@@ -380,7 +453,12 @@ export interface ModeRecord {
  */
 export type ModeSection =
 	| { mode: SummaryGameMode; kind: 'unplayed' }
-	| ({ mode: 'classic'; kind: 'played'; depth: ClassicDepth } & ModeRecord)
+	| ({
+			mode: 'classic'
+			kind: 'played'
+			depth: ClassicDepth
+			roundOne: ClassicRoundOne
+	  } & ModeRecord)
 	| ({ mode: 'turbo' | 'cup'; kind: 'played'; streak: StreakStats } & ModeRecord)
 
 /** What one game cost the player, and what it paid them back. */
@@ -774,6 +852,99 @@ function buildClassicDepth(games: SummaryGameRow[], picks: SummaryPickRow[]): Cl
 }
 
 /**
+ * The player's round-one record across their classic games.
+ *
+ * Round one is the round *this game* started at — `firstRoundNumber`, the
+ * lowest round anybody in the game ever picked in — because that is the first
+ * hurdle its players were put to. A game created after gameweek one's deadline
+ * starts at the competition's earliest still-pickable round, so its round one is
+ * gameweek 12 or 24 and is a first round all the same.
+ *
+ * The engine disagrees with that today, and it is the engine that is wrong:
+ * `settleFixture`'s starting-round exemption, both rebuy routes and the deadline
+ * lock all key off the *competition's* gameweek one, so a mid-season game gets no
+ * exemption and can offer no rebuy however `allowRebuys` is set. Issue #203 is
+ * the fix — "the starting round" is the round the game began at. Until it lands,
+ * this block's rebuy figure reports the rule as intended rather than as built,
+ * and can show a mid-season player a rebuy the engine never actually offered
+ * them. Follow the game here: it is the definition #203 moves the engine to.
+ *
+ * A game with no settled round-one pick is neither a survival nor an exit, and
+ * is out of the rate's denominator entirely — the picks are all this reads, and
+ * they don't say. Two ways that happens, both ordinary: round one hasn't kicked
+ * off yet, or a cancelled fixture voided the pick. Such a game still counts in
+ * `games`, so the page can say what the rate is over, but it can't drag the rate
+ * down to a nought the player never earned. A third way is not ordinary and is
+ * the second knowing miss below: a round one the player never picked in at all.
+ *
+ * Two cases this knowingly misses, both of them the price of reading picks
+ * rather than payments, and neither of them fixable without a figure that would
+ * be wrong in the other direction:
+ *
+ * 1. A player who bought back in and then never picked again is eliminated in
+ *    round two as `missed_rebuy_pick`, and leaves no later pick behind to show
+ *    the rebuy. Reading that off the player row would mean trusting
+ *    `eliminated_reason`, which is only written as `missed_rebuy_pick` when a
+ *    second *payment* row exists — so it would miss the free games this whole
+ *    block exists to get right. A rebuy nobody picked with reads as no rebuy.
+ * 2. A player who missed the deadline of a round one that is the competition's
+ *    gameweek *one or two*, in a game with rebuys switched on, went out with no
+ *    pick row at all: `processDeadlineLock` (`no-pick-handler.ts`) eliminates on
+ *    both of those rounds as `no_pick_no_fallback` and writes no fallback pick
+ *    (with rebuys off, round one instead leaves them alone, exempt). With no
+ *    round-one pick to read, that game is neither a survival nor an exit and sits
+ *    outside the rate — it flatters the player by the width of one game. Only a
+ *    game starting at the competition's round *three or later* escapes the hole,
+ *    where a missed deadline takes the ordinary auto-pick fallback and a fallback
+ *    pick counts exactly as a hand-made one. Reading the elimination round instead
+ *    would catch the ones who stayed out but not the ones who bought back in
+ *    (the rebuy clears it), so counting it would trade a silent omission for a
+ *    rebuy figure that states a nought against a player who did buy back in. The
+ *    omission is the quieter error of the two.
+ */
+function buildClassicRoundOne(games: SummaryGameRow[], picks: SummaryPickRow[]): ClassicRoundOne {
+	let survived = 0
+	let exits = 0
+	let rebuyable = 0
+	let rebought = 0
+	for (const g of games) {
+		const firstRound = g.firstRoundNumber
+		if (firstRound === null) continue
+		const own = picks.filter((p) => p.gameId === g.gameId)
+		const roundOne = own.find((p) => p.roundNumber === firstRound)
+		// Classic carries no handicap and no lives: only a win gets you through.
+		if (roundOne?.result === 'win') {
+			survived += 1
+			continue
+		}
+		if (roundOne?.result !== 'loss' && roundOne?.result !== 'draw') continue
+		exits += 1
+		if (!g.allowRebuys) continue
+		rebuyable += 1
+		// A pick after round one is the rebuy showing through: without buying back
+		// in there'd have been nothing left to pick with. No payment row is
+		// consulted, because a free game has none and a rebuy in one still
+		// happened. The elimination round is the cross-check the picks can't make
+		// on their own: classic accepts advance picks for later rounds and doesn't
+		// delete them when a player goes out, so a locked round-3 pick would
+		// otherwise read as a rebuy the player never took.
+		const stillOutFromRoundOne = g.eliminatedRoundId === roundOne.roundId
+		const playedOn = own.some((p) => p.roundNumber > firstRound)
+		if (!stillOutFromRoundOne && playedOn) rebought += 1
+	}
+	const settled = survived + exits
+	return {
+		games: games.length,
+		settled,
+		survived,
+		survivalRate: settled === 0 ? null : survived / settled,
+		exits,
+		rebuyable,
+		rebought,
+	}
+}
+
+/**
  * Money is added up in whole pence: pounds as floats drift, and a career total
  * is a long addition.
  */
@@ -861,7 +1032,13 @@ function buildModeSection(
 		competitions: buildCompetitionRecords(played),
 	}
 	if (mode === 'classic') {
-		return { mode, kind: 'played', ...record, depth: buildClassicDepth(played, picks) }
+		return {
+			mode,
+			kind: 'played',
+			...record,
+			depth: buildClassicDepth(played, picks),
+			roundOne: buildClassicRoundOne(played, picks),
+		}
 	}
 	return {
 		mode,

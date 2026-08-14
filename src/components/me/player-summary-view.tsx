@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Disclosure } from '@/components/ui/disclosure'
 import {
 	type CareerHeadline,
+	type ClassicRoundOne,
 	type MeSummaryView,
 	type ModeSection,
 	type SummaryGameMode,
@@ -93,6 +94,51 @@ function CareerHeadlineCards({ headline }: { headline: CareerHeadline }) {
 				note={team ? `${team.picks} ${team.picks === 1 ? 'pick' : 'picks'}` : 'No picks yet'}
 			/>
 		</div>
+	)
+}
+
+/**
+ * Classic's first hurdle. "Opening round" rather than "round 1" throughout: a
+ * game's round one is the round it *started* at, which for a game created in
+ * November is gameweek 12 — the player's own first round, not the season's.
+ *
+ * The rebuy figure carries its own denominator with it, because it isn't over
+ * the count shown beside it: a game with rebuys switched off never offered a way
+ * back, so it can't count as one the player passed up.
+ */
+function RoundOneStats({ roundOne }: { roundOne: ClassicRoundOne }) {
+	return (
+		<>
+			<Stat
+				label="Opening round survival"
+				value={percent(roundOne.survivalRate)}
+				note={
+					roundOne.settled === 0
+						? `No opening round has settled yet, over ${roundOne.games} ${roundOne.games === 1 ? 'game' : 'games'}`
+						: `Your opening pick came off in ${roundOne.survived} of ${roundOne.settled}`
+				}
+			/>
+			{/*
+			 * Labelled by the pick, not by an elimination: where the starting-round
+			 * exemption applies, a lost opening round doesn't put the player out at
+			 * all, so "exits" would be untrue for exactly the games the rebuy card
+			 * below already refuses to hold against them.
+			 */}
+			<Stat
+				label="Opening pick down"
+				value={roundOne.exits}
+				note="Games your opening pick didn't win"
+			/>
+			<Stat
+				label="Bought back in"
+				value={roundOne.rebuyable === 0 ? '—' : roundOne.rebought}
+				note={
+					roundOne.rebuyable === 0
+						? 'No rebuy on offer'
+						: `${roundOne.rebought} of ${roundOne.rebuyable} opening picks down`
+				}
+			/>
+		</>
 	)
 }
 
@@ -336,6 +382,7 @@ function ModeSectionCard({ section }: { section: ModeSection }) {
 							<>
 								<Stat label="Deepest run" value={`${section.depth.best} rounds`} />
 								<Stat label="Average run" value={`${average(section.depth.average)} rounds`} />
+								<RoundOneStats roundOne={section.roundOne} />
 							</>
 						) : (
 							<>
