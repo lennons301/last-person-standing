@@ -1,4 +1,5 @@
 import { and, asc, eq, gt } from 'drizzle-orm'
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
@@ -6,6 +7,7 @@ import { ClassicPick } from '@/components/picks/classic-pick'
 import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
 import { TurboPick } from '@/components/picks/turbo-pick'
+import { Button } from '@/components/ui/button'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { getCupLadderData } from '@/lib/game/cup-standings-queries'
@@ -18,6 +20,7 @@ import {
 	getTurboStandingsData,
 } from '@/lib/game/detail-queries'
 import { buildGameView, type GameViewPickInput } from '@/lib/game/game-view'
+import { evaluateJoinability, JOIN_BLOCKED_COPY } from '@/lib/game/joinability'
 import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
@@ -59,10 +62,45 @@ export default async function GameDetailPage({
 	if (!game) notFound()
 
 	if (!game.isMember) {
+		// Somebody who found this game in the home page's discovery sections, or
+		// followed a link to it. What they need is why they can't play and what to
+		// do about it — the same rule and the same words the join route and the
+		// invite page use, so no surface can drift from another.
+		const { reason } = evaluateJoinability({
+			game: {
+				status: game.status,
+				currentRoundId: game.currentRoundId,
+				startingRoundId: game.startingRoundId,
+			},
+			startingRound: game.startingRound,
+			now: new Date(),
+		})
+		const blocked = reason ? JOIN_BLOCKED_COPY[reason] : null
+
 		return (
-			<div className="text-center py-12">
+			<div className="max-w-md mx-auto text-center py-12">
 				<h1 className="font-display text-xl font-semibold">{game.name}</h1>
-				<p className="text-muted-foreground mt-2">You're not a member of this game.</p>
+				{blocked ? (
+					<>
+						<p className="font-medium mt-3">{blocked.heading}</p>
+						<p className="text-sm text-muted-foreground mt-1">{blocked.message}</p>
+					</>
+				) : game.visibility === 'public' ? (
+					// Open for entry and public — the invite code is a second way in to a
+					// game anyone can already find, so it's no secret here.
+					<>
+						<p className="text-muted-foreground mt-3">
+							You&apos;re not in this game yet — it&apos;s open to join.
+						</p>
+						<Button asChild className="mt-4" size="lg">
+							<Link href={`/join/${game.inviteCode}`}>Join game</Link>
+						</Button>
+					</>
+				) : (
+					// Private and still open: the invite link is the only way in, and it
+					// isn't ours to hand out.
+					<p className="text-muted-foreground mt-2">You&apos;re not a member of this game.</p>
+				)}
 			</div>
 		)
 	}

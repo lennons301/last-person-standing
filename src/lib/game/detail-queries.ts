@@ -323,6 +323,14 @@ export async function getGameDetail(gameId: string, userId: string) {
 		// to `buildGameView` for the starting-round exemption; `currentRound` can't
 		// answer it once the game has advanced (#203).
 		startingRoundId: gameData.startingRoundId,
+		// The round row itself, for the non-member view: whether self-service entry
+		// is still open is `evaluateJoinability`'s answer, and it reads that round's
+		// deadline. Already resolved above for the rebuy checks.
+		startingRound: startingRound
+			? { id: startingRound.id, deadline: startingRound.deadline }
+			: null,
+		currentRoundId: gameData.currentRoundId,
+		visibility: gameData.visibility,
 		entryFee: gameData.entryFee,
 		inviteCode: gameData.inviteCode,
 		pot,
