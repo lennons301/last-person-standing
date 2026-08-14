@@ -753,9 +753,10 @@ describe('buildMeSummaryView', () => {
 		const view = buildMeSummaryView(
 			input({
 				games: [
-					// Missed round one's deadline in a game that offered a rebuy. Round one
-					// has no auto-pick fallback, so `handleNoPicks` eliminated them without
-					// writing a pick — there is nothing here to read the hurdle off. The
+					// Missed round one's deadline in a game that offered a rebuy. Neither of
+					// the competition's first two rounds has an auto-pick fallback, so
+					// `processDeadlineLock` eliminated them without writing a pick — there
+					// is nothing here to read the hurdle off. The
 					// second knowing miss at `buildClassicRoundOne`: pinned so that
 					// counting it becomes a decision rather than an accident.
 					game({

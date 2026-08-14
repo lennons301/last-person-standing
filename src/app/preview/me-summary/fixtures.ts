@@ -145,13 +145,19 @@ const GAMES: SummaryGameRow[] = [
 		gameName: 'The Office Pool 25/26',
 		gameMode: 'classic',
 		gameStatus: 'completed',
-		playerStatus: 'eliminated',
+		// Alive in a completed game, which the rounds-exhausted tiebreak reaches:
+		// more than one player is still standing at the last round and goals settle
+		// it, so everybody who didn't win keeps the status they had. It is also the
+		// only status coherent with the rest of this row — buying back in cleared
+		// the elimination, and nothing put them out again.
+		playerStatus: 'alive',
 		...ME,
 		...OPENED_AT_ROUND_ONE,
 		...PL_2526,
 		// The rebuy, and the second payment row below is the same event. Buying
 		// back in clears the elimination round, which is what marks this apart from
-		// g1: the same lost opening round, the other decision.
+		// g1 — still pointing at its opening round: the same lost opening round,
+		// the other decision.
 		allowRebuys: true,
 	},
 	{
