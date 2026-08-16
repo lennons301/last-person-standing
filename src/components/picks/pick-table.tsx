@@ -453,10 +453,77 @@ function Row({
 	// selection to change. Used and restricted teams stay listed and unselectable.
 	const selectable = !!onSelect && row.pickable && !isCurrent
 
+	/**
+	 * Tapping the row selects its team — but only where the tap didn't land on a
+	 * control of its own. The form cell opens the sheet and the select button
+	 * below fires its own handler; neither is a row tap, and letting either
+	 * bubble here would select a team the player was only reading about.
+	 */
+	function handleRowClick(event: React.MouseEvent<HTMLTableRowElement>) {
+		if ((event.target as HTMLElement).closest('button, a')) return
+		onSelect?.()
+	}
+
+	const identity = (
+		<>
+			<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="sm" />
+			<div className="flex flex-col gap-0.5 min-w-0">
+				{/* Truncates rather than widening: a long club name gives up its
+				    tail instead of taking space off the form and win columns —
+				    which is also what holds the team column to its declared
+				    share, since a name that can't shrink would otherwise be the
+				    one thing on the board able to overrule it. */}
+				<span className={cn(TYPE.name, 'text-sm sm:text-base truncate')}>
+					<span className="sm:hidden">{team.shortName}</span>
+					<span className="hidden sm:inline">{team.name}</span>
+				</span>
+				{state.kind === 'used' && (
+					// Short on screen — the chip sits under a team name in a
+					// five-column board, and "Used Gameweek 3" spelled out the part
+					// the player already knows. A reader gets the long round name,
+					// which is the form that survives being heard.
+					<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>
+						<span aria-hidden>Used {state.label}</span>
+						<span className="sr-only">Used {state.longLabel}</span>
+					</span>
+				)}
+				{state.kind === 'restricted' && (
+					<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>{state.reason}</span>
+				)}
+				{state.kind === 'ranked' && (
+					<span className={cn(CHIP, 'bg-[var(--alive-bg)] text-[var(--alive)]')}>
+						Ranked #{state.rank}
+					</span>
+				)}
+				{state.kind === 'fixture-ranked' && (
+					<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>
+						#{state.rank}: {state.call}
+					</span>
+				)}
+				{isCurrent && state.kind === 'available' && (
+					<span className={cn(CHIP, 'bg-[var(--alive-bg)] text-[var(--alive)]')}>Current</span>
+				)}
+			</div>
+		</>
+	)
+
 	return (
+		// The whole-row gesture is a handler on the row, not a stretched overlay
+		// inside it. CSS 2.1 leaves `position: relative` on a table row undefined
+		// and WebKit ignores it, so the `absolute inset-0` button this used to be
+		// resolved against the page instead of its row on iOS: every row's tap
+		// target piled up over the top of the page, swallowing the Fixtures/Table
+		// toggle's taps and painting a selected row's green ring across the lot
+		// (#211). Nothing on this board is absolutely positioned any more — keep it
+		// that way; a table row cannot be a containing block.
+		//
+		// The handler is a pointer affordance only: the row's keyboard and
+		// screen-reader path is the real select button in the team cell below.
 		<tr
+			onClick={selectable ? handleRowClick : undefined}
 			className={cn(
-				'relative border-b border-border last:border-b-0',
+				'border-b border-border last:border-b-0',
+				selectable && 'cursor-pointer hover:bg-muted/40',
 				highlighted && 'bg-[var(--alive-bg)]',
 				// Marked, not hidden: "Chelsea, used in GW3" is the answer to the
 				// question the player is asking. Dimmed enough to skip, legible
@@ -465,50 +532,12 @@ function Row({
 			)}
 		>
 			<td className="px-2 py-2">
-				<div className="flex items-center gap-2 min-w-0">
-					<TeamBadge shortName={team.shortName} badgeUrl={team.badgeUrl} size="sm" />
-					<div className="flex flex-col gap-0.5 min-w-0">
-						{/* Truncates rather than widening: a long club name gives up its
-						    tail instead of taking space off the form and win columns —
-						    which is also what holds the team column to its declared
-						    share, since a name that can't shrink would otherwise be the
-						    one thing on the board able to overrule it. */}
-						<span className={cn(TYPE.name, 'text-sm sm:text-base truncate')}>
-							<span className="sm:hidden">{team.shortName}</span>
-							<span className="hidden sm:inline">{team.name}</span>
-						</span>
-						{state.kind === 'used' && (
-							// Short on screen — the chip sits under a team name in a
-							// five-column board, and "Used Gameweek 3" spelled out the part
-							// the player already knows. A reader gets the long round name,
-							// which is the form that survives being heard.
-							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>
-								<span aria-hidden>Used {state.label}</span>
-								<span className="sr-only">Used {state.longLabel}</span>
-							</span>
-						)}
-						{state.kind === 'restricted' && (
-							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>{state.reason}</span>
-						)}
-						{state.kind === 'ranked' && (
-							<span className={cn(CHIP, 'bg-[var(--alive-bg)] text-[var(--alive)]')}>
-								Ranked #{state.rank}
-							</span>
-						)}
-						{state.kind === 'fixture-ranked' && (
-							<span className={cn(CHIP, 'bg-muted text-muted-foreground')}>
-								#{state.rank}: {state.call}
-							</span>
-						)}
-						{isCurrent && state.kind === 'available' && (
-							<span className={cn(CHIP, 'bg-[var(--alive-bg)] text-[var(--alive)]')}>Current</span>
-						)}
-					</div>
-				</div>
-				{selectable && (
-					// The row's tap target, stretched over every cell of it. A sibling of
-					// the form cell's button rather than its parent: one interactive
-					// control can't contain another, and the form is its own gesture.
+				{selectable ? (
+					// The row's keyboard and screen-reader path: a real button carrying
+					// the whole decision, a sibling of the form cell's rather than its
+					// parent, since one interactive control can't contain another. It
+					// takes the team cell because that's where the identity is — the
+					// pointer gesture over the rest of the row is the row's own handler.
 					<button
 						type="button"
 						onClick={onSelect}
@@ -517,10 +546,16 @@ function Row({
 						// fixture the pick commits to; the label carries the whole decision.
 						aria-label={`Select ${team.name} vs ${opponent.name} (${row.side === 'home' ? 'home' : 'away'})`}
 						className={cn(
-							'absolute inset-0 z-10 w-full rounded-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
+							'-mx-1 flex w-full items-center gap-2 min-w-0 rounded-sm px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
+							// The same mark the Fixtures view puts on a selected team, in
+							// the same place: around the team, not around the row.
 							isSelected && 'ring-2 ring-inset ring-[var(--alive)]',
 						)}
-					/>
+					>
+						{identity}
+					</button>
+				) : (
+					<div className="flex items-center gap-2 min-w-0">{identity}</div>
 				)}
 			</td>
 			<td className={cn(TYPE.meta, CELL, 'text-right font-mono whitespace-nowrap')}>
@@ -608,8 +643,7 @@ function FormCell({
 				type="button"
 				onClick={onOpenSheet}
 				aria-label={`Open form details for ${row.team.name}`}
-				// Above the row's stretched select button, which covers this cell too.
-				className="relative z-20 -mx-1 inline-flex items-center gap-0.5 rounded px-1 py-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+				className="-mx-1 inline-flex items-center gap-0.5 rounded px-1 py-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 			>
 				{content}
 				<ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/60" aria-hidden />
@@ -699,8 +733,7 @@ function RankCell({
 			aria-label={`Rank ${team.name} to beat ${opponent.name} at number ${nextRank}`}
 			className={cn(
 				TYPE.chip,
-				// Above the row's stretched button in the mode that has one.
-				'relative z-20 rounded-md border border-border bg-card px-2 py-1.5 whitespace-nowrap uppercase tracking-wide hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+				'rounded-md border border-border bg-card px-2 py-1.5 whitespace-nowrap uppercase tracking-wide hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 			)}
 		>
 			Rank #{nextRank}
@@ -725,7 +758,7 @@ function RankControl({
 			onClick={onClick}
 			disabled={disabled}
 			aria-label={label}
-			className="relative z-20 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+			className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 		>
 			{children}
 		</button>
