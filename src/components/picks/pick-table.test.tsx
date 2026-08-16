@@ -228,6 +228,46 @@ describe('PickTable', () => {
 		expect(onSelect.mock.calls[0][0].team.id).toBe('t-che')
 	})
 
+	it('selects from a tap anywhere on the row that isn’t a control of its own', () => {
+		const onSelect = vi.fn()
+		const renderFormSheet = vi.fn<PickTableFormSheetRenderer>(() => null)
+		render(<PickTable rows={rowsFor()} onSelect={onSelect} renderFormSheet={renderFormSheet} />)
+
+		// The next-opponent cell carries nothing to tap, so it's the row's gesture.
+		fireEvent.click(cellsOf('Chelsea')[3])
+		expect(onSelect).toHaveBeenCalledTimes(1)
+		expect(onSelect.mock.calls[0][0].team.id).toBe('t-che')
+
+		// The form cell is its own gesture: it opens the sheet and selects nothing.
+		fireEvent.click(screen.getByRole('button', { name: 'Open form details for Chelsea' }))
+		expect(renderFormSheet).toHaveBeenCalled()
+		expect(onSelect).toHaveBeenCalledTimes(1)
+
+		// And the select button itself fires once, not once for itself and once
+		// for the row it sits in.
+		fireEvent.click(screen.getByRole('button', { name: 'Select Chelsea vs Everton (home)' }))
+		expect(onSelect).toHaveBeenCalledTimes(2)
+	})
+
+	it('positions nothing against a table row, which cannot be a containing block', () => {
+		render(
+			<PickTable
+				rows={rowsFor()}
+				onSelect={vi.fn()}
+				selectedRowId="fx-2:home"
+				renderFormSheet={() => null}
+			/>,
+		)
+		const table = screen.getByRole('table')
+		// CSS 2.1 leaves `position: relative` on a table row undefined and WebKit
+		// ignores it, so an absolutely positioned child escapes its row and lands
+		// on the page instead — which on iOS piled every row's tap target over the
+		// top of the page, swallowing the Fixtures/Table toggle's taps and painting
+		// the selected row's green ring across the lot (#211).
+		expect(table.querySelector('[class*="absolute"]')).toBeNull()
+		expect(table.querySelector('tr[class*="relative"], td[class*="relative"]')).toBeNull()
+	})
+
 	it('is keyboard-operable, with the form control a sibling rather than a child', () => {
 		render(<PickTable rows={rowsFor()} onSelect={vi.fn()} renderFormSheet={() => null} />)
 		const select = screen.getByRole('button', { name: 'Select Arsenal vs Burnley (home)' })
