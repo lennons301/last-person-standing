@@ -16,13 +16,22 @@ import { cn } from '@/lib/utils'
  * of the way of the one who doesn't. `unpaidNotice` is the slot the viewer's own
  * "settle up" prompt renders into, so an outstanding balance reads as a quiet
  * aside on this line instead of a full-width band.
+ *
+ * `refunded` is the one figure that isn't part of the pot's arithmetic — money
+ * handed back to admin-removed players, which `calculatePot` reports without
+ * banking it into `total`. It rides in as its own prop rather than on `stats`
+ * because it comes straight off the `PotBreakdown`, and it renders last, below
+ * the four rows that do add up, and only when there is some: most games never
+ * refund anything.
  */
 export function GameStatLine({
 	stats,
+	refunded,
 	unpaidNotice,
 	className,
 }: {
 	stats: GameViewStats
+	refunded?: string
 	unpaidNotice?: React.ReactNode
 	className?: string
 }) {
@@ -76,6 +85,9 @@ export function GameStatLine({
 					<PotRow label="Pending" amount={stats.potPending} />
 					<PotRow label="Unpaid" amount={stats.potUnpaid} />
 					<PotRow label="Target" amount={stats.potTarget} />
+					{refunded && refunded !== '0.00' && (
+						<PotRow label="Refunded to players" amount={refunded} />
+					)}
 				</dl>
 			)}
 		</div>

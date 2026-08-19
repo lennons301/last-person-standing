@@ -173,6 +173,10 @@ export function GameDetailView({
 
 				<GameStatLine
 					stats={view.stats}
+					// Money returned to admin-removed players. Reported in the breakdown,
+					// never added to the pot — the line stands down for the games (most of
+					// them) that never refunded a penny.
+					refunded={game.pot.refunded}
 					className="mb-4 md:mb-6"
 					unpaidNotice={
 						owed && (

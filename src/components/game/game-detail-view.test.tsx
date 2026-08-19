@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('sonner', () => ({
@@ -119,6 +119,30 @@ describe('GameDetailView management fold', () => {
 		expect(screen.queryByText('ABC123')).toBeNull()
 		expect(screen.queryByText(/entry/i)).toBeNull()
 		expect(screen.queryByText('Target')).toBeNull()
+	})
+
+	it('surfaces refunded money in the pot breakdown when there is some', () => {
+		render(
+			<GameDetailView
+				game={game({
+					pot: { confirmed: '30.00', pending: '10.00', total: '40.00', refunded: '10.00' },
+				})}
+				view={view}
+				pickSection={null}
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: /£30\.00 pot/ }))
+		const label = screen.getByText('Refunded to players')
+		expect(label.nextElementSibling?.textContent).toBe('£10.00')
+	})
+
+	it('leaves the breakdown alone for a game that refunded nothing', () => {
+		render(<GameDetailView game={game()} view={view} pickSection={null} />)
+
+		fireEvent.click(screen.getByRole('button', { name: /£30\.00 pot/ }))
+		expect(screen.getByText('Confirmed')).toBeTruthy()
+		expect(screen.queryByText(/refunded/i)).toBeNull()
 	})
 
 	it('names the round on its own strip while no hero owns it', () => {

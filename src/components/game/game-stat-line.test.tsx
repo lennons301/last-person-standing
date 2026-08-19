@@ -44,6 +44,26 @@ describe('GameStatLine', () => {
 		expect(screen.queryByText('Confirmed')).toBeNull()
 	})
 
+	it('reports refunded money in the breakdown, below the rows that add up', () => {
+		render(<GameStatLine stats={stats} refunded="25.00" />)
+		fireEvent.click(screen.getByRole('button', { name: /£150\.00 pot/ }))
+
+		const label = screen.getByText('Refunded to players')
+		expect(label.nextElementSibling?.textContent).toBe('£25.00')
+		// It's an aside, not part of the pot: the four rows that do add up keep
+		// their figures, and the refunded one sits below them.
+		const labels = Array.from(document.querySelectorAll('dt')).map((dt) => dt.textContent)
+		expect(labels).toEqual(['Confirmed', 'Pending', 'Unpaid', 'Target', 'Refunded to players'])
+	})
+
+	it('omits the refunded line for a game that refunded nothing', () => {
+		render(<GameStatLine stats={stats} refunded="0.00" />)
+		fireEvent.click(screen.getByRole('button', { name: /£150\.00 pot/ }))
+
+		expect(screen.getByText('Confirmed')).toBeTruthy()
+		expect(screen.queryByText(/refunded/i)).toBeNull()
+	})
+
 	it('flags an available rebuy', () => {
 		render(<GameStatLine stats={{ ...stats, rebuyAvailable: true }} />)
 		expect(screen.getByText('Rebuy available')).toBeTruthy()

@@ -42,6 +42,8 @@ export interface StatLineFixture {
 	stats: GameViewStats
 	/** Renders the viewer's own "unpaid — settle up" aside on the line. */
 	unpaid?: { amount: string; status: 'pending' | 'claimed' }
+	/** Money handed back to admin-removed players — the breakdown's fifth row. */
+	refunded?: string
 }
 
 export const STAT_LINE_FIXTURES: StatLineFixture[] = [
@@ -84,6 +86,13 @@ export const STAT_LINE_FIXTURES: StatLineFixture[] = [
 		note: 'Claimed but not yet confirmed by the organiser.',
 		stats: BASE_STATS,
 		unpaid: { amount: '10.00', status: 'claimed' },
+	},
+	{
+		id: 'stat-line-refunded',
+		title: 'Stat line · a player was refunded',
+		note: 'Tap the pot: the refunded total sits below the four rows that add up, and is absent from every other fixture here — most games never refund anything.',
+		stats: BASE_STATS,
+		refunded: '10.00',
 	},
 ]
 

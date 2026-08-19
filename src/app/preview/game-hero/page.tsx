@@ -73,6 +73,7 @@ export default function GameHeroPreviewPage() {
 					<div className="rounded-lg border border-border bg-card p-4">
 						<GameStatLine
 							stats={f.stats}
+							refunded={f.refunded}
 							unpaidNotice={
 								f.unpaid ? <UnpaidNotice amount={f.unpaid.amount} status={f.unpaid.status} /> : null
 							}
