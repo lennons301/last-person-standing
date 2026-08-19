@@ -7,6 +7,11 @@ export interface PotBreakdown {
 	confirmed: string
 	pending: string
 	total: string
+	/**
+	 * Money returned to players (admin removals), reported rather than banked:
+	 * it's deliberately *not* part of `total`, which stays confirmed + pending.
+	 */
+	refunded: string
 }
 
 /**
@@ -32,14 +37,17 @@ export function expectedEntryCount(
 export function calculatePot(payments: PaymentLike[]): PotBreakdown {
 	let paid = 0
 	let claimed = 0
+	let refunded = 0
 	for (const p of payments) {
 		if (p.status === 'paid') paid += Number.parseFloat(p.amount)
 		else if (p.status === 'claimed') claimed += Number.parseFloat(p.amount)
+		else if (p.status === 'refunded') refunded += Number.parseFloat(p.amount)
 	}
 	return {
 		confirmed: paid.toFixed(2),
 		pending: claimed.toFixed(2),
 		total: (paid + claimed).toFixed(2),
+		refunded: refunded.toFixed(2),
 	}
 }
 

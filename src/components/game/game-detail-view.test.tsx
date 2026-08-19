@@ -51,7 +51,7 @@ function game(overrides: Record<string, unknown> = {}) {
 		name: 'Cup Tuesday',
 		gameMode: 'classic',
 		competition: 'Premier League 2026/27',
-		pot: { confirmed: '30.00', pending: '10.00', total: '40.00' },
+		pot: { confirmed: '30.00', pending: '10.00', total: '40.00', refunded: '0.00' },
 		entryFee: '10.00',
 		aliveCount: 4,
 		status: 'active',

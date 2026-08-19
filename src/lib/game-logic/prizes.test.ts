@@ -41,7 +41,12 @@ describe('expectedEntryCount', () => {
 
 describe('calculatePot', () => {
 	it('returns all zeros on empty input', () => {
-		expect(calculatePot([])).toEqual({ confirmed: '0.00', pending: '0.00', total: '0.00' })
+		expect(calculatePot([])).toEqual({
+			confirmed: '0.00',
+			pending: '0.00',
+			total: '0.00',
+			refunded: '0.00',
+		})
 	})
 
 	it('sums paid rows into confirmed', () => {
@@ -50,7 +55,7 @@ describe('calculatePot', () => {
 				{ amount: '10.00', status: 'paid' },
 				{ amount: '10.00', status: 'paid' },
 			]),
-		).toEqual({ confirmed: '20.00', pending: '0.00', total: '20.00' })
+		).toEqual({ confirmed: '20.00', pending: '0.00', total: '20.00', refunded: '0.00' })
 	})
 
 	it('separates claimed into pending', () => {
@@ -59,17 +64,36 @@ describe('calculatePot', () => {
 				{ amount: '10.00', status: 'paid' },
 				{ amount: '10.00', status: 'claimed' },
 			]),
-		).toEqual({ confirmed: '10.00', pending: '10.00', total: '20.00' })
+		).toEqual({ confirmed: '10.00', pending: '10.00', total: '20.00', refunded: '0.00' })
 	})
 
-	it('ignores pending and refunded', () => {
+	it('ignores pending and keeps refunded out of the total', () => {
 		expect(
 			calculatePot([
 				{ amount: '10.00', status: 'paid' },
 				{ amount: '10.00', status: 'pending' },
 				{ amount: '10.00', status: 'refunded' },
 			]),
-		).toEqual({ confirmed: '10.00', pending: '0.00', total: '10.00' })
+		).toEqual({ confirmed: '10.00', pending: '0.00', total: '10.00', refunded: '10.00' })
+	})
+
+	it('sums every refunded row', () => {
+		expect(
+			calculatePot([
+				{ amount: '10.00', status: 'refunded' },
+				{ amount: '5.50', status: 'refunded' },
+				{ amount: '10.00', status: 'claimed' },
+			]),
+		).toEqual({ confirmed: '0.00', pending: '10.00', total: '10.00', refunded: '15.50' })
+	})
+
+	it('reports the whole stake as refunded when every row was returned', () => {
+		expect(
+			calculatePot([
+				{ amount: '10.00', status: 'refunded' },
+				{ amount: '10.00', status: 'refunded' },
+			]),
+		).toEqual({ confirmed: '0.00', pending: '0.00', total: '0.00', refunded: '20.00' })
 	})
 
 	it('handles multiple payments per player (rebuy pre-wiring)', () => {
@@ -78,7 +102,7 @@ describe('calculatePot', () => {
 				{ amount: '10.00', status: 'paid' },
 				{ amount: '10.00', status: 'paid' }, // rebuy
 			]),
-		).toEqual({ confirmed: '20.00', pending: '0.00', total: '20.00' })
+		).toEqual({ confirmed: '20.00', pending: '0.00', total: '20.00', refunded: '0.00' })
 	})
 })
 
