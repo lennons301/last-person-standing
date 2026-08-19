@@ -42,7 +42,11 @@ export interface StatLineFixture {
 	stats: GameViewStats
 	/** Renders the viewer's own "unpaid — settle up" aside on the line. */
 	unpaid?: { amount: string; status: 'pending' | 'claimed' }
-	/** Money handed back to admin-removed players — the breakdown's fifth row. */
+	/**
+	 * Stakes handed back — the breakdown's fifth row. A total wipeout or a
+	 * turbo/cup no-pick refund; never an admin removal, whose rows `getGameDetail`
+	 * drops before the pot is totalled (`detail-queries.ts:101`).
+	 */
 	refunded?: string
 }
 
@@ -89,10 +93,26 @@ export const STAT_LINE_FIXTURES: StatLineFixture[] = [
 	},
 	{
 		id: 'stat-line-refunded',
-		title: 'Stat line · a player was refunded',
-		note: 'Tap the pot: the refunded total sits below the four rows that add up, and is absent from every other fixture here — most games never refund anything.',
+		title: 'Stat line · one stake refunded',
+		note: 'A turbo/cup player reached a deadline with no pick and no fallback, so their stake went back. Tap the pot: the refunded total sits below the four rows that add up, and is absent from every other fixture here — most games never refund anything.',
 		stats: BASE_STATS,
 		refunded: '10.00',
+	},
+	{
+		id: 'stat-line-refunded-wipeout',
+		title: 'Stat line · total wipeout, every stake refunded',
+		note: 'Nobody got a single pick right, so the whole pot went back. The four pot rows are all nothing and the refunded row carries the only money on the line — the state that stops the page reading as a game played for free.',
+		stats: {
+			potConfirmed: '0.00',
+			potPending: '0.00',
+			potTotal: '0.00',
+			potUnpaid: '80.00',
+			potTarget: '80.00',
+			aliveCount: 0,
+			playerCount: 8,
+			rebuyAvailable: false,
+		},
+		refunded: '80.00',
 	},
 ]
 

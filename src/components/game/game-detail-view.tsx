@@ -173,9 +173,13 @@ export function GameDetailView({
 
 				<GameStatLine
 					stats={view.stats}
-					// Money returned to admin-removed players. Reported in the breakdown,
-					// never added to the pot — the line stands down for the games (most of
-					// them) that never refunded a penny.
+					// Stakes handed back: a total wipeout (every stake refunded) or a
+					// turbo/cup player who reached a deadline with no pick and no fallback.
+					// Reported in the breakdown, never added to the pot — the line stands
+					// down for the games (most of them) that never refunded a penny. An
+					// admin removal isn't one of the paths: `getGameDetail` filters a
+					// removed player's payment rows out before `calculatePot` sees them
+					// (`detail-queries.ts:101`), so that refund never reaches this figure.
 					refunded={game.pot.refunded}
 					className="mb-4 md:mb-6"
 					unpaidNotice={

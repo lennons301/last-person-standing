@@ -56,6 +56,31 @@ describe('GameStatLine', () => {
 		expect(labels).toEqual(['Confirmed', 'Pending', 'Unpaid', 'Target', 'Refunded to players'])
 	})
 
+	// The wipeout shape, and the reason the row matters most: nobody got a pick
+	// right, every stake went back, and `calculatePot` reports a pot of nothing.
+	// Without this row the page reads as a game that was played for free.
+	it('carries the only money on the line when a wipeout refunded every stake', () => {
+		render(
+			<GameStatLine
+				stats={{
+					...stats,
+					potConfirmed: '0.00',
+					potPending: '0.00',
+					potTotal: '0.00',
+					potUnpaid: '200.00',
+				}}
+				refunded="200.00"
+			/>,
+		)
+
+		expect(screen.getByRole('button', { name: /£0\.00 pot/ })).toBeTruthy()
+		fireEvent.click(screen.getByRole('button', { name: /£0\.00 pot/ }))
+
+		const amounts = Array.from(document.querySelectorAll('dd')).map((dd) => dd.textContent)
+		expect(amounts).toEqual(['£0.00', '£0.00', '£200.00', '£200.00', '£200.00'])
+		expect(screen.getByText('Refunded to players').nextElementSibling?.textContent).toBe('£200.00')
+	})
+
 	it('omits the refunded line for a game that refunded nothing', () => {
 		render(<GameStatLine stats={stats} refunded="0.00" />)
 		fireEvent.click(screen.getByRole('button', { name: /£150\.00 pot/ }))

@@ -17,12 +17,19 @@ import { cn } from '@/lib/utils'
  * "settle up" prompt renders into, so an outstanding balance reads as a quiet
  * aside on this line instead of a full-width band.
  *
- * `refunded` is the one figure that isn't part of the pot's arithmetic — money
- * handed back to admin-removed players, which `calculatePot` reports without
- * banking it into `total`. It rides in as its own prop rather than on `stats`
- * because it comes straight off the `PotBreakdown`, and it renders last, below
- * the four rows that do add up, and only when there is some: most games never
- * refund anything.
+ * `refunded` is the one figure that isn't part of the pot's arithmetic — stakes
+ * handed back, which `calculatePot` reports without banking into `total`. Two
+ * paths reach it: a total wipeout, where every stake goes back and this row
+ * carries the only money on the line (`applyAutoCompletion`), and a turbo/cup
+ * player whose round passed with no pick and no fallback (`no-pick-handler.ts`).
+ * An admin removal deliberately doesn't: `getGameDetail` drops a removed
+ * player's payment rows before `calculatePot` ever sees them (its
+ * `removedUserIds` filter, `detail-queries.ts:101`), so that refund is invisible
+ * here by design and this row stays at nothing.
+ *
+ * It rides in as its own prop rather than on `stats` because it comes straight
+ * off the `PotBreakdown`, and it renders last, below the four rows that do add
+ * up, and only when there is some: most games never refund anything.
  */
 export function GameStatLine({
 	stats,
