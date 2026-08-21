@@ -80,11 +80,70 @@ export interface RoundSummaryTeamFigure {
 	price: number | null
 }
 
+/**
+ * The market's read on the whole round.
+ *
+ * `expectedSurvivors` is a *sum* of win probabilities and it is exact rather
+ * than modelled: in classic, surviving is your pick winning — a draw eliminates
+ * after the starting round — so the expected number of survivors is the sum of
+ * the picked teams' win chances and nothing more.
+ */
+export interface RoundSummaryMarket {
+	/** Picks made in the round. */
+	picks: number
+	/** How many distinct teams the field spread across. */
+	distinctTeams: number
+	/** Mean win chance of the priced picks, 0–1. */
+	averageWinProbability: number
+	/** Sum of the priced picks' win chances. */
+	expectedSurvivors: number
+	/**
+	 * How many picks the two figures above are actually over. Null when that's
+	 * every pick in the round — the line only names a denominator when unpriced
+	 * picks left it short of the field.
+	 */
+	pricedPicks: number | null
+}
+
 /** One row of "Most backed": a team, its count, and who's on it. */
 export interface RoundSummaryBackedTeam extends RoundSummaryTeamFigure {
 	count: number
 	players: RoundSummaryPlayerRef[]
 }
+
+/** One gamble: a player, the team they took, and who it's up against. */
+export interface RoundSummaryBoldCall extends RoundSummaryTeamFigure {
+	player: RoundSummaryPlayerRef
+	side: 'home' | 'away'
+	opponentShortName: string
+	opponentName: string
+}
+
+/**
+ * "Boldest calls" — the picks the market doesn't favour.
+ *
+ * There is no magic threshold: an underdog is a team that isn't the
+ * highest-probability outcome in the match it's playing, the draw included. And
+ * the whole tile is computed over **hand-made picks only**. Auto-pick selects
+ * the lowest-ranked unused team, so auto-picks are systematically underdogs and
+ * would otherwise fill this tile with players named for a gamble the system made
+ * on their behalf after they missed the deadline. That exclusion covers the
+ * `none` variant's prices too: quoting an auto-pick's long price beneath
+ * "nobody backed an underdog" would read as a contradiction.
+ */
+export type RoundSummaryBoldest =
+	| { kind: 'calls'; calls: RoundSummaryBoldCall[] }
+	/**
+	 * Every hand-made pick was its match's favourite. The two ends of what the
+	 * field actually took are reported instead — both null in the rare round whose
+	 * only picks were auto-picks, where there is nothing of the players' own to
+	 * quote.
+	 */
+	| {
+			kind: 'none'
+			shortest: RoundSummaryTeamFigure | null
+			longest: RoundSummaryTeamFigure | null
+	  }
 
 export interface RoundSummaryView {
 	round: { label: string; longLabel: string }
@@ -96,7 +155,11 @@ export interface RoundSummaryView {
 	picksMade: number
 	/** Alive players the deadline caught with no pick at all. */
 	noPickPlayers: RoundSummaryPlayerRef[]
+	/** Null when the round carries no prices at all, or nobody picked. */
+	market: RoundSummaryMarket | null
 	mostBacked: RoundSummaryBackedTeam[]
+	/** Null when the round carries no prices at all. */
+	boldest: RoundSummaryBoldest | null
 }
 
 export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryView {
@@ -116,7 +179,92 @@ export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryVi
 		playersAlive: players.length,
 		picksMade: picked.length,
 		noPickPlayers,
+		market: buildMarket(mostBacked, picked.length),
 		mostBacked,
+		boldest: hasPrices(fixtures) ? buildBoldest(picked, teamsById) : null,
+	}
+}
+
+/** Does the round carry any bookmaker prices at all? */
+function hasPrices(fixtures: RoundSummaryFixtureRow[]): boolean {
+	return fixtures.some((f) => f.odds != null)
+}
+
+function buildBoldest(
+	picked: RoundSummaryPlayerRow[],
+	teamsById: Map<string, RoundSummaryTeamSlot>,
+): RoundSummaryBoldest {
+	const handMade = picked.filter((p) => p.pick && !p.pick.isAuto)
+	const calls: RoundSummaryBoldCall[] = []
+	const pricedFigures: RoundSummaryTeamFigure[] = []
+
+	for (const player of handMade) {
+		const pick = player.pick
+		if (!pick) continue
+		const slot = teamsById.get(pick.teamId)
+		if (!slot?.fixture.odds) continue
+		const figure = figureFor(slot)
+		pricedFigures.push(figure)
+		if (isFavourite(slot)) continue
+		const opponent = slot.side === 'home' ? slot.fixture.away : slot.fixture.home
+		calls.push({
+			...figure,
+			player: { name: player.name, isAuto: false },
+			side: slot.side,
+			opponentShortName: opponent.shortName,
+			opponentName: opponent.name,
+		})
+	}
+
+	if (calls.length > 0) {
+		return {
+			kind: 'calls',
+			calls: calls.sort(
+				(a, b) =>
+					(a.winProbability ?? 0) - (b.winProbability ?? 0) ||
+					a.player.name.localeCompare(b.player.name),
+			),
+		}
+	}
+
+	const ranked = [...pricedFigures].sort(byProbabilityDesc)
+	return { kind: 'none', shortest: ranked[0] ?? null, longest: ranked.at(-1) ?? null }
+}
+
+/**
+ * Is this team the match's most likely outcome? The comparison includes the
+ * draw, which is the whole point: a team the draw is priced ahead of is one the
+ * market doesn't favour.
+ */
+function isFavourite(slot: RoundSummaryTeamSlot): boolean {
+	const odds = slot.fixture.odds
+	if (!odds) return false
+	const mine = odds[slot.side].probability
+	return mine >= Math.max(odds.home.probability, odds.draw.probability, odds.away.probability)
+}
+
+/**
+ * The market line, read off the per-team rows so the two can't disagree.
+ *
+ * A round with no prices anywhere has no line at all rather than a line of
+ * noughts: the average of nothing is not zero, and expected survivors of nought
+ * would read as a wipeout the market never predicted.
+ */
+function buildMarket(
+	mostBacked: RoundSummaryBackedTeam[],
+	picksMade: number,
+): RoundSummaryMarket | null {
+	if (picksMade === 0) return null
+	const priced = mostBacked.filter((t) => t.winProbability != null)
+	if (priced.length === 0) return null
+	const pricedPicks = priced.reduce((sum, t) => sum + t.count, 0)
+	const expectedSurvivors = priced.reduce((sum, t) => sum + (t.winProbability ?? 0) * t.count, 0)
+	return {
+		picks: picksMade,
+		distinctTeams: mostBacked.length,
+		averageWinProbability: expectedSurvivors / pricedPicks,
+		expectedSurvivors,
+		pricedPicks: pricedPicks === picksMade ? null : pricedPicks,
 	}
 }
 

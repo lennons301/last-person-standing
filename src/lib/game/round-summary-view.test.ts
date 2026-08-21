@@ -97,3 +97,108 @@ describe('buildRoundSummary — the field', () => {
 		expect(view.headline).toBe('3 of 5 on ARS')
 	})
 })
+
+describe("buildRoundSummary — the market's verdict", () => {
+	it('reports the field, the spread, the average win chance and expected survivors', () => {
+		const view = buildRoundSummary(input())
+
+		// Three on Arsenal at 0.6 and one on Chelsea away at 0.5.
+		expect(view.market).toEqual({
+			picks: 4,
+			distinctTeams: 2,
+			averageWinProbability: 2.3 / 4,
+			expectedSurvivors: 2.3,
+			pricedPicks: null,
+		})
+	})
+
+	it('names its denominator only when unpriced picks left it short of the field', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: [
+					...FIXTURES,
+					{
+						id: 'fx-4',
+						home: { id: 't-new', shortName: 'NEW', name: 'Newcastle' },
+						away: { id: 't-ful', shortName: 'FUL', name: 'Fulham' },
+						odds: null,
+					},
+				],
+				players: [
+					player('Alex', 't-ars'),
+					player('Bea', 't-che'),
+					player('Cass', 't-new'),
+					player('Sam', null),
+				],
+			}),
+		)
+
+		expect(view.market).toEqual({
+			picks: 3,
+			distinctTeams: 3,
+			averageWinProbability: 1.1 / 2,
+			expectedSurvivors: 1.1,
+			pricedPicks: 2,
+		})
+	})
+})
+
+describe('buildRoundSummary — boldest calls', () => {
+	it('lists only picks the market does not favour in their own fixture, longest price first', () => {
+		const view = buildRoundSummary(
+			input({
+				players: [
+					player('Alex', 't-ars'), // favourite at 0.60
+					player('Bea', 't-bre'), // away underdog at 0.16
+					player('Cass', 't-liv'), // away underdog at 0.25
+					player('Dev', 't-eve'), // home underdog at 0.20
+				],
+			}),
+		)
+
+		expect(view.boldest?.kind).toBe('calls')
+		if (view.boldest?.kind !== 'calls') throw new Error('expected calls')
+		expect(view.boldest.calls.map((c) => [c.player.name, c.shortName, c.winProbability])).toEqual([
+			['Bea', 'BRE', 0.16],
+			['Dev', 'EVE', 0.2],
+			['Cass', 'LIV', 0.25],
+		])
+		expect(view.boldest.calls[0].opponentShortName).toBe('ARS')
+	})
+
+	it('excludes auto-picks — the system chose the underdog, not the player', () => {
+		const view = buildRoundSummary(
+			input({
+				players: [
+					player('Alex', 't-ars'),
+					player('Bea', 't-bre', { isAuto: true }),
+					player('Cass', 't-liv'),
+				],
+			}),
+		)
+
+		if (view.boldest?.kind !== 'calls') throw new Error('expected calls')
+		expect(view.boldest.calls.map((c) => c.player.name)).toEqual(['Cass'])
+	})
+
+	it('says so when nobody backed an underdog, naming the prices in play', () => {
+		const view = buildRoundSummary(input())
+
+		// Canonical field: Arsenal (favourite, 1.6) and Chelsea away (favourite, 2.0).
+		expect(view.boldest).toEqual({
+			kind: 'none',
+			shortest: expect.objectContaining({ shortName: 'ARS', price: 1.6 }),
+			longest: expect.objectContaining({ shortName: 'CHE', price: 2 }),
+		})
+	})
+
+	it('has no prices to quote when every pick in the round was made for a player', () => {
+		const view = buildRoundSummary(
+			input({
+				players: [player('Alex', 't-bre', { isAuto: true })],
+			}),
+		)
+
+		expect(view.boldest).toEqual({ kind: 'none', shortest: null, longest: null })
+	})
+})
