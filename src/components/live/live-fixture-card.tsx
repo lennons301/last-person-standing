@@ -1,5 +1,6 @@
 'use client'
 import { deriveMatchState } from '@/lib/live/derive'
+import { formatPreMatchWinChance, PRE_MATCH_COPY } from '@/lib/live/pre-match'
 import type { LiveFixture } from '@/lib/live/types'
 import { cn } from '@/lib/utils'
 import { LiveDot } from './live-indicators'
@@ -7,6 +8,13 @@ import { LiveDot } from './live-indicators'
 interface LiveFixtureCardProps {
 	fixture: LiveFixture
 	isMyPick?: boolean
+	/**
+	 * The badged pick's pre-match win chance, 0–1 — what the picked team went in
+	 * at, from the prices the daily sync already wrote. Null or absent for a
+	 * fixture we hold no market for, which renders nothing at all rather than a
+	 * nought.
+	 */
+	preMatchWinProbability?: number | null
 	now?: Date
 	className?: string
 }
@@ -36,10 +44,12 @@ function statusText(
 export function LiveFixtureCard({
 	fixture,
 	isMyPick = false,
+	preMatchWinProbability,
 	now = new Date(),
 	className,
 }: LiveFixtureCardProps) {
 	const state = deriveMatchState(fixture, now)
+	const preMatch = formatPreMatchWinChance(preMatchWinProbability)
 	const statusClasses =
 		state === 'live'
 			? 'text-[#ef4444] border-[#ef4444]'
@@ -61,9 +71,22 @@ export function LiveFixtureCard({
 			{isMyPick && (
 				// Inline at top of card (was previously `absolute -top-1.5` which got
 				// clipped by the scrolling wrapper it renders inside on mobile).
-				<span className="self-end -mb-0.5 rounded-sm bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
-					My pick
-				</span>
+				<div className="-mb-0.5 flex items-center justify-end gap-1.5">
+					{preMatch && (
+						// The figure attaches to the pick, not to the fixture: it is the
+						// picked team's chance and nobody else's. Labelled every time —
+						// unlabelled it would read as a live price we don't hold.
+						<span
+							title={PRE_MATCH_COPY.description}
+							className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground tabular-nums"
+						>
+							{preMatch}
+						</span>
+					)}
+					<span className="rounded-sm bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
+						My pick
+					</span>
+				</div>
 			)}
 			<div className="flex items-center justify-between text-sm font-semibold">
 				<span>{fixture.homeShort}</span>

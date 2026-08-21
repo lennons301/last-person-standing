@@ -48,6 +48,17 @@ export interface LivePick {
 		| 'pending'
 		| 'void'
 		| null
+	/**
+	 * The picked team's **pre-match** win chance, 0–1 — the de-vigged bookmaker
+	 * probability the daily sync persisted for the fixture, frozen at the round's
+	 * deadline. Never an in-play price, so every surface labels it as pre-match.
+	 *
+	 * Null wherever there is no market to quote: an unpriced fixture, a whole
+	 * competition the odds source doesn't cover (the World Cup, the FA Cup), and
+	 * every **hidden** pick — those carry no fixture and no team, so there is
+	 * nothing for a probability to attach to. Null, never 0.
+	 */
+	preMatchWinProbability?: number | null
 }
 
 export interface LivePlayer {

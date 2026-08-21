@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { LiveFixture, LivePayload } from '@/lib/live/types'
+import type { LiveFixture, LivePayload, LivePick } from '@/lib/live/types'
 import { LiveContext, type LiveContextValue } from './live-provider'
 import { LiveScoresSheet } from './live-scores-sheet'
 
@@ -31,6 +31,18 @@ function payload(fixtures: LiveFixture[], overrides: Partial<LivePayload> = {}):
 		players: [{ id: 'p1', userId: 'u1', status: 'active', livesRemaining: 0 }],
 		viewerUserId: 'u1',
 		updatedAt: new Date().toISOString(),
+		...overrides,
+	}
+}
+
+function viewerPick(fixtureId: string, overrides: Partial<LivePick> = {}): LivePick {
+	return {
+		gamePlayerId: 'p1',
+		fixtureId,
+		teamId: 't1',
+		confidenceRank: null,
+		predictedResult: 'home_win',
+		result: null,
 		...overrides,
 	}
 }
@@ -130,6 +142,36 @@ describe('LiveScoresSheet', () => {
 		fireEvent.click(screen.getByRole('button', { name: /live scores/i }))
 
 		expect(screen.getByText('My pick')).toBeTruthy()
+	})
+
+	it('renders the pick’s pre-match win chance, labelled, on that pick’s card only', () => {
+		renderSheet({
+			payload: payload(LIVE_MATCHES, {
+				picks: [viewerPick('f1', { preMatchWinProbability: 0.2249 })],
+			}),
+		})
+
+		fireEvent.click(screen.getByRole('button', { name: /live scores/i }))
+
+		// One chip, on the fixture the pick is on — a price frozen before kickoff,
+		// said so, sitting beside a live score.
+		expect(screen.getAllByText('Pre-match 22%').length).toBe(1)
+		expect(document.querySelector('[data-fixture-id="f1"]')?.textContent).toContain('Pre-match 22%')
+	})
+
+	it('renders no figure at all for a pick on a fixture we hold no price for', () => {
+		renderSheet({
+			payload: payload(LIVE_MATCHES, {
+				picks: [viewerPick('f1', { preMatchWinProbability: null })],
+			}),
+		})
+
+		fireEvent.click(screen.getByRole('button', { name: /live scores/i }))
+
+		// The pick is still badged; the absent market renders as nothing, never 0%.
+		expect(screen.getByText('My pick')).toBeTruthy()
+		expect(screen.queryByText(/pre-match/i)).toBeNull()
+		expect(screen.queryByText(/0%/)).toBeNull()
 	})
 
 	it('counts the matches in play on the control', () => {
