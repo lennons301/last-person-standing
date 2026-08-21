@@ -4089,3 +4089,104 @@ describe('lifecycle: persisted odds reach the pick selectors', () => {
 		expect(data?.fixtures.find((f) => f.id === seed.unpriced)?.odds).toBeNull()
 	})
 })
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* win-probability: persisted odds → the live payload's picks              */
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe('lifecycle: the live payload carries each pick’s pre-match win chance', () => {
+	/**
+	 * The live view's own end of the odds tracer bullet (#222): a scoreline
+	 * beside the chance its team went in at. Seeded directly, no provider — the
+	 * live payload makes no request of its own and never will, so the question
+	 * here is purely whether the `fixture` → `fixture_odds` join reaches the
+	 * picks, and whether an unpriced fixture comes back absent rather than
+	 * zeroed.
+	 */
+	async function seedLiveRound(deadline: Date) {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const c = await makeTeam({ name: 'C', shortName: 'C' })
+		const d = await makeTeam({ name: 'D', shortName: 'D' })
+		const r1 = await makeRound(compId, { number: 1, status: 'active', deadline })
+		const priced = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const unpriced = await makeFixture({ roundId: r1, homeTeamId: c, awayTeamId: d })
+		// A 1.50 / 4.00 / 6.00 market, de-vigged: 8/13, 3/13, 2/13.
+		await makeFixtureOdds({
+			fixtureId: priced,
+			homePrice: 1.5,
+			drawPrice: 4,
+			awayPrice: 6,
+			homeProbability: 8 / 13,
+			drawProbability: 3 / 13,
+			awayProbability: 2 / 13,
+		})
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r1,
+		})
+		const gpFav = await makePlayer({ gameId, userId: 'u-fav' })
+		const gpDog = await makePlayer({ gameId, userId: 'u-dog' })
+		const gpUnpriced = await makePlayer({ gameId, userId: 'u-unpriced' })
+		await makePick({
+			gameId,
+			gamePlayerId: gpFav,
+			roundId: r1,
+			teamId: a,
+			fixtureId: priced,
+			predictedResult: 'home_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpDog,
+			roundId: r1,
+			teamId: b,
+			fixtureId: priced,
+			predictedResult: 'away_win',
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpUnpriced,
+			roundId: r1,
+			teamId: c,
+			fixtureId: unpriced,
+			predictedResult: 'home_win',
+		})
+		return { gameId, gpFav, gpDog, gpUnpriced, priced }
+	}
+
+	it('classic: every revealed pick carries its own team’s chance; an unpriced fixture carries none', async () => {
+		// Deadline gone, so the whole field's picks are revealed.
+		const seed = await seedLiveRound(new Date(Date.now() - 86_400_000))
+		await liveFixture(seed.priced, 0, 1)
+
+		const payload = await getLivePayload(seed.gameId, 'u-fav')
+
+		const fav = payload?.picks.find((p) => p.gamePlayerId === seed.gpFav)
+		const dog = payload?.picks.find((p) => p.gamePlayerId === seed.gpDog)
+		const unpriced = payload?.picks.find((p) => p.gamePlayerId === seed.gpUnpriced)
+		// Each side of one fixture gets its own end of the market, not the home one.
+		expect(fav?.preMatchWinProbability).toBeCloseTo(8 / 13, 10)
+		expect(dog?.preMatchWinProbability).toBeCloseTo(2 / 13, 10)
+		// Absent, never a nought — the same rule the pick surfaces follow.
+		expect(unpriced?.preMatchWinProbability).toBeNull()
+	})
+
+	it('classic: a hidden pick carries no chance, even with a market sitting on its fixture', async () => {
+		// Deadline still ahead: opponents' picks are stripped to 'hidden'. A
+		// probability on one would leak which team they took — the whole reason
+		// this assertion exists.
+		const seed = await seedLiveRound(new Date(Date.now() + 86_400_000))
+
+		const payload = await getLivePayload(seed.gameId, 'u-fav')
+
+		const mine = payload?.picks.find((p) => p.gamePlayerId === seed.gpFav)
+		const theirs = payload?.picks.find((p) => p.gamePlayerId === seed.gpDog)
+		expect(mine?.preMatchWinProbability).toBeCloseTo(8 / 13, 10)
+		expect(theirs?.result).toBe('hidden')
+		expect(theirs?.teamId).toBeNull()
+		expect(theirs?.preMatchWinProbability).toBeNull()
+	})
+})
