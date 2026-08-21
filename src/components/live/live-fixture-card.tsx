@@ -78,12 +78,18 @@ export function LiveFixtureCard({
 						// The figure attaches to the pick, not to the fixture: it is the
 						// picked team's chance and nobody else's. Labelled every time —
 						// unlabelled it would read as a live price we don't hold.
-						<span
-							title={PRE_MATCH_COPY.description}
-							className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground tabular-nums"
-						>
-							{preMatch}
-						</span>
+						<>
+							<span
+								title={PRE_MATCH_COPY.expansion}
+								className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground tabular-nums"
+							>
+								{preMatch}
+							</span>
+							{/* Read after the figure. A `title` alone is announced
+							    inconsistently, and "Pre-match" on its own is a thin thing to
+							    hang "this is not a live price" on. */}
+							<span className="sr-only">{PRE_MATCH_COPY.expansion}</span>
+						</>
 					)}
 					<span className="rounded-sm bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
 						My pick

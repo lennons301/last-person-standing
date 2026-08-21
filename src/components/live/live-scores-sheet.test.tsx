@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { PRE_MATCH_COPY } from '@/lib/live/pre-match'
 import type { LiveFixture, LivePayload, LivePick } from '@/lib/live/types'
 import { LiveContext, type LiveContextValue } from './live-provider'
 import { LiveScoresSheet } from './live-scores-sheet'
@@ -146,6 +147,9 @@ describe('LiveScoresSheet', () => {
 		// One chip, on the fixture the pick is on — a price frozen before kickoff,
 		// said so, sitting beside a live score.
 		expect(screen.getAllByText('Pre-match 22%').length).toBe(1)
+		// Two visible words are enough on screen beside the badge; the non-visual
+		// path gets the whole sentence rather than a tooltip nobody announces.
+		expect(screen.getByText(PRE_MATCH_COPY.expansion)).toBeTruthy()
 		expect(document.querySelector('[data-fixture-id="f1"]')?.textContent).toContain('Pre-match 22%')
 	})
 
@@ -161,6 +165,7 @@ describe('LiveScoresSheet', () => {
 		// The pick is still badged; the absent market renders as nothing, never 0%.
 		expect(screen.getByText('My pick')).toBeTruthy()
 		expect(screen.queryByText(/pre-match/i)).toBeNull()
+		expect(screen.queryByText(PRE_MATCH_COPY.expansion)).toBeNull()
 		expect(screen.queryByText(/0%/)).toBeNull()
 	})
 

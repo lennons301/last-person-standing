@@ -19,8 +19,13 @@ import { formatWinChance } from '@/lib/game/round-summary-view'
 export const PRE_MATCH_COPY = {
 	/** The chip's own prefix, beside a pick. */
 	label: 'Pre-match',
-	/** Spelled out where two words aren't enough — assistive text, tooltips. */
-	description: 'Pre-match win chance for this pick — not a live price',
+	/**
+	 * What the chip's two words stand for, read straight after the figure. Two
+	 * words are enough on a phone screen beside the pick badge; the tooltip and
+	 * the screen-reader path get the sentence, so neither has to infer from the
+	 * prefix alone that this is not a live price.
+	 */
+	expansion: 'win chance for this pick, taken before kick-off — not a live price',
 } as const
 
 /**
