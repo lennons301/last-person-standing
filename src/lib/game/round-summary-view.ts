@@ -66,6 +66,56 @@ export function formatWinChance(probability: number | null | undefined): string 
 	return `${Math.round(Number((probability * 100).toFixed(6)))}%`
 }
 
+/**
+ * A decimal price as the card prints it: one decimal, two only where the price
+ * genuinely carries them ("2.0", "4.5", "1.25").
+ */
+export function formatDecimalPrice(price: number | null | undefined): string | null {
+	if (price == null) return null
+	const rounded = Math.round(price * 100) / 100
+	return rounded.toFixed(Number.isInteger(rounded * 10) ? 1 : 2)
+}
+
+/**
+ * A team as the card labels it: short name, decimal price and win chance
+ * together — `BRE 4.5 (22%)`. Just the short name where the fixture carries no
+ * price, so a missing market never prints as a nought.
+ */
+export function formatTeamFigure(figure: RoundSummaryTeamFigure): string {
+	const price = formatDecimalPrice(figure.price)
+	const chance = formatWinChance(figure.winProbability)
+	if (!price || !chance) return figure.shortName
+	return `${figure.shortName} ${price} (${chance})`
+}
+
+/**
+ * Every fixed word either surface says, in one table — the same arrangement
+ * `JOIN_BLOCKED_COPY` uses, and for the same reason: the card and the share text
+ * describe one thing, and copy split across two components drifts.
+ */
+export const ROUND_SUMMARY_COPY = {
+	/** The fold's sub-line; its title is the summary's own headline. */
+	cardSubtitle: 'Round summary — what the field picked',
+	tiles: {
+		market: "The market's verdict",
+		mostBacked: 'Most backed',
+		boldest: 'Boldest calls',
+		lonePicks: 'Out on their own',
+		headToHead: 'Head to head',
+		leftOnTable: 'Left on the table',
+	},
+	/** Why three tiles are missing, so the gap reads as deliberate. */
+	noOdds:
+		'This competition carries no bookmaker prices, so the market read sits this round out. The counts are the whole story.',
+	noUnderdogs: "Nobody backed an underdog — every pick was its match's favourite.",
+	pricesInPlay: 'Prices in play',
+	drawTakesAll: 'One side goes out — and a draw takes everyone in it.',
+	/** The opening round eliminates nobody on a draw in a no-rebuys game, so it claims nothing about draws. */
+	drawStartingRound: 'One side goes out.',
+	noPickHeading: 'No pick at all',
+	expectedSurvivors: 'expected to survive',
+} as const
+
 /** The minimum a round row needs for the anchor below. */
 export interface RoundSummaryRoundRow {
 	id: string
