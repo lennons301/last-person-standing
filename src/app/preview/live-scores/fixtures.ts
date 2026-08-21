@@ -46,6 +46,7 @@ function viewerPick(
 		confidenceRank: null,
 		predictedResult,
 		result: null,
+		preMatchWinProbability: null,
 		...overrides,
 	}
 }

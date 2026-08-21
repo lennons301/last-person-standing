@@ -130,6 +130,7 @@ describe('viewerPicksByFixture', () => {
 			confidenceRank: null,
 			predictedResult: 'home_win',
 			result: null,
+			preMatchWinProbability: null,
 			...overrides,
 		}
 	}

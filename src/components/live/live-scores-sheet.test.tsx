@@ -43,6 +43,7 @@ function viewerPick(fixtureId: string, overrides: Partial<LivePick> = {}): LiveP
 		confidenceRank: null,
 		predictedResult: 'home_win',
 		result: null,
+		preMatchWinProbability: null,
 		...overrides,
 	}
 }
@@ -125,18 +126,7 @@ describe('LiveScoresSheet', () => {
 
 	it('badges the viewer’s own pick inside the pop-out', () => {
 		renderSheet({
-			payload: payload(LIVE_MATCHES, {
-				picks: [
-					{
-						gamePlayerId: 'p1',
-						fixtureId: 'f1',
-						teamId: 't1',
-						confidenceRank: null,
-						predictedResult: 'home_win',
-						result: null,
-					},
-				],
-			}),
+			payload: payload(LIVE_MATCHES, { picks: [viewerPick('f1')] }),
 		})
 
 		fireEvent.click(screen.getByRole('button', { name: /live scores/i }))

@@ -59,6 +59,7 @@ describe('projectPickOutcome', () => {
 		confidenceRank: 1,
 		predictedResult: 'home_win',
 		result: null,
+		preMatchWinProbability: null,
 	}
 
 	it('returns winning when home pick and home leads', () => {
