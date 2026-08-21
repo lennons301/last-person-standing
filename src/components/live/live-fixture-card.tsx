@@ -71,7 +71,9 @@ export function LiveFixtureCard({
 			{isMyPick && (
 				// Inline at top of card (was previously `absolute -top-1.5` which got
 				// clipped by the scrolling wrapper it renders inside on mobile).
-				<div className="-mb-0.5 flex items-center justify-end gap-1.5">
+				// Wraps rather than overflows: the card is 170px at its narrowest, and
+				// the chance and the badge together can be wider than that.
+				<div className="-mb-0.5 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5">
 					{preMatch && (
 						// The figure attaches to the pick, not to the fixture: it is the
 						// picked team's chance and nobody else's. Labelled every time —
