@@ -11,6 +11,7 @@ import type { PaymentStatus } from '@/components/game/payment-status-chip'
 import type { AdminPayment } from '@/components/game/payments-panel'
 import { RebuyActions, RebuyOfferNotice, RebuyPendingNotice } from '@/components/game/rebuy-actions'
 import { RoundStrip, type RoundStripInfo } from '@/components/game/round-strip'
+import { RoundSummaryCard } from '@/components/game/round-summary-card'
 import { SettleUpNotice } from '@/components/game/settle-up-notice'
 import { ShareDialog } from '@/components/game/share-dialog'
 import { VoidedPickBanner } from '@/components/game/voided-pick-banner'
@@ -21,6 +22,7 @@ import { type GridPlayer, type GridRound, ProgressGrid } from '@/components/stan
 import { type TurboRoundSummary, TurboStandings } from '@/components/standings/turbo-standings'
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
 import type { GameViewDescriptor } from '@/lib/game/game-view'
+import type { RoundSummaryView } from '@/lib/game/round-summary-view'
 import type { PotBreakdown } from '@/lib/game-logic/prizes'
 import type { PaymentProvider } from '@/lib/payments/payment-link'
 
@@ -84,6 +86,12 @@ interface GameDetailViewProps {
 		payUrl?: string | null
 	} | null
 	cupStandings?: CupLadderData | null
+	/**
+	 * The latest locked round's summary — the card under the progress grid and the
+	 * prose in the share dialog, both out of one derivation. Null for every mode
+	 * but classic, and until one of this game's deadlines has passed.
+	 */
+	roundSummary?: { view: RoundSummaryView; text: string } | null
 }
 
 export function GameDetailView({
@@ -94,6 +102,7 @@ export function GameDetailView({
 	turboStandings,
 	rebuy,
 	cupStandings,
+	roundSummary,
 }: GameDetailViewProps) {
 	const [shareOpen, setShareOpen] = useState(false)
 	// Query string (sort + filter) for the standings share image — set when the
@@ -231,6 +240,10 @@ export function GameDetailView({
 					/>
 				)}
 
+				{/* Directly beneath the grid, because the grid is what reveals the picks
+				    this narrates. */}
+				{roundSummary && <RoundSummaryCard summary={roundSummary.view} />}
+
 				{turboStandings && (
 					<TurboStandings
 						rounds={turboStandings.rounds}
@@ -278,6 +291,7 @@ export function GameDetailView({
 					liveAvailable={game.liveShareAvailable}
 					winnerAvailable={game.winnerShareAvailable}
 					standingsQuery={shareStandingsQuery}
+					roundSummaryText={roundSummary?.text ?? null}
 				/>
 			</div>
 		</LiveProvider>

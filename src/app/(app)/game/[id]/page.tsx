@@ -23,6 +23,8 @@ import { buildGameView, type GameViewPickInput } from '@/lib/game/game-view'
 import { evaluateJoinability, JOIN_BLOCKED_COPY } from '@/lib/game/joinability'
 import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
+import { getRoundSummary } from '@/lib/game/round-summary-query'
+import { formatRoundSummaryText } from '@/lib/game/round-summary-text'
 import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { buildPaymentLink, buildPaymentReference } from '@/lib/payments/payment-link'
@@ -168,6 +170,14 @@ export default async function GameDetailPage({
 
 	const classicGrid =
 		game.gameMode === 'classic' ? await getProgressGridData(game.id, session.user.id) : null
+	// The post-deadline round summary: one derivation feeding the card under the
+	// progress grid and the prose in the share dialog. Classic only, and null
+	// until one of this game's own deadlines has passed — the query decides both.
+	const roundSummaryView = game.gameMode === 'classic' ? await getRoundSummary(game.id) : null
+	const roundSummary = roundSummaryView
+		? { view: roundSummaryView, text: formatRoundSummaryText(roundSummaryView) }
+		: null
+
 	const turboStandingsData =
 		game.gameMode === 'turbo' ? await getTurboStandingsData(game.id, session.user.id) : null
 	const cupStandingsData =
@@ -567,6 +577,7 @@ export default async function GameDetailPage({
 					: null
 			}
 			cupStandings={cupStandingsData}
+			roundSummary={roundSummary}
 		/>
 	)
 }

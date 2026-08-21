@@ -35,6 +35,12 @@ interface ShareDialogProps {
 	/** Extra query string (sort + filter) appended to the standings image URL so
 	 *  the shared image reproduces the on-screen grid order. */
 	standingsQuery?: string
+	/**
+	 * The latest locked round's summary as prose, from `formatRoundSummaryText`.
+	 * Null before any of this game's deadlines has passed (and for every mode but
+	 * classic), which is also when the block below doesn't render at all.
+	 */
+	roundSummaryText?: string | null
 }
 
 const VARIANT_LABEL: Record<Variant, string> = {
@@ -48,10 +54,17 @@ const VARIANT_LABEL: Record<Variant, string> = {
 // screenshot to your group chat, you don't want "Join me in <game>" tacked
 // onto it. The invite blurb stays on the dedicated WhatsApp invite button
 // up top.
-function captionFor(variant: Variant, gameName: string): string {
+export function captionFor(
+	variant: Variant,
+	gameName: string,
+	roundSummaryText?: string | null,
+): string {
 	switch (variant) {
 		case 'standings':
-			return `${gameName} — standings`
+			// The grid image and the round summary describe the same round, so the
+			// summary is the message that belongs with it. Without one — before any
+			// deadline has passed — the plain caption stands.
+			return roundSummaryText ?? `${gameName} — standings`
 		case 'live':
 			return `${gameName} — live update`
 		case 'winner':
@@ -71,8 +84,10 @@ export function ShareDialog({
 	liveAvailable,
 	winnerAvailable,
 	standingsQuery,
+	roundSummaryText,
 }: ShareDialogProps) {
 	const [copied, setCopied] = useState(false)
+	const [summaryCopied, setSummaryCopied] = useState(false)
 	const [variant, setVariant] = useState<Variant>(defaultVariant)
 	const [canShareFiles, setCanShareFiles] = useState(false)
 	const [sharing, setSharing] = useState(false)
@@ -111,6 +126,13 @@ export function ShareDialog({
 		setTimeout(() => setCopied(false), 2000)
 	}
 
+	async function handleCopySummary() {
+		if (!roundSummaryText) return
+		await navigator.clipboard.writeText(roundSummaryText)
+		setSummaryCopied(true)
+		setTimeout(() => setSummaryCopied(false), 2000)
+	}
+
 	async function handleShareImage() {
 		setShareError(null)
 		setSharing(true)
@@ -126,7 +148,7 @@ export function ShareDialog({
 			await navigator.share({
 				files: [file],
 				title: `${gameName} — ${VARIANT_LABEL[variant]}`,
-				text: captionFor(variant, gameName),
+				text: captionFor(variant, gameName, roundSummaryText),
 			})
 		} catch (err) {
 			// AbortError fires when the user dismisses the native sheet — treat
@@ -181,6 +203,43 @@ export function ShareDialog({
 							</a>
 						</Button>
 					</div>
+
+					{/* The round the picks are in, as prose somebody can paste. Same
+					    derivation as the card under the progress grid — this is the text
+					    half of it, and the standings image carries it as its caption. */}
+					{roundSummaryText && (
+						<div>
+							<div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+								Round summary
+							</div>
+							<pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-sans">
+								{roundSummaryText}
+							</pre>
+							<div className="flex gap-2 mt-2">
+								<Button variant="outline" size="sm" onClick={handleCopySummary} className="gap-1.5">
+									{summaryCopied ? (
+										<>
+											<Check className="h-3.5 w-3.5" /> Copied
+										</>
+									) : (
+										<>
+											<Copy className="h-3.5 w-3.5" /> Copy summary
+										</>
+									)}
+								</Button>
+								<Button asChild variant="outline" size="sm" className="gap-1.5">
+									<a
+										href={`https://wa.me/?text=${encodeURIComponent(roundSummaryText)}`}
+										target="_blank"
+										rel="noopener noreferrer"
+									>
+										<MessageCircle className="h-3.5 w-3.5" />
+										Send to WhatsApp
+									</a>
+								</Button>
+							</div>
+						</div>
+					)}
 
 					<div>
 						<div className="flex flex-wrap items-center justify-between gap-2 mb-2">
