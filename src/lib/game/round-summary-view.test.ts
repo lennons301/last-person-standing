@@ -202,3 +202,140 @@ describe('buildRoundSummary — boldest calls', () => {
 		expect(view.boldest).toEqual({ kind: 'none', shortest: null, longest: null })
 	})
 })
+
+describe('buildRoundSummary — out on their own', () => {
+	it('lists teams exactly one player backed, autos among them and marked', () => {
+		const view = buildRoundSummary(
+			input({
+				players: [
+					player('Alex', 't-ars'),
+					player('Bea', 't-ars'),
+					player('Cass', 't-liv'),
+					player('Dev', 't-eve', { isAuto: true }),
+				],
+			}),
+		)
+
+		expect(view.lonePicks.map((l) => [l.shortName, l.player.name, l.player.isAuto])).toEqual([
+			['LIV', 'Cass', false],
+			['EVE', 'Dev', true],
+		])
+	})
+})
+
+describe('buildRoundSummary — left on the table', () => {
+	it('names the shortest-priced team nobody picked', () => {
+		const view = buildRoundSummary(input())
+
+		// Unpicked: BRE 6.2, MCI 2.0, LIV 4.0, EVE 5.0.
+		expect(view.leftOnTable).toEqual(
+			expect.objectContaining({ shortName: 'MCI', price: 2, winProbability: 0.5 }),
+		)
+	})
+
+	it('names nothing when the field covered every team it could have', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: [FIXTURES[0]],
+				players: [player('Alex', 't-ars'), player('Bea', 't-bre')],
+			}),
+		)
+
+		expect(view.leftOnTable).toBeNull()
+	})
+})
+
+describe('buildRoundSummary — head to head', () => {
+	const contested = input({
+		players: [
+			player('Alex', 't-ars'),
+			player('Bea', 't-ars'),
+			player('Cass', 't-ars'),
+			player('Dev', 't-bre'),
+			player('Eve', 't-mci'),
+			player('Fay', 't-liv'),
+		],
+	})
+
+	it('lists the fixtures the field sits on both sides of, biggest clash first', () => {
+		const view = buildRoundSummary(contested)
+
+		expect(
+			view.headToHead.map((h) => [
+				h.home.shortName,
+				h.home.players.map((p) => p.name),
+				h.away.shortName,
+				h.away.players.map((p) => p.name),
+			]),
+		).toEqual([
+			['ARS', ['Alex', 'Bea', 'Cass'], 'BRE', ['Dev']],
+			['MCI', ['Eve'], 'LIV', ['Fay']],
+		])
+	})
+
+	it('says a draw takes everyone in the fixture — once the starting round is behind them', () => {
+		expect(buildRoundSummary(contested).headToHead[0].drawTakesAll).toBe(true)
+		expect(
+			buildRoundSummary({ ...contested, isStartingRound: true }).headToHead[0].drawTakesAll,
+		).toBe(false)
+	})
+
+	it('leaves out a fixture the field only backed one side of', () => {
+		const view = buildRoundSummary(input())
+
+		expect(view.headToHead).toEqual([])
+	})
+})
+
+describe('buildRoundSummary — a competition with no prices', () => {
+	const unpriced = input({
+		fixtures: FIXTURES.map((f) => ({ ...f, odds: null })),
+		players: [
+			player('Alex', 't-ars'),
+			player('Bea', 't-ars'),
+			player('Cass', 't-bre'),
+			player('Dev', 't-liv'),
+		],
+	})
+
+	it('keeps the count tiles and drops the three the market drives', () => {
+		const view = buildRoundSummary(unpriced)
+
+		expect(view.oddsAvailable).toBe(false)
+		expect(view.market).toBeNull()
+		expect(view.boldest).toBeNull()
+		expect(view.leftOnTable).toBeNull()
+		expect(view.mostBacked.map((t) => [t.shortName, t.count])).toEqual([
+			['ARS', 2],
+			['BRE', 1],
+			['LIV', 1],
+		])
+		expect(view.lonePicks.map((l) => l.shortName)).toEqual(['BRE', 'LIV'])
+		expect(view.headToHead.map((h) => h.fixtureId)).toEqual(['fx-1'])
+		expect(view.headline).toBe('2 of 4 on ARS')
+	})
+
+	it('renders no figure at all where a price is missing — never a zero', () => {
+		const view = buildRoundSummary(unpriced)
+
+		for (const team of view.mostBacked) {
+			expect(team.winProbability).toBeNull()
+			expect(team.price).toBeNull()
+		}
+	})
+
+	it('reports prices for the fixtures that have them when only some do', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: [FIXTURES[0], { ...FIXTURES[1], odds: null }],
+				players: [player('Alex', 't-ars'), player('Bea', 't-mci')],
+			}),
+		)
+
+		expect(view.oddsAvailable).toBe(true)
+		expect(view.mostBacked.map((t) => [t.shortName, t.winProbability])).toEqual([
+			['ARS', 0.6],
+			['MCI', null],
+		])
+	})
+})

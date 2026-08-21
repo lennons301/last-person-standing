@@ -145,6 +145,37 @@ export type RoundSummaryBoldest =
 			longest: RoundSummaryTeamFigure | null
 	  }
 
+/**
+ * "Out on their own" — a team exactly one player backed. A different axis from
+ * the boldest calls: a lone pick can be a stone-cold favourite nobody else
+ * fancied, which is why an auto-pick belongs here (it's a real pick with real
+ * consequences) and not there.
+ */
+export interface RoundSummaryLonePick extends RoundSummaryTeamFigure {
+	player: RoundSummaryPlayerRef
+}
+
+/** One side of a contested fixture: the team, and everyone on it. */
+export interface RoundSummaryHeadToHeadSide extends RoundSummaryTeamFigure {
+	players: RoundSummaryPlayerRef[]
+}
+
+/**
+ * A fixture the field sits on **both** sides of. One side goes out — and after
+ * the game's starting round a draw takes every player in the match, which is the
+ * part that isn't obvious from the two team names.
+ *
+ * Nothing here assumes one player a side: seven on the favourite and one on the
+ * underdog is the same shape, and the commonest one.
+ */
+export interface RoundSummaryHeadToHead {
+	fixtureId: string
+	home: RoundSummaryHeadToHeadSide
+	away: RoundSummaryHeadToHeadSide
+	/** False on the starting round, where a draw eliminates nobody. */
+	drawTakesAll: boolean
+}
+
 export interface RoundSummaryView {
 	round: { label: string; longLabel: string }
 	/** The collapsed trigger's line, e.g. "7 of 12 on ARS". */
@@ -155,11 +186,26 @@ export interface RoundSummaryView {
 	picksMade: number
 	/** Alive players the deadline caught with no pick at all. */
 	noPickPlayers: RoundSummaryPlayerRef[]
+	/**
+	 * Does the round carry any bookmaker price at all? False for a classic game on
+	 * a competition the odds source doesn't cover (the World Cup, the FA Cup) —
+	 * a shipped configuration, not a hypothetical, since only cup *mode* is
+	 * restricted. The three market-driven tiles are absent there and the surface
+	 * says why, so the gap reads as deliberate rather than broken.
+	 */
+	oddsAvailable: boolean
 	/** Null when the round carries no prices at all, or nobody picked. */
 	market: RoundSummaryMarket | null
 	mostBacked: RoundSummaryBackedTeam[]
 	/** Null when the round carries no prices at all. */
 	boldest: RoundSummaryBoldest | null
+	lonePicks: RoundSummaryLonePick[]
+	headToHead: RoundSummaryHeadToHead[]
+	/**
+	 * The shortest-priced team nobody took. Null when the round is unpriced, or
+	 * when the field covered every team in it.
+	 */
+	leftOnTable: RoundSummaryTeamFigure | null
 }
 
 export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryView {
@@ -172,6 +218,7 @@ export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryVi
 		.map((p) => ({ name: p.name, isAuto: false }))
 
 	const mostBacked = buildMostBacked(picked, teamsById)
+	const oddsAvailable = hasPrices(fixtures)
 
 	return {
 		round: { label: round.label, longLabel: round.longLabel },
@@ -179,10 +226,77 @@ export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryVi
 		playersAlive: players.length,
 		picksMade: picked.length,
 		noPickPlayers,
+		oddsAvailable,
 		market: buildMarket(mostBacked, picked.length),
 		mostBacked,
-		boldest: hasPrices(fixtures) ? buildBoldest(picked, teamsById) : null,
+		boldest: oddsAvailable ? buildBoldest(picked, teamsById) : null,
+		lonePicks: buildLonePicks(mostBacked),
+		headToHead: buildHeadToHead(mostBacked, fixtures, input.isStartingRound),
+		leftOnTable: buildLeftOnTable(mostBacked, teamsById),
 	}
+}
+
+/**
+ * The contested fixtures, the biggest clash first — most players involved, the
+ * home side's name breaking a tie so the order never follows fixture order.
+ */
+function buildHeadToHead(
+	mostBacked: RoundSummaryBackedTeam[],
+	fixtures: RoundSummaryFixtureRow[],
+	isStartingRound: boolean,
+): RoundSummaryHeadToHead[] {
+	const backedByTeam = new Map(mostBacked.map((t) => [t.teamId, t]))
+	const clashes: RoundSummaryHeadToHead[] = []
+	for (const fixture of fixtures) {
+		const home = backedByTeam.get(fixture.home.id)
+		const away = backedByTeam.get(fixture.away.id)
+		if (!home || !away) continue
+		clashes.push({
+			fixtureId: fixture.id,
+			home: toSide(home),
+			away: toSide(away),
+			drawTakesAll: !isStartingRound,
+		})
+	}
+	return clashes.sort(
+		(a, b) =>
+			b.home.players.length +
+				b.away.players.length -
+				(a.home.players.length + a.away.players.length) ||
+			a.home.shortName.localeCompare(b.home.shortName),
+	)
+}
+
+function toSide({ count: _count, ...side }: RoundSummaryBackedTeam): RoundSummaryHeadToHeadSide {
+	return side
+}
+
+/** Shortest price first, so the biggest surprise of a lone pick leads. */
+function buildLonePicks(mostBacked: RoundSummaryBackedTeam[]): RoundSummaryLonePick[] {
+	return mostBacked
+		.filter((t) => t.count === 1)
+		.map(({ count: _count, players, ...figure }) => ({ ...figure, player: players[0] }))
+		.sort((a, b) => byProbabilityDesc(a, b) || a.shortName.localeCompare(b.shortName))
+}
+
+/**
+ * The best thing nobody took. Priced teams only — with no price there is no
+ * "shortest", and an unpriced team named here would be an arbitrary pick out of
+ * the round rather than a fact about it.
+ */
+function buildLeftOnTable(
+	mostBacked: RoundSummaryBackedTeam[],
+	teamsById: Map<string, RoundSummaryTeamSlot>,
+): RoundSummaryTeamFigure | null {
+	const pickedTeamIds = new Set(mostBacked.map((t) => t.teamId))
+	const unpicked = [...teamsById.values()]
+		.filter((slot) => !pickedTeamIds.has(slot.team.id))
+		.map(figureFor)
+		.filter((figure) => figure.winProbability != null)
+	if (unpicked.length === 0) return null
+	return unpicked.sort(
+		(a, b) => byProbabilityDesc(a, b) || a.shortName.localeCompare(b.shortName),
+	)[0]
 }
 
 /** Does the round carry any bookmaker prices at all? */
