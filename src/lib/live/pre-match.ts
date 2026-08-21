@@ -47,19 +47,48 @@ export interface PreMatchFixtureRow {
 /**
  * The picked team's own win chance, 0–1, or null where there is none to give.
  *
+ * The figure only ever answers one question — *will this team win?* — so it is
+ * attached only where the pick says exactly that. Classic stores a hand-made
+ * pick with no `predictedResult` at all, and picking a team there **is** backing
+ * it to win, which is how a null prediction reads everywhere else in the
+ * codebase (`projectPickOutcome`). A prediction that names a side must agree with
+ * the team the row is stored against.
+ *
+ * A **draw** call carries nothing. Turbo and cup derive a pick's `teamId` from
+ * the prediction and give the draw the *home* side, so the home team's win
+ * chance would otherwise be printed beside a pick that called a draw — a figure
+ * about an outcome the player didn't take, which no "pre-match" label makes
+ * honest. Quoting the draw's own price instead is turbo work, out of scope
+ * (#222).
+ *
  * Null rather than zero in every absent case: an unpriced fixture, a fixture the
  * round doesn't hold, and a pick with no team on it at all — which is the shape
  * the live payload gives every **hidden** pick, so a hidden pick can carry no
  * probability by construction.
  */
 export function preMatchWinProbability(
-	pick: { fixtureId: string | null; teamId: string | null },
+	pick: {
+		fixtureId: string | null
+		teamId: string | null
+		/**
+		 * Absent on a hand-made classic pick; `'draw'` only in turbo and cup. Typed
+		 * as loosely as the column it comes from (a varchar), so anything that isn't
+		 * a side winning — the draw included — is refused rather than guessed at.
+		 */
+		predictedResult?: string | null
+	},
 	fixturesById: Map<string, PreMatchFixtureRow>,
 ): number | null {
 	if (!pick.fixtureId || !pick.teamId) return null
+	const prediction = pick.predictedResult ?? null
+	if (prediction !== null && prediction !== 'home_win' && prediction !== 'away_win') return null
 	const fixture = fixturesById.get(pick.fixtureId)
 	if (!fixture?.odds) return null
-	if (pick.teamId === fixture.homeTeamId) return fixture.odds.homeProbability
-	if (pick.teamId === fixture.awayTeamId) return fixture.odds.awayProbability
+	if (pick.teamId === fixture.homeTeamId) {
+		return prediction === 'away_win' ? null : fixture.odds.homeProbability
+	}
+	if (pick.teamId === fixture.awayTeamId) {
+		return prediction === 'home_win' ? null : fixture.odds.awayProbability
+	}
 	return null
 }

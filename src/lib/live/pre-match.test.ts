@@ -54,6 +54,75 @@ describe('preMatchWinProbability', () => {
 			preMatchWinProbability({ fixtureId: 'fx-1', teamId: 'team-other' }, byFixture),
 		).toBeNull()
 	})
+
+	it('carries nothing for a call on the draw, whichever team the row is stored against', () => {
+		// Turbo and cup store a draw prediction against the *home* team (the
+		// picks route derives `teamId` from the prediction, and only away_win
+		// takes the away side). The home side's 62% is a figure about an outcome
+		// the player didn't pick, and no label makes that honest — so a draw call
+		// carries nothing at all. Resolving it to the draw's own price is turbo
+		// work, out of scope here (#222).
+		const byFixture = fixtures([['fx-1', PRICED]])
+
+		expect(
+			preMatchWinProbability(
+				{ fixtureId: 'fx-1', teamId: 'team-home', predictedResult: 'draw' },
+				byFixture,
+			),
+		).toBeNull()
+	})
+
+	it('carries nothing where the prediction and the stored team disagree', () => {
+		const byFixture = fixtures([['fx-1', PRICED]])
+
+		expect(
+			preMatchWinProbability(
+				{ fixtureId: 'fx-1', teamId: 'team-home', predictedResult: 'away_win' },
+				byFixture,
+			),
+		).toBeNull()
+		// The column is a varchar, so a value this function doesn't recognise is
+		// refused rather than read as a win.
+		expect(
+			preMatchWinProbability(
+				{ fixtureId: 'fx-1', teamId: 'team-home', predictedResult: 'something_else' },
+				byFixture,
+			),
+		).toBeNull()
+	})
+
+	it('is the picked team’s chance where the prediction is that team winning', () => {
+		// A classic auto-pick writes `home_win` / `away_win` alongside the team, and
+		// so does every turbo or cup call on a side, so the two must agree.
+		const byFixture = fixtures([['fx-1', PRICED]])
+
+		expect(
+			preMatchWinProbability(
+				{ fixtureId: 'fx-1', teamId: 'team-home', predictedResult: 'home_win' },
+				byFixture,
+			),
+		).toBe(0.62)
+		expect(
+			preMatchWinProbability(
+				{ fixtureId: 'fx-1', teamId: 'team-away', predictedResult: 'away_win' },
+				byFixture,
+			),
+		).toBe(0.22)
+	})
+
+	it('is the picked team’s chance for a hand-made classic pick, which stores no prediction', () => {
+		// Classic inserts a pick with `predictedResult` null — picking the team *is*
+		// backing it to win, and the codebase reads a null prediction that way
+		// everywhere else (`projectPickOutcome`).
+		const byFixture = fixtures([['fx-1', PRICED]])
+
+		expect(
+			preMatchWinProbability(
+				{ fixtureId: 'fx-1', teamId: 'team-away', predictedResult: null },
+				byFixture,
+			),
+		).toBe(0.22)
+	})
 })
 
 describe('formatPreMatchWinChance', () => {
