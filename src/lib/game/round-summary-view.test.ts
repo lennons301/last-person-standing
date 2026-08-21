@@ -4,6 +4,8 @@ import {
 	buildRoundSummary,
 	type RoundSummaryFixtureRow,
 	type RoundSummaryPlayerRow,
+	type RoundSummaryRoundRow,
+	selectRoundSummaryRound,
 } from '@/lib/game/round-summary-view'
 
 /**
@@ -337,5 +339,87 @@ describe('buildRoundSummary — a competition with no prices', () => {
 			['ARS', 0.6],
 			['MCI', null],
 		])
+	})
+})
+
+describe('selectRoundSummaryRound', () => {
+	const NOW = new Date('2026-11-21T15:00:00Z')
+
+	function round(
+		number: number,
+		overrides: Partial<RoundSummaryRoundRow> = {},
+	): RoundSummaryRoundRow {
+		return {
+			id: `r-${number}`,
+			number,
+			status: 'upcoming',
+			deadline: new Date('2026-11-28T11:30:00Z'),
+			...overrides,
+		}
+	}
+
+	const PAST = new Date('2026-11-20T11:30:00Z')
+
+	it('anchors on the most recent locked round, not the round the game moved on to', () => {
+		const chosen = selectRoundSummaryRound({
+			rounds: [
+				round(11, { status: 'completed', deadline: PAST }),
+				round(12, { status: 'completed', deadline: PAST }),
+				round(13),
+			],
+			game: { currentRoundId: 'r-13', currentRoundNumber: 13, startingRoundId: 'r-11' },
+			latestPickedRoundNumber: 12,
+			now: NOW,
+		})
+
+		expect(chosen?.id).toBe('r-12')
+	})
+
+	it('speaks about the round in play the moment its deadline passes', () => {
+		const chosen = selectRoundSummaryRound({
+			rounds: [round(11, { status: 'completed', deadline: PAST }), round(12, { deadline: PAST })],
+			game: { currentRoundId: 'r-12', currentRoundNumber: 12, startingRoundId: 'r-11' },
+			latestPickedRoundNumber: 12,
+			now: NOW,
+		})
+
+		expect(chosen?.id).toBe('r-12')
+	})
+
+	it("has nothing to say before any of the game's own deadlines has passed", () => {
+		const chosen = selectRoundSummaryRound({
+			rounds: [round(11, { status: 'completed', deadline: PAST }), round(12)],
+			game: { currentRoundId: 'r-12', currentRoundNumber: 12, startingRoundId: 'r-12' },
+			latestPickedRoundNumber: 12,
+			now: NOW,
+		})
+
+		expect(chosen).toBeNull()
+	})
+
+	it('never reaches past the round the game is on, whatever advance picks exist', () => {
+		const chosen = selectRoundSummaryRound({
+			rounds: [round(12, { deadline: PAST }), round(13, { deadline: PAST })],
+			game: { currentRoundId: 'r-12', currentRoundNumber: 12, startingRoundId: 'r-12' },
+			latestPickedRoundNumber: 13,
+			now: NOW,
+		})
+
+		expect(chosen?.id).toBe('r-12')
+	})
+
+	it("stops at the last round a completed game played, not the competition's", () => {
+		const chosen = selectRoundSummaryRound({
+			rounds: [
+				round(12, { status: 'completed', deadline: PAST }),
+				round(13, { status: 'completed', deadline: PAST }),
+				round(14, { status: 'completed', deadline: PAST }),
+			],
+			game: { currentRoundId: null, currentRoundNumber: null, startingRoundId: 'r-12' },
+			latestPickedRoundNumber: 13,
+			now: NOW,
+		})
+
+		expect(chosen?.id).toBe('r-13')
 	})
 })

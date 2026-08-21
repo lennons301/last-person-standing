@@ -52,6 +52,85 @@ export interface RoundSummaryPlayerRow {
 	pick: { teamId: string; isAuto: boolean } | null
 }
 
+/** The minimum a round row needs for the anchor below. */
+export interface RoundSummaryRoundRow {
+	id: string
+	number: number
+	/** Competition-level round status from the bootstrap sync. */
+	status: 'upcoming' | 'open' | 'active' | 'completed'
+	deadline: Date | null
+}
+
+export interface SelectRoundSummaryRoundInput {
+	/** The competition's rounds. */
+	rounds: RoundSummaryRoundRow[]
+	game: {
+		currentRoundId: string | null
+		currentRoundNumber: number | null
+		/** `game.starting_round_id` — where this game began. */
+		startingRoundId?: string | null
+	}
+	/** Highest round number this game holds a pick on, or null for none. */
+	latestPickedRoundNumber?: number | null
+	now: Date
+}
+
+/**
+ * The round the summary speaks about: **the most recent round whose picks are
+ * locked**.
+ *
+ * Locked is the progress grid's own gate — the round has completed, or its
+ * deadline has passed — because the card narrates exactly the picks the grid
+ * reveals. Anchoring to `game.currentRoundId` instead would empty the card the
+ * moment a round settled and the game advanced to one whose picks are hidden
+ * again, which is most of the week.
+ *
+ * Two bounds keep it to rounds this game actually played:
+ *
+ * - **Not before the starting round.** A game created in November starts at
+ *   gameweek 12; gameweek 11's deadline has long passed and the game has nothing
+ *   to say about it (#203).
+ * - **Not past the round the game is on.** Classic accepts advance picks, so a
+ *   competition round beyond the game's current one can be locked with a handful
+ *   of early picks on it. The grid reveals those; a summary of them would read as
+ *   the field's verdict when it's two people's. Once a game has completed and no
+ *   longer points at a round, the last round it holds a pick on is the bound
+ *   instead — the competition plays on for months after a game is won.
+ *
+ * Null when nothing qualifies: no deadline has passed yet, or the game has no
+ * round to bound by at all.
+ */
+export function selectRoundSummaryRound(
+	input: SelectRoundSummaryRoundInput,
+): RoundSummaryRoundRow | null {
+	const { rounds, game, now } = input
+	const startingRound = game.startingRoundId
+		? rounds.find((r) => r.id === game.startingRoundId)
+		: undefined
+	const upperBound = game.currentRoundNumber ?? input.latestPickedRoundNumber ?? null
+	if (upperBound == null) return null
+
+	const candidates = rounds.filter((r) => {
+		if (r.number > upperBound) return false
+		if (startingRound && r.number < startingRound.number) return false
+		return isPicksLocked(r, now)
+	})
+	return candidates.reduce<RoundSummaryRoundRow | null>(
+		(latest, r) => (latest == null || r.number > latest.number ? r : latest),
+		null,
+	)
+}
+
+/**
+ * Are this round's picks locked and revealable? The grid's rule verbatim: the
+ * round has been processed, or its own deadline has gone. A round with no
+ * deadline recorded is never locked — nothing has closed.
+ */
+function isPicksLocked(round: RoundSummaryRoundRow, now: Date): boolean {
+	if (round.status === 'completed') return true
+	return round.deadline != null && now >= round.deadline
+}
+
 export interface BuildRoundSummaryInput {
 	round: { label: string; longLabel: string }
 	/**
