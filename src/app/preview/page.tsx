@@ -30,6 +30,12 @@ const GALLERIES = [
 			"The home page's public-game sections: the card for a game you're not in, open to join and in progress.",
 	},
 	{
+		href: '/preview/round-summary',
+		title: 'Round summary',
+		description:
+			"The post-deadline card under the progress grid, plus its share text: a priced round, an unpriced competition, and the states the field's picks put it in.",
+	},
+	{
 		href: '/preview/live-scores',
 		title: 'Live scores',
 		description: 'The on-demand scores pop-out and its control, one payload per live scenario.',
