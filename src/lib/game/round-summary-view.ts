@@ -52,6 +52,20 @@ export interface RoundSummaryPlayerRow {
 	pick: { teamId: string; isAuto: boolean } | null
 }
 
+/**
+ * A win chance as a whole-percent string, or null where there is no price —
+ * which is what keeps a missing price rendering as nothing rather than as 0%.
+ *
+ * The `toFixed` step before rounding is deliberate: an average like 2.3/4 lands
+ * at 0.5749999999999999 in binary, and rounding that raw would print 57% for a
+ * figure that means 57.5%. Both surfaces share this one rule so the card and the
+ * share text can never quote the same number differently.
+ */
+export function formatWinChance(probability: number | null | undefined): string | null {
+	if (probability == null) return null
+	return `${Math.round(Number((probability * 100).toFixed(6)))}%`
+}
+
 /** The minimum a round row needs for the anchor below. */
 export interface RoundSummaryRoundRow {
 	id: string
