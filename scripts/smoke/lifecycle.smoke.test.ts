@@ -4189,4 +4189,74 @@ describe('lifecycle: the live payload carries each pick’s pre-match win chance
 		expect(theirs?.teamId).toBeNull()
 		expect(theirs?.preMatchWinProbability).toBeNull()
 	})
+
+	it('turbo: a call on the draw carries no chance, though its row is stored against the home team', async () => {
+		// The live pop-out is mounted for every mode, so turbo picks go through the
+		// same join. Turbo stores a draw prediction against the *home* side (the
+		// picks route derives teamId from the prediction), so this is the shape that
+		// would otherwise print the home team's 8/13 beside a pick that called a
+		// draw. A call on a side is a different matter and keeps its own chance.
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const c = await makeTeam({ name: 'C', shortName: 'C' })
+		const d = await makeTeam({ name: 'D', shortName: 'D' })
+		const r1 = await makeRound(compId, {
+			number: 1,
+			status: 'active',
+			deadline: new Date(Date.now() - 86_400_000),
+		})
+		const drawn = await makeFixture({ roundId: r1, homeTeamId: a, awayTeamId: b })
+		const backed = await makeFixture({ roundId: r1, homeTeamId: c, awayTeamId: d })
+		for (const fixtureId of [drawn, backed]) {
+			await makeFixtureOdds({
+				fixtureId,
+				homePrice: 1.5,
+				drawPrice: 4,
+				awayPrice: 6,
+				homeProbability: 8 / 13,
+				drawProbability: 3 / 13,
+				awayProbability: 2 / 13,
+			})
+		}
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'turbo',
+			currentRoundId: r1,
+			modeConfig: { numberOfPicks: 2 },
+		})
+		const gp = await makePlayer({ gameId, userId: 'u-turbo' })
+		// Exactly what the picks route writes: the draw takes the home team's id.
+		const drawPickId = await makePick({
+			gameId,
+			gamePlayerId: gp,
+			roundId: r1,
+			teamId: a,
+			fixtureId: drawn,
+			confidenceRank: 1,
+			predictedResult: 'draw',
+		})
+		const awayPickId = await makePick({
+			gameId,
+			gamePlayerId: gp,
+			roundId: r1,
+			teamId: d,
+			fixtureId: backed,
+			confidenceRank: 2,
+			predictedResult: 'away_win',
+		})
+
+		const payload = await getLivePayload(gameId, 'u-turbo')
+
+		const picks = await db.query.pick.findMany({
+			where: inArray(pick.id, [drawPickId, awayPickId]),
+		})
+		// The premise of the assertion below: the draw really is stored home-side.
+		expect(picks.find((p) => p.id === drawPickId)?.teamId).toBe(a)
+
+		const drawCall = payload?.picks.find((p) => p.predictedResult === 'draw')
+		const awayCall = payload?.picks.find((p) => p.predictedResult === 'away_win')
+		expect(drawCall?.preMatchWinProbability).toBeNull()
+		expect(awayCall?.preMatchWinProbability).toBeCloseTo(2 / 13, 10)
+	})
 })
