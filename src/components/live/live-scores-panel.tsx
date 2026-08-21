@@ -41,6 +41,7 @@ export function LiveScoresPanel({
 									<LiveFixtureCard
 										fixture={fixture}
 										isMyPick={Boolean(viewerPick)}
+										preMatchWinProbability={viewerPick?.preMatchWinProbability ?? null}
 										now={now}
 										className="w-full"
 									/>

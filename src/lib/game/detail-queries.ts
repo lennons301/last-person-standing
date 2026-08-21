@@ -30,6 +30,7 @@ import {
 	type WinScenarios,
 	winScenarios,
 } from '@/lib/game-logic/win-scenarios'
+import { type PreMatchFixtureRow, preMatchWinProbability } from '@/lib/live/pre-match'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, type gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
@@ -1151,7 +1152,10 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 			currentRound: {
 				with: {
 					fixtures: {
-						with: { homeTeam: true, awayTeam: true },
+						// `odds` is the market the daily sync already persisted, frozen at
+						// the round's deadline — the pre-match chance each pick went in at
+						// (#222). A join, not a provider call: the live view makes none.
+						with: { homeTeam: true, awayTeam: true, odds: true },
 						orderBy: (fx, { asc }) => asc(fx.kickoff),
 					},
 				},
@@ -1168,6 +1172,14 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		: []
 
 	const fixturesRaw = gameData.currentRound?.fixtures ?? []
+	// Where a pick's pre-match win chance comes from — the picked team's own end
+	// of the persisted market, resolved by `preMatchWinProbability`.
+	const oddsByFixture = new Map<string, PreMatchFixtureRow>(
+		fixturesRaw.map((f) => [
+			f.id,
+			{ homeTeamId: f.homeTeamId, awayTeamId: f.awayTeamId, odds: f.odds },
+		]),
+	)
 	const fixtures = fixturesRaw.map((f) => ({
 		id: f.id,
 		kickoff: f.kickoff,
@@ -1218,6 +1230,10 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 					predictedResult: null,
 					result: 'hidden' as const,
 					projectedOutcome: null,
+					// Nothing to attach one to: the fixture and team are stripped just
+					// above, and a chance on a hidden pick would name the team it was
+					// hiding (#222).
+					preMatchWinProbability: null,
 				}
 			}
 			return {
@@ -1228,6 +1244,7 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 				predictedResult: p.predictedResult,
 				result: p.result,
 				projectedOutcome: proj.pickProjections.get(p.id) ?? null,
+				preMatchWinProbability: preMatchWinProbability(p, oddsByFixture),
 			}
 		}),
 		players: gameData.players.map((p) => {

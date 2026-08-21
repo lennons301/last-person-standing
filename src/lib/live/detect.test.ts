@@ -97,6 +97,7 @@ function pk(overrides: Partial<LivePick> = {}): LivePick {
 		confidenceRank: 1,
 		predictedResult: 'home_win',
 		result: 'pending',
+		preMatchWinProbability: null,
 		...overrides,
 	}
 }
