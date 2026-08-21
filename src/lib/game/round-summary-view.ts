@@ -125,9 +125,9 @@ export interface RoundSummaryRoundRow {
 	deadline: Date | null
 }
 
-export interface SelectRoundSummaryRoundInput {
+export interface SelectRoundSummaryRoundInput<T extends RoundSummaryRoundRow> {
 	/** The competition's rounds. */
-	rounds: RoundSummaryRoundRow[]
+	rounds: T[]
 	game: {
 		currentRoundId: string | null
 		currentRoundNumber: number | null
@@ -164,9 +164,9 @@ export interface SelectRoundSummaryRoundInput {
  * Null when nothing qualifies: no deadline has passed yet, or the game has no
  * round to bound by at all.
  */
-export function selectRoundSummaryRound(
-	input: SelectRoundSummaryRoundInput,
-): RoundSummaryRoundRow | null {
+export function selectRoundSummaryRound<T extends RoundSummaryRoundRow>(
+	input: SelectRoundSummaryRoundInput<T>,
+): T | null {
 	const { rounds, game, now } = input
 	const startingRound = game.startingRoundId
 		? rounds.find((r) => r.id === game.startingRoundId)
@@ -179,7 +179,7 @@ export function selectRoundSummaryRound(
 		if (startingRound && r.number < startingRound.number) return false
 		return isPicksLocked(r, now)
 	})
-	return candidates.reduce<RoundSummaryRoundRow | null>(
+	return candidates.reduce<T | null>(
 		(latest, r) => (latest == null || r.number > latest.number ? r : latest),
 		null,
 	)
