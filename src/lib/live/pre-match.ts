@@ -9,6 +9,33 @@
  * fixture, on a free tier).
  */
 
+import { formatWinChance } from '@/lib/game/round-summary-view'
+
+/**
+ * Every fixed word the figure is rendered with, in one table — the same
+ * arrangement `ROUND_SUMMARY_COPY` uses, and for the same reason: two surfaces
+ * of one game must not word the same number two ways.
+ */
+export const PRE_MATCH_COPY = {
+	/** The chip's own prefix, beside a pick. */
+	label: 'Pre-match',
+	/** Spelled out where two words aren't enough — assistive text, tooltips. */
+	description: 'Pre-match win chance for this pick — not a live price',
+} as const
+
+/**
+ * The figure as a pick's chip prints it: `Pre-match 22%`.
+ *
+ * The percentage comes out of the round summary's `formatWinChance` rather than
+ * a second rounding rule, so the card under the progress grid and the live
+ * scores pop-out can never quote one pick's chance differently. Null in, null
+ * out — an absent market renders no chip at all rather than a nought.
+ */
+export function formatPreMatchWinChance(probability: number | null | undefined): string | null {
+	const chance = formatWinChance(probability)
+	return chance == null ? null : `${PRE_MATCH_COPY.label} ${chance}`
+}
+
 /** A fixture as the join needs it: its two sides, and its market if we hold one. */
 export interface PreMatchFixtureRow {
 	homeTeamId: string

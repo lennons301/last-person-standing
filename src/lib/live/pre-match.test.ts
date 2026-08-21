@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { type PreMatchFixtureRow, preMatchWinProbability } from './pre-match'
+import { formatWinChance } from '@/lib/game/round-summary-view'
+import {
+	formatPreMatchWinChance,
+	type PreMatchFixtureRow,
+	preMatchWinProbability,
+} from './pre-match'
 
 function fixtures(entries: Array<[string, PreMatchFixtureRow]>): Map<string, PreMatchFixtureRow> {
 	return new Map(entries)
@@ -48,5 +53,25 @@ describe('preMatchWinProbability', () => {
 		expect(
 			preMatchWinProbability({ fixtureId: 'fx-1', teamId: 'team-other' }, byFixture),
 		).toBeNull()
+	})
+})
+
+describe('formatPreMatchWinChance', () => {
+	it('labels the figure as pre-match, so it cannot read as a live in-play price', () => {
+		// The ticket's own two figures: the 22% shot and the 84% favourite.
+		expect(formatPreMatchWinChance(0.2249)).toBe('Pre-match 22%')
+		expect(formatPreMatchWinChance(0.8351)).toBe('Pre-match 84%')
+	})
+
+	it('rounds a half exactly as the round summary card does', () => {
+		// 0.575 lands at 57.499999999999993 in binary; both surfaces of one game
+		// must say 58%, so the rule is the summary card's own and not a second one.
+		expect(formatPreMatchWinChance(0.575)).toBe('Pre-match 58%')
+		expect(formatPreMatchWinChance(0.575)).toBe(`Pre-match ${formatWinChance(0.575)}`)
+	})
+
+	it('is nothing at all where there is no probability', () => {
+		expect(formatPreMatchWinChance(null)).toBeNull()
+		expect(formatPreMatchWinChance(undefined)).toBeNull()
 	})
 })
