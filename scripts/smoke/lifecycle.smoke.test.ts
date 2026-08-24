@@ -45,7 +45,7 @@ import {
 } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment, payout } from '@/lib/schema/payment'
-import { getShareLiveData } from '@/lib/share/data'
+import { getShareLiveData, getShareStandingsData } from '@/lib/share/data'
 import {
 	finishFixture,
 	liveFixture,
@@ -1967,6 +1967,81 @@ describe('post-deadline + post-completion visibility', () => {
 		const grid = await getProgressGridData(gameId, 'u-me')
 		const otherRow = grid?.players.find((p) => p.id === gpOther)
 		expect(otherRow?.cellsByRoundId[r2]?.result).not.toBe('locked')
+	})
+
+	it('classic: the share grid keeps the played gameweeks and drops the advance-pick one (#225)', async () => {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A' })
+		const b = await makeTeam({ name: 'B', shortName: 'B' })
+		const c = await makeTeam({ name: 'C', shortName: 'C' })
+		const d = await makeTeam({ name: 'D', shortName: 'D' })
+		// GW1 played out; GW2 past its deadline with the ball still rolling; GW13
+		// a month off — the shape a player planning ten gameweeks ahead makes.
+		const r1 = await makeRound(compId, {
+			number: 1,
+			status: 'completed',
+			deadline: new Date(Date.now() - 7 * 86_400_000),
+		})
+		const r2 = await makeRound(compId, {
+			number: 2,
+			status: 'open',
+			deadline: new Date(Date.now() - 60_000),
+		})
+		const r13 = await makeRound(compId, {
+			number: 13,
+			status: 'upcoming',
+			deadline: new Date(Date.now() + 30 * 86_400_000),
+		})
+		const fx1 = await makeFixture({
+			roundId: r1,
+			homeTeamId: a,
+			awayTeamId: b,
+			status: 'finished',
+			homeScore: 2,
+			awayScore: 0,
+		})
+		const fx2 = await makeFixture({
+			roundId: r2,
+			homeTeamId: c,
+			awayTeamId: d,
+			status: 'live',
+			homeScore: 1,
+			awayScore: 0,
+		})
+		const fx13 = await makeFixture({
+			roundId: r13,
+			homeTeamId: b,
+			awayTeamId: a,
+			kickoff: new Date(Date.now() + 30 * 86_400_000),
+		})
+
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r2,
+			startingRoundId: r1,
+			modeConfig: { allowRebuys: false },
+		})
+		const gp = await makePlayer({ gameId, userId: 'u-planner' })
+		await makePick({ gameId, gamePlayerId: gp, roundId: r1, teamId: a, fixtureId: fx1 })
+		await makePick({ gameId, gamePlayerId: gp, roundId: r2, teamId: c, fixtureId: fx2 })
+		// The advance pick (PR #81): a REAL pick row against a round that hasn't
+		// opened, which is what drags the column set out to GW13.
+		await makePick({ gameId, gamePlayerId: gp, roundId: r13, teamId: b, fixtureId: fx13 })
+
+		// On screen the future column stays — a player can see their own plan.
+		const grid = await getProgressGridData(gameId, 'u-planner')
+		expect(grid?.rounds.map((r) => r.number)).toEqual([1, 2, 13])
+		expect(grid?.rounds.find((r) => r.number === 1)?.picksLocked).toBe(true)
+		// Deadline gone, fixtures still in progress — locked, so it stays a column.
+		expect(grid?.rounds.find((r) => r.number === 2)?.picksLocked).toBe(true)
+		expect(grid?.rounds.find((r) => r.number === 13)?.picksLocked).toBe(false)
+
+		// The share image renders only the gameweeks whose deadline has passed —
+		// without the filter these were six padlocks and no results.
+		const share = await getShareStandingsData(gameId, 'u-planner')
+		if (share?.mode !== 'classic') throw new Error('expected classic')
+		expect(share.classicGrid.rounds.map((r) => r.number)).toEqual([1, 2])
 	})
 
 	it('turbo: standings keep showing the round + reveal picks once deadline passes', async () => {

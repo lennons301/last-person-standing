@@ -56,7 +56,7 @@ describe('getShareStandingsData', () => {
 	it('classic: a gameweek-pick sort orders players by team and flags flat', async () => {
 		makeHeaderMock('classic')
 		getProgressGridDataMock.mockResolvedValue({
-			rounds: [{ id: 'r1', number: 1, name: 'GW1', label: 'GW1' }],
+			rounds: [{ id: 'r1', number: 1, name: 'GW1', label: 'GW1', picksLocked: true }],
 			players: [
 				{
 					id: 'c',
@@ -159,6 +159,90 @@ describe('getShareStandingsData', () => {
 		})
 		const result = await getShareStandingsData('g1', 'u1')
 		expect(result?.mode === 'cup' && result.overflowCount).toBe(5)
+	})
+
+	it('classic: drops gameweeks whose picks are not locked yet (#225 advance picks)', async () => {
+		makeHeaderMock('classic')
+		// The reported shape: three played gameweeks plus an advance pick on a
+		// far-future one, which "touches" GW13 and drags the column set out to it.
+		getProgressGridDataMock.mockResolvedValue({
+			rounds: [
+				{ id: 'r1', number: 1, label: 'GW1', picksLocked: true },
+				{ id: 'r2', number: 2, label: 'GW2', picksLocked: true },
+				{ id: 'r3', number: 3, label: 'GW3', picksLocked: true },
+				{ id: 'r13', number: 13, label: 'GW13', picksLocked: false },
+			],
+			players: [],
+		})
+		const result = await getShareStandingsData('g1', 'u1')
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.rounds.map((r) => r.label)).toEqual(['GW1', 'GW2', 'GW3'])
+	})
+
+	it('classic: keeps a post-deadline gameweek whose fixtures are still in progress', async () => {
+		makeHeaderMock('classic')
+		// Mid-round share: GW2's deadline has passed (picks locked) but nothing
+		// has settled, so its cells still project from live scores.
+		getProgressGridDataMock.mockResolvedValue({
+			rounds: [
+				{ id: 'r1', number: 1, label: 'GW1', picksLocked: true },
+				{ id: 'r2', number: 2, label: 'GW2', picksLocked: true },
+				{ id: 'r3', number: 3, label: 'GW3', picksLocked: false },
+			],
+			players: [
+				{
+					id: 'a',
+					name: 'Alice',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: {
+						r1: { result: 'win', teamShortName: 'ARS' },
+						r2: { result: 'pending', teamShortName: 'CHE' },
+						r3: { result: 'locked' },
+					},
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1')
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.rounds.map((r) => r.label)).toEqual(['GW1', 'GW2'])
+	})
+
+	it('classic: yields no gameweeks at all when none has passed its deadline', async () => {
+		makeHeaderMock('classic')
+		getProgressGridDataMock.mockResolvedValue({
+			rounds: [
+				{ id: 'r1', number: 1, label: 'GW1', picksLocked: false },
+				{ id: 'r5', number: 5, label: 'GW5', picksLocked: false },
+			],
+			players: [{ id: 'a', name: 'Alice', status: 'alive', goals: 0, cellsByRoundId: {} }],
+		})
+		const result = await getShareStandingsData('g1', 'u1')
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.rounds).toEqual([])
+		// The players still come through — the card is rendered, just column-less.
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice'])
+	})
+
+	it('classic: the round filter leaves the players ordering alone', async () => {
+		makeHeaderMock('classic')
+		getProgressGridDataMock.mockResolvedValue({
+			rounds: [{ id: 'r1', number: 1, label: 'GW1', picksLocked: true }],
+			players: [
+				{ id: 'b', name: 'Bob', status: 'alive', goals: 0, cellsByRoundId: {} },
+				{
+					id: 'a',
+					name: 'Alice',
+					status: 'eliminated',
+					eliminatedRoundNumber: 1,
+					goals: 0,
+					cellsByRoundId: {},
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1')
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Bob', 'Alice'])
 	})
 
 	it('passes viewerUserId to getProgressGridData', async () => {

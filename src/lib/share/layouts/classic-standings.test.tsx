@@ -84,6 +84,106 @@ describe('classicStandingsLayout', () => {
 		expect(height).toBe(1460)
 	})
 
+	it('renders the six most recent columns it was handed (#225: already filtered to played gameweeks)', () => {
+		const rounds = Array.from({ length: 8 }).map((_, i) => ({
+			id: `r${i + 1}`,
+			number: i + 1,
+			name: `Gameweek ${i + 1}`,
+			label: `GW${i + 1}`,
+			picksLocked: true,
+		}))
+		const data: Extract<import('../data').StandingsShareData, { mode: 'classic' }> = {
+			mode: 'classic',
+			flat: false,
+			header: fixture.header,
+			classicGrid: {
+				aliveCount: 1,
+				eliminatedCount: 0,
+				pot: '100.00',
+				rounds,
+				players: [
+					{
+						id: 'p1',
+						name: 'Player',
+						status: 'alive' as const,
+						eliminatedRoundNumber: null,
+						goals: 0,
+						cellsByRoundId: {},
+					},
+				],
+			} as never,
+		}
+		const s = JSON.stringify(classicStandingsLayout(data).jsx)
+		expect(s).not.toContain('GW1"')
+		expect(s).not.toContain('GW2"')
+		for (const label of ['GW3', 'GW4', 'GW5', 'GW6', 'GW7', 'GW8']) {
+			expect(s).toContain(label)
+		}
+	})
+
+	describe('no gameweek has passed its deadline (#225)', () => {
+		const emptyRounds: Extract<import('../data').StandingsShareData, { mode: 'classic' }> = {
+			mode: 'classic',
+			flat: false,
+			header: {
+				...fixture.header,
+				gameName: 'Pre-season game',
+				pot: '480.00',
+				potTotal: '480.00',
+			},
+			classicGrid: {
+				aliveCount: 12,
+				eliminatedCount: 3,
+				pot: '480.00',
+				rounds: [],
+				players: [
+					{
+						id: 'p1',
+						name: 'Alice',
+						status: 'alive' as const,
+						eliminatedRoundNumber: null,
+						goals: 4,
+						// Advance picks exist, but no round is revealable — the cells are
+						// unreachable because no column survives the filter.
+						cellsByRoundId: { r13: { result: 'locked' as const } },
+					},
+					{
+						id: 'p2',
+						name: 'Bob',
+						status: 'eliminated' as const,
+						eliminatedRoundNumber: 1,
+						eliminatedRoundLabel: 'GW1',
+						goals: 0,
+						cellsByRoundId: {},
+					},
+				],
+			} as never,
+		}
+
+		it('renders the card with a placeholder instead of gameweek columns', () => {
+			const s = JSON.stringify(classicStandingsLayout(emptyRounds).jsx)
+			expect(s).toContain('No gameweeks played yet')
+			// Header, pot and the alive/eliminated counts survive.
+			expect(s).toContain('Pre-season game')
+			expect(s).toContain('480.00')
+			expect(s).toContain('12 alive')
+			expect(s).toContain('3 eliminated')
+			// Player rows survive, goals column included.
+			expect(s).toContain('Alice')
+			expect(s).toContain('Bob')
+			// And not a single padlock.
+			expect(s).not.toContain('🔒')
+			expect(s).not.toContain('Locked in')
+		})
+
+		it('keeps the fixed-canvas height maths (empty column strip costs no rows)', () => {
+			const { width, height } = classicStandingsLayout(emptyRounds)
+			expect(width).toBe(1080)
+			// 340 chrome + 2 rows × 70 = 480, floored at the 600 minimum.
+			expect(height).toBe(600)
+		})
+	})
+
 	it('caps at 30 visible (20 alive + 10 eliminated) and emits an overflow tail when needed', () => {
 		const bigPlayers = Array.from({ length: 35 }).map((_, i) => ({
 			id: `p${i}`,

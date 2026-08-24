@@ -219,10 +219,19 @@ export async function getShareStandingsData(
 			? grid.players.filter((p) => p.status === 'alive')
 			: grid.players
 		const players = sortGridPlayers(filtered, sort)
+		// Only gameweeks whose picks are locked belong in a shared image (#225).
+		// The grid's column set is every round the game has TOUCHED, and an
+		// advance pick (PR #81) touches a round ten-plus gameweeks out; because the
+		// share path hides every not-yet-locked pick, those columns render as
+		// nothing but padlocks and push the played gameweeks out of the layout's
+		// six-column tail. Filtering here, not in the layout, keeps the layout a
+		// dumb renderer — and leaves the on-screen grid untouched, where a player
+		// seeing their own forward plan is the point.
+		const rounds = grid.rounds.filter((r) => r.picksLocked)
 		return {
 			mode: 'classic',
 			header,
-			classicGrid: { ...grid, players },
+			classicGrid: { ...grid, players, rounds },
 			flat: sort.key === 'round',
 		}
 	}

@@ -29,6 +29,13 @@ const OVERFLOW_ROW_HEIGHT = 44
 // outer bottom padding.
 const CHROME_HEIGHT = 340
 
+// Shown in place of the column strip when the game has no post-deadline
+// gameweek yet — a pre-season game whose players have made advance picks and
+// whose opening deadline hasn't passed. The card still carries the name, pot,
+// alive/eliminated counts and the player rows; what it can't do is show picks
+// nobody is allowed to see yet (#225).
+const NO_ROUNDS_PLACEHOLDER = 'No gameweeks played yet'
+
 export interface ClassicStandingsRender {
 	jsx: ReactElement
 	width: number
@@ -51,7 +58,13 @@ export function classicStandingsLayout(
 			]
 	const overflow = players.length - visible.length
 
+	// Rounds arrive already filtered to the ones whose picks are locked
+	// (getShareStandingsData), so the tail window is the six most recent PLAYED
+	// gameweeks rather than the six most recent touched ones.
 	const visibleRounds = grid.rounds.slice(-6)
+	// An empty column strip costs no vertical space: the placeholder sits inside
+	// the existing column-header row and each player row keeps its fixed
+	// ROW_HEIGHT, so the canvas maths below are unchanged.
 	const height = Math.max(
 		600,
 		CHROME_HEIGHT + visible.length * ROW_HEIGHT + (overflow > 0 ? OVERFLOW_ROW_HEIGHT : 0),
@@ -115,19 +128,33 @@ export function classicStandingsLayout(
 				>
 					<div style={{ display: 'flex', width: '160px' }}>Player</div>
 					<div style={{ display: 'flex', flex: 1, gap: '6px' }}>
-						{visibleRounds.map((r) => (
+						{visibleRounds.length === 0 ? (
 							<div
-								key={r.id}
 								style={{
 									display: 'flex',
 									flex: 1,
 									justifyContent: 'center',
 									fontSize: '14px',
+									fontWeight: 500,
 								}}
 							>
-								{r.label}
+								{NO_ROUNDS_PLACEHOLDER}
 							</div>
-						))}
+						) : (
+							visibleRounds.map((r) => (
+								<div
+									key={r.id}
+									style={{
+										display: 'flex',
+										flex: 1,
+										justifyContent: 'center',
+										fontSize: '14px',
+									}}
+								>
+									{r.label}
+								</div>
+							))
+						)}
 					</div>
 					<div style={{ display: 'flex', width: '60px', justifyContent: 'center' }}>Gls</div>
 					<div style={{ display: 'flex', width: '100px', justifyContent: 'flex-end' }}>Status</div>
