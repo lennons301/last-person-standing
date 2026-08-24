@@ -38,6 +38,19 @@ export interface GridRound {
 	label: string
 	isStartingRound?: boolean
 	/**
+	 * Whether this round's picks are locked and revealable to everyone — the
+	 * round has been processed, or its OWN deadline has passed (`arePicksLocked`,
+	 * which reads the round and never the game, so a finished game doesn't turn
+	 * its unplayed rounds locked). False for a future round carrying advance
+	 * picks (PR #81), which commit real pick rows against a round that hasn't
+	 * opened. Required, not optional, for the same reason the cells' hide rule is
+	 * derived and not assumed: a caller that filters columns on it (the classic
+	 * share image, #225) must never read a missing field as "locked". Plain
+	 * boolean so the descriptor stays JSON-serialisable across the server→client
+	 * boundary.
+	 */
+	picksLocked: boolean
+	/**
 	 * Non-null when this round was voided (classic threshold crossed —
 	 * see cancellation design doc). UI renders the column with prominent
 	 * "round voided" treatment.

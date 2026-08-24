@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deriveGameRoundStatus } from './round-status'
+import { arePicksLocked, deriveGameRoundStatus } from './round-status'
 
 const ROUND = {
 	id: 'r5',
@@ -80,5 +80,49 @@ describe('deriveGameRoundStatus', () => {
 			now: new Date('2026-05-01T12:00:00Z'),
 		})
 		expect(status).toBe('completed')
+	})
+})
+
+describe('arePicksLocked', () => {
+	const NOW = new Date('2026-06-15T12:00:00Z')
+
+	it('locks a round whose own deadline has gone', () => {
+		expect(
+			arePicksLocked({ status: 'active', deadline: new Date('2026-06-15T11:00:00Z') }, NOW),
+		).toBe(true)
+	})
+
+	it('locks a processed round even with no deadline recorded', () => {
+		expect(arePicksLocked({ status: 'completed', deadline: null }, NOW)).toBe(true)
+	})
+
+	it('leaves a round whose deadline is still to come unlocked', () => {
+		expect(
+			arePicksLocked({ status: 'upcoming', deadline: new Date('2026-06-15T13:00:00Z') }, NOW),
+		).toBe(false)
+	})
+
+	it('leaves a round with no deadline recorded unlocked — nothing has closed', () => {
+		expect(arePicksLocked({ status: 'upcoming', deadline: null }, NOW)).toBe(false)
+	})
+
+	it('stays keyed on the round when the game is over (#225)', () => {
+		// A completed game has no currentRoundId, so deriveGameRoundStatus reports
+		// 'completed' for every round — including a future gameweek still carrying
+		// an advance pick. This rule reads the round itself and says otherwise.
+		const future = {
+			id: 'r13',
+			number: 13,
+			status: 'upcoming' as const,
+			deadline: new Date('2026-08-15T12:00:00Z'),
+		}
+		expect(
+			deriveGameRoundStatus({
+				round: future,
+				game: { currentRoundId: null, currentRoundNumber: null },
+				now: NOW,
+			}),
+		).toBe('completed')
+		expect(arePicksLocked(future, NOW)).toBe(false)
 	})
 })
