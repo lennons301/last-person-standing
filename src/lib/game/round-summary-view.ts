@@ -11,6 +11,7 @@
  * the clock, queries, or calls a model. The prices are the ones the daily sync
  * already persisted per fixture, frozen at the round's deadline.
  */
+import { arePicksLocked } from '@/lib/game/round-status'
 
 /** A team as the summary names it. */
 export interface RoundSummaryTeamRow {
@@ -177,22 +178,12 @@ export function selectRoundSummaryRound<T extends RoundSummaryRoundRow>(
 	const candidates = rounds.filter((r) => {
 		if (r.number > upperBound) return false
 		if (startingRound && r.number < startingRound.number) return false
-		return isPicksLocked(r, now)
+		return arePicksLocked(r, now)
 	})
 	return candidates.reduce<T | null>(
 		(latest, r) => (latest == null || r.number > latest.number ? r : latest),
 		null,
 	)
-}
-
-/**
- * Are this round's picks locked and revealable? The grid's rule verbatim: the
- * round has been processed, or its own deadline has gone. A round with no
- * deadline recorded is never locked — nothing has closed.
- */
-function isPicksLocked(round: RoundSummaryRoundRow, now: Date): boolean {
-	if (round.status === 'completed') return true
-	return round.deadline != null && now >= round.deadline
 }
 
 export interface BuildRoundSummaryInput {

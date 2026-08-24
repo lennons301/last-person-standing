@@ -114,10 +114,11 @@ describe('classicStandingsLayout', () => {
 			} as never,
 		}
 		const s = JSON.stringify(classicStandingsLayout(data).jsx)
-		expect(s).not.toContain('GW1"')
-		expect(s).not.toContain('GW2"')
 		for (const label of ['GW3', 'GW4', 'GW5', 'GW6', 'GW7', 'GW8']) {
-			expect(s).toContain(label)
+			expect(s).toContain(`"${label}"`)
+		}
+		for (const label of ['GW1', 'GW2']) {
+			expect(s).not.toContain(`"${label}"`)
 		}
 	})
 

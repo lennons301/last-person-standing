@@ -15,7 +15,7 @@ import {
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
-import { deriveGameRoundStatus } from '@/lib/game/round-status'
+import { arePicksLocked, deriveGameRoundStatus } from '@/lib/game/round-status'
 import {
 	isGameStartingRound,
 	resolveRoundAfterStarting,
@@ -1003,7 +1003,13 @@ export async function getProgressGridData(
 		// Surfaced on the descriptor, not just consumed per-cell below: the classic
 		// share image filters its columns on it so a far-future advance-pick round
 		// never reaches the layout's six-column tail (#225).
-		picksLocked: picksLockedByRoundId.get(r.id) ?? false,
+		//
+		// The round's OWN rule, not the per-game map below, and the difference
+		// matters exactly once: a completed game has no `currentRoundId`, so
+		// `deriveGameRoundStatus` calls every round 'completed' — which would put
+		// an untouched future gameweek back in the share the moment a game ends.
+		// The cells keep the game-relative map, so the on-screen grid is unmoved.
+		picksLocked: arePicksLocked(r, now),
 		voidedAt: r.voidedAt ?? null,
 	}))
 

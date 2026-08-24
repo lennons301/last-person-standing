@@ -27,6 +27,7 @@ vi.mock('@/lib/game/cup-standings-queries', () => ({
 
 import { db } from '@/lib/db'
 import { getShareLiveData, getShareStandingsData, getShareWinnerData } from './data'
+import { classicStandingsLayout } from './layouts/classic-standings'
 
 function makeHeaderMock(mode: 'classic' | 'cup' | 'turbo') {
 	vi.mocked(db.query.game.findFirst).mockResolvedValue({
@@ -177,6 +178,35 @@ describe('getShareStandingsData', () => {
 		const result = await getShareStandingsData('g1', 'u1')
 		if (result?.mode !== 'classic') throw new Error('expected classic')
 		expect(result.classicGrid.rounds.map((r) => r.label)).toEqual(['GW1', 'GW2', 'GW3'])
+	})
+
+	it('classic: a long game with advance picks shares its six most recent PLAYED gameweeks', async () => {
+		makeHeaderMock('classic')
+		// Eight gameweeks played, two advance picks out in front of them. The
+		// layout takes the last six of what it is handed, so what it is handed
+		// decides whether the image is results or padlocks (#225).
+		getProgressGridDataMock.mockResolvedValue({
+			rounds: [
+				...Array.from({ length: 8 }).map((_, i) => ({
+					id: `r${i + 1}`,
+					number: i + 1,
+					label: `GW${i + 1}`,
+					picksLocked: true,
+				})),
+				{ id: 'r9', number: 9, label: 'GW9', picksLocked: false },
+				{ id: 'r20', number: 20, label: 'GW20', picksLocked: false },
+			],
+			players: [{ id: 'a', name: 'Alice', status: 'alive', goals: 0, cellsByRoundId: {} }],
+		})
+		const result = await getShareStandingsData('g1', 'u1')
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		const rendered = JSON.stringify(classicStandingsLayout(result).jsx)
+		for (const label of ['GW3', 'GW4', 'GW5', 'GW6', 'GW7', 'GW8']) {
+			expect(rendered).toContain(`"${label}"`)
+		}
+		for (const label of ['GW1', 'GW2', 'GW9', 'GW20']) {
+			expect(rendered).not.toContain(`"${label}"`)
+		}
 	})
 
 	it('classic: keeps a post-deadline gameweek whose fixtures are still in progress', async () => {

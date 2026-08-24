@@ -2042,6 +2042,18 @@ describe('post-deadline + post-completion visibility', () => {
 		const share = await getShareStandingsData(gameId, 'u-planner')
 		if (share?.mode !== 'classic') throw new Error('expected classic')
 		expect(share.classicGrid.rounds.map((r) => r.number)).toEqual([1, 2])
+
+		// And once the game is over it must stay out. Completion nulls
+		// currentRoundId, which makes deriveGameRoundStatus call every round
+		// 'completed' — the reason the descriptor reads the round's own deadline
+		// rather than the game's position (#225).
+		await db
+			.update(game)
+			.set({ status: 'completed', currentRoundId: null })
+			.where(eq(game.id, gameId))
+		const afterCompletion = await getShareStandingsData(gameId, 'u-planner')
+		if (afterCompletion?.mode !== 'classic') throw new Error('expected classic')
+		expect(afterCompletion.classicGrid.rounds.map((r) => r.number)).toEqual([1, 2])
 	})
 
 	it('turbo: standings keep showing the round + reveal picks once deadline passes', async () => {

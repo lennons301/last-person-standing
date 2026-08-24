@@ -55,3 +55,26 @@ export function deriveGameRoundStatus(
 	if (round.deadline && now >= round.deadline) return 'active'
 	return 'open'
 }
+
+export interface PicksLockedRound {
+	/** Competition-level status from the bootstrap sync. */
+	status: 'upcoming' | 'open' | 'active' | 'completed'
+	deadline: Date | null
+}
+
+/**
+ * Are this round's picks locked and revealable to everyone? The round has been
+ * processed, or its own deadline has gone. A round with no deadline recorded is
+ * never locked — nothing has closed.
+ *
+ * Deliberately keyed on the ROUND and not on where a game has got to, which is
+ * what separates it from `deriveGameRoundStatus`: that function reports
+ * 'completed' for every round once `game.currentRoundId` is null (the game is
+ * over), which is the right answer for "has this game finished with this
+ * round?" and the wrong one for "may these picks be shown?" — a completed game
+ * can still hold advance picks on a gameweek that hasn't kicked off (#225).
+ */
+export function arePicksLocked(round: PicksLockedRound, now: Date): boolean {
+	if (round.status === 'completed') return true
+	return round.deadline != null && now >= round.deadline
+}
