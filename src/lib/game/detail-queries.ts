@@ -965,18 +965,6 @@ export async function getProgressGridData(
 		touchedRoundIds.has(r.id),
 	)
 
-	const competitionType = gameData.competition.type as 'league' | 'knockout' | 'group_knockout'
-	const rounds: GridRound[] = completedAndCurrentRounds.map((r) => ({
-		id: r.id,
-		number: r.number,
-		name: r.name ?? roundLabelLong(competitionType, r.number),
-		label: roundLabel(competitionType, r.number),
-		// The game's own opening round, not the competition's gameweek one — a game
-		// created in November is marked on gameweek 12 (#203).
-		isStartingRound: isGameStartingRound(gameData, r.id),
-		voidedAt: r.voidedAt ?? null,
-	}))
-
 	// Pre-compute per-game derived status for each round. Using `r.status` alone
 	// keeps picks locked even after the deadline (round.status flips to
 	// 'completed' only when every fixture has settled). The derived status
@@ -1002,6 +990,22 @@ export async function getProgressGridData(
 		const deadlinePassed = r.deadline != null && now >= r.deadline
 		picksLockedByRoundId.set(r.id, status === 'completed' || deadlinePassed)
 	}
+
+	const competitionType = gameData.competition.type as 'league' | 'knockout' | 'group_knockout'
+	const rounds: GridRound[] = completedAndCurrentRounds.map((r) => ({
+		id: r.id,
+		number: r.number,
+		name: r.name ?? roundLabelLong(competitionType, r.number),
+		label: roundLabel(competitionType, r.number),
+		// The game's own opening round, not the competition's gameweek one — a game
+		// created in November is marked on gameweek 12 (#203).
+		isStartingRound: isGameStartingRound(gameData, r.id),
+		// Surfaced on the descriptor, not just consumed per-cell below: the classic
+		// share image filters its columns on it so a far-future advance-pick round
+		// never reaches the layout's six-column tail (#225).
+		picksLocked: picksLockedByRoundId.get(r.id) ?? false,
+		voidedAt: r.voidedAt ?? null,
+	}))
 
 	// Get user names for players
 	const { user } = await import('@/lib/schema/auth')
