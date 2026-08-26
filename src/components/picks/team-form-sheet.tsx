@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { loadTeamFormDetail } from '@/app/actions/team-form'
 import { formGuidePath } from '@/lib/game/form-guide-link'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
-import { type FormMarket, TeamFormSheetView } from './team-form-panel'
+import { type FixtureSummaryView, type FormMarket, TeamFormSheetView } from './team-form-panel'
 
 interface TeamFormSheetProps {
 	open: boolean
@@ -26,6 +26,11 @@ interface TeamFormSheetProps {
 	market?: FormMarket | null
 	// Used for the loading-state header so the sheet doesn't pop in empty.
 	teamPreview: { name: string; shortName: string; badgeUrl?: string | null }
+	/**
+	 * The specific fixture the sheet was opened from — comes down with the
+	 * caller's cell/row like `market` does, no loading of its own.
+	 */
+	fixtureSummary?: FixtureSummaryView
 }
 
 /**
@@ -44,6 +49,7 @@ export function TeamFormSheet({
 	beforeRoundNumber,
 	market = null,
 	teamPreview,
+	fixtureSummary,
 }: TeamFormSheetProps) {
 	// The page the sheet was opened from, so the guide can offer a way back to
 	// it. The guide itself stays game-agnostic — this is the only place that
@@ -84,6 +90,7 @@ export function TeamFormSheet({
 			error={error}
 			market={market}
 			teamPreview={teamPreview}
+			fixtureSummary={fixtureSummary}
 			formGuideHref={formGuidePath(competitionId, teamId, {
 				opponent: opponentTeamId,
 				from: pathname,
