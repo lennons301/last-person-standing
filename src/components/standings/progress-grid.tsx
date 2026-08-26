@@ -1,14 +1,37 @@
 'use client'
 
 import { Eye, EyeOff, Share2, UsersRound } from 'lucide-react'
-import { useState } from 'react'
+import type React from 'react'
+import { useRef, useState } from 'react'
 import { useLiveGame } from '@/components/live/use-live-game'
+import type { FixtureSummaryView } from '@/components/picks/team-form-panel'
+import { TeamFormSheet } from '@/components/picks/team-form-sheet'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { describeFixturePhase, type FixtureRecordStatus } from '@/lib/game/fixture-phase'
 import { cn } from '@/lib/utils'
 import { AdminPlayerActions } from './admin-player-actions'
 import { GridFilter } from './grid-filter'
 import { type GridSort, type GridSortDir, type GridSortKey, sortGridPlayers } from './grid-sort'
+
+/** Fixture summary plus the phase it came from, for a caller-supplied renderer. */
+export interface GridFixtureSummary extends FixtureSummaryView {
+	phase: 'pre_match' | 'result'
+}
+
+/** What a caller-supplied sheet renderer is handed when a tappable cell opens. */
+export interface GridCellSheetArgs {
+	fixtureId: string
+	teamId: string
+	opponentTeamId?: string
+	teamShortName: string
+	roundNumber: number
+	fixtureSummary: GridFixtureSummary
+	open: boolean
+	onClose: () => void
+}
+
+export type GridCellFormSheetRenderer = (args: GridCellSheetArgs) => React.ReactNode
 
 // Each column's natural first-click direction; clicking an already-active column
 // flips it.
@@ -86,6 +109,18 @@ export interface GridCell {
 	 * pick (e.g. a no-pick elimination).
 	 */
 	eliminatedHere?: boolean
+	/**
+	 * The fixture this pick sits on. Set together with `teamId` whenever the
+	 * pick's fixture is revealed (i.e. `teamShortName`/`opponentShortName`
+	 * above are set too) — never on a hidden (`locked`), unplayed (`no_pick`)
+	 * or pick-less (`skull`, `empty`) cell, so its presence alone is what
+	 * makes a cell tappable (#226).
+	 */
+	fixtureId?: string
+	teamId?: string
+	opponentTeamId?: string
+	kickoff?: Date | string | null
+	fixtureStatus?: FixtureRecordStatus
 }
 
 export interface GridPlayer {
@@ -112,6 +147,14 @@ interface ProgressGridProps {
 	 *  so the Share-grid image can reproduce the on-screen order. */
 	onShare?: (standingsQuery: string) => void
 	showAdminActions?: boolean
+	/** Required to open the default fixture-detail sheet (`TeamFormSheet`). Without either it, or `renderFormSheet`, cells render with no tap target (#226). */
+	competitionId?: string
+	/**
+	 * Overrides how the fixture-detail sheet is rendered, for callers that
+	 * can't reach the database-backed server action the default path uses.
+	 * Supplying it makes cells tappable even without `competitionId`.
+	 */
+	renderFormSheet?: GridCellFormSheetRenderer
 }
 
 export function ProgressGrid({
@@ -123,12 +166,20 @@ export function ProgressGrid({
 	gameId,
 	onShare,
 	showAdminActions,
+	competitionId,
+	renderFormSheet,
 }: ProgressGridProps) {
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
 	const [sort, setSort] = useState<GridSort>({ key: 'status', dir: 'asc' })
 	const [showOpponents, setShowOpponents] = useState(false)
 	const [hideEliminated, setHideEliminated] = useState(false)
 	const liveCtx = useLiveGame()
+	// Which cell (by player + round) opened the fixture-detail sheet. The ref
+	// keeps the sheet's content through the close animation instead of
+	// emptying the moment it starts (mirrors PickTable's `lastSheetRowId`).
+	const [sheetTarget, setSheetTarget] = useState<{ playerId: string; roundId: string } | null>(null)
+	const lastSheetTarget = useRef<{ playerId: string; roundId: string } | null>(null)
+	const sheetEnabled = !!competitionId || !!renderFormSheet
 
 	// Click a column header to sort by it; click the active one again to flip
 	// direction. Round columns sort by the team picked that gameweek.
@@ -212,6 +263,33 @@ export function ProgressGrid({
 	const visiblePlayers = hideEliminated
 		? sortedPlayers.filter((p) => p.status !== 'eliminated')
 		: sortedPlayers
+
+	const activeTarget = sheetTarget ?? lastSheetTarget.current
+	const activePlayer = activeTarget
+		? players.find((p) => p.id === activeTarget.playerId)
+		: undefined
+	const activeRound = activeTarget ? rounds.find((r) => r.id === activeTarget.roundId) : undefined
+	const activeCell = activeTarget ? activePlayer?.cellsByRoundId[activeTarget.roundId] : undefined
+	const activeFixtureSummary: GridFixtureSummary | null =
+		activeCell?.fixtureStatus && activeCell.opponentShortName && activeCell.homeAway
+			? (() => {
+					const { phase, statusLabel } = describeFixturePhase(activeCell.fixtureStatus)
+					return {
+						phase,
+						statusLabel,
+						opponentShortName: activeCell.opponentShortName as string,
+						homeAway: activeCell.homeAway as 'H' | 'A',
+						kickoff: activeCell.kickoff ?? null,
+						score: phase === 'result' ? (activeCell.score ?? null) : null,
+					}
+				})()
+			: null
+
+	function openSheet(playerId: string, roundId: string) {
+		const target = { playerId, roundId }
+		lastSheetTarget.current = target
+		setSheetTarget(target)
+	}
 
 	return (
 		<div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -412,6 +490,11 @@ export function ProgressGrid({
 														roundLabel={r.label}
 														showOpponents={showOpponents}
 														bump={bump}
+														onOpen={
+															sheetEnabled && cell.fixtureId && cell.teamId
+																? () => openSheet(player.id, r.id)
+																: undefined
+														}
 													/>
 												</td>
 											)
@@ -441,8 +524,69 @@ export function ProgressGrid({
 					</table>
 				</div>
 			</TooltipProvider>
+
+			{activeCell?.fixtureId &&
+				activeCell.teamId &&
+				activeRound &&
+				activeFixtureSummary &&
+				(renderFormSheet
+					? renderFormSheet({
+							fixtureId: activeCell.fixtureId,
+							teamId: activeCell.teamId,
+							opponentTeamId: activeCell.opponentTeamId,
+							teamShortName: activeCell.teamShortName ?? '',
+							roundNumber: activeRound.number,
+							fixtureSummary: activeFixtureSummary,
+							open: sheetTarget !== null,
+							onClose: () => setSheetTarget(null),
+						})
+					: competitionId && (
+							<TeamFormSheet
+								open={sheetTarget !== null}
+								onOpenChange={(open) => {
+									if (!open) setSheetTarget(null)
+								}}
+								teamId={activeCell.teamId}
+								competitionId={competitionId}
+								opponentTeamId={activeCell.opponentTeamId}
+								beforeRoundNumber={activeRound.number}
+								fixtureSummary={activeFixtureSummary}
+								teamPreview={{
+									name: activeCell.teamShortName ?? '',
+									shortName: activeCell.teamShortName ?? '',
+								}}
+							/>
+						))}
 		</div>
 	)
+}
+
+/**
+ * A cell's tile — a real in-flow `<button>` when it has a fixture to open
+ * (`onOpen` set), a plain `<span>` otherwise. Never absolutely positioned:
+ * same reason as `PickTable`'s row button (#211) — a table cell can't be a
+ * containing block, so the tap target has to be in-flow content, not an
+ * overlay.
+ */
+function CellTag({
+	onOpen,
+	ariaLabel,
+	className,
+	children,
+}: {
+	onOpen?: () => void
+	ariaLabel?: string
+	className: string
+	children: React.ReactNode
+}) {
+	if (onOpen) {
+		return (
+			<button type="button" onClick={onOpen} aria-label={ariaLabel} className={className}>
+				{children}
+			</button>
+		)
+	}
+	return <span className={className}>{children}</span>
 }
 
 function GridCellView({
@@ -450,11 +594,14 @@ function GridCellView({
 	roundLabel,
 	showOpponents,
 	bump,
+	onOpen,
 }: {
 	cell: GridCell
 	roundLabel: string
 	showOpponents: boolean
 	bump?: 'up' | 'down' | null
+	/** Set only for a cell carrying a real fixture (#226) — see `GridCell.fixtureId`. */
+	onOpen?: () => void
 }) {
 	const width = showOpponents ? 'w-20' : 'w-12'
 	const height = 'h-9'
@@ -506,9 +653,12 @@ function GridCellView({
 		return (
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<span
+					<CellTag
+						onOpen={onOpen}
+						ariaLabel={onOpen ? `Open fixture details for ${cell.teamShortName}` : undefined}
 						className={cn(
-							'relative inline-flex flex-col items-center justify-center rounded bg-sky-100 text-sky-700 font-semibold leading-tight cursor-help dark:bg-sky-900/40 dark:text-sky-300',
+							'relative inline-flex flex-col items-center justify-center rounded bg-sky-100 text-sky-700 font-semibold leading-tight dark:bg-sky-900/40 dark:text-sky-300',
+							onOpen ? 'cursor-pointer' : 'cursor-help',
 							width,
 							height,
 						)}
@@ -518,7 +668,7 @@ function GridCellView({
 							<span className="text-[0.55rem] font-medium opacity-80">{cell.teamShortName}</span>
 						)}
 						{bump && <BumpBadge kind={bump} />}
-					</span>
+					</CellTag>
 				</TooltipTrigger>
 				<TooltipContent>
 					<p className="text-xs">Fixture cancelled — pick voided, you stay alive.</p>
@@ -598,9 +748,12 @@ function GridCellView({
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
-				<span
+				<CellTag
+					onOpen={onOpen}
+					ariaLabel={onOpen ? `Open fixture details for ${cell.teamShortName}` : undefined}
 					className={cn(
-						'relative inline-flex flex-col items-center justify-center rounded text-[0.7rem] font-bold cursor-help leading-tight',
+						'relative inline-flex flex-col items-center justify-center rounded text-[0.7rem] font-bold leading-tight',
+						onOpen ? 'cursor-pointer' : 'cursor-help',
 						width,
 						height,
 						colour,
@@ -621,7 +774,7 @@ function GridCellView({
 						</span>
 					)}
 					{bump && <BumpBadge kind={bump} />}
-				</span>
+				</CellTag>
 			</TooltipTrigger>
 			<TooltipContent>
 				<p className="text-xs">{tooltipLabel}</p>
