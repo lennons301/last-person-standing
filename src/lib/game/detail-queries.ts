@@ -1094,6 +1094,7 @@ export async function getProgressGridData(
 			}
 
 			let opponentShortName: string | undefined
+			let opponentTeamId: string | undefined
 			let homeAway: 'H' | 'A' | undefined
 			let score: string | undefined
 			if (thePick.fixture) {
@@ -1102,6 +1103,7 @@ export async function getProgressGridData(
 				opponentShortName = pickedHome
 					? thePick.fixture.awayTeam?.shortName
 					: thePick.fixture.homeTeam?.shortName
+				opponentTeamId = pickedHome ? thePick.fixture.awayTeamId : thePick.fixture.homeTeamId
 				if (thePick.fixture.homeScore != null && thePick.fixture.awayScore != null) {
 					score = pickedHome
 						? `${thePick.fixture.homeScore}-${thePick.fixture.awayScore}`
@@ -1118,6 +1120,13 @@ export async function getProgressGridData(
 				isAuto: thePick.isAuto,
 				eliminatedHere:
 					p.status === 'eliminated' && p.eliminatedRoundId === r.id ? true : undefined,
+				// Tapping the cell opens fixture details (#226) — only where the
+				// fixture itself is revealed above, same condition as `opponentShortName`.
+				fixtureId: thePick.fixture?.id,
+				teamId: thePick.fixture ? thePick.teamId : undefined,
+				opponentTeamId,
+				kickoff: thePick.fixture?.kickoff,
+				fixtureStatus: thePick.fixture?.status,
 			}
 		}
 
@@ -1151,7 +1160,7 @@ export async function getProgressGridData(
 
 	// No pot figure here on purpose: the page's stat line owns the pot headline,
 	// so the standings section neither queries nor prints one.
-	return { rounds, players, aliveCount, eliminatedCount }
+	return { rounds, players, aliveCount, eliminatedCount, competitionId: gameData.competition.id }
 }
 
 export async function getLivePayload(gameId: string, viewerUserId: string) {

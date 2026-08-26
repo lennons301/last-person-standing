@@ -65,6 +65,8 @@ interface GameDetailViewProps {
 		players: GridPlayer[]
 		aliveCount: number
 		eliminatedCount: number
+		/** Threaded to `ProgressGrid` so a tapped cell can open the fixture-detail sheet (#226). */
+		competitionId: string
 	} | null
 	turboStandings?: {
 		rounds: TurboRoundSummary[]
@@ -237,6 +239,7 @@ export function GameDetailView({
 						gameId={game.id}
 						onShare={openShare}
 						showAdminActions={game.isAdmin}
+						competitionId={classicGrid.competitionId}
 					/>
 				)}
 
