@@ -35,6 +35,22 @@ export interface FormMarket {
 }
 
 /**
+ * The specific fixture the sheet was opened from — not the team's season, the
+ * one match. `statusLabel` and whether `score` is set come from
+ * `describeFixturePhase` (`src/lib/game/fixture-phase.ts`): before kickoff
+ * there's a time to show and no score, once there's a result the score
+ * replaces it. `score` is already oriented to this team ("2-1" from its own
+ * perspective), matching the progress grid's own cell.
+ */
+export interface FixtureSummaryView {
+	statusLabel: string
+	opponentShortName: string
+	homeAway: 'H' | 'A'
+	kickoff: Date | string | null
+	score: string | null
+}
+
+/**
  * Props of the presentational half of the team form-detail sheet.
  *
  * `TeamFormSheet` (the sibling file) owns the data-loading: it calls a
@@ -70,6 +86,8 @@ export interface TeamFormPanelProps {
 	 * the guide is the deep dive. Omitted where no route exists to link to.
 	 */
 	formGuideHref?: string
+	/** The fixture this sheet was opened from. Absent when opened team-first (no one fixture in view). */
+	fixtureSummary?: FixtureSummaryView
 }
 
 export function TeamFormPanel({
@@ -80,6 +98,7 @@ export function TeamFormPanel({
 	teamPreview,
 	titleComponent: Title = PlainTitle,
 	formGuideHref,
+	fixtureSummary,
 }: TeamFormPanelProps) {
 	const display = detail?.team ?? {
 		name: teamPreview.name,
@@ -109,6 +128,7 @@ export function TeamFormPanel({
 						)}
 					</div>
 				</div>
+				{fixtureSummary && <FixtureSummary summary={fixtureSummary} />}
 			</SheetHeader>
 
 			<div className="px-4 pb-6 sm:px-0 sm:pb-2 mt-4 space-y-5">
@@ -313,6 +333,33 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 	return (
 		<div className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
 			{children}
+		</div>
+	)
+}
+
+/**
+ * The one fixture the sheet was opened from — kickoff before the match,
+ * score once there's one. Mutually exclusive: a score means the match has
+ * moved past "kicks off at", so the time it would have shown is gone.
+ */
+function FixtureSummary({ summary }: { summary: FixtureSummaryView }) {
+	return (
+		<div className="mt-3 rounded-lg border border-border px-3 py-2">
+			<div className="flex items-center justify-between gap-2 text-sm">
+				<span className="font-medium">
+					{summary.homeAway === 'H' ? 'vs' : '@'} {summary.opponentShortName}
+				</span>
+				<span className="text-xs text-muted-foreground">{summary.statusLabel}</span>
+			</div>
+			{summary.score ? (
+				<div className="mt-1 text-base font-semibold tabular-nums">{summary.score}</div>
+			) : (
+				summary.kickoff && (
+					<div className="mt-1 text-xs text-muted-foreground">
+						<LocalDateTime date={summary.kickoff} />
+					</div>
+				)
+			)}
 		</div>
 	)
 }

@@ -153,6 +153,51 @@ describe('TeamFormPanel match odds', () => {
 	})
 })
 
+describe('TeamFormPanel fixture summary', () => {
+	it('shows the opponent and kickoff before the match — no score yet', () => {
+		render(
+			<TeamFormPanel
+				detail={DETAIL}
+				teamPreview={PREVIEW}
+				fixtureSummary={{
+					statusLabel: 'Kicks off',
+					opponentShortName: 'NEW',
+					homeAway: 'H',
+					kickoff: '2026-03-01T15:00:00.000Z',
+					score: null,
+				}}
+			/>,
+		)
+		expect(screen.getByText(/NEW/)).toBeTruthy()
+		expect(screen.getByText('Kicks off')).toBeTruthy()
+		expect(screen.queryByText('2-1')).toBeNull()
+	})
+
+	it('shows the final score once the match has a result, not the kickoff time', () => {
+		render(
+			<TeamFormPanel
+				detail={DETAIL}
+				teamPreview={PREVIEW}
+				fixtureSummary={{
+					statusLabel: 'Full-time',
+					opponentShortName: 'NEW',
+					homeAway: 'A',
+					kickoff: '2026-03-01T15:00:00.000Z',
+					score: '2-1',
+				}}
+			/>,
+		)
+		expect(screen.getByText('Full-time')).toBeTruthy()
+		expect(screen.getByText('2-1')).toBeTruthy()
+	})
+
+	it('renders no fixture summary block when none is supplied', () => {
+		render(<TeamFormPanel detail={DETAIL} teamPreview={PREVIEW} />)
+		expect(screen.queryByText('Kicks off')).toBeNull()
+		expect(screen.queryByText('Full-time')).toBeNull()
+	})
+})
+
 describe('TeamFormPanel — the way through to the full guide', () => {
 	it('links on to the form guide, from the footer and from the badge', () => {
 		render(<TeamFormPanel detail={DETAIL} teamPreview={PREVIEW} formGuideHref={HREF} />)
