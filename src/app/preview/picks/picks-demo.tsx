@@ -253,6 +253,7 @@ export function PreviewPlannerRound(props: PreviewPlannerRoundInput) {
 			usedTeams={round.usedTeams}
 			lockedTeamId={locked}
 			onLock={async (_roundId, teamId) => setLocked(teamId)}
+			onClear={async () => setLocked(null)}
 			renderFormSheet={previewFormSheet}
 		/>
 	)
