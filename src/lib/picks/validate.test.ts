@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { validateClassicPick, validateCupPicks, validateTurboPicks } from './validate'
+import {
+	validateClassicPick,
+	validateClassicPickClear,
+	validateCupPicks,
+	validateTurboPicks,
+} from './validate'
 
 describe('validateClassicPick', () => {
 	const base = {
@@ -74,6 +79,64 @@ describe('validateClassicPick', () => {
 		expect(validateClassicPick({ ...base, teamId: 'team-a', deadline: null })).toEqual({
 			valid: true,
 		})
+	})
+})
+
+describe('validateClassicPickClear', () => {
+	const base = {
+		playerStatus: 'alive' as const,
+		isPastRound: false,
+		deadline: new Date(Date.now() + 3600000),
+		now: new Date(),
+	}
+
+	it('accepts a valid clear', () => {
+		expect(validateClassicPickClear(base)).toEqual({ valid: true })
+	})
+	it('rejects eliminated player', () => {
+		expect(validateClassicPickClear({ ...base, playerStatus: 'eliminated' })).toEqual({
+			valid: false,
+			reason: 'Player is not alive',
+		})
+	})
+	it('rejects a round that has already been played', () => {
+		expect(validateClassicPickClear({ ...base, isPastRound: true })).toEqual({
+			valid: false,
+			reason: 'Round has already been played',
+		})
+	})
+	it('rejects past deadline', () => {
+		expect(validateClassicPickClear({ ...base, deadline: new Date(Date.now() - 1000) })).toEqual({
+			valid: false,
+			reason: 'Deadline has passed',
+		})
+	})
+	it('allows an admin late submission past the deadline', () => {
+		expect(
+			validateClassicPickClear(
+				{ ...base, deadline: new Date(Date.now() - 1000) },
+				{ allowAdminLateSubmission: true },
+			),
+		).toEqual({ valid: true })
+	})
+	it('still rejects an admin late submission for an already-played round', () => {
+		expect(
+			validateClassicPickClear(
+				{ ...base, isPastRound: true, deadline: new Date(Date.now() - 1000) },
+				{ allowAdminLateSubmission: true },
+			),
+		).toEqual({ valid: false, reason: 'Round has already been played' })
+	})
+	it('allows an admin late submission for an eliminated player', () => {
+		expect(
+			validateClassicPickClear(
+				{ ...base, playerStatus: 'eliminated' },
+				{ allowAdminLateSubmission: true },
+			),
+		).toEqual({ valid: true })
+	})
+	it('accepts null deadline', () => {
+		expect(validateClassicPickClear({ ...base, deadline: null })).toEqual({ valid: true })
 	})
 })
 
