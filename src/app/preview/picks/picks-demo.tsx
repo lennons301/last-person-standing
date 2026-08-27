@@ -303,7 +303,7 @@ export function PreviewClassicPick({ card }: { card: PreviewClassicCard }) {
 			summaryInHero={card.summaryInHero}
 			startExpanded={card.startExpanded}
 			onSubmitPick={async (next) => setPick(next)}
-			planHandlers={{ onLock: async () => {} }}
+			planHandlers={{ onLock: async () => {}, onClear: async () => {} }}
 			renderFormSheet={previewFormSheet}
 		/>
 	)

@@ -41,6 +41,7 @@ function renderRound(overrides: Partial<React.ComponentProps<typeof PlannerRound
 			usedTeams={[]}
 			lockedTeamId={null}
 			onLock={async () => {}}
+			onClear={async () => {}}
 			{...overrides}
 		/>,
 	)
