@@ -9,7 +9,7 @@ vi.mock('@/lib/db', () => ({
 			game: { findFirst: vi.fn() },
 			gamePlayer: { findFirst: vi.fn() },
 			round: { findFirst: vi.fn() },
-			pick: { findMany: vi.fn() },
+			pick: { findMany: vi.fn(), findFirst: vi.fn() },
 		},
 		insert: vi.fn(),
 		delete: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock('@/lib/db', () => ({
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import * as pickRoute from './route'
-import { POST } from './route'
+import { DELETE, POST } from './route'
 
 describe('GET /api/picks/[gameId]/[roundId]', () => {
 	it('is not exposed — a GET handler would leak opponents picks before the deadline', () => {
@@ -44,6 +44,13 @@ describe('GET /api/picks/[gameId]/[roundId]', () => {
 function makeReq(body: unknown) {
 	return new Request('http://localhost/api/picks/g1/r1', {
 		method: 'POST',
+		body: JSON.stringify(body),
+	})
+}
+
+function makeDeleteReq(body: unknown = {}) {
+	return new Request('http://localhost/api/picks/g1/r1', {
+		method: 'DELETE',
 		body: JSON.stringify(body),
 	})
 }
@@ -288,5 +295,178 @@ describe('POST /api/picks/[gameId]/[roundId] — classic advance picks (C1)', ()
 		expect(res.status).toBe(400)
 		const body = await res.json()
 		expect(body.error).toBe('Round has already been played')
+	})
+})
+
+describe('DELETE /api/picks/[gameId]/[roundId]', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		vi.mocked(requireSession).mockResolvedValue({ user: { id: 'u-self' } } as never)
+	})
+
+	it('clears a locked pick on the happy path', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue(OPEN_ROUND_FAR_FUTURE as never)
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue({ id: 'p-existing' } as never)
+		const deleteChain = mockDeleteChain()
+
+		const res = await DELETE(makeDeleteReq(), params)
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.cleared).toBe(true)
+		expect(deleteChain.where).toHaveBeenCalled()
+	})
+
+	it('rejects a non-classic game with 400', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+			gameMode: 'turbo',
+		} as never)
+
+		const res = await DELETE(makeDeleteReq(), params)
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.error).toBe('Only classic picks can be cleared')
+	})
+
+	it('rejects actingAs from non-admin with 403', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-other',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			status: 'alive',
+		} as never)
+
+		const res = await DELETE(makeDeleteReq({ actingAs: 'gp-target' }), params)
+		expect(res.status).toBe(403)
+		const body = await res.json()
+		expect(body.error).toBe('forbidden')
+	})
+
+	it('rejects actingAs referencing a player not in this game with 404', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-self',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst)
+			.mockResolvedValueOnce({ id: 'gp-self', userId: 'u-self', status: 'alive' } as never)
+			.mockResolvedValueOnce(undefined as never)
+
+		const res = await DELETE(makeDeleteReq({ actingAs: 'gp-target' }), params)
+		expect(res.status).toBe(404)
+		const body = await res.json()
+		expect(body.error).toBe('actingAs-not-in-game')
+	})
+
+	it('rejects a session user with no gamePlayer in this game with 403', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce(undefined as never)
+
+		const res = await DELETE(makeDeleteReq(), params)
+		expect(res.status).toBe(403)
+		const body = await res.json()
+		expect(body.error).toBe('Not a member of this game')
+	})
+
+	it('returns 404 when there is no pick to clear', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue(OPEN_ROUND_FAR_FUTURE as never)
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+
+		const res = await DELETE(makeDeleteReq(), params)
+		expect(res.status).toBe(404)
+		const body = await res.json()
+		expect(body.error).toBe('No pick to clear')
+	})
+
+	it('rejects clearing a pick for a round that has already been played', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			...OPEN_ROUND_FAR_FUTURE,
+			status: 'completed',
+		} as never)
+
+		const res = await DELETE(makeDeleteReq(), params)
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.error).toBe('Round has already been played')
+	})
+
+	it('rejects clearing a pick past the round deadline', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			...OPEN_ROUND_FAR_FUTURE,
+			deadline: new Date('2000-01-01T00:00:00Z'),
+		} as never)
+
+		const res = await DELETE(makeDeleteReq(), params)
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.error).toBe('Deadline has passed')
+	})
+
+	it('rejects a round in a different competition with 400', async () => {
+		vi.mocked(db.query.game.findFirst).mockResolvedValue({
+			...CLASSIC_GAME_ADMIN,
+			createdBy: 'u-someone-else',
+		} as never)
+		vi.mocked(db.query.gamePlayer.findFirst).mockResolvedValueOnce({
+			id: 'gp-self',
+			userId: 'u-self',
+			gameId: 'g1',
+			status: 'alive',
+		} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			...OPEN_ROUND_FAR_FUTURE,
+			competitionId: 'c2',
+		} as never)
+
+		const res = await DELETE(makeDeleteReq(), params)
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.error).toBe('Round not in this game')
 	})
 })

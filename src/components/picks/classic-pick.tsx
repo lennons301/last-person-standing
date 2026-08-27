@@ -40,6 +40,8 @@ export interface ClassicPickFixture {
 export interface ClassicPickPlanHandlers {
 	/** Commit/replace a locked real pick for a future round. */
 	onLock: (roundId: string, teamId: string) => Promise<void>
+	/** Remove a locked real pick for a future round, freeing its team for reuse. */
+	onClear: (roundId: string) => Promise<void>
 }
 
 interface ClassicPickProps {
@@ -450,6 +452,20 @@ export function ClassicPick({
 			}
 			router.refresh()
 		},
+		onClear: async (rid) => {
+			const res = await fetch(`/api/picks/${gameId}/${rid}`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					...(actingAs ? { actingAs: actingAs.gamePlayerId } : {}),
+				}),
+			})
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ error: 'Failed to clear pick' }))
+				throw new Error(body.error ?? 'Failed to clear pick')
+			}
+			router.refresh()
+		},
 	}
 
 	// When the current round's deadline has passed (game not yet advanced) the
@@ -609,6 +625,7 @@ function PlannerSection({
 							usedTeams={r.usedTeams}
 							lockedTeamId={r.lockedTeamId}
 							onLock={(rid, tid) => guard(() => handlers.onLock(rid, tid))}
+							onClear={(rid) => guard(() => handlers.onClear(rid))}
 							competitionId={competitionId}
 							renderFormSheet={renderFormSheet}
 						/>

@@ -33,6 +33,32 @@ export function validateClassicPick(
 	return { valid: true }
 }
 
+export interface ClassicPickClearValidation {
+	playerStatus: 'alive' | 'eliminated' | 'winner'
+	/** Same meaning as `ClassicPickValidation.isPastRound` — an already-played round can't be touched. */
+	isPastRound: boolean
+	deadline: Date | null
+	now: Date
+}
+
+/**
+ * Clearing removes a locked pick rather than replacing it, so it skips the
+ * team-identity checks (`usedTeamIds`/`fixtureTeamIds`) `validateClassicPick`
+ * needs — the same round/deadline gates apply either way, since a pick can
+ * only be touched (written OR removed) while its round is still open.
+ */
+export function validateClassicPickClear(
+	input: ClassicPickClearValidation,
+	opts: { allowAdminLateSubmission?: boolean } = {},
+): ValidationResult {
+	if (!opts.allowAdminLateSubmission && input.playerStatus !== 'alive')
+		return { valid: false, reason: 'Player is not alive' }
+	if (input.isPastRound) return { valid: false, reason: 'Round has already been played' }
+	if (!opts.allowAdminLateSubmission && input.deadline && input.now > input.deadline)
+		return { valid: false, reason: 'Deadline has passed' }
+	return { valid: true }
+}
+
 export interface TurboPickEntry {
 	fixtureId: string
 	confidenceRank: number

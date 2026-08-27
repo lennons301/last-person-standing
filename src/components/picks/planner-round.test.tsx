@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type PlannerFixture, PlannerRound } from './planner-round'
 
 afterEach(cleanup)
@@ -41,6 +41,7 @@ function renderRound(overrides: Partial<React.ComponentProps<typeof PlannerRound
 			usedTeams={[]}
 			lockedTeamId={null}
 			onLock={async () => {}}
+			onClear={async () => {}}
 			{...overrides}
 		/>,
 	)
@@ -77,5 +78,22 @@ describe('PlannerRound — parity with the current-round picker', () => {
 		})
 		expect(screen.getByText('4th')).toBeTruthy()
 		expect(container.textContent).not.toContain('No form yet')
+	})
+})
+
+describe('PlannerRound — clearing a locked advance pick', () => {
+	it('shows no Clear button when nothing is locked in', () => {
+		renderRound({ lockedTeamId: null })
+		expect(screen.queryByText('Clear')).toBeNull()
+	})
+
+	it('shows a Clear button next to a locked pick and calls onClear with the round id', () => {
+		const onClear = vi.fn().mockResolvedValue(undefined)
+		renderRound({ lockedTeamId: 't-mun', onClear })
+
+		const clearButton = screen.getByText('Clear')
+		expect(clearButton).toBeTruthy()
+		fireEvent.click(clearButton)
+		expect(onClear).toHaveBeenCalledWith('r27')
 	})
 })

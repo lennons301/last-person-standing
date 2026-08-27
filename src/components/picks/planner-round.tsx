@@ -45,6 +45,8 @@ interface PlannerRoundProps {
 	lockedTeamId: string | null
 	/** Commit/replace a locked real pick for this round. */
 	onLock: (roundId: string, teamId: string) => Promise<void>
+	/** Remove the locked real pick for this round, freeing its team for reuse. */
+	onClear: (roundId: string) => Promise<void>
 	/**
 	 * The competition the round belongs to. Required for the form-detail sheet —
 	 * without it (or `renderFormSheet`) planner rows show form and position but
@@ -97,9 +99,18 @@ export function PlannerRound(props: PlannerRoundProps) {
 					)}
 				</div>
 				{props.lockedTeamId && (
-					<span className="text-xs font-semibold text-[var(--alive)] uppercase tracking-wide">
-						Locked in
-					</span>
+					<div className="flex items-center gap-2">
+						<span className="text-xs font-semibold text-[var(--alive)] uppercase tracking-wide">
+							Locked in
+						</span>
+						<button
+							type="button"
+							onClick={() => props.onClear(props.roundId)}
+							className="text-xs font-medium px-2 py-1 rounded-md border border-border hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						>
+							Clear
+						</button>
+					</div>
 				)}
 			</div>
 			{props.fixtures.map((f) => {
