@@ -11,6 +11,8 @@ interface GameIdentityBarProps {
 	competition: string
 	/** Shown inside the rules dialog — it no longer sits on the page itself. */
 	entryFee: string | null
+	/** `modeConfig.allowRebuys` — forwarded to the rules dialog's classic exception line. */
+	allowRebuys?: boolean
 	onShare: () => void
 }
 
@@ -29,6 +31,7 @@ export function GameIdentityBar({
 	mode,
 	competition,
 	entryFee,
+	allowRebuys,
 	onShare,
 }: GameIdentityBarProps) {
 	const [rulesOpen, setRulesOpen] = useState(false)
@@ -63,6 +66,7 @@ export function GameIdentityBar({
 			<GameRulesDialog
 				mode={mode}
 				entryFee={entryFee}
+				allowRebuys={allowRebuys}
 				open={rulesOpen}
 				onOpenChange={setRulesOpen}
 			/>

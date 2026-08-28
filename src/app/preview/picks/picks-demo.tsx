@@ -253,6 +253,7 @@ export function PreviewPlannerRound(props: PreviewPlannerRoundInput) {
 			usedTeams={round.usedTeams}
 			lockedTeamId={locked}
 			onLock={async (_roundId, teamId) => setLocked(teamId)}
+			onClear={async () => setLocked(null)}
 			renderFormSheet={previewFormSheet}
 		/>
 	)
@@ -302,7 +303,7 @@ export function PreviewClassicPick({ card }: { card: PreviewClassicCard }) {
 			summaryInHero={card.summaryInHero}
 			startExpanded={card.startExpanded}
 			onSubmitPick={async (next) => setPick(next)}
-			planHandlers={{ onLock: async () => {} }}
+			planHandlers={{ onLock: async () => {}, onClear: async () => {} }}
 			renderFormSheet={previewFormSheet}
 		/>
 	)

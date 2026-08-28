@@ -26,4 +26,30 @@ describe('GameRulesDialog', () => {
 		render(<GameRulesDialog mode="MYSTERY" open={true} onOpenChange={vi.fn()} />)
 		expect(screen.getByRole('dialog', { name: /classic — how it works/i })).toBeTruthy()
 	})
+
+	it('never claims a draw alone is the opening-round exception', () => {
+		render(<GameRulesDialog mode="classic" open={true} onOpenChange={vi.fn()} />)
+		expect(screen.queryByText(/draw in the opening round is safe/i)).toBeNull()
+	})
+
+	it('states the no-elimination exception when the game has rebuys off', () => {
+		render(
+			<GameRulesDialog mode="classic" allowRebuys={false} open={true} onOpenChange={vi.fn()} />,
+		)
+		expect(
+			screen.getByText(/a loss or draw in your game’s opening round doesn’t eliminate you/i),
+		).toBeTruthy()
+	})
+
+	it('states the rebuy exception when the game has rebuys on', () => {
+		render(<GameRulesDialog mode="classic" allowRebuys={true} open={true} onOpenChange={vi.fn()} />)
+		expect(
+			screen.getByText(/eliminated in your game’s opening round, you can pay to rebuy back in/i),
+		).toBeTruthy()
+	})
+
+	it('omits the exception line entirely when the rebuy setting is unknown', () => {
+		render(<GameRulesDialog mode="classic" open={true} onOpenChange={vi.fn()} />)
+		expect(screen.queryByText(/opening round/i)).toBeNull()
+	})
 })

@@ -4,7 +4,12 @@ import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { validateWcClassicPick, wcRoundStage } from '@/lib/game-logic/wc-classic'
-import { validateClassicPick, validateCupPicks, validateTurboPicks } from '@/lib/picks/validate'
+import {
+	validateClassicPick,
+	validateClassicPickClear,
+	validateCupPicks,
+	validateTurboPicks,
+} from '@/lib/picks/validate'
 import { round } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 
@@ -357,4 +362,75 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	})
 
 	return NextResponse.json({ picks: newPicks, unEliminated }, { status: 201 })
+}
+
+// Clears a locked classic pick — the counterpart to POST's lock/replace. Only
+// classic picks can be cleared: turbo and cup submit a full ranked set each
+// time (there's nothing partial to unwind), so this is scoped to the mode
+// that has real advance picks for future rounds.
+export async function DELETE(request: Request, { params }: { params: Params }) {
+	const session = await requireSession()
+	const { gameId, roundId } = await params
+	const body = (await request.json().catch(() => ({}))) as { actingAs?: string }
+
+	const gameData = await db.query.game.findFirst({ where: eq(game.id, gameId) })
+	if (!gameData) {
+		return NextResponse.json({ error: 'Game not found' }, { status: 404 })
+	}
+	if (gameData.gameMode !== 'classic') {
+		return NextResponse.json({ error: 'Only classic picks can be cleared' }, { status: 400 })
+	}
+
+	let targetGamePlayer = await db.query.gamePlayer.findFirst({
+		where: and(eq(gamePlayer.gameId, gameId), eq(gamePlayer.userId, session.user.id)),
+	})
+
+	if (body.actingAs) {
+		if (gameData.createdBy !== session.user.id) {
+			return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+		}
+		const actingAsPlayer = await db.query.gamePlayer.findFirst({
+			where: and(eq(gamePlayer.id, body.actingAs), eq(gamePlayer.gameId, gameId)),
+		})
+		if (!actingAsPlayer) {
+			return NextResponse.json({ error: 'actingAs-not-in-game' }, { status: 404 })
+		}
+		targetGamePlayer = actingAsPlayer
+	}
+
+	if (!targetGamePlayer) {
+		return NextResponse.json({ error: 'Not a member of this game' }, { status: 403 })
+	}
+
+	const roundData = await db.query.round.findFirst({ where: eq(round.id, roundId) })
+	if (!roundData) {
+		return NextResponse.json({ error: 'Round not found' }, { status: 404 })
+	}
+	if (roundData.competitionId !== gameData.competitionId) {
+		return NextResponse.json({ error: 'Round not in this game' }, { status: 400 })
+	}
+
+	const validation = validateClassicPickClear(
+		{
+			playerStatus: targetGamePlayer.status,
+			isPastRound: roundData.status === 'completed',
+			deadline: roundData.deadline,
+			now: new Date(),
+		},
+		{ allowAdminLateSubmission: !!body.actingAs },
+	)
+	if (!validation.valid) {
+		return NextResponse.json({ error: validation.reason }, { status: 400 })
+	}
+
+	const existingPick = await db.query.pick.findFirst({
+		where: and(eq(pick.gamePlayerId, targetGamePlayer.id), eq(pick.roundId, roundId)),
+	})
+	if (!existingPick) {
+		return NextResponse.json({ error: 'No pick to clear' }, { status: 404 })
+	}
+
+	await db.delete(pick).where(eq(pick.id, existingPick.id))
+
+	return NextResponse.json({ cleared: true }, { status: 200 })
 }
