@@ -155,7 +155,62 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 		})
 	})
 
-	it('eliminates classic round 2 no-pick with no_pick_no_fallback when paymentRowCount <= 1', async () => {
+	it('refunds the rebuy of a player who bought back in and then missed the deadline', async () => {
+		// The rebuy was an entry into this round. Missing its deadline means it
+		// bought nothing, so the money comes back off the pot.
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'r2',
+			number: 2,
+			deadline: new Date(Date.now() - 60_000),
+		} as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(true, [makeClassicPlayer()]),
+		])
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+		vi.mocked(db.query.payment.findMany).mockResolvedValue([
+			{ id: 'pay1' },
+			{ id: 'rebuy-pay' },
+		] as never)
+		vi.mocked(db.query.payment.findFirst).mockResolvedValue({
+			id: 'rebuy-pay',
+			status: 'paid',
+		} as never)
+
+		const result = await processDeadlineLock(['r2'])
+		expect(result.paymentsRefunded).toBe(1)
+
+		const refundSet = vi.mocked(db.update).mock.results[1]?.value.set.mock.calls[0]?.[0]
+		expect(refundSet).toMatchObject({ status: 'refunded' })
+	})
+
+	it('does not refund when the rebuy was never actually paid', async () => {
+		// A pending rebuy row is money the pot never counted; there is nothing to
+		// reverse, and marking it refunded would claim a refund that never happened.
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'r2',
+			number: 2,
+			deadline: new Date(Date.now() - 60_000),
+		} as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(true, [makeClassicPlayer()]),
+		])
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+		vi.mocked(db.query.payment.findMany).mockResolvedValue([
+			{ id: 'pay1' },
+			{ id: 'rebuy-pay' },
+		] as never)
+		vi.mocked(db.query.payment.findFirst).mockResolvedValue(undefined as never)
+
+		const result = await processDeadlineLock(['r2'])
+		expect(result.playersEliminated).toBe(1)
+		expect(result.paymentsRefunded).toBe(0)
+	})
+
+	it('auto-picks for a round 2 no-picker who is still in on merit', async () => {
+		// One payment row means no rebuy: this player's opening pick came off (or
+		// the no-rebuys exemption carried it), so a missed deadline gets them the
+		// same worst-placed-unused-team fallback as any later round — not the
+		// elimination the pre-rebuy-payment behaviour handed out.
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({
 			id: 'r2',
 			number: 2,
@@ -166,16 +221,19 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 		])
 		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
 		vi.mocked(db.query.payment.findMany).mockResolvedValue([{ id: 'pay1' }] as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+		vi.mocked(db.query.fixture.findMany).mockResolvedValue([
+			{ id: 'fx1', homeTeamId: 't1', awayTeamId: 't2' },
+		] as never)
+		vi.mocked(db.query.team.findMany).mockResolvedValue([
+			{ id: 't1', leaguePosition: 3 },
+			{ id: 't2', leaguePosition: 18 },
+		] as never)
 
 		const result = await processDeadlineLock(['r2'])
-		expect(result.playersEliminated).toBe(1)
-
-		const setCall = vi.mocked(db.update).mock.results[0]?.value.set.mock.calls[0]?.[0]
-		expect(setCall).toMatchObject({
-			status: 'eliminated',
-			eliminatedReason: 'no_pick_no_fallback',
-			eliminatedRoundId: 'r2',
-		})
+		expect(result.autoPicksInserted).toBe(1)
+		expect(result.playersEliminated).toBe(0)
+		expect(db.update).not.toHaveBeenCalled()
 	})
 })
 

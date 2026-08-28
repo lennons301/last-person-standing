@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { fixture, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
-import { pickLowestRankedUnusedTeam } from './auto-pick'
+import { pickWorstUnusedTeam } from './auto-pick'
 import { isGameStartingRound, resolveRoundAfterStarting } from './starting-round'
 
 export async function processDeadlineLock(roundIds: string[]): Promise<{
@@ -78,19 +78,43 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 						}
 						// !allowRebuys: classic.ts exemption applies; no elimination here.
 					} else if (isSecondRound) {
+						// The round after the opening one holds two kinds of player, and a
+						// missed deadline means opposite things to them.
+						//
+						// A player who is here on merit — the opening pick came off, or the
+						// no-rebuys exemption carried a loss — has done nothing to forfeit
+						// their entry, so they take the ordinary auto-pick fallback, exactly
+						// as they would in any later round. Eliminating them outright was
+						// the pre-rebuy-payment behaviour and it took a paid-up survivor out
+						// of a game they were still winning.
+						//
+						// A player who is here because they *bought back in* is the other
+						// case: the rebuy was an entry into this round, and missing its
+						// deadline means the entry bought nothing. They go out and the money
+						// comes back off the pot. A second payment row is what says a rebuy
+						// happened — both rebuy routes write one, in a free game too — and
+						// it stays the signal here because the rebuy clears
+						// `eliminatedRoundId`, so player state alone can't tell the two
+						// kinds of survivor apart.
 						const prevPayments = await db.query.payment.findMany({
 							where: and(eq(payment.gameId, g.id), eq(payment.userId, player.userId)),
 						})
-						const reason = prevPayments.length > 1 ? 'missed_rebuy_pick' : 'no_pick_no_fallback'
-						await db
-							.update(gamePlayer)
-							.set({
-								status: 'eliminated',
-								eliminatedReason: reason,
-								eliminatedRoundId: roundId,
-							})
-							.where(eq(gamePlayer.id, player.id))
-						playersEliminated++
+						if (prevPayments.length > 1) {
+							await db
+								.update(gamePlayer)
+								.set({
+									status: 'eliminated',
+									eliminatedReason: 'missed_rebuy_pick',
+									eliminatedRoundId: roundId,
+								})
+								.where(eq(gamePlayer.id, player.id))
+							playersEliminated++
+							if (await refundLatestEntry(g.id, player.userId)) paymentsRefunded++
+						} else {
+							const result = await applyRule2Classic(g.id, player, roundId)
+							if (result === 'auto-pick-inserted') autoPicksInserted++
+							else if (result === 'eliminated-no-fallback') playersEliminated++
+						}
 					} else {
 						const result = await applyRule2Classic(g.id, player, roundId)
 						if (result === 'auto-pick-inserted') autoPicksInserted++
@@ -115,7 +139,12 @@ async function applyRule2Classic(
 ): Promise<'auto-pick-inserted' | 'eliminated-no-fallback' | 'already-picked'> {
 	const fixtures = await db.query.fixture.findMany({
 		where: eq(fixture.roundId, roundId),
-		with: { homeTeam: true, awayTeam: true },
+		// `odds` is the fixture's own `fixture_odds` row, written by the daily
+		// sync and frozen at the round's deadline — a join, never a request, the
+		// same way the live view's pre-match chip reads it. The fallback picks the
+		// longest-odds team out of it, falling back to the table for a round that
+		// carries no prices at all.
+		with: { homeTeam: true, awayTeam: true, odds: true },
 		orderBy: [asc(fixture.kickoff)],
 	})
 	const usedPicks = await db.query.pick.findMany({
@@ -135,7 +164,17 @@ async function applyRule2Classic(
 		teamRows.map((t) => [t.id, t.leaguePosition ?? Number.POSITIVE_INFINITY] as const),
 	)
 
-	const teamId = pickLowestRankedUnusedTeam({
+	// Each side's own end of its fixture's market. A fixture with no odds row
+	// contributes nothing rather than a nought, which is what lets the function
+	// tell "priced at 8%" apart from "not priced".
+	const teamWinProbabilities = new Map<string, number>()
+	for (const fx of fixtures) {
+		if (!fx.odds) continue
+		teamWinProbabilities.set(fx.homeTeamId, fx.odds.homeProbability)
+		teamWinProbabilities.set(fx.awayTeamId, fx.odds.awayProbability)
+	}
+
+	const teamId = pickWorstUnusedTeam({
 		fixtures: fixtures.map((fx) => ({
 			id: fx.id,
 			homeTeamId: fx.homeTeamId,
@@ -143,6 +182,7 @@ async function applyRule2Classic(
 		})),
 		usedTeamIds,
 		teamPositions,
+		teamWinProbabilities,
 	})
 
 	if (!teamId) {
@@ -203,19 +243,31 @@ async function applyRule3TurboOrCup(
 		})
 		.where(eq(gamePlayer.id, player.id))
 
+	return { refunded: await refundLatestEntry(gameId, player.userId) }
+}
+
+/**
+ * Take a player's most recent live entry back off the pot.
+ *
+ * Only a `paid` or `claimed` row is money the pot counts (`calculatePot`), so
+ * only one of those can be refunded; a `pending` rebuy nobody ever paid is left
+ * for the admin's own controls rather than marked refunded, which would claim a
+ * refund of money never taken. Returns whether a row was actually reversed.
+ */
+async function refundLatestEntry(gameId: string, userId: string): Promise<boolean> {
 	const refundCandidate = await db.query.payment.findFirst({
 		where: and(
 			eq(payment.gameId, gameId),
-			eq(payment.userId, player.userId),
+			eq(payment.userId, userId),
 			inArray(payment.status, ['paid', 'claimed']),
 		),
 		orderBy: (p, { desc }) => desc(p.createdAt),
 	})
-	if (!refundCandidate) return { refunded: false }
+	if (!refundCandidate) return false
 
 	await db
 		.update(payment)
 		.set({ status: 'refunded', refundedAt: new Date() })
 		.where(eq(payment.id, refundCandidate.id))
-	return { refunded: true }
+	return true
 }
