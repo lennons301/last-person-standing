@@ -151,7 +151,7 @@ export function TeamFormPanel({
 									>
 										<ResultPill result={r.result} />
 										<span className="text-xs text-muted-foreground w-16 font-mono">
-											{r.home ? 'vs' : '@'} {r.opponentShortName}
+											{r.opponentShortName} ({r.home ? 'H' : 'A'})
 										</span>
 										<span className="font-semibold tabular-nums">
 											{r.goalsFor}–{r.goalsAgainst}
@@ -347,7 +347,7 @@ function FixtureSummary({ summary }: { summary: FixtureSummaryView }) {
 		<div className="mt-3 rounded-lg border border-border px-3 py-2">
 			<div className="flex items-center justify-between gap-2 text-sm">
 				<span className="font-medium">
-					{summary.homeAway === 'H' ? 'vs' : '@'} {summary.opponentShortName}
+					{summary.opponentShortName} ({summary.homeAway === 'H' ? 'H' : 'A'})
 				</span>
 				<span className="text-xs text-muted-foreground">{summary.statusLabel}</span>
 			</div>
