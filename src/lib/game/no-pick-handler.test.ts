@@ -155,6 +155,35 @@ describe('processDeadlineLock — classic round 1 & 2 (4c3)', () => {
 		})
 	})
 
+	it('auto-picks classic round 2 no-pick player when allowRebuys=false', async () => {
+		// #237: the round after the starting round only closes a rebuy window when
+		// rebuys are on offer. With allowRebuys=false there's no window to close, so
+		// this player should get the ordinary worst-placed-unused auto-pick, not an
+		// elimination with no fallback.
+		vi.mocked(db.query.round.findFirst).mockResolvedValue({
+			id: 'r2',
+			number: 2,
+			deadline: new Date(Date.now() - 60_000),
+		} as never)
+		vi.mocked(db.query.game.findMany).mockResolvedValue([
+			makeClassicGame(false, [makeClassicPlayer()]),
+		])
+		vi.mocked(db.query.pick.findFirst).mockResolvedValue(undefined as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+		vi.mocked(db.query.fixture.findMany).mockResolvedValue([
+			{ id: 'fx1', homeTeamId: 't-home', awayTeamId: 't-away', kickoff: new Date() },
+		] as never)
+		vi.mocked(db.query.team.findMany).mockResolvedValue([
+			{ id: 't-home', leaguePosition: 1 },
+			{ id: 't-away', leaguePosition: 20 },
+		] as never)
+
+		const result = await processDeadlineLock(['r2'])
+		expect(result.autoPicksInserted).toBe(1)
+		expect(result.playersEliminated).toBe(0)
+		expect(db.update).not.toHaveBeenCalled()
+	})
+
 	it('eliminates classic round 2 no-pick with no_pick_no_fallback when paymentRowCount <= 1', async () => {
 		vi.mocked(db.query.round.findFirst).mockResolvedValue({
 			id: 'r2',

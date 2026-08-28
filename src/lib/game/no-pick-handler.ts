@@ -62,9 +62,9 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 				if (existingPick) continue
 
 				if (g.gameMode === 'classic') {
+					const allowRebuys =
+						(g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
 					if (isOpeningRound) {
-						const allowRebuys =
-							(g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
 						if (allowRebuys) {
 							await db
 								.update(gamePlayer)
@@ -77,7 +77,10 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 							playersEliminated++
 						}
 						// !allowRebuys: classic.ts exemption applies; no elimination here.
-					} else if (isSecondRound) {
+					} else if (isSecondRound && allowRebuys) {
+						// Only a rebuy-window-close round when rebuys are actually on offer;
+						// with allowRebuys=false there's no rebuy window to close, so this
+						// round falls through to the ordinary auto-pick path below.
 						const prevPayments = await db.query.payment.findMany({
 							where: and(eq(payment.gameId, g.id), eq(payment.userId, player.userId)),
 						})
