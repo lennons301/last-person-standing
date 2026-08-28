@@ -34,6 +34,8 @@ interface GameDetailViewProps {
 		competition: string
 		pot: PotBreakdown
 		entryFee: string | null
+		/** `modeConfig.allowRebuys` — classic only. Forwarded to the rules dialog. */
+		allowRebuys?: boolean
 		aliveCount: number
 		status: string
 		inviteCode: string
@@ -179,6 +181,7 @@ export function GameDetailView({
 					mode={game.gameMode}
 					competition={game.competition}
 					entryFee={game.entryFee}
+					allowRebuys={game.allowRebuys}
 					onShare={() => openShare()}
 				/>
 

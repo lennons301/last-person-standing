@@ -19,6 +19,39 @@ interface ModeRules {
 	sections: RuleSection[]
 }
 
+/**
+ * The starting-round exception depends on the game's own `allowRebuys` setting
+ * (`settleClassicPickRow`, `docs/game-modes/classic.md#the-starting-round`):
+ * with rebuys off, a loss or draw in the game's opening round doesn't
+ * eliminate you at all; with rebuys on (the create-game default) it does, but
+ * you can pay to buy back in. Neither is "a draw is safe" — a loss is treated
+ * identically to a draw, and the whole exception only holds with rebuys off.
+ * `allowRebuys === undefined` (mode unknown, or a non-classic dialog) omits
+ * the line rather than asserting either behaviour.
+ */
+function classicEachRoundItems(allowRebuys: boolean | undefined): string[] {
+	const items = [
+		'Pick exactly one team to win their match.',
+		'They win → you survive to the next round.',
+		'They lose or draw → you’re eliminated.',
+		'You can’t pick the same team twice in a game.',
+	]
+	if (allowRebuys === false) {
+		items.splice(
+			3,
+			0,
+			'Exception: a loss or draw in your game’s opening round doesn’t eliminate you.',
+		)
+	} else if (allowRebuys === true) {
+		items.splice(
+			3,
+			0,
+			'Exception: if you’re eliminated in your game’s opening round, you can pay to rebuy back in.',
+		)
+	}
+	return items
+}
+
 // Player-facing rules summaries, distilled from docs/game-modes/*.md.
 // These explain the mechanics a player needs at the table — not the full
 // settlement model. Keep them short and plain-English.
@@ -29,12 +62,7 @@ const RULES: Record<string, ModeRules> = {
 		sections: [
 			{
 				heading: 'Each round',
-				items: [
-					'Pick exactly one team to win their match.',
-					'They win → you survive to the next round.',
-					'They lose or draw → you’re eliminated. (A draw in the opening round is safe.)',
-					'You can’t pick the same team twice in a game.',
-				],
+				items: [],
 			},
 			{
 				heading: 'Winning',
@@ -105,12 +133,32 @@ interface GameRulesDialogProps {
 	/** The game's stake. Shown here (and in the join / payment flow) rather than
 	 *  on the page itself — it's a fact you look up, not one you monitor. */
 	entryFee?: string | null
+	/**
+	 * `modeConfig.allowRebuys` for this game — classic only. Decides which
+	 * wording the opening-round exception gets (see `classicEachRoundItems`);
+	 * omit it and the exception line is left out rather than guessed.
+	 */
+	allowRebuys?: boolean
 	open: boolean
 	onOpenChange: (open: boolean) => void
 }
 
-export function GameRulesDialog({ mode, entryFee, open, onOpenChange }: GameRulesDialogProps) {
+export function GameRulesDialog({
+	mode,
+	entryFee,
+	allowRebuys,
+	open,
+	onOpenChange,
+}: GameRulesDialogProps) {
 	const rules = RULES[mode.toLowerCase()] ?? RULES.classic
+	const sections =
+		rules === RULES.classic
+			? rules.sections.map((section) =>
+					section.heading === 'Each round'
+						? { ...section, items: classicEachRoundItems(allowRebuys) }
+						: section,
+				)
+			: rules.sections
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,7 +175,7 @@ export function GameRulesDialog({ mode, entryFee, open, onOpenChange }: GameRule
 							<span className="text-muted-foreground"> — collected by the organiser.</span>
 						</p>
 					)}
-					{rules.sections.map((section) => (
+					{sections.map((section) => (
 						<div key={section.heading}>
 							<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 								{section.heading}

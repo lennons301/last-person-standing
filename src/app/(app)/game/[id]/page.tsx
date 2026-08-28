@@ -532,6 +532,7 @@ export default async function GameDetailPage({
 				competition: game.competition.name,
 				pot: game.pot,
 				entryFee: game.entryFee,
+				allowRebuys: game.modeConfig?.allowRebuys === true,
 				aliveCount,
 				status: game.status,
 				inviteCode: game.inviteCode,
