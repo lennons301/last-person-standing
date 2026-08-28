@@ -40,7 +40,7 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 
 	async function callAction(
 		p: AdminPayment,
-		action: 'dispute' | 'admin-rebuy' | 'mark-paid' | 'add-rebuy' | 'mark-entry-paid',
+		action: 'dispute' | 'refund' | 'admin-rebuy' | 'mark-paid' | 'add-rebuy' | 'mark-entry-paid',
 	) {
 		if (action === 'mark-entry-paid') {
 			// A late-added player has no payment row at all (synthetic "unpaid"
@@ -91,6 +91,26 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 				props.onChange?.()
 			} else {
 				toast.error('Rebuy failed')
+			}
+			return
+		}
+		if (action === 'refund') {
+			// Undo a payment: the money went back to the player, so the row leaves the
+			// pot entirely. Distinct from 'dispute', which returns the row to pending
+			// because the player still owes it.
+			if (!p.id) return
+			if (!window.confirm(`Refund ${p.userName}'s £${p.amount}? This takes it out of the pot.`))
+				return
+			const res = await fetch(`/api/games/${props.gameId}/payments/${p.id}/override`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ status: 'refunded' }),
+			})
+			if (res.ok) {
+				toast.success(`Refunded ${p.userName} — £${p.amount} off the pot`)
+				props.onChange?.()
+			} else {
+				toast.error('Failed to refund')
 			}
 			return
 		}
@@ -191,6 +211,13 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 											className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
 										>
 											Dispute
+										</button>
+										<button
+											type="button"
+											onClick={() => callAction(p, 'refund')}
+											className="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
+										>
+											Refund
 										</button>
 									</>
 								) : p.id !== null && (p.status === 'pending' || p.status === 'claimed') ? (
