@@ -94,6 +94,18 @@ describe('FormGuideView — results', () => {
 		const results = section(/^Results$/)
 		expect(within(results).getByText('No matches played yet this season.')).toBeTruthy()
 	})
+
+	it('marks venue with (H)/(A) rather than the American "@" notation', () => {
+		render(<FormGuideView guide={FULL_GUIDE} />)
+		const results = section(/^Results$/)
+		expect(within(results).queryByText('@', { exact: false })).toBeNull()
+		const homeResult = FULL_GUIDE.results.find((r) => r.home)
+		const awayResult = FULL_GUIDE.results.find((r) => !r.home)
+		expect(homeResult).toBeTruthy()
+		expect(awayResult).toBeTruthy()
+		expect(within(results).getAllByText('(H)').length).toBeGreaterThan(0)
+		expect(within(results).getAllByText('(A)').length).toBeGreaterThan(0)
+	})
 })
 
 describe('FormGuideView — back link', () => {
