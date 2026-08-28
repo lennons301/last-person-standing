@@ -281,8 +281,8 @@ function ResultRow({
 				href={formGuidePath(competitionId, result.opponent.id, { from: backHref })}
 			/>
 			<span className="min-w-0 truncate">
-				<span className="text-muted-foreground">{result.home ? 'vs' : '@'} </span>
-				{result.opponent.name}
+				{result.opponent.name}{' '}
+				<span className="text-muted-foreground">({result.home ? 'H' : 'A'})</span>
 			</span>
 			<span className="ml-auto font-semibold tabular-nums whitespace-nowrap">
 				{result.goalsFor}–{result.goalsAgainst}
