@@ -17,7 +17,11 @@ import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
-import { arePicksLocked, deriveGameRoundStatus } from '@/lib/game/round-status'
+import {
+	arePicksLocked,
+	deriveGameRoundStatus,
+	type PicksLockedRound,
+} from '@/lib/game/round-status'
 import {
 	isGameStartingRound,
 	resolveRoundAfterStarting,
@@ -1250,8 +1254,13 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 	// fixture, rank, projected outcome) from the payload sent to the browser. The
 	// viewer's own picks are always returned in full.
 	const now = new Date()
-	const deadlinePassed =
-		gameData.currentRound?.deadline != null && now >= gameData.currentRound.deadline
+	// With no current round there are no picks to map below, but state the fallback
+	// anyway: no round row means nothing has locked, so only the viewer's own picks
+	// would come back in full.
+	const liveRound: PicksLockedRound = gameData.currentRound ?? {
+		status: 'upcoming',
+		deadline: null,
+	}
 	const viewerGamePlayerId = gameData.players.find((p) => p.userId === viewerUserId)?.id ?? null
 
 	return {
@@ -1260,7 +1269,9 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		roundId: gameData.currentRoundId,
 		fixtures,
 		picks: picksInRound.map((p) => {
-			const reveal = deadlinePassed || p.gamePlayerId === viewerGamePlayerId
+			// One rule for "may this viewer see this pick?" (#247).
+			const reveal =
+				resolvePickVisibility({ round: liveRound, pick: p, viewerGamePlayerId, now }) === 'visible'
 			if (!reveal) {
 				return {
 					gamePlayerId: p.gamePlayerId,
