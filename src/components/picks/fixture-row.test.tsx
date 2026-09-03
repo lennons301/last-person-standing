@@ -16,6 +16,7 @@ describe('FixtureRow league position', () => {
 		// league positions too.
 		render(
 			<FixtureRow
+				fixtureId="f1"
 				home={{ ...MUN, leaguePosition: 4 }}
 				away={{ ...NEW, leaguePosition: 9 }}
 				competitionId="c1"
@@ -30,7 +31,12 @@ describe('FixtureRow league position', () => {
 		// already reads as a season that hasn't started, and the filler only
 		// collided with the position it sat beside.
 		const { container } = render(
-			<FixtureRow home={{ ...MUN, leaguePosition: 4 }} away={NEW} competitionId="c1" />,
+			<FixtureRow
+				fixtureId="f1"
+				home={{ ...MUN, leaguePosition: 4 }}
+				away={NEW}
+				competitionId="c1"
+			/>,
 		)
 		expect(screen.getByText('4th')).toBeTruthy()
 		expect(container.textContent).not.toContain('No form yet')
@@ -39,6 +45,7 @@ describe('FixtureRow league position', () => {
 	it('still renders form alongside position', () => {
 		const { container } = render(
 			<FixtureRow
+				fixtureId="f1"
 				home={{ ...MUN, leaguePosition: 4, form: ['W', 'D'] }}
 				away={NEW}
 				competitionId="c1"
@@ -53,7 +60,7 @@ describe('FixtureRow league position', () => {
 	it('drops the bottom bar entirely when the row has neither form nor position', () => {
 		// Cup fixtures carry neither, so there's nothing for the bar to hold and no
 		// sheet worth tapping through to.
-		render(<FixtureRow home={MUN} away={NEW} competitionId="c1" />)
+		render(<FixtureRow fixtureId="f1" home={MUN} away={NEW} competitionId="c1" />)
 		expect(screen.queryByLabelText(/Open form details/)).toBeNull()
 	})
 })
@@ -61,7 +68,7 @@ describe('FixtureRow league position', () => {
 describe('FixtureRow "both used" label', () => {
 	it('renders the label outside the dimmed card so it stays legible and steals no width', () => {
 		const { container } = render(
-			<FixtureRow home={MUN} away={NEW} usedSide="both" usedLabel="Both used" />,
+			<FixtureRow fixtureId="f1" home={MUN} away={NEW} usedSide="both" usedLabel="Both used" />,
 		)
 		expect(screen.getByText('Both used')).toBeTruthy()
 		const dimmedCard = container.querySelector('.opacity-30')
@@ -77,7 +84,7 @@ describe('FixtureRow team name', () => {
 		// The two used to share one `truncate w-full` span, so a status chip on the
 		// same button shrank the column and clipped codes like MUN.
 		const { container } = render(
-			<FixtureRow home={MUN} away={NEW} homeState={{ kind: 'auto-locked' }} />,
+			<FixtureRow fixtureId="f1" home={MUN} away={NEW} homeState={{ kind: 'auto-locked' }} />,
 		)
 		// `getByText('MUN')` is ambiguous — the badge fallback renders the code too.
 		const shortCode = [...container.querySelectorAll('span')].find(
@@ -99,6 +106,7 @@ describe('FixtureRow type scale', () => {
 		// geometry problem, not part of the row's hierarchy.
 		const { container } = render(
 			<FixtureRow
+				fixtureId="f1"
 				home={{ ...MUN, leaguePosition: 1, form: ['W', 'W', 'L'], badgeUrl: '/mun.png' }}
 				away={{ ...NEW, leaguePosition: 20, form: ['L', 'D', 'W'], badgeUrl: '/new.png' }}
 				competitionId="c1"
@@ -132,7 +140,7 @@ describe('FixtureRow win probability', () => {
 	}
 
 	it('renders each side’s win probability with the raw price it came from', () => {
-		render(<FixtureRow home={MUN} away={NEW} odds={ODDS} />)
+		render(<FixtureRow fixtureId="f1" home={MUN} away={NEW} odds={ODDS} />)
 
 		expect(screen.getByText('62%')).toBeTruthy()
 		expect(screen.getByText('1.50')).toBeTruthy()
@@ -141,14 +149,14 @@ describe('FixtureRow win probability', () => {
 	})
 
 	it('stamps when the odds were taken', () => {
-		const { container } = render(<FixtureRow home={MUN} away={NEW} odds={ODDS} />)
+		const { container } = render(<FixtureRow fixtureId="f1" home={MUN} away={NEW} odds={ODDS} />)
 		expect(container.textContent).toContain('Odds as of')
 	})
 
 	it('renders no probability at all for a fixture with no odds', () => {
 		// A fixture (or whole competition) the source doesn't price. Never a zero,
 		// never a placeholder — the row is simply the row it was before.
-		const { container } = render(<FixtureRow home={MUN} away={NEW} />)
+		const { container } = render(<FixtureRow fixtureId="f1" home={MUN} away={NEW} />)
 		expect(container.textContent).not.toContain('%')
 		expect(container.textContent).not.toContain('Odds as of')
 	})
@@ -156,9 +164,10 @@ describe('FixtureRow win probability', () => {
 	it('hands the form sheet the full market, attributed to the tapped side', () => {
 		// The row shows two win chances; the sheet one tap below shows the whole
 		// 1X2, so the draw the row hides still has to reach it.
-		const markets: Array<FormMarket | null> = []
+		const markets: Array<FormMarket | null | undefined> = []
 		render(
 			<FixtureRow
+				fixtureId="f1"
 				home={{ ...MUN, form: ['W'] }}
 				away={NEW}
 				odds={ODDS}
@@ -180,9 +189,10 @@ describe('FixtureRow win probability', () => {
 	})
 
 	it('hands the form sheet no market for an unpriced fixture', () => {
-		const markets: Array<FormMarket | null> = []
+		const markets: Array<FormMarket | null | undefined> = []
 		render(
 			<FixtureRow
+				fixtureId="f1"
 				home={{ ...MUN, form: ['W'] }}
 				away={NEW}
 				renderFormSheet={({ market }) => {

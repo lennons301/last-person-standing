@@ -1066,46 +1066,42 @@ export interface RankedListFixture {
 	picks: RankedPick[]
 }
 
-function rankedTeam(t: FixtureTeamInfo): RankedPick['homeTeam'] {
-	return { id: t.id, shortName: t.shortName, name: t.name, badgeUrl: t.badgeUrl ?? null }
-}
-
 export const RANKED_LIST_FIXTURES: RankedListFixture[] = [
 	{
 		id: 'ranked-tap-through',
 		title: 'Ranked item — form tap-through',
-		note: 'Tap either team to open the same form sheet the remaining-fixtures list opens. Ranking a fixture used to drop its form entirely, so a committed pick could only be re-checked by un-ranking it.',
+		note: 'Tap either team to open the same form sheet the remaining-fixtures list opens. Ranking a fixture used to drop its form entirely, so a committed pick could only be re-checked by un-ranking it — which is why the rows carry the whole team (the row draws none of it; the sheet behind it does).',
 		picks: [
 			{
 				id: 'rl-1',
 				rank: 1,
 				fixtureId: 'tf-2',
-				homeTeam: rankedTeam(ARS()),
-				awayTeam: rankedTeam(WOL()),
+				homeTeam: ARS(['W', 'W', 'W', 'D', 'W'], 1),
+				awayTeam: WOL(['L', 'L', 'D', 'L', 'W'], 17),
 				prediction: 'home_win',
 			},
 			{
 				id: 'rl-2',
 				rank: 2,
 				fixtureId: 'tf-3',
-				homeTeam: rankedTeam(BHA()),
-				awayTeam: rankedTeam(LIV()),
+				homeTeam: BHA(['D', 'W', 'L', 'W', 'D'], 7),
+				awayTeam: LIV(['W', 'D', 'W', 'W', 'W'], 2),
 				prediction: 'away_win',
 			},
 			{
 				id: 'rl-3',
 				rank: 3,
 				fixtureId: 'tf-1',
-				homeTeam: rankedTeam(MUN()),
-				awayTeam: rankedTeam(NEW()),
+				homeTeam: MUN(['W', 'W', 'D', 'L', 'W'], 4),
+				awayTeam: NEW(['L', 'D', 'W', 'W', 'L'], 9),
 				prediction: 'draw',
 			},
 			{
 				id: 'rl-4',
 				rank: 4,
 				fixtureId: 'tf-4',
-				homeTeam: rankedTeam(CHE()),
-				awayTeam: rankedTeam(NFO()),
+				homeTeam: CHE(['L', 'W', 'W', 'D', 'L'], 8),
+				awayTeam: NFO(['D', 'L', 'W', 'L', 'D'], 13),
 				prediction: 'home_win',
 			},
 		],

@@ -12,7 +12,7 @@ import {
 	sortPickTableRows,
 } from '@/lib/game/pick-table-view'
 import { cn } from '@/lib/utils'
-import type { FixtureTeamInfo, RowFormSheetRenderer } from './fixture-row'
+import type { FixtureTeamInfo, FormSheetRenderer } from './fixture-row'
 import { FormDots } from './form-dots'
 import { TeamBadge } from './team-badge'
 import type { FormMarket } from './team-form-panel'
@@ -65,19 +65,6 @@ export interface PickTableRanking {
 	onRemove: (row: PickTableRow) => void
 }
 
-/**
- * `RowFormSheetRenderer` plus the fixture the row belongs to — the one thing a
- * board row knows that a fixture row's renderer is handed for free. Turbo keys
- * its renderer on the fixture, so without it the mode would have to re-derive
- * the fixture from the two team ids.
- *
- * A plain `RowFormSheetRenderer` (which is what classic and the gallery already
- * have) is assignable to this: it simply ignores the extra field.
- */
-export type PickTableFormSheetRenderer = (
-	args: Parameters<RowFormSheetRenderer>[0] & { fixtureId: string },
-) => React.ReactNode
-
 interface PickTableProps {
 	rows: PickTableRow[]
 	/** The team currently picked for this round, if any. Marked, not re-selectable. */
@@ -109,7 +96,7 @@ interface PickTableProps {
 	 * database-backed server action the default path uses (`/preview/picks`).
 	 * Supplying it makes the form cell tappable even without a `competitionId`.
 	 */
-	renderFormSheet?: PickTableFormSheetRenderer
+	renderFormSheet?: FormSheetRenderer
 }
 
 interface ColumnSpec {

@@ -34,21 +34,21 @@ describe('RankedItem form tap-through', () => {
 		// Ranking a fixture used to strip its form away entirely: the row dropped to
 		// a badge and a prediction, so a committed pick could only be re-examined by
 		// un-ranking it first.
-		const opened: Array<{ side: string; open: boolean }> = []
+		const opened: Array<{ fixtureId: string; side: string; open: boolean }> = []
 		renderList({
-			renderFormSheet:
-				() =>
-				({ side, open }) => {
-					opened.push({ side, open })
-					return null
-				},
+			renderFormSheet: ({ fixtureId, side, open }) => {
+				opened.push({ fixtureId, side, open })
+				return null
+			},
 		})
 
+		// The row states which fixture and which side it opened the sheet for, so
+		// the list hands every row one renderer rather than closing over each pick.
 		fireEvent.click(screen.getByLabelText('Open form details for Newcastle United'))
-		expect(opened.at(-1)).toEqual({ side: 'away', open: true })
+		expect(opened.at(-1)).toEqual({ fixtureId: 'f1', side: 'away', open: true })
 
 		fireEvent.click(screen.getByLabelText('Open form details for Manchester United'))
-		expect(opened.at(-1)).toEqual({ side: 'home', open: true })
+		expect(opened.at(-1)).toEqual({ fixtureId: 'f1', side: 'home', open: true })
 	})
 
 	it('leaves team names as plain text when no sheet is available', () => {

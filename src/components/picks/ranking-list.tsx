@@ -15,7 +15,8 @@ import {
 	sortableKeyboardCoordinates,
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { type FormSheetRenderer, RankedItem, type RankedPick } from './ranked-item'
+import type { FormSheetRenderer } from './fixture-row'
+import { RankedItem, type RankedPick } from './ranked-item'
 
 interface RankingListProps {
 	picks: RankedPick[]
@@ -25,8 +26,12 @@ interface RankingListProps {
 	/** Passed straight through to each row's form-detail tap-through. */
 	competitionId?: string
 	roundNumber?: number
-	/** Per-pick sheet override, for the database-free `/preview/picks` gallery. */
-	renderFormSheet?: (pick: RankedPick) => FormSheetRenderer
+	/**
+	 * Sheet override, for the database-free `/preview/picks` gallery. Passed to
+	 * every row as it stands: a row states which fixture and which side it opened
+	 * the sheet for, so there is nothing per-pick left for a factory to close over.
+	 */
+	renderFormSheet?: FormSheetRenderer
 }
 
 export function RankingList({
@@ -81,7 +86,7 @@ export function RankingList({
 						onChangePrediction={() => onChangePrediction(pick.id)}
 						competitionId={competitionId}
 						roundNumber={roundNumber}
-						renderFormSheet={renderFormSheet?.(pick)}
+						renderFormSheet={renderFormSheet}
 					/>
 				))}
 			</SortableContext>

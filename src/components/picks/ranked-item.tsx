@@ -3,36 +3,28 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { ChevronDown, ChevronRight, ChevronUp, GripVertical, X } from 'lucide-react'
-import type React from 'react'
 import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import type { FixtureTeamInfo, FormSheetRenderer } from './fixture-row'
 import type { Prediction } from './prediction-buttons'
 import { TeamBadge } from './team-badge'
 import { TeamFormSheet } from './team-form-sheet'
 import { CHIP, TYPE } from './type-scale'
 
-export interface RankedTeam {
-	id: string
-	shortName: string
-	name: string
-	badgeUrl?: string | null
-}
-
 export interface RankedPick {
 	id: string
 	rank: number
 	fixtureId: string
-	homeTeam: RankedTeam
-	awayTeam: RankedTeam
+	/**
+	 * The two sides, in the shape every other pick surface reads them in. A
+	 * ranked row draws only the badge and the name, but the form sheet it taps
+	 * through to is handed the whole team — so a team that hasn't played yet is
+	 * one the sheet can tell apart from one whose form nobody passed on.
+	 */
+	homeTeam: FixtureTeamInfo
+	awayTeam: FixtureTeamInfo
 	prediction: Prediction
 }
-
-/** Signature shared with `FixtureRow`'s prop of the same name. */
-export type FormSheetRenderer = (args: {
-	side: 'home' | 'away'
-	open: boolean
-	onClose: () => void
-}) => React.ReactNode
 
 interface RankedItemProps {
 	pick: RankedPick
@@ -210,6 +202,9 @@ export function RankedItem({
 
 			{renderFormSheet
 				? renderFormSheet({
+						fixtureId: pick.fixtureId,
+						home: pick.homeTeam,
+						away: pick.awayTeam,
 						side: activeSide,
 						open: sheetSide !== null,
 						onClose: () => setSheetSide(null),
@@ -241,7 +236,7 @@ function TeamName({
 	sheetEnabled,
 	onOpen,
 }: {
-	team: RankedTeam
+	team: FixtureTeamInfo
 	sheetEnabled: boolean
 	onOpen: () => void
 }) {
