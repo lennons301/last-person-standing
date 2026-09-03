@@ -282,8 +282,13 @@ async function settleTurboPickRow(p: PickRow, fx: FixtureWithRound): Promise<voi
  *
  * Returns whether anything was actually changed (used by callers to
  * decide whether to check completion).
+ *
+ * Module-private: both callers are in this file (the settle path and the
+ * void path). It was exported for an untracked repair script, which is not
+ * a reason for the settlement surface to be one function wider (#243) —
+ * a script that needs it can call the fixture-level entry points.
  */
-export async function reevaluateCupGame(gameId: string): Promise<boolean> {
+async function reevaluateCupGame(gameId: string): Promise<boolean> {
 	const g = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
 		with: {
@@ -750,26 +755,6 @@ export async function sweepGameSettlement(gameId: string): Promise<SettleResult[
 		results.push(r)
 	}
 	return results
-}
-
-/**
- * One-shot sweep across every active game. Used by daily-sync as the
- * 24h backstop for any game whose settlement was missed (e.g. early
- * production data with pending picks on long-finished fixtures).
- */
-export async function sweepAllActiveGames(): Promise<{
-	gamesChecked: number
-	fixturesSettled: number
-}> {
-	const activeGames = await db.query.game.findMany({
-		where: eq(game.status, 'active'),
-	})
-	let fixturesSettled = 0
-	for (const g of activeGames) {
-		const results = await sweepGameSettlement(g.id)
-		fixturesSettled += results.length
-	}
-	return { gamesChecked: activeGames.length, fixturesSettled }
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
