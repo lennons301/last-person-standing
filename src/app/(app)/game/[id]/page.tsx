@@ -21,6 +21,7 @@ import {
 } from '@/lib/game/detail-queries'
 import { buildGameView, type GameViewPickInput } from '@/lib/game/game-view'
 import { evaluateJoinability, JOIN_BLOCKED_COPY } from '@/lib/game/joinability'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { getRoundSummary } from '@/lib/game/round-summary-query'
@@ -165,8 +166,13 @@ export default async function GameDetailPage({
 			? await getTurboPickData(game.id, game.currentRound.id, targetGamePlayerId)
 			: null
 
-	const numberOfPicks = game.modeConfig?.numberOfPicks ?? 10
-	const startingLives = game.modeConfig?.startingLives ?? 3
+	// One read of the game's settings for the whole page — the defaults live in
+	// `resolveModeConfig`, not here (#248). Classic needs exactly one pick and
+	// has no lives, which is what the two ternaries say.
+	const modeConfig = resolveModeConfig(game)
+	const numberOfPicks = modeConfig.mode === 'classic' ? 1 : modeConfig.numberOfPicks
+	const startingLives = modeConfig.mode === 'cup' ? modeConfig.startingLives : 0
+	const allowRebuys = modeConfig.mode === 'classic' && modeConfig.allowRebuys
 
 	const classicGrid =
 		game.gameMode === 'classic' ? await getProgressGridData(game.id, session.user.id) : null
@@ -385,7 +391,7 @@ export default async function GameDetailPage({
 		targetEliminated: targetPlayerStatus === 'eliminated',
 		actingAsName: actingAsTarget?.userName ?? null,
 		pick: heroPick,
-		picksRequired: game.gameMode === 'classic' ? 1 : numberOfPicks,
+		picksRequired: numberOfPicks,
 		rebuyAvailable: !!game.rebuyBanner,
 		livesRemaining: targetLivesRemaining,
 		nextRound: nextRoundRow
@@ -407,7 +413,7 @@ export default async function GameDetailPage({
 			? roundLabel(competitionType, eliminatedRoundRow.number)
 			: null,
 		eliminatedRoundId: targetPlayer?.eliminatedRoundId ?? null,
-		allowRebuys: game.modeConfig?.allowRebuys === true,
+		allowRebuys,
 		winner: winnerBanner,
 		viewerUserId: session.user.id,
 		pot: {
@@ -532,7 +538,7 @@ export default async function GameDetailPage({
 				competition: game.competition.name,
 				pot: game.pot,
 				entryFee: game.entryFee,
-				allowRebuys: game.modeConfig?.allowRebuys === true,
+				allowRebuys,
 				aliveCount,
 				status: game.status,
 				inviteCode: game.inviteCode,

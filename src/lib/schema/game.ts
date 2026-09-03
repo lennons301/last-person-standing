@@ -57,6 +57,23 @@ export type EliminationReason =
 	| 'admin_removed'
 	| 'no_remaining_teams'
 
+/**
+ * `game.mode_config` as it sits in the column: every field optional, because a
+ * game created before a setting existed (or by a mode that has no use for it)
+ * simply doesn't carry it. Typed here so writes are checked; readers never take
+ * this shape — they take the resolved, per-mode `ModeConfig` that
+ * `resolveModeConfig` (`src/lib/game/mode-config.ts`) hands back, which is
+ * where every default is declared. See #248.
+ */
+export type StoredModeConfig = {
+	/** Cup only. Lives a player starts with; the rest are earned. */
+	startingLives?: number
+	/** Turbo and cup. How many confidence-ranked predictions the round takes. */
+	numberOfPicks?: number
+	/** Classic only. Whether a starting-round exit can be bought back from. */
+	allowRebuys?: boolean
+}
+
 export const pickResultEnum = pgEnum('pick_result', [
 	'pending',
 	'win',
@@ -82,13 +99,7 @@ export const game = pgTable('game', {
 	// otherwise. Pre-existing rows are backfilled to 'public' by the migration's
 	// column default.
 	visibility: gameVisibilityEnum('visibility').notNull().default('public'),
-	modeConfig: jsonb('mode_config')
-		.$type<{
-			startingLives?: number
-			numberOfPicks?: number
-			allowRebuys?: boolean
-		}>()
-		.default({}),
+	modeConfig: jsonb('mode_config').$type<StoredModeConfig>().default({}),
 	competitionId: uuid('competition_id')
 		.notNull()
 		.references(() => competition.id),

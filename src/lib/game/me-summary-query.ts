@@ -6,6 +6,7 @@ import {
 	type MeSummaryView,
 	type SummaryFilters,
 } from '@/lib/game/me-summary-view'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { competition, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment, payout } from '@/lib/schema/payment'
@@ -56,13 +57,17 @@ export async function getMeSummary(
 
 	// The `where` above already narrows the status; the map is what tells the
 	// type system so, since `game.status` carries setup/open too.
-	const games: BuildMeSummaryInput['games'] = gameRows.map(({ modeConfig, ...row }) => ({
-		...row,
-		gameStatus: row.gameStatus === 'completed' ? 'completed' : 'active',
-		// Same reading as `isRebuyEligible`: anything short of an explicit true is
-		// a game with no way back in.
-		allowRebuys: modeConfig?.allowRebuys === true,
-	}))
+	const games: BuildMeSummaryInput['games'] = gameRows.map(({ modeConfig, ...row }) => {
+		// Same reading as `isRebuyEligible`, because it is the same resolver:
+		// anything short of an explicit true on a classic game is a game with no
+		// way back in.
+		const resolved = resolveModeConfig({ gameMode: row.gameMode, modeConfig })
+		return {
+			...row,
+			gameStatus: row.gameStatus === 'completed' ? 'completed' : 'active',
+			allowRebuys: resolved.mode === 'classic' && resolved.allowRebuys,
+		}
+	})
 
 	// Picks come back for every game the player has ever been in; the builder
 	// keeps the ones whose game is in scope, so the season filter is applied in

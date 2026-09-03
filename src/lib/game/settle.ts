@@ -8,6 +8,7 @@ import {
 } from '@/lib/game/auto-complete'
 import { isKnockoutRound, settleClassicPick } from '@/lib/game/classic-survival'
 import { eliminationUpdate, isAdminRemoved } from '@/lib/game/elimination'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import type { WipeoutPlayerInput } from '@/lib/game-logic/auto-complete-tiebreakers'
@@ -217,7 +218,11 @@ async function settleClassicPickRow(
 		},
 		{
 			startingRoundId: g?.startingRoundId,
-			modeConfig: g?.modeConfig as { allowRebuys?: boolean } | null,
+			// The game's settings go through the one resolver (#248), never a cast
+			// of the column. A pick row settled without its game (the non-active
+			// path above) never reaches the elimination branch below, so what the
+			// exemption would have decided for it is read by nothing.
+			modeConfig: g ? resolveModeConfig(g) : { mode: 'classic', allowRebuys: false },
 		},
 	)
 	// Deferred: the pick stays PENDING on purpose and settles later via the poll
@@ -302,7 +307,8 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 		where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
 	})
 
-	const startingLives = (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	const cupConfig = resolveModeConfig(g)
+	const startingLives = cupConfig.mode === 'cup' ? cupConfig.startingLives : 0
 	let anyChanged = false
 
 	for (const player of g.players) {

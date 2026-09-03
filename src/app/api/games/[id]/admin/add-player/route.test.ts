@@ -51,6 +51,7 @@ describe('admin add-player route', () => {
 			id: 'g1',
 			createdBy: 'creator',
 			status: 'active',
+			gameMode: 'classic',
 			modeConfig: {},
 			startingRoundId: 'gw1',
 			currentRoundId: 'gw20',
@@ -67,6 +68,7 @@ describe('admin add-player route', () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue({
 			id: 'g1',
 			createdBy: 'someone-else',
+			gameMode: 'classic',
 			modeConfig: {},
 		} as never)
 
@@ -80,6 +82,7 @@ describe('admin add-player route', () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue({
 			id: 'g1',
 			createdBy: 'creator',
+			gameMode: 'classic',
 			modeConfig: {},
 			startingRoundId: 'gw1',
 			currentRoundId: 'gw20',

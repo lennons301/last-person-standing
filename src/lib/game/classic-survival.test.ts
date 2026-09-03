@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+	type ClassicSurvivalGame,
 	type ClassicSurvivalRoundFixture,
 	isKnockoutRound,
 	settleClassicPick,
@@ -24,7 +25,10 @@ function tie(overrides: Partial<ClassicSurvivalRoundFixture> = {}): ClassicSurvi
 }
 
 /** A game that began on some other round, so nothing here is exempt. */
-const GAME = { startingRoundId: 'r-opening', modeConfig: null }
+const GAME: ClassicSurvivalGame = {
+	startingRoundId: 'r-opening',
+	modeConfig: { mode: 'classic', allowRebuys: false },
+}
 
 describe('settleClassicPick', () => {
 	it('scores a penalty-decided tie by the winner, not by the level score', () => {
@@ -60,7 +64,10 @@ describe('settleClassicPick', () => {
 		// The exemption hangs off `game.starting_round_id`, not `round.number === 1`
 		// — a game created in November opens on gameweek 12 (#203).
 		const midSeasonOpener = tie({ roundId: 'r-gw12', knockout: false, awayScore: 3 })
-		const game = { startingRoundId: 'r-gw12', modeConfig: null }
+		const game: ClassicSurvivalGame = {
+			startingRoundId: 'r-gw12',
+			modeConfig: { mode: 'classic', allowRebuys: false },
+		}
 		expect(settleClassicPick({ teamId: HOME }, midSeasonOpener, game)).toEqual({
 			result: 'loss',
 			goalsScored: 0,
@@ -81,7 +88,10 @@ describe('settleClassicPick', () => {
 
 	it('has no exemption when the game allows rebuys', () => {
 		const midSeasonOpener = tie({ roundId: 'r-gw12', knockout: false, awayScore: 3 })
-		const game = { startingRoundId: 'r-gw12', modeConfig: { allowRebuys: true } }
+		const game: ClassicSurvivalGame = {
+			startingRoundId: 'r-gw12',
+			modeConfig: { mode: 'classic', allowRebuys: true },
+		}
 		expect(settleClassicPick({ teamId: HOME }, midSeasonOpener, game).eliminates).toBe(true)
 	})
 

@@ -18,6 +18,7 @@ import {
 	settleClassicPick,
 } from '@/lib/game/classic-survival'
 import { activeField, isAdminRemoved } from '@/lib/game/elimination'
+import { type ModeConfig, resolveModeConfig } from '@/lib/game/mode-config'
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import { isRebuyEligible } from '@/lib/game/rebuy'
@@ -171,10 +172,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 		eligibilityByUser.set(
 			uid,
 			isRebuyEligible({
-				game: {
-					gameMode: gameData.gameMode,
-					modeConfig: gameData.modeConfig as { allowRebuys?: boolean } | null,
-				},
+				modeConfig: resolveModeConfig(gameData),
 				gamePlayer: {
 					status: userPlayer.status,
 					eliminatedRoundId: userPlayer.eliminatedRoundId,
@@ -261,10 +259,7 @@ export async function getGameDetail(gameId: string, userId: string) {
 
 	if (viewerGamePlayer && startingRound && roundAfterStarting?.deadline && gameData.entryFee) {
 		const eligible = isRebuyEligible({
-			game: {
-				gameMode: gameData.gameMode,
-				modeConfig: gameData.modeConfig as { allowRebuys?: boolean } | null,
-			},
+			modeConfig: resolveModeConfig(gameData),
 			gamePlayer: {
 				status: viewerGamePlayer.status,
 				eliminatedRoundId: viewerGamePlayer.eliminatedRoundId,
@@ -1266,9 +1261,10 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 
 	// Build live projection.
 	const proj = computeLiveProjection({
-		gameMode: gameData.gameMode,
 		competitionType: gameData.competition.type,
-		modeConfig: gameData.modeConfig as { allowRebuys?: boolean; startingLives?: number } | null,
+		// Carries the mode as well as its settings, so the projection dispatches on
+		// the same value it reads `allowRebuys` / `startingLives` out of.
+		modeConfig: resolveModeConfig(gameData),
 		// The round being projected and the round the game began on: classic's
 		// exemption hangs off the pair, and a game that started mid-season has its
 		// own opening round (#203). The shared survival rule resolves it.
@@ -1396,9 +1392,8 @@ function projectClassicCellFromFixture(
  * by running the mode-specific evaluator over the projection set.
  */
 function computeLiveProjection(input: {
-	gameMode: 'classic' | 'turbo' | 'cup'
 	competitionType: string
-	modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
+	modeConfig: ModeConfig
 	/**
 	 * The round being projected, and the round the game began on — classic's
 	 * exemption is `isGameStartingRound` over the pair, and a game that started
@@ -1440,7 +1435,7 @@ function computeLiveProjection(input: {
 
 	for (const p of input.picks) {
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
-		pickProjections.set(p.id, projectOutcomeForPick(p, fx, knockout, input.gameMode))
+		pickProjections.set(p.id, projectOutcomeForPick(p, fx, knockout, input.modeConfig.mode))
 	}
 
 	for (const player of input.players) {
@@ -1448,14 +1443,14 @@ function computeLiveProjection(input: {
 			.filter((p) => p.gamePlayerId === player.id)
 			.sort((a, b) => (a.confidenceRank ?? 99) - (b.confidenceRank ?? 99))
 
-		if (input.gameMode === 'classic') {
+		if (input.modeConfig.mode === 'classic') {
 			playerProjections.set(
 				player.id,
 				projectClassicPlayer(player, playerPicks, fixtureById, { ...input, knockout }),
 			)
-		} else if (input.gameMode === 'turbo') {
+		} else if (input.modeConfig.mode === 'turbo') {
 			playerProjections.set(player.id, projectTurboPlayer(player, playerPicks, fixtureById))
-		} else if (input.gameMode === 'cup') {
+		} else {
 			playerProjections.set(player.id, projectCupPlayer(player, playerPicks, fixtureById, input))
 		}
 	}
@@ -1547,7 +1542,7 @@ function projectClassicPlayer(
 		}
 	>,
 	input: {
-		modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
+		modeConfig: ModeConfig
 		roundId: string | null
 		startingRoundId: string | null
 		knockout: boolean
@@ -1629,7 +1624,7 @@ function projectCupPlayer(
 			regularAwayScore: number | null
 		}
 	>,
-	input: { competitionType: string; modeConfig: { startingLives?: number } | null },
+	input: { competitionType: string; modeConfig: ModeConfig },
 ): { streak: number; lives: number; status: 'alive' | 'eliminated' } {
 	if (player.status === 'eliminated') {
 		return { streak: 0, lives: 0, status: 'eliminated' }
@@ -1689,7 +1684,13 @@ function projectCupPlayer(
 	// current persisted livesRemaining; this drifts slightly post-settle
 	// (since some lives may already be persisted) but the design accepts
 	// that — live aggregates are inherently approximate.
-	const startingLives = input.modeConfig?.startingLives ?? player.livesRemaining
+	//
+	// The game's configured lives win where the mode has them, which is every
+	// game that reaches here. A cup game whose config omits the field resolves to
+	// 0 rather than to `livesRemaining` as it did before #248 — that is the value
+	// settlement uses, so the projection now matches what will be persisted.
+	const startingLives =
+		input.modeConfig.mode === 'cup' ? input.modeConfig.startingLives : player.livesRemaining
 	const result = evaluateCupPicks(inputs, startingLives)
 	const streak = result.pickResults.filter(
 		(r) => r.result === 'win' || r.result === 'draw_success' || r.result === 'saved_by_life',

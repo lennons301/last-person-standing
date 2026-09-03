@@ -1,5 +1,6 @@
 import { determinePickResult, type PickResult } from '@/lib/game-logic/common'
 import { wcRoundStage } from '@/lib/game-logic/wc-classic'
+import type { ModeConfig } from './mode-config'
 import { isGameStartingRound, type StartingRoundGameRow } from './starting-round'
 
 /**
@@ -51,7 +52,12 @@ export interface ClassicSurvivalRoundFixture extends ClassicSurvivalFixture {
 
 /** What the rule needs to know about the game: where it began, and its config. */
 export interface ClassicSurvivalGame extends StartingRoundGameRow {
-	modeConfig?: { allowRebuys?: boolean } | null
+	/**
+	 * The game's resolved settings — `resolveModeConfig(gameRow)`. The rule takes
+	 * the resolved value rather than the stored column, so `game.mode_config`
+	 * keeps its single reader (#248).
+	 */
+	modeConfig: ModeConfig
 }
 
 /** Did the pick come through? The half of the rule a projection can answer. */
@@ -151,7 +157,7 @@ export function settleClassicPick(
 	// created on (`game.starting_round_id`) and not the competition's gameweek
 	// one — a game created in November opens at gameweek 12, and gameweek 12 is
 	// the first hurdle its players are put to. See #203.
-	const allowRebuys = game.modeConfig?.allowRebuys === true
+	const allowRebuys = game.modeConfig.mode === 'classic' && game.modeConfig.allowRebuys
 	const exempt = isGameStartingRound(game, fixture.roundId) && !allowRebuys
 
 	return { ...resolution, eliminates: resolution.result !== 'win' && !exempt }

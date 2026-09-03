@@ -59,15 +59,10 @@ export type PaymentStatus = Payment['status']
 
 // -- Mode config types --
 
-export type ClassicModeConfig = Record<string, never>
-
-export interface TurboModeConfig {
-	numberOfPicks?: number // default 10
-}
-
-export interface CupModeConfig {
-	startingLives?: number // default 0
-	numberOfPicks?: number // default 10
-}
-
-export type ModeConfig = ClassicModeConfig | TurboModeConfig | CupModeConfig
+/**
+ * The stored shape of `game.mode_config`, declared in the schema beside the
+ * column it types. Readers don't take it: they take the resolved `ModeConfig`
+ * out of `resolveModeConfig` (`src/lib/game/mode-config.ts`), which is where
+ * the per-mode fields and their defaults are declared.
+ */
+export type { StoredModeConfig } from './schema/game'

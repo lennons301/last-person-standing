@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { resolveRoundAfterStarting, resolveStartingRound } from '@/lib/game/starting-round'
 import { round } from '@/lib/schema/competition'
@@ -40,10 +41,7 @@ export async function POST(_request: Request, ctx: Ctx): Promise<Response> {
 	})
 
 	const eligible = isRebuyEligible({
-		game: {
-			gameMode: gameRow.gameMode,
-			modeConfig: gameRow.modeConfig as { allowRebuys?: boolean } | null,
-		},
+		modeConfig: resolveModeConfig(gameRow),
 		gamePlayer: {
 			status: playerRow.status,
 			eliminatedRoundId: playerRow.eliminatedRoundId,

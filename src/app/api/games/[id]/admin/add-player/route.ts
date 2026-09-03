@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { user } from '@/lib/schema/auth'
 import { game, gamePlayer } from '@/lib/schema/game'
 
@@ -37,10 +38,11 @@ export async function POST(
 		return NextResponse.json({ error: 'already-in-game' }, { status: 409 })
 	}
 
-	// Honour modeConfig.startingLives if set; default 0 (lives are earned via
-	// underdog picks in cup mode, not handed out).
-	const startingLives =
-		(gameRow.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	// Honour modeConfig.startingLives if set; only cup has lives and its default
+	// is 0 (they're earned via underdog picks, not handed out). See
+	// `resolveModeConfig` — the join route reads the same answer.
+	const modeConfig = resolveModeConfig(gameRow)
+	const startingLives = modeConfig.mode === 'cup' ? modeConfig.startingLives : 0
 	const [inserted] = await db
 		.insert(gamePlayer)
 		.values({

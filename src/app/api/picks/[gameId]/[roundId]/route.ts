@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { validateWcClassicPick, wcRoundStage } from '@/lib/game-logic/wc-classic'
 import {
@@ -245,7 +246,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
 		confidenceRank: number
 		predictedResult: 'home_win' | 'draw' | 'away_win'
 	}>
-	const numberOfPicks = (gameData.modeConfig as { numberOfPicks?: number })?.numberOfPicks ?? 10
+	// Classic returned above; the modes that get here rank N predictions, and how
+	// many is the game's own setting. The default lives in `resolveModeConfig`,
+	// which the cup standings grid reads too — it used to say 6 there and 10 here
+	// (#248).
+	const modeConfig = resolveModeConfig(gameData)
+	const numberOfPicks = modeConfig.mode === 'classic' ? 1 : modeConfig.numberOfPicks
 
 	const allowEliminatedRebuyMulti = Boolean(
 		body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
