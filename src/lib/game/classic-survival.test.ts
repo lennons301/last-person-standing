@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { type ClassicSurvivalFixture, isKnockoutRound, settleClassicPick } from './classic-survival'
+import {
+	type ClassicSurvivalRoundFixture,
+	isKnockoutRound,
+	settleClassicPick,
+} from './classic-survival'
 
 const HOME = 'team-home'
 const AWAY = 'team-away'
 
 /** A knockout tie, level at full time — the shape the winner-lag incident had. */
-function tie(overrides: Partial<ClassicSurvivalFixture> = {}): ClassicSurvivalFixture {
+function tie(overrides: Partial<ClassicSurvivalRoundFixture> = {}): ClassicSurvivalRoundFixture {
 	return {
 		roundId: 'r-ko',
 		homeTeamId: HOME,

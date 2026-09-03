@@ -12,6 +12,7 @@ import {
 	type ChainRoundRow,
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
+import { isKnockoutRound } from '@/lib/game/classic-survival'
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
@@ -1199,6 +1200,12 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 			{ homeTeamId: f.homeTeamId, awayTeamId: f.awayTeamId, odds: f.odds },
 		]),
 	)
+	// Whether this round's fixtures are knockout ties — matches that can't end
+	// level, so an unresolved one is deferred rather than shown settled (#107).
+	const roundIsKnockout = isKnockoutRound(
+		gameData.competition.type,
+		gameData.currentRound?.number ?? 0,
+	)
 	const fixtures = fixturesRaw.map((f) => ({
 		id: f.id,
 		kickoff: f.kickoff,
@@ -1207,6 +1214,14 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		status: f.status,
 		homeShort: f.homeTeam.shortName,
 		awayShort: f.awayTeam.shortName,
+		// The sides, the authoritative winner of a penalty-decided tie and the
+		// round's stage all ride along because the classic survival rule reads
+		// them — the browser projects a pick with the same module the server
+		// settles it with (#242).
+		homeTeamId: f.homeTeamId,
+		awayTeamId: f.awayTeamId,
+		winner: f.winner,
+		knockout: roundIsKnockout,
 	}))
 
 	// Build live projection.

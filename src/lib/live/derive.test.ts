@@ -11,6 +11,10 @@ function fx(overrides: Partial<LiveFixture> = {}): LiveFixture {
 		status: 'scheduled',
 		homeShort: 'ENG',
 		awayShort: 'FRA',
+		homeTeamId: 't-home',
+		awayTeamId: 't-away',
+		winner: null,
+		knockout: false,
 		...overrides,
 	}
 }
@@ -111,9 +115,30 @@ describe('projectPickOutcome', () => {
 	})
 
 	it('returns winning for away pick when away leads', () => {
-		const awayWin: LivePick = { ...homeWin, predictedResult: 'away_win' }
+		const awayWin: LivePick = { ...homeWin, teamId: 't-away', predictedResult: 'away_win' }
 		expect(
 			projectPickOutcome(awayWin, fx({ homeScore: 0, awayScore: 1, status: 'live' }), 'classic'),
 		).toBe('winning')
+	})
+
+	it('projects a penalty-decided tie as a win, the same as settlement scores it', () => {
+		// The #242 divergence: level on score, `winner` populated. Settlement read
+		// the winner and scored a win; the projection read the score alone and
+		// showed the backer a loss (and, on the grid, an elimination).
+		const tie = fx({
+			homeScore: 1,
+			awayScore: 1,
+			status: 'finished',
+			winner: 'home',
+			knockout: true,
+		})
+		expect(projectPickOutcome(homeWin, tie, 'classic')).toBe('settled-win')
+	})
+
+	it('leaves an unresolved knockout tie pending rather than calling it a loss', () => {
+		// #107's deferral, on the projection side: level with no winner reported is
+		// winner-lag, and nothing may be shown as settled until it resolves.
+		const unresolved = fx({ homeScore: 1, awayScore: 1, status: 'finished', knockout: true })
+		expect(projectPickOutcome(homeWin, unresolved, 'classic')).toBe('pending')
 	})
 })

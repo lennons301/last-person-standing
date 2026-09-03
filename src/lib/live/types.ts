@@ -18,6 +18,25 @@ export interface LiveFixture {
 	status: FixtureStatus
 	homeShort: string
 	awayShort: string
+	/**
+	 * The sides, so a pick's team can be placed on its fixture — which is what
+	 * the classic survival rule reads. Required, not derived from the short
+	 * names: those are display strings and two clubs can share one.
+	 */
+	homeTeamId: string
+	awayTeamId: string
+	/**
+	 * Authoritative winner of a tie settled after a level 90 minutes (extra time
+	 * or penalties). Carried on the payload because settlement reads it, and a
+	 * projection that didn't showed a penalty-decided win as a loss (#242).
+	 */
+	winner: 'home' | 'away' | null
+	/**
+	 * Is this fixture a knockout tie — a match that can't end level? An
+	 * unresolved level tie is deferred rather than shown settled (#107), and
+	 * that only holds where a draw is impossible.
+	 */
+	knockout: boolean
 }
 
 export interface LivePick {

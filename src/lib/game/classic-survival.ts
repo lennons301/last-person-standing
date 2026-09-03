@@ -22,10 +22,8 @@ export interface ClassicSurvivalPick {
 	teamId: string | null
 }
 
-/** What the rule needs to know about the fixture the pick sits on. */
+/** What scoring the pick needs to know about the fixture it sits on. */
 export interface ClassicSurvivalFixture {
-	/** The round the fixture belongs to — read for the starting-round exemption. */
-	roundId: string
 	homeTeamId: string
 	awayTeamId: string
 	homeScore: number | null
@@ -42,19 +40,32 @@ export interface ClassicSurvivalFixture {
 	knockout: boolean
 }
 
+/**
+ * The same fixture, placed in its round — what asking whether the result
+ * *eliminates* additionally needs, since the exemption is a fact about which
+ * round the game began on.
+ */
+export interface ClassicSurvivalRoundFixture extends ClassicSurvivalFixture {
+	roundId: string
+}
+
 /** What the rule needs to know about the game: where it began, and its config. */
 export interface ClassicSurvivalGame extends StartingRoundGameRow {
 	modeConfig?: { allowRebuys?: boolean } | null
 }
 
-export interface ClassicSurvivalOutcome {
+/** Did the pick come through? The half of the rule a projection can answer. */
+export interface ClassicPickResolution {
 	/** Null while the pick can't be resolved yet — see `defer`. */
 	result: PickResult | null
 	goalsScored: number
-	/** Does this result put the player out? False under the starting-round exemption. */
-	eliminates: boolean
 	/** Leave the pick pending: there is no result to write yet. */
 	defer: boolean
+}
+
+export interface ClassicSurvivalOutcome extends ClassicPickResolution {
+	/** Does this result put the player out? False under the starting-round exemption. */
+	eliminates: boolean
 }
 
 /**
@@ -71,18 +82,21 @@ export function isKnockoutRound(competitionType: string, roundNumber: number): b
 }
 
 /** Nothing to write: the pick stays pending until the fixture says more. */
-const DEFERRED: ClassicSurvivalOutcome = {
+const DEFERRED: ClassicPickResolution = {
 	result: null,
 	goalsScored: 0,
-	eliminates: false,
 	defer: true,
 }
 
-export function settleClassicPick(
+/**
+ * Did the picked team come through this fixture? The scoring half of the rule,
+ * without the game context — what a projection has to hand, and all it needs:
+ * a live view says nothing about elimination that this doesn't already decide.
+ */
+export function resolveClassicPickResult(
 	pick: ClassicSurvivalPick,
 	fixture: ClassicSurvivalFixture,
-	game: ClassicSurvivalGame,
-): ClassicSurvivalOutcome {
+): ClassicPickResolution {
 	// A pick with no team is a hidden pick — the live payload strips the team
 	// before the deadline. Nothing to score, and nothing that may be guessed:
 	// reading "not the home team" as away would score somebody else's fixture.
@@ -116,6 +130,22 @@ export function settleClassicPick(
 	const pickedHome = pick.teamId === fixture.homeTeamId
 	const goalsScored = result === 'win' ? (pickedHome ? homeScore : awayScore) : 0
 
+	return { result, goalsScored, defer: false }
+}
+
+/**
+ * The whole rule: the result, and whether it puts the player out.
+ *
+ * The seam the settle path, the progress grid and the live projection all call.
+ */
+export function settleClassicPick(
+	pick: ClassicSurvivalPick,
+	fixture: ClassicSurvivalRoundFixture,
+	game: ClassicSurvivalGame,
+): ClassicSurvivalOutcome {
+	const resolution = resolveClassicPickResult(pick, fixture)
+	if (resolution.defer || resolution.result == null) return { ...resolution, eliminates: false }
+
 	// Starting-round exemption: the game's OWN first round, with rebuys off, is
 	// the round a non-win doesn't eliminate on. The round is the one the game was
 	// created on (`game.starting_round_id`) and not the competition's gameweek
@@ -123,7 +153,6 @@ export function settleClassicPick(
 	// the first hurdle its players are put to. See #203.
 	const allowRebuys = game.modeConfig?.allowRebuys === true
 	const exempt = isGameStartingRound(game, fixture.roundId) && !allowRebuys
-	const eliminates = result !== 'win' && !exempt
 
-	return { result, goalsScored, eliminates, defer: false }
+	return { ...resolution, eliminates: resolution.result !== 'win' && !exempt }
 }
