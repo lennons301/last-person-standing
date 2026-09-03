@@ -7,16 +7,24 @@ import { submitPlannedPick } from '@/lib/game/auto-submit'
 import { syncCompetition } from '@/lib/game/bootstrap-competitions'
 import { writeEvent } from '@/lib/game/events'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
-import { processGameRound } from '@/lib/game/process-round'
 import { reconcileAllActiveGames } from '@/lib/game/reconcile'
 import { scheduleDeadlineLockForRound } from '@/lib/game/round-lifecycle'
+import { sweepGameSettlement } from '@/lib/game/settle'
 import { competition } from '@/lib/schema/competition'
 
 async function handler(request: Request): Promise<Response> {
 	const body = (await request.json()) as QStashJob
 	switch (body.type) {
 		case 'process_round': {
-			await processGameRound(body.gameId, body.roundId)
+			// Legacy job type: nothing enqueues it any more (settlement is
+			// per-fixture, driven from the sites that write `finished`), but the
+			// case stays so an in-flight message still gets a 200 rather than the
+			// 400 below. It used to call `processGameRound`, which filtered the
+			// round's finished fixtures, settled them, and then called this sweep —
+			// which re-filtered and re-settled the same set. The sweep alone is the
+			// whole of it; settlement is idempotent and reconcile is the backstop
+			// for a job naming a round the game has since advanced past (#243).
+			await sweepGameSettlement(body.gameId)
 			return NextResponse.json({ ok: true })
 		}
 		case 'deadline_reminder': {

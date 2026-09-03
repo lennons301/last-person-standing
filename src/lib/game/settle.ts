@@ -35,8 +35,8 @@ import { game, gamePlayer, pick } from '@/lib/schema/game'
  *   - `/api/cron/poll-scores` (live observation of the transition)
  *   - `syncCompetition` in `bootstrap-competitions.ts` (adapter mirror)
  *
- * Also called from `processGameRound` and `reconcileGameState` as sweep
- * wrappers — both delegate to settleFixture for each finished-but-pending
+ * Also called from `reconcileGameState` via `sweepGameSettlement` as a sweep
+ * wrapper — it delegates to settleFixture for each finished-but-pending
  * fixture in a game.
  *
  * Idempotent on every axis: re-running on a settled pick is a no-op
@@ -697,7 +697,7 @@ async function runWcClassicAutoElims(gameId: string, currentRoundId: string): Pr
  *
  * THE single advancement implementation. Both paths that advance a game call
  * it: the settle path (`checkAndMaybeCompleteOrAdvance` below) and the
- * reconcile path (`advanceGameIfReady` in process-round.ts). They share the
+ * reconcile path (`advanceGameIfReady`, just below). They share the
  * pending-pick gate (`gameHasPendingPicksInRound`) too — keep it that way;
  * two divergent advancement bodies is how a game ends up advancing past an
  * unresolved knockout tie on one path but not the other.
@@ -726,6 +726,43 @@ export async function advanceGameToNextRound(
 	return { advanced: true }
 }
 
+/**
+ * Retry advancement for a game stuck pointing at a completed round. Used by
+ * the reconcile path to pick up games whose next round was TBD at
+ * process-time and has since been populated by bootstrap.
+ *
+ * Lives beside `advanceGameToNextRound` because it is the second half of the
+ * one advancement implementation: this decides *whether* to advance, that
+ * does the advancing. It used to sit in `process-round.ts` alongside the dead
+ * `processGameRound`, which is why the pending-pick gate below reads as a
+ * copy of the settle path's rather than as its sibling (#243).
+ */
+export async function advanceGameIfReady(
+	gameId: string,
+): Promise<{ advanced: boolean; reason: string }> {
+	const g = await db.query.game.findFirst({
+		where: eq(game.id, gameId),
+		with: { currentRound: true },
+	})
+	if (!g) return { advanced: false, reason: 'not-found' }
+	if (g.status !== 'active') return { advanced: false, reason: 'not-active' }
+	if (!g.currentRound) return { advanced: false, reason: 'no-current-round' }
+	if (g.currentRound.status !== 'completed') {
+		return { advanced: false, reason: 'round-not-completed' }
+	}
+	// Same pending-pick gate as the settle-path advancement
+	// (checkAndMaybeCompleteOrAdvance): the round's status is the data
+	// source's verdict that its fixtures are done, but a deferred knockout
+	// pick (winner-lag) can still be pending on a finished fixture. Advancing
+	// past it strands the pick forever — the player survives rounds they
+	// should have gone out in.
+	if (await gameHasPendingPicksInRound(gameId, g.currentRound.id)) {
+		return { advanced: false, reason: 'pending-picks' }
+	}
+	const result = await advanceGameToNextRound(g.id, g.competitionId, g.currentRound.number)
+	return { advanced: result.advanced, reason: result.reason ?? 'advanced' }
+}
+
 /* ────────────────────────────────────────────────────────────────────── */
 /* Sweeps                                                                 */
 /* ────────────────────────────────────────────────────────────────────── */
@@ -733,8 +770,8 @@ export async function advanceGameToNextRound(
 /**
  * Sweep helper: for a given game, find every finished fixture in its
  * current round with pending picks and run settleFixture on each. Used
- * by reconcileGameState as the safety-net body, and by processGameRound
- * as the wrapper around per-fixture settlement.
+ * by reconcileGameState as the safety-net body, and by the qstash
+ * handler's legacy `process_round` job.
  */
 export async function sweepGameSettlement(gameId: string): Promise<SettleResult[]> {
 	const g = await db.query.game.findFirst({

@@ -1,7 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { advanceGameIfReady } from '@/lib/game/process-round'
-import { sweepGameSettlement, sweepStuckFixtures } from '@/lib/game/settle'
+import { advanceGameIfReady, sweepGameSettlement, sweepStuckFixtures } from '@/lib/game/settle'
 import { game } from '@/lib/schema/game'
 
 export type ReconcileResult =

@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
 	verifyMock,
-	processGameRoundMock,
+	sweepGameSettlementMock,
 	writeEventMock,
 	submitPlannedPickMock,
 	processDeadlineLockMock,
 	scheduleDeadlineLockForRoundMock,
 } = vi.hoisted(() => ({
 	verifyMock: vi.fn(),
-	processGameRoundMock: vi.fn().mockResolvedValue({ processed: true }),
+	sweepGameSettlementMock: vi.fn().mockResolvedValue([]),
 	writeEventMock: vi.fn().mockResolvedValue(undefined),
 	submitPlannedPickMock: vi.fn().mockResolvedValue({ submitted: true }),
 	processDeadlineLockMock: vi.fn().mockResolvedValue({
@@ -25,7 +25,7 @@ vi.mock('@upstash/qstash/nextjs', () => ({
 	verifySignature: verifyMock,
 }))
 
-vi.mock('@/lib/game/process-round', () => ({ processGameRound: processGameRoundMock }))
+vi.mock('@/lib/game/settle', () => ({ sweepGameSettlement: sweepGameSettlementMock }))
 
 vi.mock('@/lib/game/events', () => ({ writeEvent: writeEventMock }))
 
@@ -52,10 +52,10 @@ describe('qstash-handler', () => {
 		vi.clearAllMocks()
 	})
 
-	it('dispatches process_round jobs', async () => {
+	it('dispatches a legacy process_round job to the game sweep', async () => {
 		const res = await POST(req({ type: 'process_round', gameId: 'g', roundId: 'r' }))
 		expect(res.status).toBe(200)
-		expect(processGameRoundMock).toHaveBeenCalledWith('g', 'r')
+		expect(sweepGameSettlementMock).toHaveBeenCalledWith('g')
 	})
 
 	it('dispatches deadline_reminder jobs', async () => {

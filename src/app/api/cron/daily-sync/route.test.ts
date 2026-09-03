@@ -35,10 +35,6 @@ vi.mock('@/lib/game/no-pick-handler', () => ({
 		.mockResolvedValue({ autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 }),
 }))
 
-vi.mock('@/lib/game/process-round', () => ({
-	advanceGameIfReady: vi.fn().mockResolvedValue({ advanced: false, reason: 'not-active' }),
-}))
-
 vi.mock('@/lib/game/round-lifecycle', () => ({
 	openRoundForGame: vi.fn().mockResolvedValue(undefined),
 }))
