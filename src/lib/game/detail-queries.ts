@@ -678,14 +678,26 @@ export async function getTurboStandingsData(
 				now,
 			})
 			const isRoundOpen = derivedStatus === 'open'
+			// May this viewer see this player's picks for this round? One module owns
+			// the rule (#247) — `hideOpenRoundPicks` (the share-image path) is stated
+			// as "no viewer to make an exception for", and a round the GAME has
+			// finished with is revealed wholesale (a completed turbo game nulls
+			// `currentRoundId`, which is how its standings stay readable).
+			const pickHidden = (gamePlayerId: string) =>
+				resolvePickVisibility({
+					round: r,
+					pick: { gamePlayerId },
+					viewerGamePlayerId: options?.hideOpenRoundPicks ? null : viewerGamePlayerId,
+					now,
+					revealAll: derivedStatus === 'completed',
+				}) === 'hidden'
 
 			const players = gameData.players.map((p) => {
 				const playerPicks = gameData.picks
 					.filter((pk) => pk.gamePlayerId === p.id && pk.roundId === r.id)
 					.sort((a, b) => (a.confidenceRank ?? 99) - (b.confidenceRank ?? 99))
 
-				const isOwnPick = viewerGamePlayerId === p.id
-				const hideCells = isRoundOpen && (options?.hideOpenRoundPicks || !isOwnPick)
+				const hideCells = pickHidden(p.id)
 
 				// Streak + goals. For completed rounds: persisted pick.result drives
 				// it. For in-progress rounds: project from current scores — same
@@ -801,9 +813,8 @@ export async function getTurboStandingsData(
 
 			for (const p of gameData.players) {
 				const playerName = userNames.get(p.userId) ?? 'Player'
-				const isOwnPick = viewerGamePlayerId === p.id
 				const streakBreakRank = playerStreakBreakRank.get(p.id)
-				const hideThisPlayerInOpenRound = isRoundOpen && (options?.hideOpenRoundPicks || !isOwnPick)
+				const hideThisPlayerInOpenRound = pickHidden(p.id)
 
 				const playerPicks = gameData.picks.filter(
 					(pk) => pk.gamePlayerId === p.id && pk.roundId === r.id,
