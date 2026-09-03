@@ -14,6 +14,7 @@ import {
 } from '@/lib/game/classic-planner-view'
 import { activeField, isAdminRemoved } from '@/lib/game/elimination'
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
+import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { arePicksLocked, deriveGameRoundStatus } from '@/lib/game/round-status'
@@ -971,46 +972,51 @@ export async function getProgressGridData(
 	const now = new Date()
 	const currentRoundNumber =
 		gameData.competition.rounds.find((r) => r.id === gameData.currentRoundId)?.number ?? null
-	const derivedRoundStatus = new Map<string, 'upcoming' | 'open' | 'active' | 'completed'>()
-	// Whether a round's picks are locked-and-revealable to everyone. Picks stay
-	// hidden from other viewers until the round's OWN deadline passes (or it's
-	// processed) — this must hold for FUTURE rounds too, since advance picks
-	// (PR #81) commit real picks for a round that's still 'upcoming'. Keying the
-	// reveal on `=== 'open'` only covered the current round and leaked advance
-	// picks the moment they were made.
-	const picksLockedByRoundId = new Map<string, boolean>()
+	// Rounds this GAME has finished with — advanced past, or every round of a game
+	// that is itself over (completion nulls `currentRoundId`, and
+	// `deriveGameRoundStatus` then calls the lot 'completed'). This is the only
+	// thing the on-screen grid's per-cell reveal adds to the round's own lock, and
+	// it is passed to `resolvePickVisibility` as `revealAll` below rather than
+	// re-stating the lock rule: a player looking back at a game they played sees
+	// the field's picks for every round of it.
+	const gameFinishedWithRoundIds = new Set<string>()
 	for (const r of gameData.competition.rounds) {
 		const status = deriveGameRoundStatus({
 			round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
 			game: { currentRoundId: gameData.currentRoundId, currentRoundNumber },
 			now,
 		})
-		derivedRoundStatus.set(r.id, status)
-		const deadlinePassed = r.deadline != null && now >= r.deadline
-		picksLockedByRoundId.set(r.id, status === 'completed' || deadlinePassed)
+		if (status === 'completed') gameFinishedWithRoundIds.add(r.id)
 	}
 
 	const competitionType = gameData.competition.type as 'league' | 'knockout' | 'group_knockout'
-	const rounds: GridRound[] = completedAndCurrentRounds.map((r) => ({
-		id: r.id,
-		number: r.number,
-		name: r.name ?? roundLabelLong(competitionType, r.number),
-		label: roundLabel(competitionType, r.number),
-		// The game's own opening round, not the competition's gameweek one — a game
-		// created in November is marked on gameweek 12 (#203).
-		isStartingRound: isGameStartingRound(gameData, r.id),
-		// Surfaced on the descriptor, not just consumed per-cell below: the classic
-		// share image filters its columns on it so a far-future advance-pick round
-		// never reaches the layout's six-column tail (#225).
-		//
-		// The round's OWN rule, not the per-game map below, and the difference
-		// matters exactly once: a completed game has no `currentRoundId`, so
-		// `deriveGameRoundStatus` calls every round 'completed' — which would put
-		// an untouched future gameweek back in the share the moment a game ends.
-		// The cells keep the game-relative map, so the on-screen grid is unmoved.
-		picksLocked: arePicksLocked(r, now),
-		voidedAt: r.voidedAt ?? null,
+	// The row is carried beside the descriptor because the per-cell visibility rule
+	// below needs the round's own status and deadline, which `GridRound` doesn't
+	// carry (it crosses to the client).
+	const displayRounds = completedAndCurrentRounds.map((row) => ({
+		row,
+		grid: {
+			id: row.id,
+			number: row.number,
+			name: row.name ?? roundLabelLong(competitionType, row.number),
+			label: roundLabel(competitionType, row.number),
+			// The game's own opening round, not the competition's gameweek one — a game
+			// created in November is marked on gameweek 12 (#203).
+			isStartingRound: isGameStartingRound(gameData, row.id),
+			// Surfaced on the descriptor, not just consumed per-cell below: the classic
+			// share image filters its columns on it so a far-future advance-pick round
+			// never reaches the layout's six-column tail (#225).
+			//
+			// The round's OWN rule, with no game-relative reveal, and the difference
+			// matters exactly once: a completed game has no `currentRoundId`, so
+			// `deriveGameRoundStatus` calls every round 'completed' — which would put
+			// an untouched future gameweek back in the share the moment a game ends.
+			// The cells keep the game-relative reveal, so the on-screen grid is unmoved.
+			picksLocked: arePicksLocked(row, now),
+			voidedAt: row.voidedAt ?? null,
+		} satisfies GridRound,
 	}))
+	const rounds: GridRound[] = displayRounds.map((r) => r.grid)
 
 	// Get user names for players
 	const { user } = await import('@/lib/schema/auth')
@@ -1030,7 +1036,7 @@ export async function getProgressGridData(
 
 	const players: GridPlayer[] = gameData.players.map((p) => {
 		const cellsByRoundId: Record<string, GridCell> = {}
-		for (const r of rounds) {
+		for (const { row, grid: r } of displayRounds) {
 			const thePick = gameData.picks.find((pk) => pk.gamePlayerId === p.id && pk.roundId === r.id)
 
 			// Elimination round with NO pick (e.g. a no-pick elimination) → bare
@@ -1048,23 +1054,28 @@ export async function getProgressGridData(
 					continue
 				}
 			}
-			const picksLocked = picksLockedByRoundId.get(r.id) ?? false
-			const isOwnPick = viewerGamePlayerId && thePick?.gamePlayerId === viewerGamePlayerId
-			// Hide the team while this round's picks aren't locked yet (its deadline
-			// hasn't passed) and either the viewer isn't the picker or the caller
-			// requested a shared-view (hide everything not-yet-locked). Covers the
-			// current open round AND future advance-pick rounds.
-			const hideTeam = !picksLocked && (options?.hideAllCurrentPicks || !isOwnPick)
-
 			if (!thePick) {
 				// Always show "?" for players who haven't picked yet — acts as a nudge.
 				cellsByRoundId[r.id] = { result: 'no_pick' }
 				continue
 			}
 
-			// In an open round, if we should hide others' picks: show "locked" to indicate
-			// "pick is in but hidden". The viewer's own pick is still visible unless
-			// hideAllCurrentPicks is set (share-image mode).
+			// May this viewer see this pick? One module owns that (#247). The
+			// round's own lock covers the current open round AND future
+			// advance-pick rounds (PR #81), which is what the leak was (#86);
+			// `hideAllCurrentPicks` (the share-image path) is stated as "there is
+			// no viewer to make an exception for", so a not-yet-locked pick stays
+			// hidden from everyone, its own picker included.
+			const hideTeam =
+				resolvePickVisibility({
+					round: row,
+					pick: thePick,
+					viewerGamePlayerId: options?.hideAllCurrentPicks ? null : viewerGamePlayerId,
+					now,
+					revealAll: gameFinishedWithRoundIds.has(r.id),
+				}) === 'hidden'
+
+			// A pick that's in but hidden shows "locked".
 			if (hideTeam) {
 				cellsByRoundId[r.id] = { result: 'locked' }
 				continue
