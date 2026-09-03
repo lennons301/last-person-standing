@@ -5,11 +5,17 @@
  * are locked — you may always see your own, and nobody else's before then.
  */
 
+import { arePicksLocked, type PicksLockedRound } from '@/lib/game/round-status'
+
 export type PickVisibility = 'visible' | 'hidden'
 
 export interface ResolvePickVisibilityInput {
-	/** The pick's own round. */
-	round: unknown
+	/**
+	 * The pick's own round — the round whose lock the secret hangs on, never the
+	 * game's current round. Advance picks (PR #81) sit on rounds ten-plus
+	 * gameweeks out, and each stays a secret until its own deadline goes (#86).
+	 */
+	round: PicksLockedRound
 	/** The pick under consideration — only its owner matters here. */
 	pick: { gamePlayerId: string }
 	/**
@@ -22,8 +28,10 @@ export interface ResolvePickVisibilityInput {
 }
 
 export function resolvePickVisibility(input: ResolvePickVisibilityInput): PickVisibility {
-	const { pick, viewerGamePlayerId } = input
+	const { round, pick, viewerGamePlayerId, now } = input
 	// Your own pick is never a secret from you.
 	if (viewerGamePlayerId != null && pick.gamePlayerId === viewerGamePlayerId) return 'visible'
+	// Everyone else's opens up the moment the round's picks lock.
+	if (arePicksLocked(round, now)) return 'visible'
 	return 'hidden'
 }

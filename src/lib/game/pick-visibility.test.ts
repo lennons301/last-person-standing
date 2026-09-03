@@ -28,4 +28,15 @@ describe('resolvePickVisibility', () => {
 			}),
 		).toBe('hidden')
 	})
+
+	it("reveals an opponent's pick once the round's deadline has passed", () => {
+		expect(
+			resolvePickVisibility({
+				round: { status: 'active', deadline: new Date('2026-06-15T11:00:00Z') },
+				pick: { gamePlayerId: 'gp-rival' },
+				viewerGamePlayerId: VIEWER,
+				now: NOW,
+			}),
+		).toBe('visible')
+	})
 })
