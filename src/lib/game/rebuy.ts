@@ -22,6 +22,18 @@ export interface IsRebuyEligibleArgs {
 	now: Date
 }
 
+/**
+ * Has this player bought back in?
+ *
+ * One payment row is the entry; a second is the rebuy — both rebuy routes write
+ * one, in a free game too. The same question is asked from both ends of the
+ * rebuy: here, to refuse a second one, and by the deadline lock, to tell a
+ * bought-back-in player apart from a survivor who is still in on merit.
+ */
+export function hasBoughtBackIn(paymentRowCount: number): boolean {
+	return paymentRowCount >= 2
+}
+
 export function isRebuyEligible(args: IsRebuyEligibleArgs): boolean {
 	if (args.game.gameMode !== 'classic') return false
 	if (args.game.modeConfig?.allowRebuys !== true) return false
@@ -29,6 +41,6 @@ export function isRebuyEligible(args: IsRebuyEligibleArgs): boolean {
 	if (args.gamePlayer.eliminatedRoundId !== args.startingRound.id) return false
 	if (!args.roundAfterStarting.deadline) return false
 	if (args.now.getTime() >= args.roundAfterStarting.deadline.getTime()) return false
-	if (args.paymentRowCount >= 2) return false
+	if (hasBoughtBackIn(args.paymentRowCount)) return false
 	return true
 }

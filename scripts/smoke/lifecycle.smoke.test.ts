@@ -819,6 +819,128 @@ describe("lifecycle: classic starting round is the game's own (#203)", () => {
 		})
 		expect(autoPick).toBeUndefined()
 	})
+
+	/**
+	 * The deadline lock on the round *after* the game's starting round — the round
+	 * a rebuy buys, and the round whose two kinds of survivor #238 could not tell
+	 * apart. A player who bought back in and then missed this deadline goes out
+	 * with the money; a player still in on merit takes the ordinary fallback.
+	 */
+	async function roundAfterStartingSetup() {
+		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
+		const a = await makeTeam({ name: 'A', shortName: 'A', leaguePosition: 4 })
+		const b = await makeTeam({ name: 'B', shortName: 'B', leaguePosition: 18 })
+		const c = await makeTeam({ name: 'C', shortName: 'C', leaguePosition: 12 })
+		const d = await makeTeam({ name: 'D', shortName: 'D', leaguePosition: 16 })
+		const gw12 = await makeRound(compId, {
+			number: 12,
+			status: 'open',
+			deadline: new Date(Date.now() - 7 * 86_400_000),
+		})
+		// The lock only fires on a round whose own deadline has gone.
+		const gw13 = await makeRound(compId, {
+			number: 13,
+			status: 'open',
+			deadline: new Date(Date.now() - 60_000),
+		})
+		const fxAB12 = await makeFixture({ roundId: gw12, homeTeamId: a, awayTeamId: b })
+		const fxAB13 = await makeFixture({
+			roundId: gw13,
+			homeTeamId: a,
+			awayTeamId: b,
+			kickoff: new Date(Date.now() + 3_600_000),
+		})
+		const fxCD13 = await makeFixture({
+			roundId: gw13,
+			homeTeamId: c,
+			awayTeamId: d,
+			kickoff: new Date(Date.now() + 3_600_000),
+		})
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: gw13,
+			startingRoundId: gw12,
+			modeConfig: { allowRebuys: true },
+		})
+
+		// Bought back in after a losing opening pick: the rebuy wrote a second
+		// payment row, and cleared the elimination it bought back from.
+		const gpRebought = await makePlayer({ gameId, userId: 'u-rebought' })
+		await makePayment({ gameId, userId: 'u-rebought' })
+		await makePayment({ gameId, userId: 'u-rebought' })
+		await makePick({
+			gameId,
+			gamePlayerId: gpRebought,
+			roundId: gw12,
+			teamId: a,
+			fixtureId: fxAB12,
+		})
+
+		// Still in on merit — one entry, one opening pick that came off.
+		const gpSurvivor = await makePlayer({ gameId, userId: 'u-survivor' })
+		await makePayment({ gameId, userId: 'u-survivor' })
+		await makePick({
+			gameId,
+			gamePlayerId: gpSurvivor,
+			roundId: gw12,
+			teamId: a,
+			fixtureId: fxAB12,
+		})
+
+		return { a, b, c, d, gw13, fxAB13, fxCD13, gameId, gpRebought, gpSurvivor }
+	}
+
+	it('eliminates and refunds a rebuyer who missed the round their rebuy bought', async () => {
+		const { gw13, gameId, gpRebought } = await roundAfterStartingSetup()
+
+		const result = await processDeadlineLock([gw13])
+		expect(result.playersEliminated).toBe(1)
+		expect(result.paymentsRefunded).toBe(1)
+
+		const out = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpRebought) })
+		expect(out?.status).toBe('eliminated')
+		expect(out?.eliminatedReason).toBe('missed_rebuy_pick')
+		expect(out?.eliminatedRoundId).toBe(gw13)
+
+		// The rebuy comes back off the pot; the original entry stays on it.
+		const rows = await db.query.payment.findMany({
+			where: and(eq(payment.gameId, gameId), eq(payment.userId, 'u-rebought')),
+		})
+		expect(rows.filter((p) => p.status === 'refunded')).toHaveLength(1)
+		expect(rows.filter((p) => p.status === 'paid')).toHaveLength(1)
+		expect(rows.find((p) => p.status === 'refunded')?.refundedAt).not.toBeNull()
+
+		// No auto-pick for a player who is out.
+		const autoPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpRebought), eq(pick.roundId, gw13)),
+		})
+		expect(autoPick).toBeUndefined()
+	})
+
+	it('auto-picks for a paid-up survivor who missed the same deadline (#238)', async () => {
+		const { b, gw13, fxAB13, gameId, gpSurvivor } = await roundAfterStartingSetup()
+
+		const result = await processDeadlineLock([gw13])
+		expect(result.autoPicksInserted).toBe(1)
+
+		const alive = await db.query.gamePlayer.findFirst({ where: eq(gamePlayer.id, gpSurvivor) })
+		expect(alive?.status).toBe('alive')
+
+		// The worst-placed team they haven't used: A is used, B sits 18th.
+		const autoPick = await db.query.pick.findFirst({
+			where: and(eq(pick.gamePlayerId, gpSurvivor), eq(pick.roundId, gw13)),
+		})
+		expect(autoPick?.teamId).toBe(b)
+		expect(autoPick?.fixtureId).toBe(fxAB13)
+		expect(autoPick?.isAuto).toBe(true)
+
+		// Their entry is untouched: nothing was refunded on their account.
+		const rows = await db.query.payment.findMany({
+			where: and(eq(payment.gameId, gameId), eq(payment.userId, 'u-survivor')),
+		})
+		expect(rows.map((p) => p.status)).toEqual(['paid'])
+	})
 })
 
 describe('lifecycle: classic-WC', () => {
