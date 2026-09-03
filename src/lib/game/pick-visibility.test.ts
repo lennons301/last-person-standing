@@ -62,4 +62,28 @@ describe('resolvePickVisibility', () => {
 			}),
 		).toBe('visible')
 	})
+
+	it('hides an unlocked pick from a surface with no viewer, its own picker included', () => {
+		// What the share path and the old `hideAllCurrentPicks` / `hideOpenRoundPicks`
+		// flags asked for: a shared image reveals nothing that has not locked.
+		expect(
+			resolvePickVisibility({
+				round: OPEN_ROUND,
+				pick: OWN_PICK,
+				viewerGamePlayerId: null,
+				now: NOW,
+			}),
+		).toBe('hidden')
+	})
+
+	it('hides an unlocked pick on a round carrying no deadline at all', () => {
+		expect(
+			resolvePickVisibility({
+				round: { status: 'upcoming', deadline: null },
+				pick: { gamePlayerId: 'gp-rival' },
+				viewerGamePlayerId: VIEWER,
+				now: NOW,
+			}),
+		).toBe('hidden')
+	})
 })
