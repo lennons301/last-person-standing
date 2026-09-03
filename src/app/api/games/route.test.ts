@@ -11,7 +11,9 @@ vi.mock('@/lib/game/round-lifecycle', () => ({
 }))
 
 const { dbMock, insertReturning, insertValues, updateSet, updateWhere } = vi.hoisted(() => {
-	const insertReturning = vi.fn().mockResolvedValue([{ id: 'new-game' }])
+	const insertReturning = vi
+		.fn()
+		.mockResolvedValue([{ id: 'new-game', gameMode: 'classic', modeConfig: {} }])
 	const updateWhere = vi.fn().mockResolvedValue(undefined)
 	const updateSet = vi.fn(() => ({ where: updateWhere }))
 	// db.insert(...).values(...) is awaited directly for gamePlayer/payment rows
@@ -58,7 +60,7 @@ const createBody = { name: 'GW1 survivors', competitionId: 'c1', gameMode: 'clas
 describe('POST /api/games', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		insertReturning.mockResolvedValue([{ id: 'new-game' }])
+		insertReturning.mockResolvedValue([{ id: 'new-game', gameMode: 'classic', modeConfig: {} }])
 		dbMock.query.competition.findFirst.mockResolvedValue({
 			id: 'c1',
 			type: 'league',
@@ -107,7 +109,7 @@ describe('POST /api/games', () => {
 describe('POST /api/games — visibility', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		insertReturning.mockResolvedValue([{ id: 'new-game' }])
+		insertReturning.mockResolvedValue([{ id: 'new-game', gameMode: 'classic', modeConfig: {} }])
 		dbMock.query.competition.findFirst.mockResolvedValue({
 			id: 'c1',
 			type: 'league',
@@ -162,7 +164,7 @@ describe('POST /api/games — visibility', () => {
 describe("POST /api/games — the creator's payment handle", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		insertReturning.mockResolvedValue([{ id: 'new-game' }])
+		insertReturning.mockResolvedValue([{ id: 'new-game', gameMode: 'classic', modeConfig: {} }])
 		dbMock.query.competition.findFirst.mockResolvedValue({
 			id: 'c1',
 			type: 'league',

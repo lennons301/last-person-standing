@@ -261,6 +261,7 @@ describe('getCupStandingsData', () => {
 			currentRound: null,
 			players: [],
 			competition: { type: 'group_knockout', rounds: [] },
+			gameMode: 'cup',
 			modeConfig: {},
 		})
 		findManyMock.mockResolvedValue([])
@@ -292,6 +293,7 @@ describe('getCupStandingsData', () => {
 				},
 			],
 			competition: { type: 'group_knockout', rounds: [round] },
+			gameMode: 'cup',
 			modeConfig: { startingLives: 3, numberOfPicks: 6 },
 		})
 		findManyMock.mockResolvedValue([])
@@ -331,6 +333,7 @@ describe('getCupStandingsData', () => {
 			currentRound: null,
 			players: [],
 			competition: { type: 'group_knockout', rounds: [r1, r2] },
+			gameMode: 'cup',
 			modeConfig: {},
 		})
 		// First findMany call: picks-by-game (round resolution). Second: picks-for-display-round.

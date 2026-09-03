@@ -103,12 +103,25 @@ describe('join route', () => {
 
 	it('honours modeConfig.startingLives', async () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue(
-			openGame({ modeConfig: { startingLives: 2 } }) as never,
+			openGame({ gameMode: 'cup', modeConfig: { startingLives: 2, numberOfPicks: 6 } }) as never,
 		)
 
 		await post()
 
 		expect(insertedValues[0]).toMatchObject({ livesRemaining: 2 })
+	})
+
+	it('gives a classic joiner no lives, whatever the column happens to hold', async () => {
+		// Lives are a cup idea. `resolveModeConfig` doesn't hand them to a classic
+		// game, so a stray `startingLives` on one can't seed a player with three
+		// lives nothing in classic would ever spend (#248).
+		vi.mocked(db.query.game.findFirst).mockResolvedValue(
+			openGame({ gameMode: 'classic', modeConfig: { startingLives: 2 } }) as never,
+		)
+
+		await post()
+
+		expect(insertedValues[0]).toMatchObject({ livesRemaining: 0 })
 	})
 
 	it('rejects once the starting round deadline has passed', async () => {
