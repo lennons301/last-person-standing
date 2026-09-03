@@ -100,7 +100,6 @@ interface PickTableProps {
 	ranking?: PickTableRanking
 	/** Post-deadline / read-only: the board still reads, nothing commits. */
 	readonly?: boolean
-	initialSort?: PickTableSort
 	// Required for the form-detail sheet the form cell taps through to. Without
 	// either, the form cell is not tappable and carries no chevron.
 	competitionId?: string
@@ -213,12 +212,11 @@ export function PickTable({
 	onSelect,
 	ranking,
 	readonly = false,
-	initialSort = DEFAULT_PICK_TABLE_SORT,
 	competitionId,
 	roundNumber,
 	renderFormSheet,
 }: PickTableProps) {
-	const [sort, setSort] = useState<PickTableSort>(initialSort)
+	const [sort, setSort] = useState<PickTableSort>(DEFAULT_PICK_TABLE_SORT)
 	const [sheetRowId, setSheetRowId] = useState<string | null>(null)
 	// Retain the last opened row so the sheet keeps its team through the dismiss
 	// animation instead of emptying the moment the close starts.

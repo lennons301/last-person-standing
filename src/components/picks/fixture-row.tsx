@@ -107,8 +107,6 @@ export interface FixtureRowProps {
 	usedLabel?: string
 	onPickHome?: () => void
 	onPickAway?: () => void
-	disabledSide?: 'home' | 'away' | 'both' | null
-	disabledReason?: string
 	tierValue?: number
 	tierMax?: 3 | 5
 	plusN?: number
@@ -163,8 +161,6 @@ export function FixtureRow({
 	usedLabel,
 	onPickHome,
 	onPickAway,
-	disabledSide,
-	disabledReason,
 	tierValue,
 	tierMax,
 	plusN,
@@ -249,8 +245,6 @@ export function FixtureRow({
 						side="home"
 						selected={selectedSide === 'home'}
 						used={usedSide === 'home'}
-						disabled={disabledSide === 'home' || disabledSide === 'both'}
-						disabledReason={disabledReason}
 						state={homeState}
 						onClick={onPickHome}
 						bonusLives={underdogSide === 'home' ? bonusLivesOnButton : 0}
@@ -272,8 +266,6 @@ export function FixtureRow({
 						side="away"
 						selected={selectedSide === 'away'}
 						used={usedSide === 'away'}
-						disabled={disabledSide === 'away' || disabledSide === 'both'}
-						disabledReason={disabledReason}
 						state={awayState}
 						onClick={onPickAway}
 						bonusLives={underdogSide === 'away' ? bonusLivesOnButton : 0}
@@ -431,8 +423,6 @@ interface TeamPickButtonProps {
 	side: 'home' | 'away'
 	selected: boolean
 	used: boolean
-	disabled: boolean
-	disabledReason?: string
 	state?: SideState
 	onClick?: () => void
 	/**
@@ -451,7 +441,6 @@ function TeamPickButton({
 	side,
 	selected,
 	used,
-	disabled,
 	state,
 	onClick,
 	bonusLives,
@@ -459,7 +448,7 @@ function TeamPickButton({
 }: TeamPickButtonProps) {
 	const stateBlocksClick =
 		state?.kind === 'restricted' || state?.kind === 'used' || state?.kind === 'planned-elsewhere'
-	const clickable = !!onClick && !disabled && !used && !stateBlocksClick
+	const clickable = !!onClick && !used && !stateBlocksClick
 	const isHome = side === 'home'
 	const stateCls = sideClass(state)
 	const chip = sideChip(state)
@@ -476,7 +465,6 @@ function TeamPickButton({
 				clickable && 'hover:bg-muted/50 cursor-pointer',
 				selected && 'bg-[var(--alive-bg)] ring-2 ring-[var(--alive)] ring-inset',
 				used && 'opacity-30 line-through',
-				disabled && !used && 'opacity-50 cursor-not-allowed',
 				stateCls,
 			)}
 		>

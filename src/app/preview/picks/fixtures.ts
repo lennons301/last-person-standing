@@ -100,8 +100,6 @@ export interface RowFixture {
 	usedLabel?: string
 	homeState?: SideState
 	awayState?: SideState
-	disabledSide?: 'home' | 'away' | 'both' | null
-	disabledReason?: string
 	tierValue?: number
 	tierMax?: 3 | 5
 	plusN?: number
@@ -239,16 +237,6 @@ export const ROW_FIXTURES: RowFixture[] = [
 			away: { probability: 0.037, price: 24 },
 			asOfInMinutes: -12,
 		},
-	},
-	{
-		id: 'row-kickoff-passed',
-		title: 'Disabled — kickoff passed',
-		note: 'Both sides dim and stop responding. `disabledReason` is accepted by the row but not rendered anywhere yet, and no mode passes it — a loose end for whichever mode ticket needs it.',
-		home: MUN(['W', 'L', 'D', 'W', 'W'], 4),
-		away: BHA(['D', 'W', 'W', 'L', 'D'], 8),
-		kickoffInMinutes: -35,
-		disabledSide: 'both',
-		readonly: true,
 	},
 ]
 

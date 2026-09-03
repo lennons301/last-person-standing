@@ -108,8 +108,6 @@ export function PreviewFixtureRow({
 			usedLabel={fixture.usedLabel}
 			homeState={fixture.homeState}
 			awayState={fixture.awayState}
-			disabledSide={fixture.disabledSide}
-			disabledReason={fixture.disabledReason}
 			tierValue={fixture.tierValue}
 			tierMax={fixture.tierMax}
 			plusN={fixture.plusN}
