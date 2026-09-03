@@ -1255,7 +1255,7 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		players: gameData.players,
 	})
 
-	// Hide opponents' pick identity until the round's deadline passes. The
+	// Hide opponents' pick identity until this round's picks lock. The
 	// projection above is computed server-side from the full pick set, so live
 	// play is unaffected — we only strip the identifying fields (team, prediction,
 	// fixture, rank, projected outcome) from the payload sent to the browser. The

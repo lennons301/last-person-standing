@@ -199,6 +199,9 @@ export async function getCupStandingsData(
 			const pickedSide: 'home' | 'away' = pk.teamId === fx.homeTeamId ? 'home' : 'away'
 			const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
 			const tierFromPicked = pickedSide === 'home' ? tierFromHome : -tierFromHome
+			// Ownership is stated per row rather than resolved to one id, because a
+			// user re-added by an admin can hold more than one row in a game and
+			// every one of them is theirs.
 			const hidden =
 				resolvePickVisibility({
 					round: displayRound,
