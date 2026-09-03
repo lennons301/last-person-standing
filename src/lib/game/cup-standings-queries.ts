@@ -1,8 +1,9 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { activeField } from '@/lib/game/elimination'
+import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import { roundLabel } from '@/lib/game/round-label'
-import { deriveGameRoundStatus } from '@/lib/game/round-status'
+import { arePicksLocked, deriveGameRoundStatus } from '@/lib/game/round-status'
 import { determineFixtureOutcome } from '@/lib/game-logic/common'
 import { evaluateCupPicks, resolveCupQualifier } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
@@ -160,12 +161,13 @@ export async function getCupStandingsData(
 			: []
 	const userNames = new Map(userRows.map((u) => [u.id, u.name]))
 
-	// Hide picks while the round is still accepting them (deadline hasn't passed).
-	// Once the deadline passes, picks are revealed even though the round may
-	// still be in 'active' state until processGameRound completes.
+	// Picks stay hidden while the round is still accepting them; once its picks
+	// lock they're revealed, even though the round may sit in 'active' state until
+	// processGameRound completes. `arePicksLocked` owns that (it was written out
+	// again here, #247); the per-pick reveal below goes through
+	// `resolvePickVisibility` like every other surface.
 	const now = new Date()
-	const hideOpenPicks =
-		displayRound.status !== 'completed' && (!displayRound.deadline || now < displayRound.deadline)
+	const hideOpenPicks = !arePicksLocked(displayRound, now)
 
 	// Starting lives default 0 (lives are EARNED in cup) — must match settlement
 	// (settle.ts) so projected lives equal persisted once settled.
@@ -197,7 +199,13 @@ export async function getCupStandingsData(
 			const pickedSide: 'home' | 'away' = pk.teamId === fx.homeTeamId ? 'home' : 'away'
 			const tierFromHome = computeTierDifference(fx.homeTeam, fx.awayTeam, g.competition.type)
 			const tierFromPicked = pickedSide === 'home' ? tierFromHome : -tierFromHome
-			const hidden = hideOpenPicks && !isViewer
+			const hidden =
+				resolvePickVisibility({
+					round: displayRound,
+					pick: { gamePlayerId: p.id },
+					viewerGamePlayerId: isViewer ? p.id : null,
+					now,
+				}) === 'hidden'
 			// Pending picks on in-progress fixtures project as winning / losing
 			// based on current score — same visual as a settled pick. Cup-
 			// specific outcomes (draw_success, saved_by_life) only appear post-
