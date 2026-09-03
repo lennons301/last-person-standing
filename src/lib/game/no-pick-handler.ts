@@ -4,8 +4,35 @@ import { fixture, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 import { pickWorstUnusedTeam } from './auto-pick'
-import { isGameStartingRound, resolveRoundAfterStarting } from './starting-round'
+import { decideNoPickOutcome, type NoPickOutcome } from './no-pick-decision'
 
+/** A transaction handle, as drizzle hands one to `db.transaction`'s callback. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** The round's fixtures and the two measures the fallback is chosen on. */
+interface RoundBoard {
+	fixtures: Array<{ id: string; homeTeamId: string; awayTeamId: string }>
+	teamPositions: Map<string, number>
+	teamWinProbabilities: Map<string, number>
+}
+
+/** A fallback pick, resolved to the row the insert would write. */
+interface FallbackPick {
+	teamId: string
+	fixtureId: string
+	predictedResult: 'home_win' | 'away_win'
+}
+
+/**
+ * The deadline lock: what happens to the players a round's deadline caught with
+ * nothing in.
+ *
+ * Three halves, in order. **Gather** reads the rows — the round, the games on
+ * it, the competition's round sequence, each no-picker's payment rows and the
+ * fallback team the round leaves them. **Decide** is `decideNoPickOutcome`,
+ * pure, and is where the whole rule lives. **Apply** writes what was decided,
+ * inside a transaction so an elimination and its refund land together.
+ */
 export async function processDeadlineLock(roundIds: string[]): Promise<{
 	autoPicksInserted: number
 	playersEliminated: number
@@ -50,81 +77,61 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 			roundsByCompetition.set(r.competitionId, list)
 		}
 
+		// The round's board is a property of the round, not of a player or a game,
+		// so it is read once and shared — but only once a classic no-picker is
+		// actually found, so a round nobody missed costs nothing.
+		let boardPromise: Promise<RoundBoard> | null = null
+		const roundBoard = () => {
+			boardPromise ??= loadRoundBoard(roundId)
+			return boardPromise
+		}
+
 		for (const g of games) {
 			const gameRounds = roundsByCompetition.get(g.competitionId) ?? []
-			const isOpeningRound = isGameStartingRound(g, roundId)
-			const isSecondRound = resolveRoundAfterStarting(g, gameRounds)?.id === roundId
-			const activePlayers = g.players.filter((p) => p.status === 'alive')
-			for (const player of activePlayers) {
+			const noPickers: (typeof g.players)[number][] = []
+			for (const player of g.players) {
+				if (player.status !== 'alive') continue
 				const existingPick = await db.query.pick.findFirst({
 					where: and(eq(pick.gamePlayerId, player.id), eq(pick.roundId, roundId)),
 				})
-				if (existingPick) continue
+				if (!existingPick) noPickers.push(player)
+			}
+			if (noPickers.length === 0) continue
 
-				if (g.gameMode === 'classic') {
-					if (isOpeningRound) {
-						const allowRebuys =
-							(g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
-						if (allowRebuys) {
-							await db
-								.update(gamePlayer)
-								.set({
-									status: 'eliminated',
-									eliminatedReason: 'no_pick_no_fallback',
-									eliminatedRoundId: roundId,
-								})
-								.where(eq(gamePlayer.id, player.id))
-							playersEliminated++
-						}
-						// !allowRebuys: classic.ts exemption applies; no elimination here.
-					} else if (isSecondRound) {
-						// The round after the opening one holds two kinds of player, and a
-						// missed deadline means opposite things to them.
-						//
-						// A player who is here on merit — the opening pick came off, or the
-						// no-rebuys exemption carried a loss — has done nothing to forfeit
-						// their entry, so they take the ordinary auto-pick fallback, exactly
-						// as they would in any later round. Eliminating them outright was
-						// the pre-rebuy-payment behaviour and it took a paid-up survivor out
-						// of a game they were still winning.
-						//
-						// A player who is here because they *bought back in* is the other
-						// case: the rebuy was an entry into this round, and missing its
-						// deadline means the entry bought nothing. They go out and the money
-						// comes back off the pot. A second payment row is what says a rebuy
-						// happened — both rebuy routes write one, in a free game too — and
-						// it stays the signal here because the rebuy clears
-						// `eliminatedRoundId`, so player state alone can't tell the two
-						// kinds of survivor apart.
-						const prevPayments = await db.query.payment.findMany({
-							where: and(eq(payment.gameId, g.id), eq(payment.userId, player.userId)),
-						})
-						if (prevPayments.length > 1) {
-							await db
-								.update(gamePlayer)
-								.set({
-									status: 'eliminated',
-									eliminatedReason: 'missed_rebuy_pick',
-									eliminatedRoundId: roundId,
-								})
-								.where(eq(gamePlayer.id, player.id))
-							playersEliminated++
-							if (await refundLatestEntry(g.id, player.userId)) paymentsRefunded++
-						} else {
-							const result = await applyRule2Classic(g.id, player, roundId)
-							if (result === 'auto-pick-inserted') autoPicksInserted++
-							else if (result === 'eliminated-no-fallback') playersEliminated++
-						}
-					} else {
-						const result = await applyRule2Classic(g.id, player, roundId)
-						if (result === 'auto-pick-inserted') autoPicksInserted++
-						else if (result === 'eliminated-no-fallback') playersEliminated++
-					}
-				} else if (g.gameMode === 'turbo' || g.gameMode === 'cup') {
-					const result = await applyRule3TurboOrCup(g.id, player, roundId)
-					playersEliminated++
-					if (result.refunded) paymentsRefunded++
-				}
+			const paymentRowCounts = await countPaymentRowsByUser(g.id)
+
+			for (const player of noPickers) {
+				// Resolved before the decision rather than inside it: the team choice
+				// is already the pure `pickWorstUnusedTeam`, so the fallback reaches the
+				// rule as a fact — "a team remains, and it is this one" — and outcome 5
+				// stops hiding inside the auto-pick path.
+				const fallback =
+					g.gameMode === 'classic'
+						? await resolveFallback(await roundBoard(), g.id, player.id)
+						: null
+
+				const outcome = decideNoPickOutcome({
+					game: {
+						gameMode: g.gameMode,
+						startingRoundId: g.startingRoundId,
+						modeConfig: g.modeConfig as { allowRebuys?: boolean } | null,
+					},
+					roundId,
+					competitionRounds: gameRounds,
+					paymentRowCount: paymentRowCounts.get(player.userId) ?? 0,
+					fallbackTeamId: fallback?.teamId ?? null,
+				})
+
+				const applied = await applyNoPickOutcome({
+					outcome,
+					gameId: g.id,
+					roundId,
+					player,
+					fallback,
+				})
+				autoPicksInserted += applied.autoPicksInserted
+				playersEliminated += applied.playersEliminated
+				paymentsRefunded += applied.paymentsRefunded
 			}
 		}
 	}
@@ -132,11 +139,17 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 	return { autoPicksInserted, playersEliminated, paymentsRefunded }
 }
 
-async function applyRule2Classic(
-	gameId: string,
-	player: typeof gamePlayer.$inferSelect,
-	roundId: string,
-): Promise<'auto-pick-inserted' | 'eliminated-no-fallback' | 'already-picked'> {
+/* ── gather ────────────────────────────────────────────────────────────── */
+
+/** How many payment rows each player of the game has — the rebuy signal. */
+async function countPaymentRowsByUser(gameId: string): Promise<Map<string, number>> {
+	const rows = await db.query.payment.findMany({ where: eq(payment.gameId, gameId) })
+	const counts = new Map<string, number>()
+	for (const row of rows) counts.set(row.userId, (counts.get(row.userId) ?? 0) + 1)
+	return counts
+}
+
+async function loadRoundBoard(roundId: string): Promise<RoundBoard> {
 	const fixtures = await db.query.fixture.findMany({
 		where: eq(fixture.roundId, roundId),
 		// `odds` is the fixture's own `fixture_odds` row, written by the daily
@@ -147,10 +160,6 @@ async function applyRule2Classic(
 		with: { homeTeam: true, awayTeam: true, odds: true },
 		orderBy: [asc(fixture.kickoff)],
 	})
-	const usedPicks = await db.query.pick.findMany({
-		where: and(eq(pick.gameId, gameId), eq(pick.gamePlayerId, player.id)),
-	})
-	const usedTeamIds = new Set(usedPicks.flatMap((p) => (p.teamId ? [p.teamId] : [])))
 
 	const allTeamIds = new Set<string>()
 	for (const fx of fixtures) {
@@ -165,7 +174,7 @@ async function applyRule2Classic(
 	)
 
 	// Each side's own end of its fixture's market. A fixture with no odds row
-	// contributes nothing rather than a nought, which is what lets the function
+	// contributes nothing rather than a nought, which is what lets the choice
 	// tell "priced at 8%" apart from "not priced".
 	const teamWinProbabilities = new Map<string, number>()
 	for (const fx of fixtures) {
@@ -174,76 +183,113 @@ async function applyRule2Classic(
 		teamWinProbabilities.set(fx.awayTeamId, fx.odds.awayProbability)
 	}
 
-	const teamId = pickWorstUnusedTeam({
+	return {
 		fixtures: fixtures.map((fx) => ({
 			id: fx.id,
 			homeTeamId: fx.homeTeamId,
 			awayTeamId: fx.awayTeamId,
 		})),
-		usedTeamIds,
 		teamPositions,
 		teamWinProbabilities,
-	})
+	}
+}
 
-	if (!teamId) {
-		await db
+/**
+ * The worst unused team the round leaves this player, as the pick row it would
+ * become. Null when every team in the round is already used — and, defensively,
+ * when the chosen team can't be found in a fixture, which can't happen since it
+ * came out of these fixtures.
+ */
+async function resolveFallback(
+	board: RoundBoard,
+	gameId: string,
+	gamePlayerId: string,
+): Promise<FallbackPick | null> {
+	const usedPicks = await db.query.pick.findMany({
+		where: and(eq(pick.gameId, gameId), eq(pick.gamePlayerId, gamePlayerId)),
+	})
+	const usedTeamIds = new Set(usedPicks.flatMap((p) => (p.teamId ? [p.teamId] : [])))
+
+	const teamId = pickWorstUnusedTeam({
+		fixtures: board.fixtures,
+		usedTeamIds,
+		teamPositions: board.teamPositions,
+		teamWinProbabilities: board.teamWinProbabilities,
+	})
+	if (!teamId) return null
+
+	const chosenFixture = board.fixtures.find(
+		(fx) => fx.homeTeamId === teamId || fx.awayTeamId === teamId,
+	)
+	if (!chosenFixture) return null
+
+	return {
+		teamId,
+		fixtureId: chosenFixture.id,
+		predictedResult: chosenFixture.homeTeamId === teamId ? 'home_win' : 'away_win',
+	}
+}
+
+/* ── apply ─────────────────────────────────────────────────────────────── */
+
+async function applyNoPickOutcome(args: {
+	outcome: NoPickOutcome
+	gameId: string
+	roundId: string
+	player: { id: string; userId: string }
+	fallback: FallbackPick | null
+}): Promise<{ autoPicksInserted: number; playersEliminated: number; paymentsRefunded: number }> {
+	const { outcome, gameId, roundId, player, fallback } = args
+	const nothing = { autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 }
+
+	if (outcome.kind === 'exempt') return nothing
+
+	if (outcome.kind === 'auto-pick') {
+		if (!fallback) return nothing
+		// The existing-pick read in the gather half makes this idempotent across
+		// *sequential* invocations (deadline trigger, daily-sync fallback, crown
+		// guard). Two invocations racing each other could both pass that read, so
+		// the partial unique index `pick_player_round_classic_idx` is the real
+		// arbiter: the loser's insert is a no-op and returns no row. Counting the
+		// returned rows (rather than assuming one) keeps `autoPicksInserted` honest.
+		const inserted = await db.transaction((tx) =>
+			tx
+				.insert(pick)
+				.values({
+					gameId,
+					roundId,
+					gamePlayerId: player.id,
+					fixtureId: fallback.fixtureId,
+					teamId: outcome.teamId,
+					predictedResult: fallback.predictedResult,
+					confidenceRank: null,
+					isAuto: true,
+				})
+				.onConflictDoNothing({
+					target: [pick.gamePlayerId, pick.roundId],
+					where: sql`${pick.confidenceRank} is null`,
+				})
+				.returning({ id: pick.id }),
+		)
+		return { ...nothing, autoPicksInserted: inserted.length > 0 ? 1 : 0 }
+	}
+
+	// An elimination and the refund that goes with it are one act: the money only
+	// comes off the pot because the player went out, so they land together.
+	const refunded = await db.transaction(async (tx) => {
+		await tx
 			.update(gamePlayer)
 			.set({
 				status: 'eliminated',
-				eliminatedReason: 'no_pick_no_fallback',
+				eliminatedReason: outcome.reason,
 				eliminatedRoundId: roundId,
 			})
 			.where(eq(gamePlayer.id, player.id))
-		return 'eliminated-no-fallback'
-	}
 
-	const chosenFixture = fixtures.find((fx) => fx.homeTeamId === teamId || fx.awayTeamId === teamId)
-	if (!chosenFixture) {
-		// Defensive — should not happen since teamId came from fixtures.
-		return 'eliminated-no-fallback'
-	}
-	const predictedResult = chosenFixture.homeTeamId === teamId ? 'home_win' : 'away_win'
-	// The existing-pick read above makes this idempotent across *sequential*
-	// invocations (deadline trigger, daily-sync fallback, crown guard). Two
-	// invocations racing each other could both pass that read, so the partial
-	// unique index `pick_player_round_classic_idx` is the real arbiter: the
-	// loser's insert is a no-op and returns no row. Counting the returned rows
-	// (rather than assuming one) keeps `autoPicksInserted` honest.
-	const inserted = await db
-		.insert(pick)
-		.values({
-			gameId,
-			roundId,
-			gamePlayerId: player.id,
-			fixtureId: chosenFixture.id,
-			teamId,
-			predictedResult,
-			confidenceRank: null,
-			isAuto: true,
-		})
-		.onConflictDoNothing({
-			target: [pick.gamePlayerId, pick.roundId],
-			where: sql`${pick.confidenceRank} is null`,
-		})
-		.returning({ id: pick.id })
-	return inserted.length > 0 ? 'auto-pick-inserted' : 'already-picked'
-}
+		return outcome.refund ? await refundLatestEntry(tx, gameId, player.userId) : false
+	})
 
-async function applyRule3TurboOrCup(
-	gameId: string,
-	player: typeof gamePlayer.$inferSelect,
-	roundId: string,
-): Promise<{ refunded: boolean }> {
-	await db
-		.update(gamePlayer)
-		.set({
-			status: 'eliminated',
-			eliminatedReason: 'no_pick_no_fallback',
-			eliminatedRoundId: roundId,
-		})
-		.where(eq(gamePlayer.id, player.id))
-
-	return { refunded: await refundLatestEntry(gameId, player.userId) }
+	return { ...nothing, playersEliminated: 1, paymentsRefunded: refunded ? 1 : 0 }
 }
 
 /**
@@ -254,8 +300,8 @@ async function applyRule3TurboOrCup(
  * for the admin's own controls rather than marked refunded, which would claim a
  * refund of money never taken. Returns whether a row was actually reversed.
  */
-async function refundLatestEntry(gameId: string, userId: string): Promise<boolean> {
-	const refundCandidate = await db.query.payment.findFirst({
+async function refundLatestEntry(tx: Tx, gameId: string, userId: string): Promise<boolean> {
+	const refundCandidate = await tx.query.payment.findFirst({
 		where: and(
 			eq(payment.gameId, gameId),
 			eq(payment.userId, userId),
@@ -265,7 +311,7 @@ async function refundLatestEntry(gameId: string, userId: string): Promise<boolea
 	})
 	if (!refundCandidate) return false
 
-	await db
+	await tx
 		.update(payment)
 		.set({ status: 'refunded', refundedAt: new Date() })
 		.where(eq(payment.id, refundCandidate.id))
