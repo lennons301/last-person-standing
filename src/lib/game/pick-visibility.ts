@@ -1,8 +1,13 @@
 /**
  * May this viewer see this pick?
  *
- * The secrecy rule, in one place. A pick is a secret until its round's picks
- * are locked — you may always see your own, and nobody else's before then.
+ * One module owns the secrecy rule (#247). A pick is a secret until its own
+ * round's picks lock — you may always see your own, and nobody else's before
+ * then. The lock itself is `arePicksLocked`, composed here rather than restated.
+ *
+ * The progress grid, both turbo standings views, the live poll payload and the
+ * share images all read this and keep no predicate of their own: the rule was
+ * written out six ways, and it leaked in production once already (#84/#86).
  */
 
 import { arePicksLocked, type PicksLockedRound } from '@/lib/game/round-status'
@@ -26,12 +31,13 @@ export interface ResolvePickVisibilityInput {
 	viewerGamePlayerId: string | null | undefined
 	now: Date
 	/**
-	 * Reveal regardless of the round's own lock. The one caller is the progress
-	 * grid's per-cell rule, which additionally reveals a round the GAME has
-	 * finished with (`deriveGameRoundStatus` → 'completed', which covers a
-	 * completed game's whole round set): a player looking at their own game sees
-	 * the field's picks for every round it played. Nothing else has a use for it
-	 * — the round's own lock is the rule.
+	 * Reveal regardless of the round's own lock. Its callers are the two
+	 * standings queries, which additionally reveal a round the GAME has finished
+	 * with (`deriveGameRoundStatus` → 'completed', which covers a completed
+	 * game's whole round set, since completion nulls `currentRoundId`): a player
+	 * looking back at a game they played sees the field's picks for every round
+	 * of it. That is the only thing anything adds on top — the round's own lock
+	 * is the rule.
 	 */
 	revealAll?: boolean
 }
