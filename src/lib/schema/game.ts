@@ -30,6 +30,33 @@ export const playerStatusEnum = pgEnum('player_status', ['alive', 'eliminated', 
 // keeps one.
 export const gameVisibilityEnum = pgEnum('game_visibility', ['public', 'private'])
 
+/**
+ * Why a `game_player` row is no longer alive. Stored as free text in Postgres
+ * (there is no `pg_enum` behind it), but a closed union in TypeScript, so a
+ * typo'd reason and a write that names none at all are both compile errors —
+ * which is how `no_remaining_teams` came to exist: the World Cup auto-elim
+ * wrote a status and a round and no reason at all, and those players then slid
+ * through every `admin_removed` filter and the cup self-heal guard unnoticed.
+ * See `src/lib/game/elimination.ts` for the predicates and the update patch
+ * that every elimination write goes through, and #113 for the WC behaviour.
+ *
+ * - `loss` — the pick didn't come off.
+ * - `missed_rebuy_pick` — bought back in, then missed the deadline of the round
+ *   the rebuy was an entry into.
+ * - `no_pick_no_fallback` — deadline passed with no pick and no team left to
+ *   auto-pick (or a mode with no fallback at all).
+ * - `admin_removed` — the creator took the player out. Deliberate, refunded,
+ *   and excluded from the field everywhere rather than shown as eliminated.
+ * - `no_remaining_teams` — knockout auto-elim: every team the player could
+ *   still pick is out of the competition, so they cannot reach the final.
+ */
+export type EliminationReason =
+	| 'loss'
+	| 'missed_rebuy_pick'
+	| 'no_pick_no_fallback'
+	| 'admin_removed'
+	| 'no_remaining_teams'
+
 export const pickResultEnum = pgEnum('pick_result', [
 	'pending',
 	'win',
@@ -91,8 +118,7 @@ export const gamePlayer = pgTable(
 		userId: text('user_id').notNull(),
 		status: playerStatusEnum('status').notNull().default('alive'),
 		eliminatedRoundId: uuid('eliminated_round_id').references(() => round.id),
-		// Valid values: 'loss' | 'missed_rebuy_pick' | 'no_pick_no_fallback' | 'admin_removed'
-		eliminatedReason: text('eliminated_reason'),
+		eliminatedReason: text('eliminated_reason').$type<EliminationReason>(),
 		livesRemaining: integer('lives_remaining').notNull().default(0),
 		joinedAt: timestamp('joined_at').defaultNow().notNull(),
 	},

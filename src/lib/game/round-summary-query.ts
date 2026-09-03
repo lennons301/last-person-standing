@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { activeField } from '@/lib/game/elimination'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import {
 	buildRoundSummary,
@@ -106,8 +107,7 @@ export async function getRoundSummary(
 	// eliminated in this round or later was in it; one eliminated earlier wasn't.
 	// Admin-removed players are out of the grid, so they're out of here too.
 	const roundNumberById = new Map(rounds.map((r) => [r.id, r.number]))
-	const players: RoundSummaryPlayerRow[] = playerRows
-		.filter((p) => p.eliminatedReason !== 'admin_removed')
+	const players: RoundSummaryPlayerRow[] = activeField(playerRows)
 		.filter((p) => {
 			if (p.status !== 'eliminated') return true
 			const eliminatedAt = p.eliminatedRoundId
