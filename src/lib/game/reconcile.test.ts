@@ -7,8 +7,10 @@ const { dbMock, advanceGameIfReadyMock, sweepGameSettlementMock } = vi.hoisted((
 }))
 
 vi.mock('@/lib/db', () => ({ db: dbMock }))
-vi.mock('@/lib/game/process-round', () => ({ advanceGameIfReady: advanceGameIfReadyMock }))
-vi.mock('@/lib/game/settle', () => ({ sweepGameSettlement: sweepGameSettlementMock }))
+vi.mock('@/lib/game/settle', () => ({
+	advanceGameIfReady: advanceGameIfReadyMock,
+	sweepGameSettlement: sweepGameSettlementMock,
+}))
 
 import { reconcileGameState } from './reconcile'
 
