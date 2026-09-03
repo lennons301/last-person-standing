@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
+import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import { roundLabel } from '@/lib/game/round-label'
 import { calculatePayouts, calculatePot } from '@/lib/game-logic/prizes'
 import { user } from '@/lib/schema/auth'
@@ -210,7 +211,7 @@ export async function getShareStandingsData(
 	if (!header) return null
 
 	if (header.gameMode === 'classic') {
-		const grid = await getProgressGridData(gameId, viewerUserId, { hideAllCurrentPicks: true })
+		const grid = await getProgressGridData(gameId, viewerUserId, { hideUnlockedPicks: true })
 		if (!grid) return null
 		// Order + filter the players in the data layer so the layout is a dumb
 		// renderer. Default ordering matches the on-screen grid's default ('status').
@@ -285,11 +286,14 @@ export async function getShareLiveData(
 	const currentRoundLabel = roundLabel(liveCompetitionType, currentRound.number)
 
 	if (header.gameMode === 'classic') {
-		// Don't reveal anyone's pick in the shareable image until the round's
-		// deadline has passed — the same gate the standings/grid use. A live share
-		// is normally generated mid-round (post-deadline), but nothing stops one
-		// being requested while picks are still open.
-		const liveDeadlinePassed = currentRound.deadline != null && new Date() >= currentRound.deadline
+		// Don't reveal anyone's pick in the shareable image until this round's picks
+		// are locked — the same rule, from the same module, the grid and the live
+		// poll read (#247). A share image has no viewer to make an exception for:
+		// the whole group sees it, so an unlocked pick is hidden from everyone, its
+		// own picker included. A live share is normally generated mid-round
+		// (post-deadline), but nothing stops one being requested while picks are
+		// still open.
+		const now = new Date()
 		const allPicks = await db.query.pick.findMany({
 			where: and(eq(pick.gameId, gameId), eq(pick.roundId, currentRound.id)),
 			with: { team: true, fixture: { with: { homeTeam: true, awayTeam: true } } },
@@ -306,8 +310,15 @@ export async function getShareLiveData(
 		const rows: ClassicLiveRow[] = gameRow.players
 			.filter((p) => p.status === 'alive')
 			.map((p) => {
-				// Before the deadline, surface the player but hide their pick + fixture.
-				if (!liveDeadlinePassed) {
+				const visibility = resolvePickVisibility({
+					round: currentRound,
+					pick: { gamePlayerId: p.id },
+					viewerGamePlayerId: null,
+					now,
+				})
+				// While the picks are unlocked, surface the player but hide their pick
+				// + fixture.
+				if (visibility === 'hidden') {
 					return {
 						id: p.id,
 						userId: p.userId,
