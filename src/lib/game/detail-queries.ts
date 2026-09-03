@@ -1401,7 +1401,7 @@ function computeLiveProjection(input: {
 
 	for (const p of input.picks) {
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
-		pickProjections.set(p.id, projectOutcomeForPick(p, fx, knockout))
+		pickProjections.set(p.id, projectOutcomeForPick(p, fx, knockout, input.gameMode))
 	}
 
 	for (const player of input.players) {
@@ -1447,6 +1447,7 @@ function projectOutcomeForPick(
 		  }
 		| undefined,
 	knockout: boolean,
+	gameMode: 'classic' | 'turbo' | 'cup',
 ): LiveProjectedOutcome {
 	if (p.result === 'void') return 'void'
 	if (p.result === 'saved_by_life') return 'saved-by-life'
@@ -1462,23 +1463,33 @@ function projectOutcomeForPick(
 	if (fx?.status === 'cancelled') return 'void'
 	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
 	const isFinished = fx.status === 'finished'
+
+	// Classic first, and on the MODE rather than on whether a prediction happens
+	// to be stored: the picked team must come through, and the shared rule is
+	// what says whether it did — the same one settlement calls, so a tie won on
+	// penalties can't read as a loss here (#242) and an unresolved one stays
+	// pending rather than settled (#107). Branching on `predictedResult` sent
+	// classic's deadline auto-picks down the turbo path, which reads the score
+	// alone: `applyRule2Classic` stores a prediction where a hand-made classic
+	// pick stores none, so one payload could call the same pick a loss on its
+	// card and its backer alive on their row.
+	if (gameMode === 'classic') {
+		const { result, defer } = resolveClassicPickResult(p, { ...fx, knockout })
+		if (defer || result == null) return 'pending'
+		if (result === 'win') return isFinished ? 'settled-win' : 'winning'
+		if (result === 'draw') return isFinished ? 'settled-loss' : 'drawing'
+		return isFinished ? 'settled-loss' : 'losing'
+	}
+
+	// Turbo / cup: the call is the prediction, and it may be a draw.
 	const predicted = p.predictedResult
 	if (predicted) {
-		// Turbo / cup style: predictedResult drives projection.
 		const actualOutcome =
 			fx.homeScore > fx.awayScore ? 'home_win' : fx.awayScore > fx.homeScore ? 'away_win' : 'draw'
 		if (predicted === actualOutcome) return isFinished ? 'settled-win' : 'winning'
 		return isFinished ? 'settled-loss' : 'losing'
 	}
-	// Classic: the picked team must come through, and the shared rule is what
-	// says whether it did — the same one settlement calls, so a tie won on
-	// penalties can't read as a loss here (#242) and an unresolved one stays
-	// pending rather than settled (#107).
-	const { result, defer } = resolveClassicPickResult(p, { ...fx, knockout })
-	if (defer || result == null) return 'pending'
-	if (result === 'win') return isFinished ? 'settled-win' : 'winning'
-	if (result === 'draw') return isFinished ? 'settled-loss' : 'drawing'
-	return isFinished ? 'settled-loss' : 'losing'
+	return 'pending'
 }
 
 function projectClassicPlayer(

@@ -1781,7 +1781,16 @@ describe('live projection', () => {
 	 * settle pass running. Both projections (the live payload and the progress
 	 * grid) must say what settlement is about to say.
 	 */
-	async function knockoutTieSeed(winner: 'home' | 'away' | null) {
+	async function knockoutTieSeed(
+		winner: 'home' | 'away' | null,
+		/**
+		 * Write the picks the way the deadline lock's auto-pick does — classic
+		 * hand-made picks store no prediction, but `applyRule2Classic` stores one,
+		 * and a projection that reads it instead of the team never sees the tie's
+		 * `winner` (the #242 defect, surviving in the auto-pick case).
+		 */
+		opts: { auto?: boolean } = {},
+	) {
 		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
 		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
 		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
@@ -1795,8 +1804,22 @@ describe('live projection', () => {
 		})
 		const gpHome = await makePlayer({ gameId, userId: 'u-home' })
 		const gpAway = await makePlayer({ gameId, userId: 'u-away' })
-		await makePick({ gameId, gamePlayerId: gpHome, roundId: r4, teamId: home, fixtureId: fx })
-		await makePick({ gameId, gamePlayerId: gpAway, roundId: r4, teamId: away, fixtureId: fx })
+		await makePick({
+			gameId,
+			gamePlayerId: gpHome,
+			roundId: r4,
+			teamId: home,
+			fixtureId: fx,
+			predictedResult: opts.auto ? 'home_win' : undefined,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpAway,
+			roundId: r4,
+			teamId: away,
+			fixtureId: fx,
+			predictedResult: opts.auto ? 'away_win' : undefined,
+		})
 		// Level at full time. NOT settled — the picks stay pending, which is what
 		// puts both surfaces on their projection path.
 		await finishFixture(fx, 1, 1, winner)
@@ -1839,6 +1862,36 @@ describe('live projection', () => {
 		const grid = await getProgressGridData(gameId, 'u-home')
 		expect(grid?.players.find((p) => p.id === gpHome)?.cellsByRoundId[r4]?.result).toBe('pending')
 		expect(grid?.players.find((p) => p.id === gpAway)?.cellsByRoundId[r4]?.result).toBe('pending')
+	})
+
+	it('classic: an auto-pick projects through the same rule as a hand-made one', async () => {
+		// A deadline auto-pick stores a `predictedResult` (`applyRule2Classic`),
+		// which a projection must not read: classic is "did my team come through",
+		// and the prediction carries no `winner`. Reading it left one payload
+		// contradicting itself — the pick card a loss, the player row alive.
+		const { gameId, r4, gpHome, gpAway } = await knockoutTieSeed('home', { auto: true })
+
+		const payload = await getLivePayload(gameId, 'u-home')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpHome)?.projectedOutcome).toBe(
+			'settled-win',
+		)
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpAway)?.projectedOutcome).toBe(
+			'settled-loss',
+		)
+		expect(payload?.players.find((p) => p.id === gpHome)?.projectedStatus).toBe('alive')
+		expect(payload?.players.find((p) => p.id === gpAway)?.projectedStatus).toBe('eliminated')
+
+		const grid = await getProgressGridData(gameId, 'u-home')
+		expect(grid?.players.find((p) => p.id === gpHome)?.cellsByRoundId[r4]?.result).toBe('win')
+	})
+
+	it('classic: an auto-pick on an unresolved tie is deferred like any other pick', async () => {
+		const { gameId, gpHome, gpAway } = await knockoutTieSeed(null, { auto: true })
+
+		const payload = await getLivePayload(gameId, 'u-home')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpHome)?.projectedOutcome).toBe('pending')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpAway)?.projectedOutcome).toBe('pending')
+		expect(payload?.players.find((p) => p.id === gpAway)?.projectedStatus).toBe('alive')
 	})
 
 	it('classic: in-progress fixture surfaces projected player status', async () => {
