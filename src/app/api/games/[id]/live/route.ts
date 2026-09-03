@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
-import { getGameDetail, getLivePayload } from '@/lib/game/detail-queries'
+import { getLivePayload } from '@/lib/game/detail-queries'
+import { requireMembership } from '@/lib/game/membership'
 import { reconcileGameState } from '@/lib/game/reconcile'
 
 type RouteCtx = { params: Promise<{ id: string }> }
@@ -9,9 +10,8 @@ export async function GET(_request: Request, ctx: RouteCtx): Promise<Response> {
 	const session = await requireSession()
 	const { id } = await ctx.params
 
-	const game = await getGameDetail(id, session.user.id)
-	if (!game) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-	if (!game.isMember) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+	const access = await requireMembership(id, session.user.id)
+	if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status })
 
 	// Browser polls this every 30 s while a game page is open. Use those
 	// hits as a recovery surface — settles any finished-but-pending picks

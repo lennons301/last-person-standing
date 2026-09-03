@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 import type { GridSort, GridSortKey } from '@/components/standings/grid-sort'
 import { requireSession } from '@/lib/auth-helpers'
-import { getGameDetail } from '@/lib/game/detail-queries'
+import { requireMembership } from '@/lib/game/membership'
 import { getShareStandingsData } from '@/lib/share/data'
 import { classicStandingsLayout } from '@/lib/share/layouts/classic-standings'
 import { cupStandingsLayout } from '@/lib/share/layouts/cup-standings'
@@ -30,9 +30,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ game
 	const session = await requireSession()
 	const { gameId } = await params
 
-	const game = await getGameDetail(gameId, session.user.id)
-	if (!game) return new Response('Not found', { status: 404 })
-	if (!game.isMember) return new Response('Forbidden', { status: 403 })
+	const access = await requireMembership(gameId, session.user.id)
+	if (!access.ok) return new Response(access.message, { status: access.status })
 
 	const sp = new URL(request.url).searchParams
 	const data = await getShareStandingsData(gameId, session.user.id, {
