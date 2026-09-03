@@ -6,6 +6,7 @@ import {
 	checkCupCompletion,
 	checkTurboCompletion,
 } from '@/lib/game/auto-complete'
+import { eliminationUpdate, isAdminRemoved } from '@/lib/game/elimination'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { isGameStartingRound } from '@/lib/game/starting-round'
@@ -249,11 +250,7 @@ async function settleClassicPickRow(
 	// double-call-safe.
 	const updated = await db
 		.update(gamePlayer)
-		.set({
-			status: 'eliminated',
-			eliminatedRoundId: fx.round.id,
-			eliminatedReason: 'loss',
-		})
+		.set(eliminationUpdate('loss', fx.round.id))
 		.where(and(eq(gamePlayer.id, p.gamePlayerId), eq(gamePlayer.status, 'alive')))
 		.returning({ id: gamePlayer.id })
 	return { settled: true, eliminated: updated.length > 0 }
@@ -444,10 +441,9 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 			eliminatedRoundId?: string | null
 		} = { livesRemaining: evalResult.finalLives }
 		// Self-heal: revive any cup player a previous (buggy) settle wrongly marked
-		// eliminated on a streak break. Admin removals (eliminatedReason
-		// 'admin_removed') are a deliberate action and must persist.
-		const wronglyEliminated =
-			player.status === 'eliminated' && player.eliminatedReason !== 'admin_removed'
+		// eliminated on a streak break. Admin removals are a deliberate action and
+		// must persist.
+		const wronglyEliminated = player.status === 'eliminated' && !isAdminRemoved(player)
 		if (wronglyEliminated) {
 			updates.status = 'alive'
 			updates.eliminatedRoundId = null
@@ -678,9 +674,13 @@ async function runWcClassicAutoElims(gameId: string, currentRoundId: string): Pr
 		finishedKnockoutFixtures,
 	})
 	for (const ae of autoElims) {
+		// `no_remaining_teams` rather than `loss`: nothing of theirs lost, every
+		// team they could still pick is out of the tournament. This write used to
+		// name no reason at all, which left these players null-reasoned and so
+		// indistinguishable from an unwritten row by every reason-driven read.
 		await db
 			.update(gamePlayer)
-			.set({ status: 'eliminated', eliminatedRoundId: currentRoundId })
+			.set(eliminationUpdate('no_remaining_teams', currentRoundId))
 			.where(eq(gamePlayer.id, ae.gamePlayerId))
 	}
 }

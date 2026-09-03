@@ -4,6 +4,7 @@ import { fixture, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 import { pickWorstUnusedTeam } from './auto-pick'
+import { eliminationUpdate } from './elimination'
 import { decideNoPickOutcome, type NoPickOutcome } from './no-pick-decision'
 
 /** A transaction handle, as drizzle hands one to `db.transaction`'s callback. */
@@ -279,11 +280,7 @@ async function applyNoPickOutcome(args: {
 	const refunded = await db.transaction(async (tx) => {
 		await tx
 			.update(gamePlayer)
-			.set({
-				status: 'eliminated',
-				eliminatedReason: outcome.reason,
-				eliminatedRoundId: roundId,
-			})
+			.set(eliminationUpdate(outcome.reason, roundId))
 			.where(eq(gamePlayer.id, player.id))
 
 		return outcome.refund ? await refundLatestEntry(tx, gameId, player.userId) : false
