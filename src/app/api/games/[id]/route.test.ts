@@ -15,7 +15,6 @@ vi.mock('@/lib/db', () => ({
 	db: {
 		query: {
 			game: { findFirst: vi.fn() },
-			payment: { findMany: vi.fn() },
 		},
 		transaction: vi.fn(async (cb: (tx: typeof txMock) => Promise<void>) => {
 			await cb(txMock)
