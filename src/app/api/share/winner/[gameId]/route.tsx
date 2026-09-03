@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og'
 import { requireSession } from '@/lib/auth-helpers'
-import { getGameDetail } from '@/lib/game/detail-queries'
+import { requireMembership } from '@/lib/game/membership'
 import { getShareWinnerData } from '@/lib/share/data'
 import { classicWinnerLayout } from '@/lib/share/layouts/classic-winner'
 import { cupWinnerLayout } from '@/lib/share/layouts/cup-winner'
@@ -13,9 +13,8 @@ const CACHE_HEADERS = { 'Cache-Control': 'public, s-maxage=86400, immutable' }
 export async function GET(_request: Request, { params }: { params: Promise<{ gameId: string }> }) {
 	const session = await requireSession()
 	const { gameId } = await params
-	const game = await getGameDetail(gameId, session.user.id)
-	if (!game) return new Response('Not found', { status: 404 })
-	if (!game.isMember) return new Response('Forbidden', { status: 403 })
+	const access = await requireMembership(gameId, session.user.id)
+	if (!access.ok) return new Response(access.message, { status: access.status })
 
 	const data = await getShareWinnerData(gameId, session.user.id)
 	if (!data) return new Response('No data', { status: 404 })
