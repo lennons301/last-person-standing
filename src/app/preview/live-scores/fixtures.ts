@@ -27,6 +27,10 @@ function match(overrides: Partial<LiveFixture> & { id: string }): LiveFixture {
 		status: 'scheduled',
 		homeShort: 'HOM',
 		awayShort: 'AWY',
+		homeTeamId: 't-home',
+		awayTeamId: 't-away',
+		winner: null,
+		knockout: false,
 		...overrides,
 	}
 }

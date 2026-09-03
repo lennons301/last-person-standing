@@ -1897,6 +1897,125 @@ describe('lifecycle: cup wipeout rule', () => {
 /* ────────────────────────────────────────────────────────────────────── */
 
 describe('live projection', () => {
+	/**
+	 * A knockout tie level at full time, with the pick deliberately left unsettled
+	 * — the window the browser polls in, between the fixture row landing and the
+	 * settle pass running. Both projections (the live payload and the progress
+	 * grid) must say what settlement is about to say.
+	 */
+	async function knockoutTieSeed(
+		winner: 'home' | 'away' | null,
+		/**
+		 * Write the picks the way the deadline lock's auto-pick does — classic
+		 * hand-made picks store no prediction, but `applyRule2Classic` stores one,
+		 * and a projection that reads it instead of the team never sees the tie's
+		 * `winner` (the #242 defect, surviving in the auto-pick case).
+		 */
+		opts: { auto?: boolean } = {},
+	) {
+		const compId = await makeCompetition({ type: 'group_knockout', dataSource: 'football_data' })
+		const home = await makeTeam({ name: 'Home', shortName: 'HOM' })
+		const away = await makeTeam({ name: 'Away', shortName: 'AWY' })
+		const r4 = await makeRound(compId, { number: 4, status: 'open' })
+		const fx = await makeFixture({ roundId: r4, homeTeamId: home, awayTeamId: away })
+		const gameId = await makeGame({
+			competitionId: compId,
+			gameMode: 'classic',
+			currentRoundId: r4,
+			modeConfig: { allowRebuys: false },
+		})
+		const gpHome = await makePlayer({ gameId, userId: 'u-home' })
+		const gpAway = await makePlayer({ gameId, userId: 'u-away' })
+		await makePick({
+			gameId,
+			gamePlayerId: gpHome,
+			roundId: r4,
+			teamId: home,
+			fixtureId: fx,
+			predictedResult: opts.auto ? 'home_win' : undefined,
+		})
+		await makePick({
+			gameId,
+			gamePlayerId: gpAway,
+			roundId: r4,
+			teamId: away,
+			fixtureId: fx,
+			predictedResult: opts.auto ? 'away_win' : undefined,
+		})
+		// Level at full time. NOT settled — the picks stay pending, which is what
+		// puts both surfaces on their projection path.
+		await finishFixture(fx, 1, 1, winner)
+		return { gameId, r4, gpHome, gpAway }
+	}
+
+	it('classic: a penalty-decided tie projects as a win, exactly as it settles', async () => {
+		// #242: settlement read `fixture.winner` and scored the home backer a win
+		// while both projections decided on the level score alone and showed them a
+		// loss — and, on the grid, an elimination for a tie their team had won.
+		const { gameId, r4, gpHome, gpAway } = await knockoutTieSeed('home')
+
+		const payload = await getLivePayload(gameId, 'u-home')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpHome)?.projectedOutcome).toBe(
+			'settled-win',
+		)
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpAway)?.projectedOutcome).toBe(
+			'settled-loss',
+		)
+		expect(payload?.players.find((p) => p.id === gpHome)?.projectedStatus).toBe('alive')
+		expect(payload?.players.find((p) => p.id === gpAway)?.projectedStatus).toBe('eliminated')
+
+		const grid = await getProgressGridData(gameId, 'u-home')
+		expect(grid?.players.find((p) => p.id === gpHome)?.cellsByRoundId[r4]?.result).toBe('win')
+		expect(grid?.players.find((p) => p.id === gpAway)?.cellsByRoundId[r4]?.result).toBe('loss')
+	})
+
+	it('classic: an unresolved knockout tie projects as pending, not as a loss', async () => {
+		// #107's deferral, on the projection side: level with no winner reported is
+		// winner-lag. Settlement writes nothing, so neither surface may show the
+		// backers settled — or, worse, out.
+		const { gameId, r4, gpHome, gpAway } = await knockoutTieSeed(null)
+
+		const payload = await getLivePayload(gameId, 'u-home')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpHome)?.projectedOutcome).toBe('pending')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpAway)?.projectedOutcome).toBe('pending')
+		expect(payload?.players.find((p) => p.id === gpHome)?.projectedStatus).toBe('alive')
+		expect(payload?.players.find((p) => p.id === gpAway)?.projectedStatus).toBe('alive')
+
+		const grid = await getProgressGridData(gameId, 'u-home')
+		expect(grid?.players.find((p) => p.id === gpHome)?.cellsByRoundId[r4]?.result).toBe('pending')
+		expect(grid?.players.find((p) => p.id === gpAway)?.cellsByRoundId[r4]?.result).toBe('pending')
+	})
+
+	it('classic: an auto-pick projects through the same rule as a hand-made one', async () => {
+		// A deadline auto-pick stores a `predictedResult` (`applyRule2Classic`),
+		// which a projection must not read: classic is "did my team come through",
+		// and the prediction carries no `winner`. Reading it left one payload
+		// contradicting itself — the pick card a loss, the player row alive.
+		const { gameId, r4, gpHome, gpAway } = await knockoutTieSeed('home', { auto: true })
+
+		const payload = await getLivePayload(gameId, 'u-home')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpHome)?.projectedOutcome).toBe(
+			'settled-win',
+		)
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpAway)?.projectedOutcome).toBe(
+			'settled-loss',
+		)
+		expect(payload?.players.find((p) => p.id === gpHome)?.projectedStatus).toBe('alive')
+		expect(payload?.players.find((p) => p.id === gpAway)?.projectedStatus).toBe('eliminated')
+
+		const grid = await getProgressGridData(gameId, 'u-home')
+		expect(grid?.players.find((p) => p.id === gpHome)?.cellsByRoundId[r4]?.result).toBe('win')
+	})
+
+	it('classic: an auto-pick on an unresolved tie is deferred like any other pick', async () => {
+		const { gameId, gpHome, gpAway } = await knockoutTieSeed(null, { auto: true })
+
+		const payload = await getLivePayload(gameId, 'u-home')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpHome)?.projectedOutcome).toBe('pending')
+		expect(payload?.picks.find((p) => p.gamePlayerId === gpAway)?.projectedOutcome).toBe('pending')
+		expect(payload?.players.find((p) => p.id === gpAway)?.projectedStatus).toBe('alive')
+	})
+
 	it('classic: in-progress fixture surfaces projected player status', async () => {
 		const compId = await makeCompetition({ type: 'league', dataSource: 'fpl' })
 		const a = await makeTeam({ name: 'A', shortName: 'A' })

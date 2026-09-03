@@ -6,12 +6,11 @@ import {
 	checkCupCompletion,
 	checkTurboCompletion,
 } from '@/lib/game/auto-complete'
+import { isKnockoutRound, settleClassicPick } from '@/lib/game/classic-survival'
 import { eliminationUpdate, isAdminRemoved } from '@/lib/game/elimination'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
-import { isGameStartingRound } from '@/lib/game/starting-round'
 import type { WipeoutPlayerInput } from '@/lib/game-logic/auto-complete-tiebreakers'
-import { determinePickResult } from '@/lib/game-logic/common'
 import { evaluateCupPicks, resolveCupQualifier } from '@/lib/game-logic/cup'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import {
@@ -199,52 +198,39 @@ async function settleClassicPickRow(
 	fx: FixtureWithRound,
 	g?: typeof game.$inferSelect,
 ): Promise<{ settled: boolean; eliminated: boolean }> {
-	// `fx.homeScore` and `fx.awayScore` are pre-validated non-null by the
-	// settleFixture entry point — the narrowing is lost across the helper
-	// boundary so we coalesce defensively.
-	const homeScore = fx.homeScore ?? 0
-	const awayScore = fx.awayScore ?? 0
+	// THE classic survival rule, shared with both projections (#242): it reads
+	// `fixture.winner`, so a tie settled on penalties is a win rather than a
+	// draw; it defers an unresolved knockout tie (#107) rather than scoring one;
+	// and it owns the starting-round exemption (#203). Nothing here decides any
+	// of that — extend the module, not this caller.
+	const outcome = settleClassicPick(
+		{ teamId: p.teamId },
+		{
+			roundId: fx.round.id,
+			homeTeamId: fx.homeTeam.id,
+			awayTeamId: fx.awayTeam.id,
+			homeScore: fx.homeScore,
+			awayScore: fx.awayScore,
+			winner: fx.winner,
+			status: fx.status,
+			knockout: isKnockoutRound(fx.round.competition.type, fx.round.number),
+		},
+		{
+			startingRoundId: g?.startingRoundId,
+			modeConfig: g?.modeConfig as { allowRebuys?: boolean } | null,
+		},
+	)
+	// Deferred: the pick stays PENDING on purpose and settles later via the poll
+	// re-fire / recovery sweeps, once the winner (or a decisive score) lands.
+	if (outcome.defer || outcome.result == null) return { settled: false, eliminated: false }
 
-	// Unresolved knockout tie → leave the pick PENDING (don't score it a draw).
-	// A knockout match can't end level: if a knockout-round fixture is finished
-	// level with no `winner` reported yet, that's football-data's winner-lag, not
-	// a draw. Scoring it a draw here would wrongly eliminate the backer (whose team
-	// may have advanced on penalties) — and once that elimination completes or
-	// advances the game it can't be undone. Deferring keeps the player alive until
-	// the winner (or a decisive full-time score) lands, at which point the pick
-	// settles correctly via the poll re-fire / recovery sweeps. Group-stage and
-	// league draws are genuine results and are unaffected.
-	const isKnockoutRound =
-		fx.round.competition.type === 'knockout' ||
-		(fx.round.competition.type === 'group_knockout' && wcRoundStage(fx.round.number) === 'knockout')
-	if (isKnockoutRound && fx.winner == null && homeScore === awayScore) {
-		return { settled: false, eliminated: false }
-	}
-
-	const result = determinePickResult({
-		pickedTeamId: p.teamId,
-		homeTeamId: fx.homeTeam.id,
-		awayTeamId: fx.awayTeam.id,
-		homeScore,
-		awayScore,
-		winner: fx.winner,
-	})
-	const pickedHome = p.teamId === fx.homeTeam.id
-	const goalsScored = result === 'win' ? (pickedHome ? homeScore : awayScore) : 0
-	await db.update(pick).set({ result, goalsScored }).where(eq(pick.id, p.id))
+	await db
+		.update(pick)
+		.set({ result: outcome.result, goalsScored: outcome.goalsScored })
+		.where(eq(pick.id, p.id))
 
 	if (g == null) return { settled: true, eliminated: false }
-
-	if (result === 'win') return { settled: true, eliminated: false }
-
-	// Starting-round exemption: the game's OWN first round + allowRebuys=false is
-	// the "starting gameweek" — losses/draws don't eliminate. The round is the one
-	// the game was created on (`game.starting_round_id`), not the competition's
-	// gameweek one: a game created in November opens at gameweek 12 and gameweek
-	// 12 is the first hurdle its players are put to. See #203.
-	const allowRebuys = (g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
-	const isStartingRound = isGameStartingRound(g, fx.round.id) && !allowRebuys
-	if (isStartingRound) return { settled: true, eliminated: false }
+	if (!outcome.eliminates) return { settled: true, eliminated: false }
 
 	// Eliminate only if currently alive. Guard makes this race-safe and
 	// double-call-safe.

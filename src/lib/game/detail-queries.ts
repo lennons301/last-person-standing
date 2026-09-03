@@ -12,6 +12,11 @@ import {
 	type ChainRoundRow,
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
+import {
+	isKnockoutRound,
+	resolveClassicPickResult,
+	settleClassicPick,
+} from '@/lib/game/classic-survival'
 import { activeField, isAdminRemoved } from '@/lib/game/elimination'
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
@@ -1089,7 +1094,11 @@ export async function getProgressGridData(
 			else if (thePick.result === 'draw') resultForCell = r.isStartingRound ? 'draw_exempt' : 'loss'
 			else if (thePick.result === 'saved_by_life') resultForCell = 'saved'
 			else {
-				resultForCell = projectClassicCellFromFixture(thePick, r.isStartingRound ?? false)
+				resultForCell = projectClassicCellFromFixture(
+					thePick,
+					r.isStartingRound ?? false,
+					isKnockoutRound(competitionType, r.number),
+				)
 			}
 
 			let opponentShortName: string | undefined
@@ -1198,6 +1207,12 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 			{ homeTeamId: f.homeTeamId, awayTeamId: f.awayTeamId, odds: f.odds },
 		]),
 	)
+	// Whether this round's fixtures are knockout ties — matches that can't end
+	// level, so an unresolved one is deferred rather than shown settled (#107).
+	const roundIsKnockout = isKnockoutRound(
+		gameData.competition.type,
+		gameData.currentRound?.number ?? 0,
+	)
 	const fixtures = fixturesRaw.map((f) => ({
 		id: f.id,
 		kickoff: f.kickoff,
@@ -1206,6 +1221,14 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		status: f.status,
 		homeShort: f.homeTeam.shortName,
 		awayShort: f.awayTeam.shortName,
+		// The sides, the authoritative winner of a penalty-decided tie and the
+		// round's stage all ride along because the classic survival rule reads
+		// them — the browser projects a pick with the same module the server
+		// settles it with (#242).
+		homeTeamId: f.homeTeamId,
+		awayTeamId: f.awayTeamId,
+		winner: f.winner,
+		knockout: roundIsKnockout,
 	}))
 
 	// Build live projection.
@@ -1213,10 +1236,12 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		gameMode: gameData.gameMode,
 		competitionType: gameData.competition.type,
 		modeConfig: gameData.modeConfig as { allowRebuys?: boolean; startingLives?: number } | null,
-		// Whether the round being projected is the game's own opening round —
-		// classic's exemption hangs off it, and a game that started mid-season has
-		// its own (#203).
-		isStartingRound: isGameStartingRound(gameData, gameData.currentRoundId),
+		// The round being projected and the round the game began on: classic's
+		// exemption hangs off the pair, and a game that started mid-season has its
+		// own opening round (#203). The shared survival rule resolves it.
+		roundId: gameData.currentRoundId,
+		startingRoundId: gameData.startingRoundId,
+		roundNumber: gameData.currentRound?.number ?? 0,
 		fixtures: fixturesRaw,
 		picks: picksInRound,
 		players: gameData.players,
@@ -1298,18 +1323,25 @@ function projectClassicCellFromFixture(
 			awayTeamId: string
 			homeScore: number | null
 			awayScore: number | null
+			winner: 'home' | 'away' | null
+			status: string
 		} | null
 	},
 	isStartingRound: boolean,
+	knockout: boolean,
 ): GridCell['result'] {
 	const fx = thePick.fixture
-	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
-	const pickedHome = thePick.teamId === fx.homeTeamId
-	const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
-	const otherScore = pickedHome ? fx.awayScore : fx.homeScore
-	if (pickedScore > otherScore) return 'win'
-	if (pickedScore < otherScore) return 'loss'
-	return isStartingRound ? 'draw_exempt' : 'loss'
+	if (!fx) return 'pending'
+	// The shared survival rule, so a projected cell can't contradict the settled
+	// one it turns into: it reads `fixture.winner` (a tie won on penalties is a
+	// win, #242) and defers an unresolved tie rather than calling it a draw
+	// (#107). The draw → cell mapping stays here beside the settled branch's,
+	// which is display and not survival.
+	const { result, defer } = resolveClassicPickResult(thePick, { ...fx, knockout })
+	if (defer || result == null) return 'pending'
+	if (result === 'win') return 'win'
+	if (result === 'draw') return isStartingRound ? 'draw_exempt' : 'loss'
+	return 'loss'
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -1327,8 +1359,16 @@ function computeLiveProjection(input: {
 	gameMode: 'classic' | 'turbo' | 'cup'
 	competitionType: string
 	modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
-	/** Is the round being projected the game's own starting round? */
-	isStartingRound: boolean
+	/**
+	 * The round being projected, and the round the game began on — classic's
+	 * exemption is `isGameStartingRound` over the pair, and a game that started
+	 * mid-season has its own (#203). The shared survival rule resolves it, so
+	 * the two ids travel rather than a pre-computed flag.
+	 */
+	roundId: string | null
+	startingRoundId: string | null
+	/** Which round of the competition, so knockout ties can be told apart. */
+	roundNumber: number
 	fixtures: Array<{
 		id: string
 		homeTeamId: string
@@ -1355,10 +1395,12 @@ function computeLiveProjection(input: {
 	>()
 
 	const fixtureById = new Map(input.fixtures.map((f) => [f.id, f]))
+	// Every fixture in the round shares its stage, so the question is asked once.
+	const knockout = isKnockoutRound(input.competitionType, input.roundNumber)
 
 	for (const p of input.picks) {
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
-		pickProjections.set(p.id, projectOutcomeForPick(p, fx))
+		pickProjections.set(p.id, projectOutcomeForPick(p, fx, knockout, input.gameMode))
 	}
 
 	for (const player of input.players) {
@@ -1369,7 +1411,7 @@ function computeLiveProjection(input: {
 		if (input.gameMode === 'classic') {
 			playerProjections.set(
 				player.id,
-				projectClassicPlayer(player, playerPicks, fixtureById, input),
+				projectClassicPlayer(player, playerPicks, fixtureById, { ...input, knockout }),
 			)
 		} else if (input.gameMode === 'turbo') {
 			playerProjections.set(player.id, projectTurboPlayer(player, playerPicks, fixtureById))
@@ -1399,9 +1441,12 @@ function projectOutcomeForPick(
 				awayTeamId: string
 				homeScore: number | null
 				awayScore: number | null
+				winner: 'home' | 'away' | null
 				status: string
 		  }
 		| undefined,
+	knockout: boolean,
+	gameMode: 'classic' | 'turbo' | 'cup',
 ): LiveProjectedOutcome {
 	if (p.result === 'void') return 'void'
 	if (p.result === 'saved_by_life') return 'saved-by-life'
@@ -1417,21 +1462,33 @@ function projectOutcomeForPick(
 	if (fx?.status === 'cancelled') return 'void'
 	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
 	const isFinished = fx.status === 'finished'
-	const pickedHome = p.teamId === fx.homeTeamId
+
+	// Classic first, and on the MODE rather than on whether a prediction happens
+	// to be stored: the picked team must come through, and the shared rule is
+	// what says whether it did — the same one settlement calls, so a tie won on
+	// penalties can't read as a loss here (#242) and an unresolved one stays
+	// pending rather than settled (#107). Branching on `predictedResult` sent
+	// classic's deadline auto-picks down the turbo path, which reads the score
+	// alone: `applyRule2Classic` stores a prediction where a hand-made classic
+	// pick stores none, so one payload could call the same pick a loss on its
+	// card and its backer alive on their row.
+	if (gameMode === 'classic') {
+		const { result, defer } = resolveClassicPickResult(p, { ...fx, knockout })
+		if (defer || result == null) return 'pending'
+		if (result === 'win') return isFinished ? 'settled-win' : 'winning'
+		if (result === 'draw') return isFinished ? 'settled-loss' : 'drawing'
+		return isFinished ? 'settled-loss' : 'losing'
+	}
+
+	// Turbo / cup: the call is the prediction, and it may be a draw.
 	const predicted = p.predictedResult
 	if (predicted) {
-		// Turbo / cup style: predictedResult drives projection.
 		const actualOutcome =
 			fx.homeScore > fx.awayScore ? 'home_win' : fx.awayScore > fx.homeScore ? 'away_win' : 'draw'
 		if (predicted === actualOutcome) return isFinished ? 'settled-win' : 'winning'
 		return isFinished ? 'settled-loss' : 'losing'
 	}
-	// Classic: picked team must win.
-	const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
-	const otherScore = pickedHome ? fx.awayScore : fx.homeScore
-	if (pickedScore > otherScore) return isFinished ? 'settled-win' : 'winning'
-	if (pickedScore < otherScore) return isFinished ? 'settled-loss' : 'losing'
-	return isFinished ? 'settled-loss' : 'drawing'
+	return 'pending'
 }
 
 function projectClassicPlayer(
@@ -1445,33 +1502,36 @@ function projectClassicPlayer(
 			awayTeamId: string
 			homeScore: number | null
 			awayScore: number | null
+			winner: 'home' | 'away' | null
 			status: string
 		}
 	>,
 	input: {
 		modeConfig: { allowRebuys?: boolean; startingLives?: number } | null
-		isStartingRound: boolean
+		roundId: string | null
+		startingRoundId: string | null
+		knockout: boolean
 	},
 ): { streak: number; lives: number; status: 'alive' | 'eliminated' } {
 	if (player.status === 'eliminated') {
 		return { streak: 0, lives: 0, status: 'eliminated' }
 	}
 	if (playerPicks.length === 0) return { streak: 0, lives: 0, status: 'alive' }
-	const allowRebuys = input.modeConfig?.allowRebuys === true
-	const exemptRound = input.isStartingRound && !allowRebuys
 	// Classic has one pick per round; project elimination if any in-progress
 	// pick is losing/drawing AND not in starting round. Voided picks don't
-	// count — player stays alive on them per the cancellation design.
+	// count — player stays alive on them per the cancellation design. Whether a
+	// pick eliminates is the shared survival rule's answer, exemption included
+	// (#242) — a deferred tie eliminates nobody, since settlement writes nothing.
 	for (const p of playerPicks) {
 		if (p.result === 'void') continue
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
 		if (!fx || fx.status === 'cancelled') continue
-		if (fx.homeScore == null || fx.awayScore == null) continue
-		const pickedHome = p.teamId === fx.homeTeamId
-		const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
-		const otherScore = pickedHome ? fx.awayScore : fx.homeScore
-		const wouldLose = pickedScore <= otherScore // includes draw
-		if (wouldLose && !exemptRound) {
+		const outcome = settleClassicPick(
+			p,
+			{ ...fx, roundId: input.roundId ?? '', knockout: input.knockout },
+			{ startingRoundId: input.startingRoundId, modeConfig: input.modeConfig },
+		)
+		if (outcome.eliminates) {
 			return { streak: 0, lives: 0, status: 'eliminated' }
 		}
 	}
