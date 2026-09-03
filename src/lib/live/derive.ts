@@ -1,3 +1,4 @@
+import { resolveClassicPickResult } from '@/lib/game/classic-survival'
 import type { LiveFixture, LivePick } from './types'
 
 const LIVE_WINDOW_BEFORE_MS = 10 * 60 * 1000
@@ -32,7 +33,7 @@ export type PickOutcome =
 export function projectPickOutcome(
 	pick: LivePick,
 	fixture: LiveFixture,
-	_mode: 'classic' | 'turbo' | 'cup',
+	mode: 'classic' | 'turbo' | 'cup',
 ): PickOutcome {
 	if (pick.result === 'saved_by_life') return 'saved-by-life'
 	if (pick.result === 'win') return 'settled-win'
@@ -42,6 +43,19 @@ export function projectPickOutcome(
 	if (homeScore == null || awayScore == null) return 'pending'
 
 	const isFinished = status === 'finished'
+
+	// Classic backs a team to win, and one shared module decides whether it did
+	// — the same one settlement calls, so the live view can't contradict the
+	// result it is about to show (#242). Deciding here on the score alone showed
+	// a penalty-decided tie as a loss. A classic pick carries no
+	// `predictedResult`: the team it is stored against IS the call.
+	if (mode === 'classic') {
+		const { result, defer } = resolveClassicPickResult(pick, fixture)
+		if (defer || result == null) return 'pending'
+		if (result === 'win') return isFinished ? 'settled-win' : 'winning'
+		if (result === 'draw') return isFinished ? 'settled-loss' : 'drawing'
+		return isFinished ? 'settled-loss' : 'losing'
+	}
 
 	if (pick.predictedResult === 'home_win') {
 		if (homeScore > awayScore) return isFinished ? 'settled-win' : 'winning'

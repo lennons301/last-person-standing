@@ -105,6 +105,8 @@ While a fixture is `live` or `halftime` (kicked off, not yet finished), the serv
 
 Computed entirely server-side in `getLivePayload` (`src/lib/game/detail-queries.ts`). Pure function `projectPickOutcome` lives in `src/lib/live/derive.ts`. No DB writes.
 
+A classic projection decides nothing of its own: it calls `resolveClassicPickResult` (`src/lib/game/classic-survival.ts`), the scoring half of the rule settlement itself uses, so a projected cell can't contradict the settled one it turns into. That is what the `winner`, `homeTeamId` / `awayTeamId` and `knockout` fields on `LiveFixture` are for — before #242 the projections read the score alone, and a knockout tie won on penalties projected as a loss. A deferred tie (finished, level, winner not in yet) projects as `pending` on every surface, because settlement writes nothing for it. Which branch a pick takes is the **game mode**, never whether a `predictedResult` is stored on the row: classic's deadline auto-picks store one and hand-made classic picks don't, so branching on the field alone splits classic in two.
+
 ---
 
 ## Trigger surfaces

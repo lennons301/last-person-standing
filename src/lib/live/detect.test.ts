@@ -25,6 +25,10 @@ function fx(overrides: Partial<LiveFixture> = {}): LiveFixture {
 		status: 'live',
 		homeShort: 'ENG',
 		awayShort: 'FRA',
+		homeTeamId: 't-home',
+		awayTeamId: 't-away',
+		winner: null,
+		knockout: false,
 		...overrides,
 	}
 }

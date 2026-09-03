@@ -12,12 +12,22 @@ import {
 	type ChainRoundRow,
 	type FutureRoundRow,
 } from '@/lib/game/classic-planner-view'
+import {
+	isKnockoutRound,
+	resolveClassicPickResult,
+	settleClassicPick,
+} from '@/lib/game/classic-survival'
 import { activeField, isAdminRemoved } from '@/lib/game/elimination'
 import { type ModeConfig, resolveModeConfig } from '@/lib/game/mode-config'
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
+import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
-import { arePicksLocked, deriveGameRoundStatus } from '@/lib/game/round-status'
+import {
+	arePicksLocked,
+	deriveGameRoundStatus,
+	type PicksLockedRound,
+} from '@/lib/game/round-status'
 import {
 	isGameStartingRound,
 	resolveRoundAfterStarting,
@@ -583,7 +593,13 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 export async function getTurboStandingsData(
 	gameId: string,
 	viewerUserId?: string,
-	options?: { hideOpenRoundPicks?: boolean },
+	/**
+	 * `hideUnlockedPicks`: hide every pick whose round hasn't locked, the viewer's
+	 * own included — what a shared surface asks for, since the whole group sees
+	 * it. One name across both standings queries on purpose: it is one request,
+	 * and it was spelled two ways (#247).
+	 */
+	options?: { hideUnlockedPicks?: boolean },
 ) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
@@ -672,14 +688,26 @@ export async function getTurboStandingsData(
 				now,
 			})
 			const isRoundOpen = derivedStatus === 'open'
+			// May this viewer see this player's picks for this round? One module owns
+			// the rule (#247) — `hideUnlockedPicks` (the share-image path) is stated
+			// as "no viewer to make an exception for", and a round the GAME has
+			// finished with is revealed wholesale (a completed turbo game nulls
+			// `currentRoundId`, which is how its standings stay readable).
+			const pickHidden = (gamePlayerId: string) =>
+				resolvePickVisibility({
+					round: r,
+					pick: { gamePlayerId },
+					viewerGamePlayerId: options?.hideUnlockedPicks ? null : viewerGamePlayerId,
+					now,
+					revealAll: derivedStatus === 'completed',
+				}) === 'hidden'
 
 			const players = gameData.players.map((p) => {
 				const playerPicks = gameData.picks
 					.filter((pk) => pk.gamePlayerId === p.id && pk.roundId === r.id)
 					.sort((a, b) => (a.confidenceRank ?? 99) - (b.confidenceRank ?? 99))
 
-				const isOwnPick = viewerGamePlayerId === p.id
-				const hideCells = isRoundOpen && (options?.hideOpenRoundPicks || !isOwnPick)
+				const hideCells = pickHidden(p.id)
 
 				// Streak + goals. For completed rounds: persisted pick.result drives
 				// it. For in-progress rounds: project from current scores — same
@@ -795,9 +823,8 @@ export async function getTurboStandingsData(
 
 			for (const p of gameData.players) {
 				const playerName = userNames.get(p.userId) ?? 'Player'
-				const isOwnPick = viewerGamePlayerId === p.id
 				const streakBreakRank = playerStreakBreakRank.get(p.id)
-				const hideThisPlayerInOpenRound = isRoundOpen && (options?.hideOpenRoundPicks || !isOwnPick)
+				const hideThisPlayerInOpenRound = pickHidden(p.id)
 
 				const playerPicks = gameData.picks.filter(
 					(pk) => pk.gamePlayerId === p.id && pk.roundId === r.id,
@@ -913,7 +940,8 @@ export async function getTurboStandingsData(
 export async function getProgressGridData(
 	gameId: string,
 	viewerUserId?: string,
-	options?: { hideAllCurrentPicks?: boolean },
+	/** `hideUnlockedPicks`: as on `getTurboStandingsData` — the shared-surface ask. */
+	options?: { hideUnlockedPicks?: boolean },
 ) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
@@ -966,46 +994,51 @@ export async function getProgressGridData(
 	const now = new Date()
 	const currentRoundNumber =
 		gameData.competition.rounds.find((r) => r.id === gameData.currentRoundId)?.number ?? null
-	const derivedRoundStatus = new Map<string, 'upcoming' | 'open' | 'active' | 'completed'>()
-	// Whether a round's picks are locked-and-revealable to everyone. Picks stay
-	// hidden from other viewers until the round's OWN deadline passes (or it's
-	// processed) — this must hold for FUTURE rounds too, since advance picks
-	// (PR #81) commit real picks for a round that's still 'upcoming'. Keying the
-	// reveal on `=== 'open'` only covered the current round and leaked advance
-	// picks the moment they were made.
-	const picksLockedByRoundId = new Map<string, boolean>()
+	// Rounds this GAME has finished with — advanced past, or every round of a game
+	// that is itself over (completion nulls `currentRoundId`, and
+	// `deriveGameRoundStatus` then calls the lot 'completed'). This is the only
+	// thing the on-screen grid's per-cell reveal adds to the round's own lock, and
+	// it is passed to `resolvePickVisibility` as `revealAll` below rather than
+	// re-stating the lock rule: a player looking back at a game they played sees
+	// the field's picks for every round of it.
+	const gameFinishedWithRoundIds = new Set<string>()
 	for (const r of gameData.competition.rounds) {
 		const status = deriveGameRoundStatus({
 			round: { id: r.id, number: r.number, status: r.status, deadline: r.deadline },
 			game: { currentRoundId: gameData.currentRoundId, currentRoundNumber },
 			now,
 		})
-		derivedRoundStatus.set(r.id, status)
-		const deadlinePassed = r.deadline != null && now >= r.deadline
-		picksLockedByRoundId.set(r.id, status === 'completed' || deadlinePassed)
+		if (status === 'completed') gameFinishedWithRoundIds.add(r.id)
 	}
 
 	const competitionType = gameData.competition.type as 'league' | 'knockout' | 'group_knockout'
-	const rounds: GridRound[] = completedAndCurrentRounds.map((r) => ({
-		id: r.id,
-		number: r.number,
-		name: r.name ?? roundLabelLong(competitionType, r.number),
-		label: roundLabel(competitionType, r.number),
-		// The game's own opening round, not the competition's gameweek one — a game
-		// created in November is marked on gameweek 12 (#203).
-		isStartingRound: isGameStartingRound(gameData, r.id),
-		// Surfaced on the descriptor, not just consumed per-cell below: the classic
-		// share image filters its columns on it so a far-future advance-pick round
-		// never reaches the layout's six-column tail (#225).
-		//
-		// The round's OWN rule, not the per-game map below, and the difference
-		// matters exactly once: a completed game has no `currentRoundId`, so
-		// `deriveGameRoundStatus` calls every round 'completed' — which would put
-		// an untouched future gameweek back in the share the moment a game ends.
-		// The cells keep the game-relative map, so the on-screen grid is unmoved.
-		picksLocked: arePicksLocked(r, now),
-		voidedAt: r.voidedAt ?? null,
+	// The row is carried beside the descriptor because the per-cell visibility rule
+	// below needs the round's own status and deadline, which `GridRound` doesn't
+	// carry (it crosses to the client).
+	const displayRounds = completedAndCurrentRounds.map((row) => ({
+		row,
+		grid: {
+			id: row.id,
+			number: row.number,
+			name: row.name ?? roundLabelLong(competitionType, row.number),
+			label: roundLabel(competitionType, row.number),
+			// The game's own opening round, not the competition's gameweek one — a game
+			// created in November is marked on gameweek 12 (#203).
+			isStartingRound: isGameStartingRound(gameData, row.id),
+			// Surfaced on the descriptor, not just consumed per-cell below: the classic
+			// share image filters its columns on it so a far-future advance-pick round
+			// never reaches the layout's six-column tail (#225).
+			//
+			// The round's OWN rule, with no game-relative reveal, and the difference
+			// matters exactly once: a completed game has no `currentRoundId`, so
+			// `deriveGameRoundStatus` calls every round 'completed' — which would put
+			// an untouched future gameweek back in the share the moment a game ends.
+			// The cells keep the game-relative reveal, so the on-screen grid is unmoved.
+			picksLocked: arePicksLocked(row, now),
+			voidedAt: row.voidedAt ?? null,
+		} satisfies GridRound,
 	}))
+	const rounds: GridRound[] = displayRounds.map((r) => r.grid)
 
 	// Get user names for players
 	const { user } = await import('@/lib/schema/auth')
@@ -1025,7 +1058,7 @@ export async function getProgressGridData(
 
 	const players: GridPlayer[] = gameData.players.map((p) => {
 		const cellsByRoundId: Record<string, GridCell> = {}
-		for (const r of rounds) {
+		for (const { row, grid: r } of displayRounds) {
 			const thePick = gameData.picks.find((pk) => pk.gamePlayerId === p.id && pk.roundId === r.id)
 
 			// Elimination round with NO pick (e.g. a no-pick elimination) → bare
@@ -1043,23 +1076,28 @@ export async function getProgressGridData(
 					continue
 				}
 			}
-			const picksLocked = picksLockedByRoundId.get(r.id) ?? false
-			const isOwnPick = viewerGamePlayerId && thePick?.gamePlayerId === viewerGamePlayerId
-			// Hide the team while this round's picks aren't locked yet (its deadline
-			// hasn't passed) and either the viewer isn't the picker or the caller
-			// requested a shared-view (hide everything not-yet-locked). Covers the
-			// current open round AND future advance-pick rounds.
-			const hideTeam = !picksLocked && (options?.hideAllCurrentPicks || !isOwnPick)
-
 			if (!thePick) {
 				// Always show "?" for players who haven't picked yet — acts as a nudge.
 				cellsByRoundId[r.id] = { result: 'no_pick' }
 				continue
 			}
 
-			// In an open round, if we should hide others' picks: show "locked" to indicate
-			// "pick is in but hidden". The viewer's own pick is still visible unless
-			// hideAllCurrentPicks is set (share-image mode).
+			// May this viewer see this pick? One module owns that (#247). The
+			// round's own lock covers the current open round AND future
+			// advance-pick rounds (PR #81), which is what the leak was (#86);
+			// `hideUnlockedPicks` (the share-image path) is stated as "there is
+			// no viewer to make an exception for", so a not-yet-locked pick stays
+			// hidden from everyone, its own picker included.
+			const hideTeam =
+				resolvePickVisibility({
+					round: row,
+					pick: thePick,
+					viewerGamePlayerId: options?.hideUnlockedPicks ? null : viewerGamePlayerId,
+					now,
+					revealAll: gameFinishedWithRoundIds.has(r.id),
+				}) === 'hidden'
+
+			// A pick that's in but hidden shows "locked".
 			if (hideTeam) {
 				cellsByRoundId[r.id] = { result: 'locked' }
 				continue
@@ -1084,7 +1122,11 @@ export async function getProgressGridData(
 			else if (thePick.result === 'draw') resultForCell = r.isStartingRound ? 'draw_exempt' : 'loss'
 			else if (thePick.result === 'saved_by_life') resultForCell = 'saved'
 			else {
-				resultForCell = projectClassicCellFromFixture(thePick, r.isStartingRound ?? false)
+				resultForCell = projectClassicCellFromFixture(
+					thePick,
+					r.isStartingRound ?? false,
+					isKnockoutRound(competitionType, r.number),
+				)
 			}
 
 			let opponentShortName: string | undefined
@@ -1193,6 +1235,12 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 			{ homeTeamId: f.homeTeamId, awayTeamId: f.awayTeamId, odds: f.odds },
 		]),
 	)
+	// Whether this round's fixtures are knockout ties — matches that can't end
+	// level, so an unresolved one is deferred rather than shown settled (#107).
+	const roundIsKnockout = isKnockoutRound(
+		gameData.competition.type,
+		gameData.currentRound?.number ?? 0,
+	)
 	const fixtures = fixturesRaw.map((f) => ({
 		id: f.id,
 		kickoff: f.kickoff,
@@ -1201,6 +1249,14 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		status: f.status,
 		homeShort: f.homeTeam.shortName,
 		awayShort: f.awayTeam.shortName,
+		// The sides, the authoritative winner of a penalty-decided tie and the
+		// round's stage all ride along because the classic survival rule reads
+		// them — the browser projects a pick with the same module the server
+		// settles it with (#242).
+		homeTeamId: f.homeTeamId,
+		awayTeamId: f.awayTeamId,
+		winner: f.winner,
+		knockout: roundIsKnockout,
 	}))
 
 	// Build live projection.
@@ -1209,23 +1265,30 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		// Carries the mode as well as its settings, so the projection dispatches on
 		// the same value it reads `allowRebuys` / `startingLives` out of.
 		modeConfig: resolveModeConfig(gameData),
-		// Whether the round being projected is the game's own opening round —
-		// classic's exemption hangs off it, and a game that started mid-season has
-		// its own (#203).
-		isStartingRound: isGameStartingRound(gameData, gameData.currentRoundId),
+		// The round being projected and the round the game began on: classic's
+		// exemption hangs off the pair, and a game that started mid-season has its
+		// own opening round (#203). The shared survival rule resolves it.
+		roundId: gameData.currentRoundId,
+		startingRoundId: gameData.startingRoundId,
+		roundNumber: gameData.currentRound?.number ?? 0,
 		fixtures: fixturesRaw,
 		picks: picksInRound,
 		players: gameData.players,
 	})
 
-	// Hide opponents' pick identity until the round's deadline passes. The
+	// Hide opponents' pick identity until this round's picks lock. The
 	// projection above is computed server-side from the full pick set, so live
 	// play is unaffected — we only strip the identifying fields (team, prediction,
 	// fixture, rank, projected outcome) from the payload sent to the browser. The
 	// viewer's own picks are always returned in full.
 	const now = new Date()
-	const deadlinePassed =
-		gameData.currentRound?.deadline != null && now >= gameData.currentRound.deadline
+	// With no current round there are no picks to map below, but state the fallback
+	// anyway: no round row means nothing has locked, so only the viewer's own picks
+	// would come back in full.
+	const liveRound: PicksLockedRound = gameData.currentRound ?? {
+		status: 'upcoming',
+		deadline: null,
+	}
 	const viewerGamePlayerId = gameData.players.find((p) => p.userId === viewerUserId)?.id ?? null
 
 	return {
@@ -1234,7 +1297,9 @@ export async function getLivePayload(gameId: string, viewerUserId: string) {
 		roundId: gameData.currentRoundId,
 		fixtures,
 		picks: picksInRound.map((p) => {
-			const reveal = deadlinePassed || p.gamePlayerId === viewerGamePlayerId
+			// One rule for "may this viewer see this pick?" (#247).
+			const reveal =
+				resolvePickVisibility({ round: liveRound, pick: p, viewerGamePlayerId, now }) === 'visible'
 			if (!reveal) {
 				return {
 					gamePlayerId: p.gamePlayerId,
@@ -1294,18 +1359,25 @@ function projectClassicCellFromFixture(
 			awayTeamId: string
 			homeScore: number | null
 			awayScore: number | null
+			winner: 'home' | 'away' | null
+			status: string
 		} | null
 	},
 	isStartingRound: boolean,
+	knockout: boolean,
 ): GridCell['result'] {
 	const fx = thePick.fixture
-	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
-	const pickedHome = thePick.teamId === fx.homeTeamId
-	const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
-	const otherScore = pickedHome ? fx.awayScore : fx.homeScore
-	if (pickedScore > otherScore) return 'win'
-	if (pickedScore < otherScore) return 'loss'
-	return isStartingRound ? 'draw_exempt' : 'loss'
+	if (!fx) return 'pending'
+	// The shared survival rule, so a projected cell can't contradict the settled
+	// one it turns into: it reads `fixture.winner` (a tie won on penalties is a
+	// win, #242) and defers an unresolved tie rather than calling it a draw
+	// (#107). The draw → cell mapping stays here beside the settled branch's,
+	// which is display and not survival.
+	const { result, defer } = resolveClassicPickResult(thePick, { ...fx, knockout })
+	if (defer || result == null) return 'pending'
+	if (result === 'win') return 'win'
+	if (result === 'draw') return isStartingRound ? 'draw_exempt' : 'loss'
+	return 'loss'
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -1322,8 +1394,16 @@ function projectClassicCellFromFixture(
 function computeLiveProjection(input: {
 	competitionType: string
 	modeConfig: ModeConfig
-	/** Is the round being projected the game's own starting round? */
-	isStartingRound: boolean
+	/**
+	 * The round being projected, and the round the game began on — classic's
+	 * exemption is `isGameStartingRound` over the pair, and a game that started
+	 * mid-season has its own (#203). The shared survival rule resolves it, so
+	 * the two ids travel rather than a pre-computed flag.
+	 */
+	roundId: string | null
+	startingRoundId: string | null
+	/** Which round of the competition, so knockout ties can be told apart. */
+	roundNumber: number
 	fixtures: Array<{
 		id: string
 		homeTeamId: string
@@ -1350,10 +1430,12 @@ function computeLiveProjection(input: {
 	>()
 
 	const fixtureById = new Map(input.fixtures.map((f) => [f.id, f]))
+	// Every fixture in the round shares its stage, so the question is asked once.
+	const knockout = isKnockoutRound(input.competitionType, input.roundNumber)
 
 	for (const p of input.picks) {
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
-		pickProjections.set(p.id, projectOutcomeForPick(p, fx))
+		pickProjections.set(p.id, projectOutcomeForPick(p, fx, knockout, input.modeConfig.mode))
 	}
 
 	for (const player of input.players) {
@@ -1364,7 +1446,7 @@ function computeLiveProjection(input: {
 		if (input.modeConfig.mode === 'classic') {
 			playerProjections.set(
 				player.id,
-				projectClassicPlayer(player, playerPicks, fixtureById, input),
+				projectClassicPlayer(player, playerPicks, fixtureById, { ...input, knockout }),
 			)
 		} else if (input.modeConfig.mode === 'turbo') {
 			playerProjections.set(player.id, projectTurboPlayer(player, playerPicks, fixtureById))
@@ -1394,9 +1476,12 @@ function projectOutcomeForPick(
 				awayTeamId: string
 				homeScore: number | null
 				awayScore: number | null
+				winner: 'home' | 'away' | null
 				status: string
 		  }
 		| undefined,
+	knockout: boolean,
+	gameMode: 'classic' | 'turbo' | 'cup',
 ): LiveProjectedOutcome {
 	if (p.result === 'void') return 'void'
 	if (p.result === 'saved_by_life') return 'saved-by-life'
@@ -1412,21 +1497,33 @@ function projectOutcomeForPick(
 	if (fx?.status === 'cancelled') return 'void'
 	if (!fx || fx.homeScore == null || fx.awayScore == null) return 'pending'
 	const isFinished = fx.status === 'finished'
-	const pickedHome = p.teamId === fx.homeTeamId
+
+	// Classic first, and on the MODE rather than on whether a prediction happens
+	// to be stored: the picked team must come through, and the shared rule is
+	// what says whether it did — the same one settlement calls, so a tie won on
+	// penalties can't read as a loss here (#242) and an unresolved one stays
+	// pending rather than settled (#107). Branching on `predictedResult` sent
+	// classic's deadline auto-picks down the turbo path, which reads the score
+	// alone: `applyRule2Classic` stores a prediction where a hand-made classic
+	// pick stores none, so one payload could call the same pick a loss on its
+	// card and its backer alive on their row.
+	if (gameMode === 'classic') {
+		const { result, defer } = resolveClassicPickResult(p, { ...fx, knockout })
+		if (defer || result == null) return 'pending'
+		if (result === 'win') return isFinished ? 'settled-win' : 'winning'
+		if (result === 'draw') return isFinished ? 'settled-loss' : 'drawing'
+		return isFinished ? 'settled-loss' : 'losing'
+	}
+
+	// Turbo / cup: the call is the prediction, and it may be a draw.
 	const predicted = p.predictedResult
 	if (predicted) {
-		// Turbo / cup style: predictedResult drives projection.
 		const actualOutcome =
 			fx.homeScore > fx.awayScore ? 'home_win' : fx.awayScore > fx.homeScore ? 'away_win' : 'draw'
 		if (predicted === actualOutcome) return isFinished ? 'settled-win' : 'winning'
 		return isFinished ? 'settled-loss' : 'losing'
 	}
-	// Classic: picked team must win.
-	const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
-	const otherScore = pickedHome ? fx.awayScore : fx.homeScore
-	if (pickedScore > otherScore) return isFinished ? 'settled-win' : 'winning'
-	if (pickedScore < otherScore) return isFinished ? 'settled-loss' : 'losing'
-	return isFinished ? 'settled-loss' : 'drawing'
+	return 'pending'
 }
 
 function projectClassicPlayer(
@@ -1440,33 +1537,36 @@ function projectClassicPlayer(
 			awayTeamId: string
 			homeScore: number | null
 			awayScore: number | null
+			winner: 'home' | 'away' | null
 			status: string
 		}
 	>,
 	input: {
 		modeConfig: ModeConfig
-		isStartingRound: boolean
+		roundId: string | null
+		startingRoundId: string | null
+		knockout: boolean
 	},
 ): { streak: number; lives: number; status: 'alive' | 'eliminated' } {
 	if (player.status === 'eliminated') {
 		return { streak: 0, lives: 0, status: 'eliminated' }
 	}
 	if (playerPicks.length === 0) return { streak: 0, lives: 0, status: 'alive' }
-	const allowRebuys = input.modeConfig.mode === 'classic' && input.modeConfig.allowRebuys
-	const exemptRound = input.isStartingRound && !allowRebuys
 	// Classic has one pick per round; project elimination if any in-progress
 	// pick is losing/drawing AND not in starting round. Voided picks don't
-	// count — player stays alive on them per the cancellation design.
+	// count — player stays alive on them per the cancellation design. Whether a
+	// pick eliminates is the shared survival rule's answer, exemption included
+	// (#242) — a deferred tie eliminates nobody, since settlement writes nothing.
 	for (const p of playerPicks) {
 		if (p.result === 'void') continue
 		const fx = p.fixtureId ? fixtureById.get(p.fixtureId) : undefined
 		if (!fx || fx.status === 'cancelled') continue
-		if (fx.homeScore == null || fx.awayScore == null) continue
-		const pickedHome = p.teamId === fx.homeTeamId
-		const pickedScore = pickedHome ? fx.homeScore : fx.awayScore
-		const otherScore = pickedHome ? fx.awayScore : fx.homeScore
-		const wouldLose = pickedScore <= otherScore // includes draw
-		if (wouldLose && !exemptRound) {
+		const outcome = settleClassicPick(
+			p,
+			{ ...fx, roundId: input.roundId ?? '', knockout: input.knockout },
+			{ startingRoundId: input.startingRoundId, modeConfig: input.modeConfig },
+		)
+		if (outcome.eliminates) {
 			return { streak: 0, lives: 0, status: 'eliminated' }
 		}
 	}
