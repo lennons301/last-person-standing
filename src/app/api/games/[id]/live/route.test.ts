@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getGameDetailMock, getLivePayloadMock, reconcileMock } = vi.hoisted(() => ({
-	getGameDetailMock: vi.fn(),
+const { requireMembershipMock, getLivePayloadMock, reconcileMock } = vi.hoisted(() => ({
+	requireMembershipMock: vi.fn(),
 	getLivePayloadMock: vi.fn(),
 	reconcileMock: vi.fn().mockResolvedValue({ ok: true, action: 'noop', reason: 'test' }),
 }))
@@ -11,8 +11,11 @@ vi.mock('@/lib/auth-helpers', () => ({
 }))
 
 vi.mock('@/lib/game/detail-queries', () => ({
-	getGameDetail: getGameDetailMock,
 	getLivePayload: getLivePayloadMock,
+}))
+
+vi.mock('@/lib/game/membership', () => ({
+	requireMembership: requireMembershipMock,
 }))
 
 vi.mock('@/lib/game/reconcile', () => ({
@@ -20,6 +23,11 @@ vi.mock('@/lib/game/reconcile', () => ({
 }))
 
 import { GET } from './route'
+
+// Authorization is the seam's call now; the route renders what it decided.
+const NOT_FOUND = { ok: false, reason: 'not-found', status: 404, message: 'Not found' }
+const NOT_MEMBER = { ok: false, reason: 'not-member', status: 403, message: 'Forbidden' }
+const MEMBER = { ok: true, membership: { id: 'gp1' } }
 
 function req(url: string): Request {
 	return new Request(url)
@@ -31,7 +39,7 @@ describe('GET /api/games/[id]/live', () => {
 	})
 
 	it('returns 404 when the game does not exist', async () => {
-		getGameDetailMock.mockResolvedValue(null)
+		requireMembershipMock.mockResolvedValue(NOT_FOUND)
 		const res = await GET(req('http://x/api/games/g1/live'), {
 			params: Promise.resolve({ id: 'g1' }),
 		})
@@ -39,7 +47,7 @@ describe('GET /api/games/[id]/live', () => {
 	})
 
 	it('returns 403 when the user is not a member', async () => {
-		getGameDetailMock.mockResolvedValue({ isMember: false })
+		requireMembershipMock.mockResolvedValue(NOT_MEMBER)
 		const res = await GET(req('http://x/api/games/g1/live'), {
 			params: Promise.resolve({ id: 'g1' }),
 		})
@@ -47,7 +55,7 @@ describe('GET /api/games/[id]/live', () => {
 	})
 
 	it('returns the live payload', async () => {
-		getGameDetailMock.mockResolvedValue({ isMember: true, gameMode: 'classic' })
+		requireMembershipMock.mockResolvedValue(MEMBER)
 		getLivePayloadMock.mockResolvedValue({ players: [], updatedAt: new Date().toISOString() })
 		const res = await GET(req('http://x/api/games/g1/live'), {
 			params: Promise.resolve({ id: 'g1' }),
