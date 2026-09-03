@@ -68,7 +68,10 @@ export type FormSheetRenderer = (args: {
 	side: 'home' | 'away'
 	open: boolean
 	onClose: () => void
-	/** The fixture's full 1X2, for the sheet's market block. Null when unpriced. */
+	/**
+	 * The fixture's full 1X2, for the sheet's market block. Null when the fixture
+	 * is unpriced, absent where the surface holds no odds to pass on.
+	 */
 	market?: FormMarket | null
 }) => React.ReactNode
 
