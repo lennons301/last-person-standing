@@ -17,6 +17,7 @@ import {
 	resolveClassicPickResult,
 	settleClassicPick,
 } from '@/lib/game/classic-survival'
+import { activeField, isAdminRemoved } from '@/lib/game/elimination'
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
@@ -69,10 +70,8 @@ export async function getGameDetail(gameId: string, userId: string) {
 	// Admin-removed players are fully excluded from the game view — they drop out
 	// of standings, counts, the pot target and the payments panel. Their payments
 	// were refunded on removal, so the pot total is unaffected.
-	const removedUserIds = new Set(
-		gameData.players.filter((p) => p.eliminatedReason === 'admin_removed').map((p) => p.userId),
-	)
-	gameData.players = gameData.players.filter((p) => p.eliminatedReason !== 'admin_removed')
+	const removedUserIds = new Set(gameData.players.filter(isAdminRemoved).map((p) => p.userId))
+	gameData.players = activeField(gameData.players)
 
 	const myMembership = gameData.players.find((p) => p.userId === userId)
 	const isAdmin = gameData.createdBy === userId
@@ -948,7 +947,7 @@ export async function getProgressGridData(
 	if (!gameData) return null
 
 	// Admin-removed players don't appear in the standings grid.
-	gameData.players = gameData.players.filter((p) => p.eliminatedReason !== 'admin_removed')
+	gameData.players = activeField(gameData.players)
 
 	// Identify the viewer's gamePlayer so we can still show them their own current pick,
 	// while hiding other players' picks for in-progress (not completed) rounds.
