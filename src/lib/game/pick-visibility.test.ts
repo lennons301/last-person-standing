@@ -17,4 +17,15 @@ describe('resolvePickVisibility', () => {
 			}),
 		).toBe('visible')
 	})
+
+	it("hides an opponent's pick before the round's deadline", () => {
+		expect(
+			resolvePickVisibility({
+				round: OPEN_ROUND,
+				pick: { gamePlayerId: 'gp-rival' },
+				viewerGamePlayerId: VIEWER,
+				now: NOW,
+			}),
+		).toBe('hidden')
+	})
 })
