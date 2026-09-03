@@ -52,6 +52,8 @@ export type GameMode = Game['gameMode']
 export type GameStatus = Game['status']
 export type GameVisibility = Game['visibility']
 export type PlayerStatus = GamePlayer['status']
+/** Why a player is out. Declared in the schema beside the column it types. */
+export type { EliminationReason } from './schema/game'
 export type PickResult = Pick['result']
 export type PaymentStatus = Payment['status']
 

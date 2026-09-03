@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { eliminationUpdate } from '@/lib/game/elimination'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -45,7 +46,7 @@ export async function POST(_request: Request, ctx: Ctx): Promise<Response> {
 	await db.transaction(async (tx) => {
 		await tx
 			.update(gamePlayer)
-			.set({ status: 'eliminated', eliminatedReason: 'admin_removed', eliminatedRoundId: null })
+			.set(eliminationUpdate('admin_removed', null))
 			.where(eq(gamePlayer.id, playerRow.id))
 		// Refund any of their payments so they drop out of the pot (calculatePot
 		// ignores refunded). Idempotent.

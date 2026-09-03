@@ -4,6 +4,7 @@ import { fixture, round, team } from '@/lib/schema/competition'
 import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 import { pickWorstUnusedTeam } from './auto-pick'
+import { eliminationUpdate } from './elimination'
 import { isGameStartingRound, resolveRoundAfterStarting } from './starting-round'
 
 export async function processDeadlineLock(roundIds: string[]): Promise<{
@@ -68,11 +69,7 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 						if (allowRebuys) {
 							await db
 								.update(gamePlayer)
-								.set({
-									status: 'eliminated',
-									eliminatedReason: 'no_pick_no_fallback',
-									eliminatedRoundId: roundId,
-								})
+								.set(eliminationUpdate('no_pick_no_fallback', roundId))
 								.where(eq(gamePlayer.id, player.id))
 							playersEliminated++
 						}
@@ -102,11 +99,7 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 						if (prevPayments.length > 1) {
 							await db
 								.update(gamePlayer)
-								.set({
-									status: 'eliminated',
-									eliminatedReason: 'missed_rebuy_pick',
-									eliminatedRoundId: roundId,
-								})
+								.set(eliminationUpdate('missed_rebuy_pick', roundId))
 								.where(eq(gamePlayer.id, player.id))
 							playersEliminated++
 							if (await refundLatestEntry(g.id, player.userId)) paymentsRefunded++
@@ -188,11 +181,7 @@ async function applyRule2Classic(
 	if (!teamId) {
 		await db
 			.update(gamePlayer)
-			.set({
-				status: 'eliminated',
-				eliminatedReason: 'no_pick_no_fallback',
-				eliminatedRoundId: roundId,
-			})
+			.set(eliminationUpdate('no_pick_no_fallback', roundId))
 			.where(eq(gamePlayer.id, player.id))
 		return 'eliminated-no-fallback'
 	}
@@ -236,11 +225,7 @@ async function applyRule3TurboOrCup(
 ): Promise<{ refunded: boolean }> {
 	await db
 		.update(gamePlayer)
-		.set({
-			status: 'eliminated',
-			eliminatedReason: 'no_pick_no_fallback',
-			eliminatedRoundId: roundId,
-		})
+		.set(eliminationUpdate('no_pick_no_fallback', roundId))
 		.where(eq(gamePlayer.id, player.id))
 
 	return { refunded: await refundLatestEntry(gameId, player.userId) }
