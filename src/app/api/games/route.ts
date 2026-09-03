@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { generateInviteCode } from '@/lib/game/invite-code'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { parsePaymentHandleInput } from '@/lib/payments/payment-link'
 import { user } from '@/lib/schema/auth'
@@ -212,8 +213,11 @@ export async function POST(request: Request) {
 
 	// Creator automatically joins the game. Lives are earned via underdog
 	// picks in cup mode, not handed out — default 0. Form lets the creator
-	// override if they want a more forgiving game.
-	const creatorStartingLives = (modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	// override if they want a more forgiving game. Read off the inserted row
+	// through `resolveModeConfig`, the same way the join and add-player routes
+	// read it, so the creator's lives can't differ from a joiner's.
+	const creatorConfig = resolveModeConfig(newGame)
+	const creatorStartingLives = creatorConfig.mode === 'cup' ? creatorConfig.startingLives : 0
 	await db.insert(gamePlayer).values({
 		gameId: newGame.id,
 		userId: session.user.id,

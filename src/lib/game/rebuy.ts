@@ -1,8 +1,12 @@
+import type { ModeConfig } from './mode-config'
+
 export interface IsRebuyEligibleArgs {
-	game: {
-		gameMode: 'classic' | 'turbo' | 'cup'
-		modeConfig: { allowRebuys?: boolean } | null | undefined
-	}
+	/**
+	 * The game's resolved settings — `resolveModeConfig(gameRow)`. It carries the
+	 * mode as well as `allowRebuys`, so there is nothing else to pass and no
+	 * second reading of the column.
+	 */
+	modeConfig: ModeConfig
 	gamePlayer: {
 		status: 'alive' | 'eliminated' | 'winner'
 		eliminatedRoundId: string | null
@@ -35,8 +39,8 @@ export function hasBoughtBackIn(paymentRowCount: number): boolean {
 }
 
 export function isRebuyEligible(args: IsRebuyEligibleArgs): boolean {
-	if (args.game.gameMode !== 'classic') return false
-	if (args.game.modeConfig?.allowRebuys !== true) return false
+	if (args.modeConfig.mode !== 'classic') return false
+	if (!args.modeConfig.allowRebuys) return false
 	if (args.gamePlayer.status !== 'eliminated') return false
 	if (args.gamePlayer.eliminatedRoundId !== args.startingRound.id) return false
 	if (!args.roundAfterStarting.deadline) return false

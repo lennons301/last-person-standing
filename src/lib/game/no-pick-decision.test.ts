@@ -16,7 +16,7 @@ const COMPETITION_ROUNDS = [
 
 function input(overrides: Partial<NoPickDecisionInput> = {}): NoPickDecisionInput {
 	return {
-		game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: null },
+		game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: false } },
 		roundId: 'r1',
 		competitionRounds: COMPETITION_ROUNDS,
 		paymentRowCount: 1,
@@ -36,7 +36,7 @@ const OUTCOME_TABLE: Array<{
 	{
 		name: '1. classic, opening round, rebuys off → exempt',
 		given: {
-			game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: false } },
+			game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: false } },
 			roundId: 'r1',
 		},
 		expected: { kind: 'exempt' },
@@ -44,7 +44,7 @@ const OUTCOME_TABLE: Array<{
 	{
 		name: '2. classic, opening round, rebuys on → eliminate, no refund',
 		given: {
-			game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+			game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: true } },
 			roundId: 'r1',
 		},
 		expected: { kind: 'eliminate', reason: 'no_pick_no_fallback', refund: false },
@@ -52,7 +52,7 @@ const OUTCOME_TABLE: Array<{
 	{
 		name: '3. classic, round after starting, bought back in → eliminate the rebuy, refund it',
 		given: {
-			game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+			game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: true } },
 			roundId: 'r2',
 			paymentRowCount: 2,
 			fallbackTeamId: 't-worst',
@@ -62,7 +62,7 @@ const OUTCOME_TABLE: Array<{
 	{
 		name: '4. classic, an ordinary round with a team left → auto-pick',
 		given: {
-			game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+			game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: true } },
 			roundId: 'r3',
 			fallbackTeamId: 't-worst',
 		},
@@ -71,7 +71,7 @@ const OUTCOME_TABLE: Array<{
 	{
 		name: '5. classic, every team in the round already used → eliminate, no refund',
 		given: {
-			game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+			game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: true } },
 			roundId: 'r3',
 			fallbackTeamId: null,
 		},
@@ -80,7 +80,7 @@ const OUTCOME_TABLE: Array<{
 	{
 		name: '6. turbo/cup → eliminate and refund, whatever the round',
 		given: {
-			game: { gameMode: 'turbo', startingRoundId: 'r1', modeConfig: null },
+			game: { startingRoundId: 'r1', modeConfig: { mode: 'turbo', numberOfPicks: 10 } },
 			roundId: 'r1',
 		},
 		expected: { kind: 'eliminate', reason: 'no_pick_no_fallback', refund: true },
@@ -98,7 +98,10 @@ describe('decideNoPickOutcome — the six reachable outcomes', () => {
 		expect(
 			decideNoPickOutcome(
 				input({
-					game: { gameMode: 'cup', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+					game: {
+						startingRoundId: 'r1',
+						modeConfig: { mode: 'cup', numberOfPicks: 6, startingLives: 2 },
+					},
 					roundId: 'r3',
 					fallbackTeamId: 't-worst',
 				}),
@@ -116,7 +119,7 @@ describe('decideNoPickOutcome — the f8159fa regression', () => {
 		expect(
 			decideNoPickOutcome(
 				input({
-					game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+					game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: true } },
 					roundId: 'r2',
 					paymentRowCount: 1,
 					fallbackTeamId: 't-worst',
@@ -129,7 +132,7 @@ describe('decideNoPickOutcome — the f8159fa regression', () => {
 		expect(
 			decideNoPickOutcome(
 				input({
-					game: { gameMode: 'classic', startingRoundId: 'gw12', modeConfig: { allowRebuys: true } },
+					game: { startingRoundId: 'gw12', modeConfig: { mode: 'classic', allowRebuys: true } },
 					roundId: 'gw13',
 					paymentRowCount: 0,
 					fallbackTeamId: 't-worst',
@@ -144,7 +147,7 @@ describe('decideNoPickOutcome — the f8159fa regression', () => {
 		expect(
 			decideNoPickOutcome(
 				input({
-					game: { gameMode: 'classic', startingRoundId: 'gw12', modeConfig: { allowRebuys: true } },
+					game: { startingRoundId: 'gw12', modeConfig: { mode: 'classic', allowRebuys: true } },
 					roundId: 'gw13',
 					paymentRowCount: 2,
 					fallbackTeamId: 't-worst',
@@ -159,7 +162,7 @@ describe('decideNoPickOutcome — the f8159fa regression', () => {
 		expect(
 			decideNoPickOutcome(
 				input({
-					game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+					game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: true } },
 					roundId: 'r3',
 					paymentRowCount: 2,
 					fallbackTeamId: 't-worst',
@@ -174,7 +177,7 @@ describe('decideNoPickOutcome — the game’s own opening round', () => {
 		expect(
 			decideNoPickOutcome(
 				input({
-					game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: false } },
+					game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: false } },
 					roundId: 'r1',
 				}),
 			),
@@ -185,7 +188,7 @@ describe('decideNoPickOutcome — the game’s own opening round', () => {
 		expect(
 			decideNoPickOutcome(
 				input({
-					game: { gameMode: 'classic', startingRoundId: 'r1', modeConfig: { allowRebuys: true } },
+					game: { startingRoundId: 'r1', modeConfig: { mode: 'classic', allowRebuys: true } },
 					roundId: 'r1',
 				}),
 			),
@@ -196,9 +199,8 @@ describe('decideNoPickOutcome — the game’s own opening round', () => {
 		// A game created in November opens at gameweek 12: that is where the
 		// exemption applies, and gameweek 1 is no round of this game's at all.
 		const midSeason = {
-			gameMode: 'classic',
 			startingRoundId: 'gw12',
-			modeConfig: { allowRebuys: false },
+			modeConfig: { mode: 'classic', allowRebuys: false },
 		} as const
 		expect(decideNoPickOutcome(input({ game: midSeason, roundId: 'gw12' }))).toEqual({
 			kind: 'exempt',

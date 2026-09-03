@@ -1,3 +1,4 @@
+import type { ModeConfig } from './mode-config'
 import { hasBoughtBackIn } from './rebuy'
 import { isGameStartingRound, resolveRoundAfterStarting } from './starting-round'
 
@@ -7,9 +8,9 @@ import { isGameStartingRound, resolveRoundAfterStarting } from './starting-round
  */
 export interface NoPickDecisionInput {
 	game: {
-		gameMode: 'classic' | 'turbo' | 'cup'
 		startingRoundId: string | null
-		modeConfig: { allowRebuys?: boolean } | null
+		/** The game's resolved settings — `resolveModeConfig(gameRow)`. */
+		modeConfig: ModeConfig
 	}
 	/** The round whose deadline just passed. */
 	roundId: string
@@ -46,13 +47,12 @@ export function decideNoPickOutcome(input: NoPickDecisionInput): NoPickOutcome {
 
 	// Turbo and cup have no fallback to offer: their round *is* the game, so a
 	// missed deadline ends it and the entry comes back off the pot.
-	if (game.gameMode !== 'classic') {
+	if (game.modeConfig.mode !== 'classic') {
 		return { kind: 'eliminate', reason: 'no_pick_no_fallback', refund: true }
 	}
 
 	if (isGameStartingRound(game, roundId)) {
-		const allowRebuys = game.modeConfig?.allowRebuys === true
-		return allowRebuys
+		return game.modeConfig.allowRebuys
 			? { kind: 'eliminate', reason: 'no_pick_no_fallback', refund: false }
 			: { kind: 'exempt' }
 	}

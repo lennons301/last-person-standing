@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { evaluateJoinability, JOIN_BLOCKED_COPY } from '@/lib/game/joinability'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -42,10 +43,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 		return NextResponse.json({ error: 'Already a member of this game' }, { status: 400 })
 	}
 
-	// Honour modeConfig.startingLives if the game creator set one. Default 0:
-	// in cup mode lives are earned via underdog picks, not handed out.
-	const startingLives =
-		(gameData.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	// Honour modeConfig.startingLives if the game creator set one. Only cup has
+	// them, and its default is 0: lives are earned via underdog picks, not handed
+	// out. See `resolveModeConfig`.
+	const modeConfig = resolveModeConfig(gameData)
+	const startingLives = modeConfig.mode === 'cup' ? modeConfig.startingLives : 0
 
 	const [player] = await db
 		.insert(gamePlayer)

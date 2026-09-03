@@ -5,6 +5,7 @@ import { game, gamePlayer, pick } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 import { pickWorstUnusedTeam } from './auto-pick'
 import { eliminationUpdate } from './elimination'
+import { resolveModeConfig } from './mode-config'
 import { decideNoPickOutcome, type NoPickOutcome } from './no-pick-decision'
 
 /** A transaction handle, as drizzle hands one to `db.transaction`'s callback. */
@@ -113,9 +114,8 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 
 				const outcome = decideNoPickOutcome({
 					game: {
-						gameMode: g.gameMode,
 						startingRoundId: g.startingRoundId,
-						modeConfig: g.modeConfig as { allowRebuys?: boolean } | null,
+						modeConfig: resolveModeConfig(g),
 					},
 					roundId,
 					competitionRounds: gameRounds,

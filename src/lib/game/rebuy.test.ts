@@ -3,10 +3,7 @@ import { type IsRebuyEligibleArgs, isRebuyEligible } from './rebuy'
 
 function base(overrides: Partial<IsRebuyEligibleArgs> = {}): IsRebuyEligibleArgs {
 	return {
-		game: {
-			gameMode: 'classic',
-			modeConfig: { allowRebuys: true },
-		},
+		modeConfig: { mode: 'classic', allowRebuys: true },
 		gamePlayer: {
 			status: 'eliminated',
 			eliminatedRoundId: 'gw12',
@@ -26,17 +23,14 @@ describe('isRebuyEligible', () => {
 		expect(isRebuyEligible(base())).toBe(true)
 	})
 
-	it('false when gameMode !== classic', () => {
-		expect(
-			isRebuyEligible(base({ game: { gameMode: 'turbo', modeConfig: { allowRebuys: true } } })),
-		).toBe(false)
+	it('false when the mode is not classic', () => {
+		expect(isRebuyEligible(base({ modeConfig: { mode: 'turbo', numberOfPicks: 10 } }))).toBe(false)
 	})
 
 	it('false when allowRebuys is not true', () => {
-		expect(isRebuyEligible(base({ game: { gameMode: 'classic', modeConfig: {} } }))).toBe(false)
-		expect(
-			isRebuyEligible(base({ game: { gameMode: 'classic', modeConfig: { allowRebuys: false } } })),
-		).toBe(false)
+		expect(isRebuyEligible(base({ modeConfig: { mode: 'classic', allowRebuys: false } }))).toBe(
+			false,
+		)
 	})
 
 	it('false when player is still alive', () => {

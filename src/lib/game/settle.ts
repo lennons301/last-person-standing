@@ -7,6 +7,7 @@ import {
 	checkTurboCompletion,
 } from '@/lib/game/auto-complete'
 import { eliminationUpdate, isAdminRemoved } from '@/lib/game/elimination'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
 import { isGameStartingRound } from '@/lib/game/starting-round'
@@ -242,7 +243,8 @@ async function settleClassicPickRow(
 	// the game was created on (`game.starting_round_id`), not the competition's
 	// gameweek one: a game created in November opens at gameweek 12 and gameweek
 	// 12 is the first hurdle its players are put to. See #203.
-	const allowRebuys = (g.modeConfig as { allowRebuys?: boolean } | null)?.allowRebuys === true
+	const modeConfig = resolveModeConfig(g)
+	const allowRebuys = modeConfig.mode === 'classic' && modeConfig.allowRebuys
 	const isStartingRound = isGameStartingRound(g, fx.round.id) && !allowRebuys
 	if (isStartingRound) return { settled: true, eliminated: false }
 
@@ -316,7 +318,8 @@ export async function reevaluateCupGame(gameId: string): Promise<boolean> {
 		where: and(eq(pick.gameId, gameId), eq(pick.roundId, roundId)),
 	})
 
-	const startingLives = (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	const cupConfig = resolveModeConfig(g)
+	const startingLives = cupConfig.mode === 'cup' ? cupConfig.startingLives : 0
 	let anyChanged = false
 
 	for (const player of g.players) {

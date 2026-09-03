@@ -1,6 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { activeField } from '@/lib/game/elimination'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { roundLabel } from '@/lib/game/round-label'
 import { deriveGameRoundStatus } from '@/lib/game/round-status'
 import { determineFixtureOutcome } from '@/lib/game-logic/common'
@@ -167,9 +168,11 @@ export async function getCupStandingsData(
 	const hideOpenPicks =
 		displayRound.status !== 'completed' && (!displayRound.deadline || now < displayRound.deadline)
 
-	// Starting lives default 0 (lives are EARNED in cup) — must match settlement
-	// (settle.ts) so projected lives equal persisted once settled.
-	const startingLives = (g.modeConfig as { startingLives?: number } | null)?.startingLives ?? 0
+	// Starting lives default 0 (lives are EARNED in cup) — the default lives in
+	// `resolveModeConfig`, which settlement (settle.ts) reads too, so projected
+	// lives equal persisted once settled.
+	const modeConfig = resolveModeConfig(g)
+	const startingLives = modeConfig.mode === 'cup' ? modeConfig.startingLives : 0
 
 	const players: CupStandingsPlayer[] = activeField(g.players).map((p) => {
 		const isViewer = p.userId === viewerUserId
@@ -329,7 +332,11 @@ export async function getCupStandingsData(
 			now,
 		}) as 'open' | 'active' | 'completed',
 		maxLives: startingLives,
-		numberOfPicks: (g.modeConfig as { numberOfPicks?: number } | null)?.numberOfPicks ?? 6,
+		// The grid's column count and the submission validator's limit are the same
+		// number: both come out of `resolveModeConfig`. This used to fall back to 6
+		// here and 10 in the picks route, so a cup game missing the field was
+		// checked against one and drawn with the other (#248).
+		numberOfPicks: modeConfig.mode === 'classic' ? 1 : modeConfig.numberOfPicks,
 		players,
 		scenarios,
 	}
