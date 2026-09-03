@@ -25,10 +25,20 @@ export interface ResolvePickVisibilityInput {
 	 */
 	viewerGamePlayerId: string | null | undefined
 	now: Date
+	/**
+	 * Reveal regardless of the round's own lock. The one caller is the progress
+	 * grid's per-cell rule, which additionally reveals a round the GAME has
+	 * finished with (`deriveGameRoundStatus` → 'completed', which covers a
+	 * completed game's whole round set): a player looking at their own game sees
+	 * the field's picks for every round it played. Nothing else has a use for it
+	 * — the round's own lock is the rule.
+	 */
+	revealAll?: boolean
 }
 
 export function resolvePickVisibility(input: ResolvePickVisibilityInput): PickVisibility {
-	const { round, pick, viewerGamePlayerId, now } = input
+	const { round, pick, viewerGamePlayerId, now, revealAll } = input
+	if (revealAll) return 'visible'
 	// Your own pick is never a secret from you.
 	if (viewerGamePlayerId != null && pick.gamePlayerId === viewerGamePlayerId) return 'visible'
 	// Everyone else's opens up the moment the round's picks lock.

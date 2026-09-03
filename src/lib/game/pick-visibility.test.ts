@@ -50,4 +50,16 @@ describe('resolvePickVisibility', () => {
 			}),
 		).toBe('visible')
 	})
+
+	it("reveals an opponent's unlocked pick when the caller passes revealAll", () => {
+		expect(
+			resolvePickVisibility({
+				round: OPEN_ROUND,
+				pick: { gamePlayerId: 'gp-rival' },
+				viewerGamePlayerId: VIEWER,
+				now: NOW,
+				revealAll: true,
+			}),
+		).toBe('visible')
+	})
 })
