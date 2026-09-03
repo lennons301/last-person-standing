@@ -593,7 +593,13 @@ export async function getTurboPickData(gameId: string, roundId: string, gamePlay
 export async function getTurboStandingsData(
 	gameId: string,
 	viewerUserId?: string,
-	options?: { hideOpenRoundPicks?: boolean },
+	/**
+	 * `hideUnlockedPicks`: hide every pick whose round hasn't locked, the viewer's
+	 * own included — what a shared surface asks for, since the whole group sees
+	 * it. One name across both standings queries on purpose: it is one request,
+	 * and it was spelled two ways (#247).
+	 */
+	options?: { hideUnlockedPicks?: boolean },
 ) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
@@ -683,7 +689,7 @@ export async function getTurboStandingsData(
 			})
 			const isRoundOpen = derivedStatus === 'open'
 			// May this viewer see this player's picks for this round? One module owns
-			// the rule (#247) — `hideOpenRoundPicks` (the share-image path) is stated
+			// the rule (#247) — `hideUnlockedPicks` (the share-image path) is stated
 			// as "no viewer to make an exception for", and a round the GAME has
 			// finished with is revealed wholesale (a completed turbo game nulls
 			// `currentRoundId`, which is how its standings stay readable).
@@ -691,7 +697,7 @@ export async function getTurboStandingsData(
 				resolvePickVisibility({
 					round: r,
 					pick: { gamePlayerId },
-					viewerGamePlayerId: options?.hideOpenRoundPicks ? null : viewerGamePlayerId,
+					viewerGamePlayerId: options?.hideUnlockedPicks ? null : viewerGamePlayerId,
 					now,
 					revealAll: derivedStatus === 'completed',
 				}) === 'hidden'
@@ -934,7 +940,8 @@ export async function getTurboStandingsData(
 export async function getProgressGridData(
 	gameId: string,
 	viewerUserId?: string,
-	options?: { hideAllCurrentPicks?: boolean },
+	/** `hideUnlockedPicks`: as on `getTurboStandingsData` — the shared-surface ask. */
+	options?: { hideUnlockedPicks?: boolean },
 ) {
 	const gameData = await db.query.game.findFirst({
 		where: eq(game.id, gameId),
@@ -1078,14 +1085,14 @@ export async function getProgressGridData(
 			// May this viewer see this pick? One module owns that (#247). The
 			// round's own lock covers the current open round AND future
 			// advance-pick rounds (PR #81), which is what the leak was (#86);
-			// `hideAllCurrentPicks` (the share-image path) is stated as "there is
+			// `hideUnlockedPicks` (the share-image path) is stated as "there is
 			// no viewer to make an exception for", so a not-yet-locked pick stays
 			// hidden from everyone, its own picker included.
 			const hideTeam =
 				resolvePickVisibility({
 					round: row,
 					pick: thePick,
-					viewerGamePlayerId: options?.hideAllCurrentPicks ? null : viewerGamePlayerId,
+					viewerGamePlayerId: options?.hideUnlockedPicks ? null : viewerGamePlayerId,
 					now,
 					revealAll: gameFinishedWithRoundIds.has(r.id),
 				}) === 'hidden'

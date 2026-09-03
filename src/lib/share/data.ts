@@ -211,7 +211,7 @@ export async function getShareStandingsData(
 	if (!header) return null
 
 	if (header.gameMode === 'classic') {
-		const grid = await getProgressGridData(gameId, viewerUserId, { hideAllCurrentPicks: true })
+		const grid = await getProgressGridData(gameId, viewerUserId, { hideUnlockedPicks: true })
 		if (!grid) return null
 		// Order + filter the players in the data layer so the layout is a dumb
 		// renderer. Default ordering matches the on-screen grid's default ('status').

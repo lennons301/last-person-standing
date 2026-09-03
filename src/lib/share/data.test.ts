@@ -280,7 +280,7 @@ describe('getShareStandingsData', () => {
 		getProgressGridDataMock.mockResolvedValue({ players: [], rounds: [] })
 		await getShareStandingsData('g1', 'user-42')
 		expect(getProgressGridDataMock).toHaveBeenCalledWith('g1', 'user-42', {
-			hideAllCurrentPicks: true,
+			hideUnlockedPicks: true,
 		})
 	})
 })

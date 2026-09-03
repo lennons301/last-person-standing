@@ -64,8 +64,8 @@ describe('resolvePickVisibility', () => {
 	})
 
 	it('hides an unlocked pick from a surface with no viewer, its own picker included', () => {
-		// What the share path and the old `hideAllCurrentPicks` / `hideOpenRoundPicks`
-		// flags asked for: a shared image reveals nothing that has not locked.
+		// What the share path's `hideUnlockedPicks` asks for: a shared image
+		// reveals nothing that has not locked.
 		expect(
 			resolvePickVisibility({
 				round: OPEN_ROUND,
