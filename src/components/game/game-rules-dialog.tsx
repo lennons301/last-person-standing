@@ -21,7 +21,7 @@ interface ModeRules {
 
 /**
  * The starting-round exception depends on the game's own `allowRebuys` setting
- * (`settleClassicPickRow`, `docs/game-modes/classic.md#the-starting-round`):
+ * (`settleClassicPick`, `docs/game-modes/classic.md#the-starting-round`):
  * with rebuys off, a loss or draw in the game's opening round doesn't
  * eliminate you at all; with rebuys on (the create-game default) it does, but
  * you can pay to buy back in. Neither is "a draw is safe" — a loss is treated

@@ -492,7 +492,7 @@ function buildHero(input: BuildGameViewInput): GameHeroDescriptor {
 	// The one exception is the settled round they actually went out in — that
 	// round still gets to say so, via the round-result hero below, before the
 	// hero settles into spectating. It has to be *that* round, not just any
-	// settled one: `advanceGameToNextRound` deliberately parks a game on a
+	// settled one: `advanceGame` deliberately parks a game on a
 	// completed round when the next one is TBD, and a competition-scoped round
 	// can settle before this game advances — so a player eliminated in GW5 would
 	// otherwise be told "you're out" all over again on a settled GW6, on a round
@@ -657,7 +657,7 @@ function isTargetEliminated(input: BuildGameViewInput): boolean {
  * Classic's starting-round exemption: in the game's own opening round of a
  * no-rebuys game a loss, a draw and even a missed deadline all leave the player
  * in. It's a rule of the mode (`docs/game-modes/classic.md`), encoded in
- * `settleClassicPickRow`, in `processDeadlineLock`'s opening-round branch, and in
+ * `settleClassicPick`, in `processDeadlineLock`'s opening-round branch, and in
  * the standings' own projection (`projectClassicPlayer`). The hero reads the same
  * scoreboard as those standings, so without this it would announce "Out" directly
  * above a table showing the same player alive.

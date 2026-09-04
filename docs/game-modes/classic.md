@@ -10,7 +10,7 @@ Last person standing, played over **many rounds** — the only multi-round mode.
 
 It's recorded on `game.starting_round_id`, written at creation and never moved (`current_round_id` advances as the game goes on, so it can't answer this). `src/lib/game/starting-round.ts` is the only place it's resolved: `isGameStartingRound` for "is this the starting round?" and `resolveRoundAfterStarting` for the round after it — the rebuy window's closing deadline, resolved on the competition's round sequence rather than as `number + 1`. **"The round after the starting round" is what used to be called "round 2" throughout this document.**
 
-Every rule keys off it: the settle exemption (`settleClassicPickRow`), both rebuy routes and the rebuy offer, the deadline lock's opening/second-round branches (`processDeadlineLock`), the progress grid's marker and `draw_exempt` rendering, the live projection (`projectClassicPlayer`) and the hero's exemption state (`buildGameView`). Keying any of them off `round.number === 1` gave a mid-season game no exemption and no possible rebuy however `allowRebuys` was set — see #203. The player's own summary reads the same round for its opening-round block (`buildClassicRoundOne`).
+Every rule keys off it: the settle exemption (`settleClassicPick`), both rebuy routes and the rebuy offer, the deadline lock's opening/second-round branches (`processDeadlineLock`), the progress grid's marker and `draw_exempt` rendering, the live projection (`projectClassicPlayer`) and the hero's exemption state (`buildGameView`). Keying any of them off `round.number === 1` gave a mid-season game no exemption and no possible rebuy however `allowRebuys` was set — see #203. The player's own summary reads the same round for its opening-round block (`buildClassicRoundOne`).
 
 A game with no starting round recorded has no starting round at all: no exemption, no rebuy, no marker. After #203's backfill that can't be a game the app created.
 
@@ -23,29 +23,29 @@ A game with no starting round recorded has no starting round at all: no exemptio
 
 ## Settlement (per fixture)
 
-`settleFixture` (`src/lib/game/settle.ts`) dispatches each pick on the just-finished fixture through `settleClassicPickRow`:
+`settleFixture` (`src/lib/game/settle.ts`) gathers the rows, `deriveSettlement` (`src/lib/game/settlement-plan.ts`) decides the whole outcome with no database in reach, and `applyPlan` writes it in one transaction:
 
 ```mermaid
 sequenceDiagram
     participant Trigger as fixture.status → finished
     participant Settle as settleFixture
-    participant Settle1 as settleClassicPickRow
-    participant Complete as checkAndMaybeCompleteOrAdvance
+    participant Derive as deriveSettlement (classic arm)
+    participant Apply as applyPlan (one transaction)
 
     Trigger->>Settle: fixtureId
-    Settle->>Settle1: per pick on fixture
-    Settle1->>Settle1: settleClassicPick → win/loss/draw (or defer)
-    Settle1->>Settle1: persist pick.result + goalsScored
-    Settle1->>Settle1: if non-win AND not starting round → eliminate player
-    Settle->>Complete: per game touched by this fixture
-    Complete->>Complete: WC group_knockout? → runWcClassicAutoElims (if round fully settled)
-    Complete->>Complete: checkClassicCompletion
+    Settle->>Settle: gather rows for each game touched by this fixture
+    Settle->>Derive: SettlementFacts
+    Derive->>Derive: settleClassicPick → win/loss/draw (or defer)
+    Derive->>Derive: if non-win AND not starting round → eliminate player
+    Derive->>Derive: WC group_knockout? → computeWcClassicAutoElims (if round fully settled)
+    Derive->>Derive: checkClassicCompletion
+    Derive->>Apply: SettlementPlan
     alt alive=1 (last-alive)
-        Complete->>Complete: applyAutoCompletion — winner declared
+        Apply->>Apply: applyAutoCompletion — winner declared
     else alive=0 (mass-extinction)
-        Complete->>Complete: applyAutoCompletion — cohort tiebreaker
+        Apply->>Apply: applyAutoCompletion — cohort tiebreaker
     else round fully settled
-        Complete->>Complete: round.status=completed, advance to next round
+        Apply->>Apply: round.status=completed, advanceGame to next round
     end
 ```
 

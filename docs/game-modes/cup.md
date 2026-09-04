@@ -30,25 +30,24 @@
 
 ## Settlement (whole-game re-evaluation)
 
-Cup settlement mirrors the predecessor's `process_cup_results(p_game_id)`: when a cup fixture finishes, every game that has a pick on it gets a whole-game re-evaluation in `reevaluateCupGame`:
+Cup settlement mirrors the predecessor's `process_cup_results(p_game_id)`: when a cup fixture finishes, every game that has a pick on it gets a whole-game re-evaluation — the cup arm of `deriveSettlement` (`src/lib/game/settlement-plan.ts`):
 
 ```mermaid
 sequenceDiagram
     participant Trigger as fixture.status → finished
     participant Settle as settleFixture
-    participant ReEval as reevaluateCupGame
-    participant Complete as checkAndMaybeCompleteOrAdvance
+    participant Derive as deriveSettlement (cup arm)
+    participant Apply as applyPlan (one transaction)
 
     Trigger->>Settle: fixtureId
-    Settle->>ReEval: per cup game touched
-    Note over ReEval: For each alive player:<br/>1. Collect their picks for the current round<br/>2. Filter to picks whose fixture has scores<br/>3. Run evaluateCupPicks in rank order<br/>4. Persist per-pick: result, goalsScored,<br/>   life_gained, life_spent<br/>5. Persist gamePlayer.livesRemaining +<br/>   eliminated flag
-    Settle->>Complete: per game
-    Complete->>Complete: round fully settled?
+    Settle->>Derive: SettlementFacts, per cup game touched
+    Note over Derive: For each player:<br/>1. Collect their picks for the current round<br/>2. Filter to picks whose fixture has scores<br/>3. Run evaluateCupPicks in rank order<br/>4. Plan per-pick: result, goalsScored,<br/>   life_gained, life_spent<br/>5. Plan gamePlayer.livesRemaining
+    Derive->>Derive: round fully settled?
     alt yes
-        Complete->>Complete: checkCupCompletion → crown the LONGEST streak (cupTiebreaker)
-        Complete->>Complete: applyAutoCompletion; round.status=completed; game complete
+        Derive->>Derive: checkCupCompletion → crown the LONGEST streak (cupTiebreaker)
+        Derive->>Apply: applyAutoCompletion; round.status=completed; game complete
     else no
-        Complete->>Complete: wait for remaining fixtures
+        Derive->>Apply: pick results only — wait for remaining fixtures
     end
 ```
 
