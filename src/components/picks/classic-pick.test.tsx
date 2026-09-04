@@ -8,11 +8,12 @@ vi.mock('next/navigation', () => ({
 	usePathname: () => '/game/g1',
 }))
 
-import { ClassicPick, type ClassicPickFixture } from './classic-pick'
+import type { PickFixture } from '@/lib/game/pick-view-types'
+import { ClassicPick } from './classic-pick'
 
 afterEach(cleanup)
 
-const FIXTURES: ClassicPickFixture[] = [
+const FIXTURES: PickFixture[] = [
 	{
 		id: 'fx-1',
 		home: { id: 't-mun', name: 'Manchester United', shortName: 'MUN', leaguePosition: 4 },
@@ -85,7 +86,7 @@ describe('ClassicPick win probability', () => {
 })
 
 describe('ClassicPick — Fixtures ⇄ Table', () => {
-	const TABLE_FIXTURES: ClassicPickFixture[] = [
+	const TABLE_FIXTURES: PickFixture[] = [
 		{
 			...FIXTURES[0],
 			home: { ...FIXTURES[0].home, standing: { played: 26, points: 55 } },

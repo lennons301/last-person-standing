@@ -3,6 +3,7 @@
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Disclosure } from '@/components/ui/disclosure'
+import type { CupPickFixture, CupPickSlot } from '@/lib/game/pick-view-types'
 import { cn } from '@/lib/utils'
 import { FixtureRow, type SideState } from './fixture-row'
 import { HeartIcon } from './heart-icon'
@@ -10,29 +11,6 @@ import { LivesSummary } from './lives-summary'
 import { PlusNBadge } from './plus-n-badge'
 import { TeamBadge } from './team-badge'
 import { TierPips } from './tier-pips'
-
-export interface CupPickFixture {
-	id: string
-	homeTeamId: string
-	awayTeamId: string
-	homeShort: string
-	homeName: string
-	homeColor: string | null
-	homeBadgeUrl: string | null
-	awayShort: string
-	awayName: string
-	awayColor: string | null
-	awayBadgeUrl: string | null
-	kickoff: Date | null
-	/** From home perspective: positive = home is higher tier, negative = away is higher tier. */
-	tierDifference: number
-}
-
-export interface CupPickSlot {
-	confidenceRank: number
-	fixtureId: string
-	pickedSide: 'home' | 'away'
-}
 
 interface CupPickProps {
 	fixtures: CupPickFixture[]

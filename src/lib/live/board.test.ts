@@ -151,9 +151,9 @@ describe('viewerPicksByFixture', () => {
 			pick({ gamePlayerId: 'mine', fixtureId: null }),
 		],
 		players: [
-			{ id: 'mine', userId: 'u1', status: 'active', livesRemaining: 0 },
+			{ id: 'mine', userId: 'u1', status: 'alive', livesRemaining: 0 },
 			{ id: 'my-rebuy', userId: 'u1', status: 'eliminated', livesRemaining: 0 },
-			{ id: 'theirs', userId: 'u2', status: 'active', livesRemaining: 0 },
+			{ id: 'theirs', userId: 'u2', status: 'alive', livesRemaining: 0 },
 		],
 		viewerUserId: 'u1',
 		updatedAt: NOW.toISOString(),

@@ -63,12 +63,12 @@ function payload(fixtures: LiveFixture[], picks: LivePick[] = []): LivePayload {
 		fixtures,
 		picks,
 		players: [
-			{ id: VIEWER_PLAYER_ID, userId: VIEWER_USER_ID, status: 'active', livesRemaining: 0 },
+			{ id: VIEWER_PLAYER_ID, userId: VIEWER_USER_ID, status: 'alive', livesRemaining: 0 },
 			// The rebuy row is the viewer's too, so a payload can carry two of their
 			// picks in one round — which is how the gallery shows a priced pick and an
 			// unpriced one side by side.
-			{ id: VIEWER_REBUY_PLAYER_ID, userId: VIEWER_USER_ID, status: 'active', livesRemaining: 0 },
-			{ id: 'other-player', userId: 'someone-else', status: 'active', livesRemaining: 0 },
+			{ id: VIEWER_REBUY_PLAYER_ID, userId: VIEWER_USER_ID, status: 'alive', livesRemaining: 0 },
+			{ id: 'other-player', userId: 'someone-else', status: 'alive', livesRemaining: 0 },
 		],
 		viewerUserId: VIEWER_USER_ID,
 		updatedAt: new Date(0).toISOString(),

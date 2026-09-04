@@ -8,11 +8,12 @@ vi.mock('next/navigation', () => ({
 	usePathname: () => '/game/g1',
 }))
 
-import { TurboPick, type TurboPickFixture } from './turbo-pick'
+import type { PickFixture } from '@/lib/game/pick-view-types'
+import { TurboPick } from './turbo-pick'
 
 afterEach(cleanup)
 
-const FIXTURES: TurboPickFixture[] = [
+const FIXTURES: PickFixture[] = [
 	{
 		id: 'f1',
 		home: { id: 't1', name: 'Manchester United', shortName: 'MUN', form: ['W', 'D'] },
@@ -142,13 +143,13 @@ describe('TurboPick win probability', () => {
  * a tap that adds to the confidence set instead of committing a single pick.
  */
 describe('TurboPick Table view', () => {
-	const withTable = (f: TurboPickFixture, homePos: number, awayPos: number): TurboPickFixture => ({
+	const withTable = (f: PickFixture, homePos: number, awayPos: number): PickFixture => ({
 		...f,
 		home: { ...f.home, leaguePosition: homePos, standing: { played: 26, points: 50 } },
 		away: { ...f.away, leaguePosition: awayPos, standing: { played: 26, points: 38 } },
 	})
 
-	const TABLE_FIXTURES: TurboPickFixture[] = [
+	const TABLE_FIXTURES: PickFixture[] = [
 		withTable(FIXTURES[0], 4, 9),
 		withTable(FIXTURES[1], 1, 6),
 		withTable(

@@ -1,10 +1,15 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { type GridSort, sortGridPlayers } from '@/components/standings/grid-sort'
 import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
-import { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
+import { type GridSort, sortGridPlayers } from '@/lib/game/grid-sort'
 import { resolvePickVisibility } from '@/lib/game/pick-visibility'
+import {
+	type GridView,
+	getProgressGridData,
+	getTurboStandingsData,
+	type TurboStandings,
+} from '@/lib/game/read/standings'
 import { roundLabel } from '@/lib/game/round-label'
 import { calculatePayouts, calculatePot } from '@/lib/game-logic/prizes'
 import { user } from '@/lib/schema/auth'
@@ -58,9 +63,7 @@ export type StandingsShareData =
 	| {
 			mode: 'classic'
 			header: ShareHeader
-			classicGrid: NonNullable<
-				Awaited<ReturnType<typeof import('@/lib/game/detail-queries').getProgressGridData>>
-			>
+			classicGrid: GridView
 			/**
 			 * True when ordered by a gameweek's picks (`sort.key === 'round'`): the
 			 * image renders one flat list grouped by team rather than the
@@ -77,9 +80,7 @@ export type StandingsShareData =
 	| {
 			mode: 'turbo'
 			header: ShareHeader
-			turboData: NonNullable<
-				Awaited<ReturnType<typeof import('@/lib/game/detail-queries').getTurboStandingsData>>
-			>
+			turboData: TurboStandings
 			overflowCount: number
 	  }
 
@@ -117,9 +118,7 @@ export type LiveShareData =
 	| {
 			mode: 'turbo'
 			header: ShareHeader
-			turboData: NonNullable<
-				Awaited<ReturnType<typeof import('@/lib/game/detail-queries').getTurboStandingsData>>
-			>
+			turboData: TurboStandings
 			roundNumber: number
 			roundLabel: string
 			overflowCount: number

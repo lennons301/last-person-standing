@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm'
-import type { FixtureOdds } from '@/components/picks/fixture-row'
 import { db } from '@/lib/db'
 import { toFixtureOddsView } from '@/lib/game/fixture-odds-view'
+import type { FixtureOdds } from '@/lib/game/pick-view-types'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { getPositionLine, getTableSize, type PositionPoint } from '@/lib/game/standings-snapshot'
 import { competition, fixture, fixtureOdds, round, team } from '@/lib/schema/competition'

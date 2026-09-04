@@ -1,23 +1,7 @@
 'use client'
 
+import type { ChainSlot } from '@/lib/game/classic-planner-view'
 import { cn } from '@/lib/utils'
-
-export type ChainSlotState =
-	| { kind: 'win'; teamShort: string; teamColour: string | null }
-	| { kind: 'loss'; teamShort: string; teamColour: string | null }
-	| { kind: 'draw'; teamShort: string; teamColour: string | null }
-	| { kind: 'current'; teamShort: string | null; teamColour: string | null }
-	| { kind: 'planned'; teamShort: string; teamColour: string | null }
-	| { kind: 'planned-locked'; teamShort: string; teamColour: string | null }
-	| { kind: 'empty' }
-	| { kind: 'tbc' }
-
-export interface ChainSlot {
-	roundId: string
-	roundNumber: number
-	roundLabel: string
-	state: ChainSlotState
-}
 
 interface ChainRibbonProps {
 	slots: ChainSlot[]

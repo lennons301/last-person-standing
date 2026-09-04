@@ -8,11 +8,17 @@ import type { FixtureSummaryView } from '@/components/picks/team-form-panel'
 import { TeamFormSheet } from '@/components/picks/team-form-sheet'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { describeFixturePhase, type FixtureRecordStatus } from '@/lib/game/fixture-phase'
+import { describeFixturePhase } from '@/lib/game/fixture-phase'
+import {
+	type GridSort,
+	type GridSortDir,
+	type GridSortKey,
+	sortGridPlayers,
+} from '@/lib/game/grid-sort'
+import type { GridCell, GridPlayer, GridRound } from '@/lib/game/read/standings'
 import { cn } from '@/lib/utils'
 import { AdminPlayerActions } from './admin-player-actions'
 import { GridFilter } from './grid-filter'
-import { type GridSort, type GridSortDir, type GridSortKey, sortGridPlayers } from './grid-sort'
 
 /** Fixture summary plus the phase it came from, for a caller-supplied renderer. */
 export interface GridFixtureSummary extends FixtureSummaryView {
@@ -51,89 +57,6 @@ interface ProgressLiveMeta {
 	recentGoalByFixture: Map<string, { side: 'home' | 'away' }>
 	pickFixtureByPlayer: Map<string, string>
 	pickSideByPlayer: Map<string, 'home' | 'away' | null>
-}
-
-export interface GridRound {
-	id: string
-	number: number
-	name: string
-	/** Short label for column headers, e.g. "GW1" / "MD1" / "R16". */
-	label: string
-	isStartingRound?: boolean
-	/**
-	 * Whether this round's picks are locked and revealable to everyone — the
-	 * round has been processed, or its OWN deadline has passed (`arePicksLocked`,
-	 * which reads the round and never the game, so a finished game doesn't turn
-	 * its unplayed rounds locked). False for a future round carrying advance
-	 * picks (PR #81), which commit real pick rows against a round that hasn't
-	 * opened. Required, not optional, for the same reason the cells' hide rule is
-	 * derived and not assumed: a caller that filters columns on it (the classic
-	 * share image, #225) must never read a missing field as "locked". Plain
-	 * boolean so the descriptor stays JSON-serialisable across the server→client
-	 * boundary.
-	 */
-	picksLocked: boolean
-	/**
-	 * Non-null when this round was voided (classic threshold crossed —
-	 * see cancellation design doc). UI renders the column with prominent
-	 * "round voided" treatment.
-	 */
-	voidedAt?: Date | string | null
-}
-
-export interface GridCell {
-	result:
-		| 'win'
-		| 'loss'
-		| 'draw'
-		| 'draw_exempt'
-		| 'saved'
-		| 'pending'
-		| 'locked'
-		| 'skull'
-		| 'empty'
-		| 'no_pick'
-		/** Pick on a cancelled fixture (or pick in a voided round). */
-		| 'void'
-	teamShortName?: string
-	opponentShortName?: string
-	homeAway?: 'H' | 'A'
-	score?: string
-	isAuto?: boolean
-	/**
-	 * True on the cell for the round in which this player was eliminated, when a
-	 * real pick exists for that round. The pick + result render as normal and a
-	 * skull marker is overlaid — so a pick that actually won (but the player was
-	 * still eliminated) stays visible rather than being replaced by a bare skull.
-	 * The bare `result: 'skull'` cell is kept only for elimination rounds with no
-	 * pick (e.g. a no-pick elimination).
-	 */
-	eliminatedHere?: boolean
-	/**
-	 * The fixture this pick sits on. Set together with `teamId` whenever the
-	 * pick's fixture is revealed (i.e. `teamShortName`/`opponentShortName`
-	 * above are set too) — never on a hidden (`locked`), unplayed (`no_pick`)
-	 * or pick-less (`skull`, `empty`) cell, so its presence alone is what
-	 * makes a cell tappable (#226).
-	 */
-	fixtureId?: string
-	teamId?: string
-	opponentTeamId?: string
-	kickoff?: Date | string | null
-	fixtureStatus?: FixtureRecordStatus
-}
-
-export interface GridPlayer {
-	id: string
-	/** Present in the live grid (used by admin remove); omitted in the share image. */
-	userId?: string
-	name: string
-	status: 'alive' | 'eliminated' | 'winner'
-	eliminatedRoundNumber?: number
-	eliminatedRoundLabel?: string
-	/** Total goals scored by this player's winning picks (classic tiebreaker). */
-	goals: number
-	cellsByRoundId: Record<string, GridCell>
 }
 
 interface ProgressGridProps {

@@ -8,22 +8,23 @@ import type {
 	TurboScenario,
 } from '@/app/preview/picks/fixtures'
 import { TEAM_FORM_DETAIL, TEAM_FORM_DETAIL_EMPTY } from '@/app/preview/picks/fixtures'
-import { ClassicPick, type ClassicPickFixture } from '@/components/picks/classic-pick'
-import { CupPick, type CupPickSlot } from '@/components/picks/cup-pick'
-import type { FixtureTeamInfo, FormSheetRenderer } from '@/components/picks/fixture-row'
+import { ClassicPick } from '@/components/picks/classic-pick'
+import { CupPick } from '@/components/picks/cup-pick'
+import type { FormSheetRenderer } from '@/components/picks/fixture-row'
 import { FixtureRow } from '@/components/picks/fixture-row'
 import { PickTable } from '@/components/picks/pick-table'
-import { type PlannerFixture, PlannerRound, type UsedInfo } from '@/components/picks/planner-round'
+import { PlannerRound } from '@/components/picks/planner-round'
 import { RankingList } from '@/components/picks/ranking-list'
 import { TeamFormSheetView } from '@/components/picks/team-form-panel'
 import { TurboPick } from '@/components/picks/turbo-pick'
-import type { PlannerRoundInput } from '@/lib/game/classic-planner-view'
+import type { PlannerFixture, PlannerRoundInput, UsedInfo } from '@/lib/game/classic-planner-view'
 import {
 	buildPickTableRows,
 	type PickTableFixture,
 	type RankedFixtureCall,
 	type UsedRoundLabel,
 } from '@/lib/game/pick-table-view'
+import type { CupPickSlot, FixtureTeamInfo, PickFixture } from '@/lib/game/pick-view-types'
 import type { TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**
@@ -234,7 +235,7 @@ export interface PreviewClassicCard {
 	roundName: string
 	roundNumber: number
 	deadline: string | null
-	fixtures: ClassicPickFixture[]
+	fixtures: PickFixture[]
 	usedTeamsByRound: Record<string, UsedRoundLabel>
 	existingPickTeamId: string | null
 	existingPickFixtureId: string | null

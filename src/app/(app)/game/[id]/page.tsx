@@ -4,30 +4,28 @@ import { notFound, redirect } from 'next/navigation'
 import { ActingAsBanner } from '@/components/game/acting-as-banner'
 import { GameDetailView } from '@/components/game/game-detail-view'
 import { ClassicPick } from '@/components/picks/classic-pick'
-import type { CupPickFixture, CupPickSlot } from '@/components/picks/cup-pick'
 import { CupPickForm } from '@/components/picks/cup-pick-form'
 import { TurboPick } from '@/components/picks/turbo-pick'
 import { Button } from '@/components/ui/button'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { getCupLadderData } from '@/lib/game/cup-standings-queries'
-import {
-	getClassicPickData,
-	getClassicPlannerData,
-	getGameDetail,
-	getProgressGridData,
-	getTurboPickData,
-	getTurboStandingsData,
-} from '@/lib/game/detail-queries'
 import { buildGameView, type GameViewPickInput } from '@/lib/game/game-view'
 import { evaluateJoinability, JOIN_BLOCKED_COPY } from '@/lib/game/joinability'
 import { resolveModeConfig } from '@/lib/game/mode-config'
+import { getGameDetail } from '@/lib/game/read/game-detail'
+import {
+	getClassicPickData,
+	getClassicPlannerData,
+	getCupPickData,
+	getTurboPickData,
+} from '@/lib/game/read/pick-surfaces'
+import { getProgressGridData, getTurboStandingsData } from '@/lib/game/read/standings'
 import { reconcileGameState } from '@/lib/game/reconcile'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import { getRoundSummary } from '@/lib/game/round-summary-query'
 import { formatRoundSummaryText } from '@/lib/game/round-summary-text'
 import { buildWinnerBanner } from '@/lib/game/winner-banner-builder'
-import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { buildPaymentLink, buildPaymentReference } from '@/lib/payments/payment-link'
 import { user } from '@/lib/schema/auth'
 import { round as roundTable } from '@/lib/schema/competition'
@@ -166,6 +164,13 @@ export default async function GameDetailPage({
 			? await getTurboPickData(game.id, game.currentRound.id, targetGamePlayerId)
 			: null
 
+	// Cup's fixtures and whatever the player has already ranked. Sourced from the
+	// TARGET player, so admin acting-as sees the target's slot state.
+	const cupPickData =
+		game.currentRound && targetGamePlayerId && game.gameMode === 'cup'
+			? await getCupPickData(game.id, game.currentRound.id, targetGamePlayerId)
+			: null
+
 	// One read of the game's settings for the whole page — the defaults live in
 	// `resolveModeConfig`, not here (#248). Classic needs exactly one pick and
 	// has no lives, which is what the two ternaries say.
@@ -222,42 +227,6 @@ export default async function GameDetailPage({
 	const unpaidNum = Math.max(0, targetNum - Number.parseFloat(game.pot.total))
 	const target = targetNum.toFixed(2)
 	const unpaid = unpaidNum.toFixed(2)
-
-	// Build cup pick props. Source picks from the TARGET player so admin acting-as
-	// sees the target's existing slot state, not their own.
-	let cupFixtures: CupPickFixture[] = []
-	let cupInitialSlots: CupPickSlot[] = []
-	if (game.gameMode === 'cup' && game.currentRound && targetGamePlayerId) {
-		cupFixtures = game.currentRound.fixtures.map((f) => ({
-			id: f.id,
-			homeTeamId: f.homeTeamId,
-			awayTeamId: f.awayTeamId,
-			homeShort: f.homeTeam.shortName,
-			homeName: f.homeTeam.name,
-			homeColor: f.homeTeam.primaryColor,
-			homeBadgeUrl: f.homeTeam.badgeUrl,
-			awayShort: f.awayTeam.shortName,
-			awayName: f.awayTeam.name,
-			awayColor: f.awayTeam.primaryColor,
-			awayBadgeUrl: f.awayTeam.badgeUrl,
-			kickoff: f.kickoff,
-			tierDifference: computeTierDifference(f.homeTeam, f.awayTeam, game.competition.type),
-		}))
-
-		cupInitialSlots = game.picks
-			.filter(
-				(p) =>
-					p.gamePlayerId === targetGamePlayerId &&
-					p.roundId === game.currentRound?.id &&
-					p.fixtureId != null &&
-					p.confidenceRank != null,
-			)
-			.map((p) => ({
-				confidenceRank: p.confidenceRank as number,
-				fixtureId: p.fixtureId as string,
-				pickedSide: (p.predictedResult === 'away_win' ? 'away' : 'home') as 'home' | 'away',
-			}))
-	}
 
 	const actingAsForPickUI = actingAsTarget
 		? { gamePlayerId: actingAsTarget.gamePlayerId, userName: actingAsTarget.userName }
@@ -496,11 +465,11 @@ export default async function GameDetailPage({
 				<CupPickForm
 					gameId={game.id}
 					roundId={game.currentRound.id}
-					fixtures={cupFixtures}
+					fixtures={cupPickData?.fixtures ?? []}
 					numberOfPicks={numberOfPicks}
 					livesRemaining={targetLivesRemaining}
 					maxLives={startingLives}
-					initialSlots={cupInitialSlots}
+					initialSlots={cupPickData?.initialSlots ?? []}
 					readonly={game.status === 'completed'}
 					actingAs={actingAsForPickUI}
 					competitionId={game.competition.id}

@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og'
-import type { GridSort, GridSortKey } from '@/components/standings/grid-sort'
 import { requireSession } from '@/lib/auth-helpers'
+import type { GridSort, GridSortKey } from '@/lib/game/grid-sort'
 import { requireMembership } from '@/lib/game/membership'
 import { getShareStandingsData } from '@/lib/share/data'
 import { classicStandingsLayout } from '@/lib/share/layouts/classic-standings'

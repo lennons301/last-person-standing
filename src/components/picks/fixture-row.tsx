@@ -4,8 +4,9 @@ import { ChevronRight } from 'lucide-react'
 import type React from 'react'
 import { useRef, useState } from 'react'
 import { LocalDateTime } from '@/components/local-datetime'
+import type { FixtureOdds, FixtureTeamInfo, FormResult, SideOdds } from '@/lib/game/pick-view-types'
 import { cn } from '@/lib/utils'
-import { FormDots, type FormResult } from './form-dots'
+import { FormDots } from './form-dots'
 import { HeartIcon } from './heart-icon'
 import { ODDS_AS_OF_FORMAT } from './odds-format'
 import { ordinal } from './ordinal'
@@ -15,34 +16,6 @@ import type { FormMarket } from './team-form-panel'
 import { TeamFormSheet } from './team-form-sheet'
 import { TierPips } from './tier-pips'
 import { CHIP, TYPE } from './type-scale'
-
-/**
- * The rest of a team's row in the official table, beside the `leaguePosition`
- * the fixture row already shows. Only the Table view renders these, but they
- * hang off the team rather than off that view: they're the same sync's writes as
- * the position, and both pick views read one team shape.
- *
- * Every field is independently nullable — a competition with no standings at all
- * (a cup) carries none of them, and a league before its first round has a
- * position with nothing played.
- */
-export interface TeamStandingLine {
-	played?: number | null
-	points?: number | null
-	goalsFor?: number | null
-	goalsAgainst?: number | null
-}
-
-export interface FixtureTeamInfo {
-	id: string
-	name: string
-	shortName: string
-	badgeUrl?: string | null
-	form?: FormResult[]
-	leaguePosition?: number | null
-	/** Played / points / goals, for the Table view. Absent where there's no table. */
-	standing?: TeamStandingLine | null
-}
 
 /**
  * How the form-detail sheet gets rendered for one side of one fixture — the
@@ -74,35 +47,6 @@ export type FormSheetRenderer = (args: {
 	 */
 	market?: FormMarket | null
 }) => React.ReactNode
-
-/**
- * One side's indicative market read: the de-vigged win probability and the raw
- * decimal win-price it was derived from.
- */
-export interface SideOdds {
-	/** De-vigged implied probability, 0–1. */
-	probability: number
-	/** Decimal win-price as the bookmaker quoted it. */
-	price: number
-}
-
-/**
- * A fixture's win-probability signal, sourced from bookmaker 1X2 prices (see
- * `src/lib/data/odds-api.ts`). Absent for any fixture or competition we have no
- * odds for — the row then shows no probability at all rather than a zero.
- *
- * The draw isn't *shown* on the row: its job is "how likely is each side to
- * win", which is exactly what a survivor pick turns on. It's carried all the
- * same, because the form sheet one tap below shows the full home/draw/away
- * market — and a market is either fully known or absent, never part-priced.
- */
-export interface FixtureOdds {
-	home: SideOdds
-	draw: SideOdds
-	away: SideOdds
-	/** When the bookmaker last moved this market. Frozen at the round deadline. */
-	asOf: string | Date
-}
 
 export type SideState =
 	| { kind: 'current' }

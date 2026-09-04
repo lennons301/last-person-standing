@@ -8,8 +8,8 @@ import { isGameStartingRound, type StartingRoundGameRow } from './starting-round
  * and does the answer put the player out?
  *
  * One pure module, called by every surface that has to answer it — the settle
- * path (`settle.ts`), the live projection and the progress grid
- * (`detail-queries.ts`), and the live pop-out's own projection
+ * path (`settle.ts`), the live projection (`read/live.ts`) and the progress
+ * grid (`read/standings.ts`), and the live pop-out's own projection
  * (`live/derive.ts`). Four implementations of this rule existed before #242 and
  * they disagreed: settlement read `fixture.winner`, the projections decided on
  * the score alone, so a knockout tie settled on penalties rendered as a loss in

@@ -10,7 +10,7 @@ vi.mock('@/lib/auth-helpers', () => ({
 	requireSession: vi.fn().mockResolvedValue({ user: { id: 'u1' } }),
 }))
 
-vi.mock('@/lib/game/detail-queries', () => ({
+vi.mock('@/lib/game/read/live', () => ({
 	getLivePayload: getLivePayloadMock,
 }))
 

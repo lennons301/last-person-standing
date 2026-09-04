@@ -1,7 +1,8 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { CupPick, type CupPickFixture, type CupPickSlot } from './cup-pick'
+import type { CupPickFixture, CupPickSlot } from '@/lib/game/pick-view-types'
+import { CupPick } from './cup-pick'
 
 interface CupPickFormProps {
 	gameId: string

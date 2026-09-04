@@ -3,12 +3,12 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { ChainRibbon, type ChainSlot } from '@/components/picks/chain-ribbon'
+import { ChainRibbon } from '@/components/picks/chain-ribbon'
 import { useOnPickEditRequest } from '@/components/picks/edit-pick-event'
 import { PlannerRound } from '@/components/picks/planner-round'
 import { TeamBadge } from '@/components/picks/team-badge'
 import { formatDeadline } from '@/lib/format'
-import type { ChainSummary, PlannerRoundInput } from '@/lib/game/classic-planner-view'
+import type { ChainSlot, ChainSummary, PlannerRoundInput } from '@/lib/game/classic-planner-view'
 import { formGuidePath } from '@/lib/game/form-guide-link'
 import {
 	buildPickTableRows,
@@ -18,24 +18,11 @@ import {
 	pickTableHasStandings,
 	type UsedRoundLabel,
 } from '@/lib/game/pick-table-view'
-import {
-	type FixtureOdds,
-	FixtureRow,
-	type FixtureTeamInfo,
-	type FormSheetRenderer,
-} from './fixture-row'
+import type { PickFixture } from '@/lib/game/pick-view-types'
+import { FixtureRow, type FormSheetRenderer } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
 import { PickTable } from './pick-table'
 import { PickViewToggle } from './pick-view-toggle'
-
-export interface ClassicPickFixture {
-	id: string
-	home: FixtureTeamInfo
-	away: FixtureTeamInfo
-	kickoff: string | null
-	/** Indicative win-probabilities. Absent for fixtures we have no odds for. */
-	odds?: FixtureOdds | null
-}
 
 export interface ClassicPickPlanHandlers {
 	/** Commit/replace a locked real pick for a future round. */
@@ -51,7 +38,7 @@ interface ClassicPickProps {
 	roundNumber: number
 	competitionId: string
 	deadline: Date | null
-	fixtures: ClassicPickFixture[]
+	fixtures: PickFixture[]
 	/** teamId → the earlier round that team was spent in, short label and long. */
 	usedTeamsByRound: Record<string, UsedRoundLabel>
 	/**
@@ -169,7 +156,7 @@ export function ClassicPick({
 		select(row.fixtureId, row.team.id)
 	}
 
-	function handlePick(fixture: ClassicPickFixture, side: 'home' | 'away') {
+	function handlePick(fixture: PickFixture, side: 'home' | 'away') {
 		select(fixture.id, side === 'home' ? fixture.home.id : fixture.away.id)
 	}
 

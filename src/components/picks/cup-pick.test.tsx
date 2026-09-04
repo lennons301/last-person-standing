@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CupPick, type CupPickFixture } from './cup-pick'
+import type { CupPickFixture } from '@/lib/game/pick-view-types'
+import { CupPick } from './cup-pick'
 
 afterEach(cleanup)
 

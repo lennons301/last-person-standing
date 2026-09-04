@@ -1,36 +1,9 @@
 'use client'
 
 import { LocalDateTime } from '@/components/local-datetime'
-import { FixtureRow, type FixtureTeamInfo, type FormSheetRenderer } from './fixture-row'
-import type { FormResult } from './form-dots'
-
-interface PlannerTeam {
-	id: string
-	short: string
-	name: string
-	colour: string | null
-	badgeUrl: string | null
-	/**
-	 * The team's *current* form — a future round's opponents haven't played yet,
-	 * so there is no such thing as form "as of" GW27. Current form is exactly what
-	 * the decision needs: which in-form team to spend now and which to save.
-	 */
-	form?: FormResult[]
-	leaguePosition?: number | null
-}
-
-export interface PlannerFixture {
-	id: string
-	homeTeam: PlannerTeam
-	awayTeam: PlannerTeam
-	kickoff: Date | null
-}
-
-export interface UsedInfo {
-	teamId: string
-	label: string // e.g. "USED GW3" or "PLANNED GW27"
-	kind: 'used' | 'planned-elsewhere'
-}
+import type { PlannerFixture, PlannerTeam, UsedInfo } from '@/lib/game/classic-planner-view'
+import type { FixtureTeamInfo } from '@/lib/game/pick-view-types'
+import { FixtureRow, type FormSheetRenderer } from './fixture-row'
 
 interface PlannerRoundProps {
 	roundId: string
