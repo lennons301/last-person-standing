@@ -51,7 +51,7 @@ export function resolveStartingRound<T extends StartingRoundSeqRow>(
  * The round after the starting round — where a rebuy window closes.
  *
  * Resolved on the round sequence (lowest number above the starting round) rather
- * than as `number + 1`, the same way `advanceGameToNextRound` picks its target,
+ * than as `number + 1`, the same way `advanceGame` picks its target,
  * so a competition whose round numbers aren't contiguous can't lose its second
  * round. Null when the game has no starting round, or when that round is the
  * competition's last.

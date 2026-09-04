@@ -157,7 +157,7 @@ export const pick = pgTable(
 		predictedResult: varchar('predicted_result', { length: 10 }),
 		result: pickResultEnum('result').notNull().default('pending'),
 		goalsScored: integer('goals_scored'),
-		// Cup-mode bookkeeping: persisted by reevaluateCupGame on each settlement.
+		// Cup-mode bookkeeping: persisted by the cup arm of `deriveSettlement` on each settlement.
 		// Replaces the read-time recomputation that used to live in
 		// cup-standings-queries.computeLivesGained / computeLivesSpent.
 		// Non-cup picks: always 0 / false. Cup picks: as evaluated by

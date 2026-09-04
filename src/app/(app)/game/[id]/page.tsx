@@ -335,7 +335,7 @@ export default async function GameDetailPage({
 	// The round the game moves to next — the round-result hero points at it. Only
 	// needed once the current round has been settled, and only in classic: turbo
 	// and cup are single-round, so they never advance to an N+1. Queried the same
-	// way `advanceGameToNextRound` picks its target (lowest number above this one,
+	// way `advanceGame` picks its target (lowest number above this one,
 	// not number + 1) so the hero can't disagree with the engine on a competition
 	// whose round numbers aren't contiguous.
 	const nextRoundRow =

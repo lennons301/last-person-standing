@@ -648,7 +648,7 @@ export async function syncCompetition(
 		})
 		// Round status now follows game lifecycle, not wall-clock time:
 		//   'upcoming' → 'open' on game creation / round advance (see api/games
-		//                and settle.ts:advanceGameToNextRound)
+		//                and settle.ts:advanceGame)
 		//   'open' → 'completed' on processGameRound
 		// Bootstrap only mirrors the adapter's `finished` flag (all fixtures
 		// finished, so the round can be considered settled at the data layer)

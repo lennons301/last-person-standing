@@ -45,7 +45,7 @@ export async function reconcileGameState(gameId: string): Promise<ReconcileResul
 		return { ok: true, action: 'noop', reason: 'no-current-round' }
 	}
 
-	// Stuck-on-completed: the round was processed but advanceGameToNextRound
+	// Stuck-on-completed: the round was processed but advanceGame
 	// couldn't find a next round (TBD bracket, etc.). Try again now.
 	if (g.currentRound.status === 'completed') {
 		const r = await advanceGameIfReady(gameId)
