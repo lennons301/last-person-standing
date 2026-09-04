@@ -1,14 +1,61 @@
-import type { ChainSlot } from '@/components/picks/chain-ribbon'
-import type { FormResult } from '@/components/picks/form-dots'
-import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
+import type { FormResult } from '@/lib/game/pick-view-types'
 
 /**
  * Pure view-builders for the classic-pick chain ribbon + planner section.
  *
  * These functions take already-loaded database rows and assemble the exact
  * props the client components need. Keeping the mapping out of the page
- * component lets us unit-test it without hitting the DB.
+ * component lets us unit-test it without hitting the DB — and the shapes they
+ * build are declared here rather than in the components that render them, so
+ * the dependency arrow runs lib → components and not back (#249).
  */
+
+/** What one round's slot in the chain ribbon shows. */
+export type ChainSlotState =
+	| { kind: 'win'; teamShort: string; teamColour: string | null }
+	| { kind: 'loss'; teamShort: string; teamColour: string | null }
+	| { kind: 'draw'; teamShort: string; teamColour: string | null }
+	| { kind: 'current'; teamShort: string | null; teamColour: string | null }
+	| { kind: 'planned'; teamShort: string; teamColour: string | null }
+	| { kind: 'planned-locked'; teamShort: string; teamColour: string | null }
+	| { kind: 'empty' }
+	| { kind: 'tbc' }
+
+export interface ChainSlot {
+	roundId: string
+	roundNumber: number
+	roundLabel: string
+	state: ChainSlotState
+}
+
+/** One side of a planner fixture. */
+export interface PlannerTeam {
+	id: string
+	short: string
+	name: string
+	colour: string | null
+	badgeUrl: string | null
+	/**
+	 * The team's *current* form — a future round's opponents haven't played yet,
+	 * so there is no such thing as form "as of" GW27. Current form is exactly what
+	 * the decision needs: which in-form team to spend now and which to save.
+	 */
+	form?: FormResult[]
+	leaguePosition?: number | null
+}
+
+export interface PlannerFixture {
+	id: string
+	homeTeam: PlannerTeam
+	awayTeam: PlannerTeam
+	kickoff: Date | null
+}
+
+export interface UsedInfo {
+	teamId: string
+	label: string // e.g. "USED GW3" or "PLANNED GW27"
+	kind: 'used' | 'planned-elsewhere'
+}
 
 export interface ChainSummary {
 	played: number

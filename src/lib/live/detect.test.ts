@@ -107,7 +107,7 @@ function pk(overrides: Partial<LivePick> = {}): LivePick {
 }
 
 function pl(overrides: Partial<LivePlayer> = {}): LivePlayer {
-	return { id: 'gp1', userId: 'u1', status: 'active', livesRemaining: 1, ...overrides }
+	return { id: 'gp1', userId: 'u1', status: 'alive', livesRemaining: 1, ...overrides }
 }
 
 describe('detectPickSettlements', () => {

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { FixtureRow, type FixtureTeamInfo } from './fixture-row'
+import type { FixtureTeamInfo } from '@/lib/game/pick-view-types'
+import { FixtureRow } from './fixture-row'
 import type { FormMarket } from './team-form-panel'
 
 afterEach(cleanup)

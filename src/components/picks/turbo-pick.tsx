@@ -11,13 +11,9 @@ import {
 	pickTableHasStandings,
 	type RankedFixtureCall,
 } from '@/lib/game/pick-table-view'
+import type { PickFixture } from '@/lib/game/pick-view-types'
 import { cn } from '@/lib/utils'
-import {
-	type FixtureOdds,
-	FixtureRow,
-	type FixtureTeamInfo,
-	type FormSheetRenderer,
-} from './fixture-row'
+import { FixtureRow, type FormSheetRenderer } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
 import { PickTable } from './pick-table'
 import { PickViewToggle } from './pick-view-toggle'
@@ -26,20 +22,6 @@ import { type Prediction, PredictionButtons } from './prediction-buttons'
 import type { RankedPick } from './ranked-item'
 import { RankingList } from './ranking-list'
 import { SECTION_HEADING, TYPE } from './type-scale'
-
-export interface TurboPickFixture {
-	id: string
-	/**
-	 * The shared team shape both pick views read — the standings line included,
-	 * which is what the Table view's columns are made of. Absent on a competition
-	 * with no table behind it, in which case turbo never offers the view.
-	 */
-	home: FixtureTeamInfo
-	away: FixtureTeamInfo
-	kickoff: string | null
-	/** Indicative win-probabilities. Absent for fixtures we have no odds for. */
-	odds?: FixtureOdds | null
-}
 
 /** A ranked prediction as it crosses into (and out of) this component. */
 export interface TurboPickEntry {
@@ -53,7 +35,7 @@ interface TurboPickProps {
 	roundId: string
 	roundNumber: number
 	competitionId: string
-	fixtures: TurboPickFixture[]
+	fixtures: PickFixture[]
 	existingPicks: TurboPickEntry[]
 	numberOfPicks: number
 	/** When set, the admin is picking on behalf of this player. */
@@ -169,7 +151,7 @@ export function TurboPick({
 	 * row's "add to predictions" and the table's "Rank #N" — so a ranking built
 	 * across the two is one list in one order, whichever view made each entry.
 	 */
-	function addToRanked(fixture: TurboPickFixture, prediction: Prediction) {
+	function addToRanked(fixture: PickFixture, prediction: Prediction) {
 		if (rankedFixtureIds.has(fixture.id)) return
 		setRanked([
 			...ranked,
@@ -184,7 +166,7 @@ export function TurboPick({
 		])
 	}
 
-	function handleAddToRanked(fixture: TurboPickFixture) {
+	function handleAddToRanked(fixture: PickFixture) {
 		const prediction = pendingPredictions[fixture.id]
 		if (!prediction) return
 		addToRanked(fixture, prediction)
@@ -379,7 +361,7 @@ export function TurboPick({
  * Confidence-ordered pick entries → ranked rows, dropping any entry whose
  * fixture isn't in this round (the row can't be drawn without its teams).
  */
-function toRankedPicks(entries: TurboPickEntry[], fixtures: TurboPickFixture[]): RankedPick[] {
+function toRankedPicks(entries: TurboPickEntry[], fixtures: PickFixture[]): RankedPick[] {
 	return entries
 		.slice()
 		.sort((a, b) => a.confidenceRank - b.confidenceRank)

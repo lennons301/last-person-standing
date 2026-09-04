@@ -17,7 +17,7 @@ const { getProgressGridDataMock, getCupStandingsDataMock, getTurboStandingsDataM
 		getTurboStandingsDataMock: vi.fn(),
 	}),
 )
-vi.mock('@/lib/game/detail-queries', () => ({
+vi.mock('@/lib/game/read/standings', () => ({
 	getProgressGridData: getProgressGridDataMock,
 	getTurboStandingsData: getTurboStandingsDataMock,
 }))

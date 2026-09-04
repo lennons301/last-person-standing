@@ -1,4 +1,22 @@
-export type FixtureStatus = 'scheduled' | 'live' | 'finished' | 'postponed' | 'halftime'
+import type { GameMode, PlayerStatus } from '@/lib/types'
+
+/**
+ * A fixture's state as the live payload carries it: every value the `fixture`
+ * table's own enum can hold, plus `halftime` — which the poller derives for
+ * display and the pop-out's `deriveMatchState` reads.
+ *
+ * `cancelled` is in the union because the payload has always sent it: the round
+ * is mapped fixture-for-fixture, cancellations included, and a pick sitting on
+ * one projects as `void`. It was missing here only because nothing checked the
+ * server side against this type until `getLivePayload` declared it (#249).
+ */
+export type FixtureStatus =
+	| 'scheduled'
+	| 'live'
+	| 'finished'
+	| 'postponed'
+	| 'cancelled'
+	| 'halftime'
 
 export type PickResultState =
 	| 'win'
@@ -86,7 +104,14 @@ export interface LivePick {
 export interface LivePlayer {
 	id: string
 	userId: string
-	status: 'active' | 'eliminated'
+	/**
+	 * The player's persisted status, straight off `game_player` — 'alive',
+	 * 'eliminated' or 'winner'. It read `'active' | 'eliminated'` until #249,
+	 * a value the server has never sent: nothing checked the payload against
+	 * this type, so the lie was invisible. `projectedStatus` below is the "if
+	 * scores held" reading and stays two-valued.
+	 */
+	status: PlayerStatus
 	livesRemaining: number
 	/**
 	 * Live aggregates — "if scores stayed as they are right now". Computed
@@ -108,7 +133,7 @@ export interface LivePlayer {
 
 export interface LivePayload {
 	gameId: string
-	gameMode: 'classic' | 'turbo' | 'cup'
+	gameMode: GameMode
 	roundId: string | null
 	fixtures: LiveFixture[]
 	picks: LivePick[]

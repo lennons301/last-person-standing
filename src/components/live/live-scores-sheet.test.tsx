@@ -33,7 +33,7 @@ function payload(fixtures: LiveFixture[], overrides: Partial<LivePayload> = {}):
 		roundId: 'r1',
 		fixtures,
 		picks: [],
-		players: [{ id: 'p1', userId: 'u1', status: 'active', livesRemaining: 0 }],
+		players: [{ id: 'p1', userId: 'u1', status: 'alive', livesRemaining: 0 }],
 		viewerUserId: 'u1',
 		updatedAt: new Date().toISOString(),
 		...overrides,

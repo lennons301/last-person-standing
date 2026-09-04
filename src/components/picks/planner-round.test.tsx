@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { type PlannerFixture, PlannerRound } from './planner-round'
+import type { PlannerFixture } from '@/lib/game/classic-planner-view'
+import { PlannerRound } from './planner-round'
 
 afterEach(cleanup)
 

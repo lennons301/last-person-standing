@@ -1,4 +1,4 @@
-import type { FixtureOdds, FixtureTeamInfo } from '@/components/picks/fixture-row'
+import type { FixtureOdds, FixtureTeamInfo } from '@/lib/game/pick-view-types'
 import { type CompetitionType, roundLabel, roundLabelLong } from '@/lib/game/round-label'
 
 /**

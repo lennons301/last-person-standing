@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { FixtureTeamInfo } from '@/components/picks/fixture-row'
+import type { FixtureTeamInfo } from '@/lib/game/pick-view-types'
 import {
 	buildPickTableRows,
 	DEFAULT_PICK_TABLE_SORT,

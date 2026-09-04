@@ -1,15 +1,15 @@
-import type { CupPickSlot } from '@/components/picks/cup-pick'
-import type {
-	FixtureTeamInfo,
-	SideOdds,
-	SideState,
-	TeamStandingLine,
-} from '@/components/picks/fixture-row'
-import type { PlannerFixture, UsedInfo } from '@/components/picks/planner-round'
+import type { SideState } from '@/components/picks/fixture-row'
 import type { RankedPick } from '@/components/picks/ranked-item'
 import type { FormMarket } from '@/components/picks/team-form-panel'
 import type { TurboPickEntry } from '@/components/picks/turbo-pick'
+import type { PlannerFixture, UsedInfo } from '@/lib/game/classic-planner-view'
 import { type UsedRoundLabel, usedRoundLabel } from '@/lib/game/pick-table-view'
+import type {
+	CupPickSlot,
+	FixtureTeamInfo,
+	SideOdds,
+	TeamStandingLine,
+} from '@/lib/game/pick-view-types'
 import type { FormSplit, TeamFormDetail } from '@/lib/game/team-form-detail'
 
 /**

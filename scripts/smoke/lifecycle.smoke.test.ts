@@ -27,14 +27,10 @@ import {
 	syncCompetition,
 } from '@/lib/game/bootstrap-competitions'
 import { getCupLadderData, getCupStandingsData } from '@/lib/game/cup-standings-queries'
-import {
-	getClassicPickData,
-	getLivePayload,
-	getProgressGridData,
-	getTurboPickData,
-	getTurboStandingsData,
-} from '@/lib/game/detail-queries'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
+import { getLivePayload } from '@/lib/game/read/live'
+import { getClassicPickData, getTurboPickData } from '@/lib/game/read/pick-surfaces'
+import { getProgressGridData, getTurboStandingsData } from '@/lib/game/read/standings'
 import { reconcileAllActiveGames, reconcileGameState } from '@/lib/game/reconcile'
 import { settleFixture } from '@/lib/game/settle'
 import {

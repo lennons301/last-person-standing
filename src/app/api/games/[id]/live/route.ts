@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
-import { getLivePayload } from '@/lib/game/detail-queries'
 import { requireMembership } from '@/lib/game/membership'
+import { getLivePayload } from '@/lib/game/read/live'
 import { reconcileGameState } from '@/lib/game/reconcile'
 
 type RouteCtx = { params: Promise<{ id: string }> }

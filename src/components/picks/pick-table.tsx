@@ -11,8 +11,9 @@ import {
 	type PickTableSortColumn,
 	sortPickTableRows,
 } from '@/lib/game/pick-table-view'
+import type { FixtureTeamInfo } from '@/lib/game/pick-view-types'
 import { cn } from '@/lib/utils'
-import type { FixtureTeamInfo, FormSheetRenderer } from './fixture-row'
+import type { FormSheetRenderer } from './fixture-row'
 import { FormDots } from './form-dots'
 import { TeamBadge } from './team-badge'
 import type { FormMarket } from './team-form-panel'

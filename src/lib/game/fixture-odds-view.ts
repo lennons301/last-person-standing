@@ -1,4 +1,4 @@
-import type { FixtureOdds } from '@/components/picks/fixture-row'
+import type { FixtureOdds } from '@/lib/game/pick-view-types'
 import type { FixtureOddsRow } from '@/lib/types'
 
 /**

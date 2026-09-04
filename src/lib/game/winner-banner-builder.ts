@@ -1,6 +1,6 @@
 import type { CupLadderData } from '@/lib/game/cup-standings-queries'
-import type { getProgressGridData, getTurboStandingsData } from '@/lib/game/detail-queries'
 import type { HeroWinnerEntry } from '@/lib/game/game-view'
+import type { GridView, TurboStandings } from '@/lib/game/read/standings'
 import { calculatePayouts } from '@/lib/game-logic/prizes'
 
 // Feeds the game hero's `winner` variant via `buildGameView`, so the payload
@@ -22,9 +22,9 @@ interface BuildWinnerBannerInput {
 	gameStatus: string
 	potTotal: string
 	players: WinnerPlayerInput[]
-	turboStandings: Awaited<ReturnType<typeof getTurboStandingsData>> | null
+	turboStandings: TurboStandings | null
 	cupStandings: CupLadderData | null
-	classicGrid: Awaited<ReturnType<typeof getProgressGridData>> | null
+	classicGrid: GridView | null
 }
 
 export interface WinnerBannerPayload {

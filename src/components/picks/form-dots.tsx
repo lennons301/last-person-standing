@@ -1,6 +1,5 @@
+import type { FormResult } from '@/lib/game/pick-view-types'
 import { cn } from '@/lib/utils'
-
-export type FormResult = 'W' | 'D' | 'L'
 
 interface FormDotsProps {
 	results: FormResult[]
