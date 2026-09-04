@@ -335,7 +335,21 @@ async function loadCupRound(gameId: string, roundId: string): Promise<Settlement
 /* Apply                                                                  */
 /* ────────────────────────────────────────────────────────────────────── */
 
+/** Does this plan ask for anything at all? A re-run sweep's usually doesn't. */
+function planIsEmpty(plan: SettlementPlan): boolean {
+	return (
+		plan.pickWrites.length === 0 &&
+		plan.playerWrites.length === 0 &&
+		plan.completion == null &&
+		!plan.completeRound &&
+		!plan.advance
+	)
+}
+
 async function applySettlementPlan(plan: SettlementPlan, result: SettleResult): Promise<void> {
+	// Don't open a connection to write nothing — the recovery sweeps re-derive
+	// every settled fixture of a game on every page view.
+	if (planIsEmpty(plan)) return
 	const applied = await db.transaction((tx) => applyPlan(tx, plan))
 
 	result.classicSettled += plan.counters.classicSettled
