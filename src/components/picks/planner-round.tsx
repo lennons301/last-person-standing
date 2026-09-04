@@ -1,7 +1,7 @@
 'use client'
 
 import { LocalDateTime } from '@/components/local-datetime'
-import { FixtureRow, type FixtureTeamInfo, type RowFormSheetRenderer } from './fixture-row'
+import { FixtureRow, type FixtureTeamInfo, type FormSheetRenderer } from './fixture-row'
 import type { FormResult } from './form-dots'
 
 interface PlannerTeam {
@@ -54,7 +54,7 @@ interface PlannerRoundProps {
 	 */
 	competitionId?: string
 	/** Fixture-driven override for the sheet, for the database-free gallery. */
-	renderFormSheet?: RowFormSheetRenderer
+	renderFormSheet?: FormSheetRenderer
 }
 
 function teamInfo(t: PlannerTeam): FixtureTeamInfo {
@@ -118,19 +118,15 @@ export function PlannerRound(props: PlannerRoundProps) {
 				const awayUsed = props.usedTeams.find((u) => u.teamId === f.awayTeam.id)
 				const homeIsLocked = f.homeTeam.id === props.lockedTeamId
 				const awayIsLocked = f.awayTeam.id === props.lockedTeamId
-				const home = teamInfo(f.homeTeam)
-				const away = teamInfo(f.awayTeam)
-				const renderFormSheet = props.renderFormSheet
 				return (
 					<FixtureRow
 						key={f.id}
-						home={home}
-						away={away}
+						fixtureId={f.id}
+						home={teamInfo(f.homeTeam)}
+						away={teamInfo(f.awayTeam)}
 						competitionId={props.competitionId}
 						roundNumber={props.roundNumber}
-						renderFormSheet={
-							renderFormSheet ? (args) => renderFormSheet({ ...args, home, away }) : undefined
-						}
+						renderFormSheet={props.renderFormSheet}
 						kickoff={f.kickoff ?? undefined}
 						homeState={
 							homeIsLocked

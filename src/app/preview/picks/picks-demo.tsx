@@ -10,11 +10,10 @@ import type {
 import { TEAM_FORM_DETAIL, TEAM_FORM_DETAIL_EMPTY } from '@/app/preview/picks/fixtures'
 import { ClassicPick, type ClassicPickFixture } from '@/components/picks/classic-pick'
 import { CupPick, type CupPickSlot } from '@/components/picks/cup-pick'
-import type { FixtureTeamInfo, RowFormSheetRenderer } from '@/components/picks/fixture-row'
+import type { FixtureTeamInfo, FormSheetRenderer } from '@/components/picks/fixture-row'
 import { FixtureRow } from '@/components/picks/fixture-row'
 import { PickTable } from '@/components/picks/pick-table'
 import { type PlannerFixture, PlannerRound, type UsedInfo } from '@/components/picks/planner-round'
-import type { RankedTeam } from '@/components/picks/ranked-item'
 import { RankingList } from '@/components/picks/ranking-list'
 import { TeamFormSheetView } from '@/components/picks/team-form-panel'
 import { TurboPick } from '@/components/picks/turbo-pick'
@@ -40,8 +39,8 @@ import type { TeamFormDetail } from '@/lib/game/team-form-detail'
  * with no form stands in for a season that hasn't started, so its sheet reports
  * an unplayed season rather than a loaded one.
  */
-function detailForTeam(t: FixtureTeamInfo | RankedTeam): TeamFormDetail {
-	const played = 'form' in t ? !!t.form?.length : true
+function detailForTeam(t: FixtureTeamInfo): TeamFormDetail {
+	const played = !!t.form?.length
 	const base = played ? TEAM_FORM_DETAIL : TEAM_FORM_DETAIL_EMPTY
 	return {
 		...base,
@@ -55,8 +54,12 @@ function detailForTeam(t: FixtureTeamInfo | RankedTeam): TeamFormDetail {
 	}
 }
 
-/** The one form-sheet renderer every row in this gallery shares. */
-const previewFormSheet: RowFormSheetRenderer = ({ home, away, side, open, onClose, market }) => {
+/**
+ * The one form-sheet renderer every row in this gallery shares — every picker,
+ * every board, every ranked row. One renderer type across the picks cluster is
+ * what lets it be passed down as it stands rather than re-wrapped per surface.
+ */
+const previewFormSheet: FormSheetRenderer = ({ home, away, side, open, onClose, market }) => {
 	const team = side === 'home' ? home : away
 	return (
 		<TeamFormSheetView
@@ -90,6 +93,7 @@ export function PreviewFixtureRow({
 
 	return (
 		<FixtureRow
+			fixtureId={fixture.id}
 			home={fixture.home}
 			away={fixture.away}
 			kickoff={kickoff}
@@ -108,8 +112,6 @@ export function PreviewFixtureRow({
 			usedLabel={fixture.usedLabel}
 			homeState={fixture.homeState}
 			awayState={fixture.awayState}
-			disabledSide={fixture.disabledSide}
-			disabledReason={fixture.disabledReason}
 			tierValue={fixture.tierValue}
 			tierMax={fixture.tierMax}
 			plusN={fixture.plusN}
@@ -117,9 +119,7 @@ export function PreviewFixtureRow({
 			underdogSide={fixture.underdogSide}
 			onPickHome={readonly ? undefined : () => setSelected((s) => (s === 'home' ? null : 'home'))}
 			onPickAway={readonly ? undefined : () => setSelected((s) => (s === 'away' ? null : 'away'))}
-			renderFormSheet={(args) =>
-				previewFormSheet({ ...args, home: fixture.home, away: fixture.away })
-			}
+			renderFormSheet={previewFormSheet}
 		/>
 	)
 }
@@ -142,7 +142,6 @@ export function PreviewTurboPick({
 	fixtures: Array<{ id: string; kickoff: string | null }>
 }) {
 	const kickoffs = new Map(fixtures.map((f) => [f.id, f.kickoff]))
-	const byId = new Map(scenario.fixtures.map((f) => [f.id, f]))
 
 	return (
 		<TurboPick
@@ -160,22 +159,7 @@ export function PreviewTurboPick({
 				away: f.away,
 				kickoff: kickoffs.get(f.id) ?? null,
 			}))}
-			renderFormSheet={({ fixtureId, side, open, onClose, market }) => {
-				const fixture = byId.get(fixtureId)
-				if (!fixture) return null
-				const team = side === 'home' ? fixture.home : fixture.away
-				return (
-					<TeamFormSheetView
-						open={open}
-						onOpenChange={(next) => {
-							if (!next) onClose()
-						}}
-						detail={detailForTeam(team)}
-						market={market ?? null}
-						teamPreview={team}
-					/>
-				)
-			}}
+			renderFormSheet={previewFormSheet}
 		/>
 	)
 }
@@ -196,20 +180,7 @@ export function PreviewRankedList({ fixture }: { fixture: RankedListFixture }) {
 			// The picker owns the change-prediction dialog; here the chip is just a
 			// chip, so tapping it does nothing rather than opening half a flow.
 			onChangePrediction={() => {}}
-			renderFormSheet={(pick) =>
-				({ side, open, onClose }) => {
-					const team = side === 'home' ? pick.homeTeam : pick.awayTeam
-					return (
-						<TeamFormSheetView
-							open={open}
-							onOpenChange={(next) => {
-								if (!next) onClose()
-							}}
-							detail={detailForTeam(team)}
-							teamPreview={team}
-						/>
-					)
-				}}
+			renderFormSheet={previewFormSheet}
 		/>
 	)
 }

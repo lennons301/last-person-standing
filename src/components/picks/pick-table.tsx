@@ -12,7 +12,7 @@ import {
 	sortPickTableRows,
 } from '@/lib/game/pick-table-view'
 import { cn } from '@/lib/utils'
-import type { FixtureTeamInfo, RowFormSheetRenderer } from './fixture-row'
+import type { FixtureTeamInfo, FormSheetRenderer } from './fixture-row'
 import { FormDots } from './form-dots'
 import { TeamBadge } from './team-badge'
 import type { FormMarket } from './team-form-panel'
@@ -65,19 +65,6 @@ export interface PickTableRanking {
 	onRemove: (row: PickTableRow) => void
 }
 
-/**
- * `RowFormSheetRenderer` plus the fixture the row belongs to — the one thing a
- * board row knows that a fixture row's renderer is handed for free. Turbo keys
- * its renderer on the fixture, so without it the mode would have to re-derive
- * the fixture from the two team ids.
- *
- * A plain `RowFormSheetRenderer` (which is what classic and the gallery already
- * have) is assignable to this: it simply ignores the extra field.
- */
-export type PickTableFormSheetRenderer = (
-	args: Parameters<RowFormSheetRenderer>[0] & { fixtureId: string },
-) => React.ReactNode
-
 interface PickTableProps {
 	rows: PickTableRow[]
 	/** The team currently picked for this round, if any. Marked, not re-selectable. */
@@ -100,7 +87,6 @@ interface PickTableProps {
 	ranking?: PickTableRanking
 	/** Post-deadline / read-only: the board still reads, nothing commits. */
 	readonly?: boolean
-	initialSort?: PickTableSort
 	// Required for the form-detail sheet the form cell taps through to. Without
 	// either, the form cell is not tappable and carries no chevron.
 	competitionId?: string
@@ -110,7 +96,7 @@ interface PickTableProps {
 	 * database-backed server action the default path uses (`/preview/picks`).
 	 * Supplying it makes the form cell tappable even without a `competitionId`.
 	 */
-	renderFormSheet?: PickTableFormSheetRenderer
+	renderFormSheet?: FormSheetRenderer
 }
 
 interface ColumnSpec {
@@ -213,12 +199,11 @@ export function PickTable({
 	onSelect,
 	ranking,
 	readonly = false,
-	initialSort = DEFAULT_PICK_TABLE_SORT,
 	competitionId,
 	roundNumber,
 	renderFormSheet,
 }: PickTableProps) {
-	const [sort, setSort] = useState<PickTableSort>(initialSort)
+	const [sort, setSort] = useState<PickTableSort>(DEFAULT_PICK_TABLE_SORT)
 	const [sheetRowId, setSheetRowId] = useState<string | null>(null)
 	// Retain the last opened row so the sheet keeps its team through the dismiss
 	// animation instead of emptying the moment the close starts.

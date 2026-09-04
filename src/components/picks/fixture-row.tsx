@@ -45,19 +45,34 @@ export interface FixtureTeamInfo {
 }
 
 /**
- * `renderFormSheet` lifted one level up, for components that own a *set* of
- * `FixtureRow`s (classic's picker and its planner) and resolve the renderer per
- * row. Keyed on the row's two teams rather than on any mode's fixture type, so
- * one renderer serves current-round rows and planner rows alike.
+ * How the form-detail sheet gets rendered for one side of one fixture — the
+ * picks cluster's *only* renderer type, shared by every surface that opens the
+ * sheet: the fixture row, the Table view's rows, turbo's ranked rows, and the
+ * pickers that own sets of them.
+ *
+ * It carries everything any of those surfaces has ever needed to identify what
+ * was tapped: the fixture, both its teams and which side. That is deliberately
+ * more than any single caller reads — the alternative was five near-identical
+ * types and eight closures converting between them (#251), where a renderer
+ * keyed on the fixture couldn't be handed to a row keyed on its teams. A caller
+ * takes the fields it wants and ignores the rest.
+ *
+ * `market` is optional because turbo's ranked rows carry no odds of their own:
+ * a row that shows no probabilities has no 1X2 to pass on to the sheet.
  */
-export type RowFormSheetRenderer = (args: {
+export type FormSheetRenderer = (args: {
+	/** The fixture the tapped side belongs to. */
+	fixtureId: string
 	home: FixtureTeamInfo
 	away: FixtureTeamInfo
 	side: 'home' | 'away'
 	open: boolean
 	onClose: () => void
-	/** The fixture's full 1X2, for the sheet's market block. Null when unpriced. */
-	market: FormMarket | null
+	/**
+	 * The fixture's full 1X2, for the sheet's market block. Null when the fixture
+	 * is unpriced, absent where the surface holds no odds to pass on.
+	 */
+	market?: FormMarket | null
 }) => React.ReactNode
 
 /**
@@ -98,6 +113,12 @@ export type SideState =
 	| { kind: 'planned-elsewhere'; label: string }
 
 export interface FixtureRowProps {
+	/**
+	 * The fixture these two teams meet in. Every mode's row has one, and the
+	 * form-sheet renderer is keyed on it — turbo resolves its ranked call from
+	 * the fixture, not from a pair of team ids.
+	 */
+	fixtureId: string
 	home: FixtureTeamInfo
 	away: FixtureTeamInfo
 	/** ISO string. Rendered in the user's local timezone via <LocalDateTime />. */
@@ -107,8 +128,6 @@ export interface FixtureRowProps {
 	usedLabel?: string
 	onPickHome?: () => void
 	onPickAway?: () => void
-	disabledSide?: 'home' | 'away' | 'both' | null
-	disabledReason?: string
 	tierValue?: number
 	tierMax?: 3 | 5
 	plusN?: number
@@ -139,13 +158,7 @@ export interface FixtureRowProps {
 	 * renderer so the form bar stays tappable with no database. Supplying this
 	 * makes the form bar tappable even without a `competitionId`.
 	 */
-	renderFormSheet?: (args: {
-		side: 'home' | 'away'
-		open: boolean
-		onClose: () => void
-		/** The fixture's full 1X2, for the sheet's market block. Null when unpriced. */
-		market: FormMarket | null
-	}) => React.ReactNode
+	renderFormSheet?: FormSheetRenderer
 	/**
 	 * Extra content rendered inside the bordered card, below the form bar.
 	 * Used by turbo's pick interface to attach PredictionButtons to the
@@ -155,6 +168,7 @@ export interface FixtureRowProps {
 }
 
 export function FixtureRow({
+	fixtureId,
 	home,
 	away,
 	kickoff,
@@ -163,8 +177,6 @@ export function FixtureRow({
 	usedLabel,
 	onPickHome,
 	onPickAway,
-	disabledSide,
-	disabledReason,
 	tierValue,
 	tierMax,
 	plusN,
@@ -249,8 +261,6 @@ export function FixtureRow({
 						side="home"
 						selected={selectedSide === 'home'}
 						used={usedSide === 'home'}
-						disabled={disabledSide === 'home' || disabledSide === 'both'}
-						disabledReason={disabledReason}
 						state={homeState}
 						onClick={onPickHome}
 						bonusLives={underdogSide === 'home' ? bonusLivesOnButton : 0}
@@ -272,8 +282,6 @@ export function FixtureRow({
 						side="away"
 						selected={selectedSide === 'away'}
 						used={usedSide === 'away'}
-						disabled={disabledSide === 'away' || disabledSide === 'both'}
-						disabledReason={disabledReason}
 						state={awayState}
 						onClick={onPickAway}
 						bonusLives={underdogSide === 'away' ? bonusLivesOnButton : 0}
@@ -294,6 +302,9 @@ export function FixtureRow({
 
 			{renderFormSheet
 				? renderFormSheet({
+						fixtureId,
+						home,
+						away,
 						side: activeSheetSide,
 						open: sheetTeam !== null,
 						onClose: () => setSheetTeam(null),
@@ -431,8 +442,6 @@ interface TeamPickButtonProps {
 	side: 'home' | 'away'
 	selected: boolean
 	used: boolean
-	disabled: boolean
-	disabledReason?: string
 	state?: SideState
 	onClick?: () => void
 	/**
@@ -451,7 +460,6 @@ function TeamPickButton({
 	side,
 	selected,
 	used,
-	disabled,
 	state,
 	onClick,
 	bonusLives,
@@ -459,7 +467,7 @@ function TeamPickButton({
 }: TeamPickButtonProps) {
 	const stateBlocksClick =
 		state?.kind === 'restricted' || state?.kind === 'used' || state?.kind === 'planned-elsewhere'
-	const clickable = !!onClick && !disabled && !used && !stateBlocksClick
+	const clickable = !!onClick && !used && !stateBlocksClick
 	const isHome = side === 'home'
 	const stateCls = sideClass(state)
 	const chip = sideChip(state)
@@ -476,7 +484,6 @@ function TeamPickButton({
 				clickable && 'hover:bg-muted/50 cursor-pointer',
 				selected && 'bg-[var(--alive-bg)] ring-2 ring-[var(--alive)] ring-inset',
 				used && 'opacity-30 line-through',
-				disabled && !used && 'opacity-50 cursor-not-allowed',
 				stateCls,
 			)}
 		>

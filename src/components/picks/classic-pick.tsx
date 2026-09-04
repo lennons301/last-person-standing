@@ -22,7 +22,7 @@ import {
 	type FixtureOdds,
 	FixtureRow,
 	type FixtureTeamInfo,
-	type RowFormSheetRenderer,
+	type FormSheetRenderer,
 } from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
 import { PickTable } from './pick-table'
@@ -92,7 +92,7 @@ interface ClassicPickProps {
 	 * passes it; in the app the rows resolve the sheet from `competitionId`
 	 * through its server action.
 	 */
-	renderFormSheet?: RowFormSheetRenderer
+	renderFormSheet?: FormSheetRenderer
 	/**
 	 * Submit the current round's pick. Defaults to the picks API — the sibling of
 	 * `planHandlers.onLock`, for the round being played rather than a planned one.
@@ -347,13 +347,7 @@ export function ClassicPick({
 					onSelect={handleSelectRow}
 					competitionId={competitionId}
 					roundNumber={roundNumber}
-					// The board's rows know their fixture; this renderer is keyed on the
-					// two teams, exactly as the fixture rows' is.
-					renderFormSheet={
-						renderFormSheet
-							? ({ fixtureId: _fixtureId, ...args }) => renderFormSheet(args)
-							: undefined
-					}
+					renderFormSheet={renderFormSheet}
 				/>
 			) : (
 				fixtures.map((fixture) => {
@@ -384,6 +378,7 @@ export function ClassicPick({
 					return (
 						<FixtureRow
 							key={fixture.id}
+							fixtureId={fixture.id}
 							home={fixture.home}
 							away={fixture.away}
 							kickoff={fixture.kickoff ?? undefined}
@@ -395,11 +390,7 @@ export function ClassicPick({
 							onPickAway={() => handlePick(fixture, 'away')}
 							competitionId={competitionId}
 							roundNumber={roundNumber}
-							renderFormSheet={
-								renderFormSheet
-									? (args) => renderFormSheet({ ...args, home: fixture.home, away: fixture.away })
-									: undefined
-							}
+							renderFormSheet={renderFormSheet}
 						/>
 					)
 				})
@@ -548,7 +539,7 @@ function PlannerSection({
 	rounds: PlannerRoundInput[]
 	handlers: ClassicPickPlanHandlers
 	defaultOpen?: boolean
-	renderFormSheet?: RowFormSheetRenderer
+	renderFormSheet?: FormSheetRenderer
 }) {
 	const storageKey = `lps.planner-open.${gameId}`
 	const [open, setOpen] = useState(defaultOpen)

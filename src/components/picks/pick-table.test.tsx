@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildPickTableRows, type PickTableFixture } from '@/lib/game/pick-table-view'
-import { PickTable, type PickTableFormSheetRenderer, type PickTableRanking } from './pick-table'
+import type { FormSheetRenderer } from './fixture-row'
+import { PickTable, type PickTableRanking } from './pick-table'
 
 afterEach(cleanup)
 
@@ -144,7 +145,7 @@ describe('PickTable', () => {
 	})
 
 	it('shows three form results, and taps through to the form sheet', () => {
-		const renderFormSheet = vi.fn<PickTableFormSheetRenderer>(() => null)
+		const renderFormSheet = vi.fn<FormSheetRenderer>(() => null)
 		render(<PickTable rows={rowsFor()} renderFormSheet={renderFormSheet} />)
 
 		// Arsenal carries six results; the board shows the three most recent.
@@ -160,7 +161,7 @@ describe('PickTable', () => {
 	})
 
 	it('taps through on a row with no form, and still says the season has not started', () => {
-		const renderFormSheet = vi.fn<PickTableFormSheetRenderer>(() => null)
+		const renderFormSheet = vi.fn<FormSheetRenderer>(() => null)
 		render(<PickTable rows={rowsFor()} renderFormSheet={renderFormSheet} />)
 		// Burnley alone has no form in these fixtures. A labelled column reads a
 		// blank cell as a gap, so the wording stays — the cell is tappable anyway.
@@ -230,7 +231,7 @@ describe('PickTable', () => {
 
 	it('selects from a tap anywhere on the row that isn’t a control of its own', () => {
 		const onSelect = vi.fn()
-		const renderFormSheet = vi.fn<PickTableFormSheetRenderer>(() => null)
+		const renderFormSheet = vi.fn<FormSheetRenderer>(() => null)
 		render(<PickTable rows={rowsFor()} onSelect={onSelect} renderFormSheet={renderFormSheet} />)
 
 		// The next-opponent cell carries nothing to tap, so it's the row's gesture.

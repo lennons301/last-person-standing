@@ -221,6 +221,7 @@ export function CupPick({
 							return (
 								<FixtureRow
 									key={f.id}
+									fixtureId={f.id}
 									home={{
 										id: f.homeTeamId,
 										name: f.homeName,

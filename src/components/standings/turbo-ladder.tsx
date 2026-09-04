@@ -129,7 +129,7 @@ export function TurboLadder({ fixtures, players, roundStatus }: TurboLadderProps
 					</h3>
 					<div className="space-y-2">
 						{unplayed.map((f) => (
-							<FixtureRow
+							<LadderFixtureRow
 								key={f.id}
 								fixture={f}
 								crucial={crucialFixtureIds.has(f.id)}
@@ -150,7 +150,7 @@ export function TurboLadder({ fixtures, players, roundStatus }: TurboLadderProps
 					</h3>
 					<div className="space-y-2">
 						{played.map((f) => (
-							<FixtureRow key={f.id} fixture={f} />
+							<LadderFixtureRow key={f.id} fixture={f} />
 						))}
 					</div>
 				</div>
@@ -159,7 +159,13 @@ export function TurboLadder({ fixtures, players, roundStatus }: TurboLadderProps
 	)
 }
 
-function FixtureRow({
+/**
+ * One fixture on the ladder — the live/played read of a round, not a pickable
+ * row. Named for the ladder rather than for the fixture because the picks
+ * cluster exports its own `FixtureRow`, and two components of one name in one
+ * codebase is a navigation hazard for a grep.
+ */
+function LadderFixtureRow({
 	fixture,
 	crucial,
 	showPaths,

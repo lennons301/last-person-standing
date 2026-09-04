@@ -1,7 +1,6 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import type React from 'react'
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
@@ -13,7 +12,12 @@ import {
 	type RankedFixtureCall,
 } from '@/lib/game/pick-table-view'
 import { cn } from '@/lib/utils'
-import { type FixtureOdds, FixtureRow, type FixtureTeamInfo } from './fixture-row'
+import {
+	type FixtureOdds,
+	FixtureRow,
+	type FixtureTeamInfo,
+	type FormSheetRenderer,
+} from './fixture-row'
 import { PickConfirmBar } from './pick-confirm-bar'
 import { PickTable } from './pick-table'
 import { PickViewToggle } from './pick-view-toggle'
@@ -21,7 +25,6 @@ import { PicksSubmittedNotice } from './picks-submitted-notice'
 import { type Prediction, PredictionButtons } from './prediction-buttons'
 import type { RankedPick } from './ranked-item'
 import { RankingList } from './ranking-list'
-import type { FormMarket } from './team-form-panel'
 import { SECTION_HEADING, TYPE } from './type-scale'
 
 export interface TurboPickFixture {
@@ -78,20 +81,10 @@ interface TurboPickProps {
 	 * Overrides how the form-detail sheet is rendered for one side of one
 	 * fixture — ranked or remaining. The default path resolves it through a
 	 * database-backed server action; `/preview/picks` supplies its own so the
-	 * gallery stays database-free. See `FixtureRow`'s prop of the same name.
+	 * gallery stays database-free. Handed as it stands to all three surfaces
+	 * turbo opens the sheet from: the ranked list, the board and the fixture rows.
 	 */
-	renderFormSheet?: (args: {
-		fixtureId: string
-		side: 'home' | 'away'
-		open: boolean
-		onClose: () => void
-		/**
-		 * The fixture's full 1X2, for the sheet's market block. Present for the
-		 * remaining-fixtures rows, which carry the fixture's odds; absent for
-		 * ranked rows, which show no probabilities of their own.
-		 */
-		market?: FormMarket | null
-	}) => React.ReactNode
+	renderFormSheet?: FormSheetRenderer
 }
 
 /**
@@ -184,18 +177,8 @@ export function TurboPick({
 				id: fixture.id,
 				rank: ranked.length + 1,
 				fixtureId: fixture.id,
-				homeTeam: {
-					id: fixture.home.id,
-					shortName: fixture.home.shortName,
-					name: fixture.home.name,
-					badgeUrl: fixture.home.badgeUrl,
-				},
-				awayTeam: {
-					id: fixture.away.id,
-					shortName: fixture.away.shortName,
-					name: fixture.away.name,
-					badgeUrl: fixture.away.badgeUrl,
-				},
+				homeTeam: fixture.home,
+				awayTeam: fixture.away,
 				prediction,
 			},
 		])
@@ -284,11 +267,7 @@ export function TurboPick({
 				onChangePrediction={(id) => setEditingId(id)}
 				competitionId={competitionId}
 				roundNumber={roundNumber}
-				renderFormSheet={
-					renderFormSheet
-						? (pick) => (args) => renderFormSheet({ fixtureId: pick.fixtureId, ...args })
-						: undefined
-				}
+				renderFormSheet={renderFormSheet}
 			/>
 
 			{remaining.length > 0 && (
@@ -310,14 +289,7 @@ export function TurboPick({
 							rows={tableRows}
 							competitionId={competitionId}
 							roundNumber={roundNumber}
-							// The board's renderer is keyed on the row's fixture, which is what
-							// turbo's own renderer wants — so it passes straight through.
-							renderFormSheet={
-								renderFormSheet
-									? ({ fixtureId, side, open, onClose, market }) =>
-											renderFormSheet({ fixtureId, side, open, onClose, market })
-									: undefined
-							}
+							renderFormSheet={renderFormSheet}
 							ranking={{
 								count: ranked.length,
 								target: numberOfPicks,
@@ -333,31 +305,14 @@ export function TurboPick({
 								return (
 									<FixtureRow
 										key={fix.id}
-										home={{
-											id: fix.home.id,
-											name: fix.home.name,
-											shortName: fix.home.shortName,
-											badgeUrl: fix.home.badgeUrl,
-											form: fix.home.form,
-											leaguePosition: fix.home.leaguePosition,
-										}}
-										away={{
-											id: fix.away.id,
-											name: fix.away.name,
-											shortName: fix.away.shortName,
-											badgeUrl: fix.away.badgeUrl,
-											form: fix.away.form,
-											leaguePosition: fix.away.leaguePosition,
-										}}
+										fixtureId={fix.id}
+										home={fix.home}
+										away={fix.away}
 										kickoff={fix.kickoff}
 										odds={fix.odds}
 										competitionId={competitionId}
 										roundNumber={roundNumber}
-										renderFormSheet={
-											renderFormSheet
-												? (args) => renderFormSheet({ fixtureId: fix.id, ...args })
-												: undefined
-										}
+										renderFormSheet={renderFormSheet}
 									>
 										<div className="px-4 py-3 border-t border-border bg-muted/20">
 											<PredictionButtons
@@ -435,18 +390,8 @@ function toRankedPicks(entries: TurboPickEntry[], fixtures: TurboPickFixture[]):
 				id: p.fixtureId,
 				rank: i + 1,
 				fixtureId: p.fixtureId,
-				homeTeam: {
-					id: fix.home.id,
-					shortName: fix.home.shortName,
-					name: fix.home.name,
-					badgeUrl: fix.home.badgeUrl,
-				},
-				awayTeam: {
-					id: fix.away.id,
-					shortName: fix.away.shortName,
-					name: fix.away.name,
-					badgeUrl: fix.away.badgeUrl,
-				},
+				homeTeam: fix.home,
+				awayTeam: fix.away,
 				prediction: p.predictedResult,
 			}
 		})
