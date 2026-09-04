@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, inArray, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { applyCompletion } from '@/lib/game/auto-complete'
+import { applyAutoCompletion } from '@/lib/game/auto-complete'
 import { resolveModeConfig } from '@/lib/game/mode-config'
 import { processDeadlineLock } from '@/lib/game/no-pick-handler'
 import { openRoundForGame } from '@/lib/game/round-lifecycle'
@@ -386,7 +386,7 @@ async function applyPlan(tx: Tx, plan: SettlementPlan): Promise<AppliedPlan> {
 	}
 
 	if (plan.completion) {
-		await applyCompletion(tx, plan.gameId, plan.completion.winnerPlayerIds, {
+		await applyAutoCompletion(tx, plan.gameId, plan.completion.winnerPlayerIds, {
 			refund: plan.completion.refund,
 		})
 	}

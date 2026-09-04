@@ -1881,7 +1881,7 @@ async function seed() {
 	// --- Out three rounds ago, game parked on a settled round: the spectator hero ---
 	// The distinction the round-result hero must not swallow. dev went out in GW4;
 	// the game is still pointed at GW6, which has settled. Production reaches this
-	// whenever the next round is TBD (advanceGameToNextRound leaves the pointer
+	// whenever the next round is TBD (advanceGame leaves the pointer
 	// where it is) or when the competition round settles before this game advances
 	// — so the hero has to name GW4, not re-announce an exit on GW6.
 	{

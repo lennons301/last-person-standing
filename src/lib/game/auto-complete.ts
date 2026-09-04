@@ -25,7 +25,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
  * Reads sit inside the transaction too, so the pot is calculated from the same
  * snapshot the payout rows are written against.
  */
-export async function applyCompletion(
+export async function applyAutoCompletion(
 	tx: Tx,
 	gameId: string,
 	winnerPlayerIds: string[],

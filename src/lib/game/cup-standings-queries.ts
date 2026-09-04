@@ -378,7 +378,7 @@ export function mapPickResult(r: string): 'win' | 'saved_by_life' | 'loss' | 'pe
  * handicapped underdog that is level on the 90-minute (regulation) score is a
  * `draw_success` survival (renders `win`) whether the tie is in progress or was
  * lost in the shootout. The `saved_by_life` outcome still needs streak + lives
- * context and only appears once the pick is fully settled by reevaluateCupGame.
+ * context and only appears once settlement's cup re-evaluation (`deriveSettlement`) has settled the pick.
  */
 export function projectCupCellFromFixture(
 	pickedSide: 'home' | 'away',
@@ -414,7 +414,7 @@ export function projectCupCellFromFixture(
 
 /**
  * Lives gained/spent now come from persisted `pick.life_gained` /
- * `pick.life_spent` (written by `reevaluateCupGame` in
+ * `pick.life_spent` (written by the cup arm of `deriveSettlement` in
  * `lib/game/settle.ts`). These helpers preserve the original recompute
  * signature for callers that still need a pure-function shape (tests).
  */

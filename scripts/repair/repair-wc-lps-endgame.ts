@@ -5,7 +5,7 @@
  *
  * What it does (all-or-nothing, single transaction):
  *   1. Resolves the stuck Round-of-16 pick (left `pending` on a finished,
- *      decided fixture) as a loss — mirroring settleClassicPickRow: result
+ *      decided fixture) as a loss — mirroring `settleClassicPick`: result
  *      via determinePickResult (fixture `winner` authoritative), goals 0.
  *   2. Moves that player's elimination from the quarter-final round to the
  *      Round of 16 (reason: loss). Their post-deadline quarter-final pick
@@ -102,7 +102,7 @@ async function main() {
 	if (fx.status !== 'finished') fail(`stuck pick fixture status is ${fx.status}, expected finished`)
 	if (fx.homeScore == null || fx.awayScore == null) fail('stuck pick fixture has no score')
 
-	// Mirror settleClassicPickRow: `winner` is authoritative for knockout ties.
+	// Mirror `settleClassicPick`: `winner` is authoritative for knockout ties.
 	const resolvedResult = determinePickResult({
 		pickedTeamId: stuckPick.teamId,
 		homeTeamId: fx.homeTeamId,

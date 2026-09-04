@@ -371,7 +371,7 @@ describe('mapPickResult', () => {
 
 describe('computeLivesGained', () => {
 	it('reads the persisted life_gained column', () => {
-		// Lives gained are now written by reevaluateCupGame from
+		// Lives gained are now written by settlement's cup re-evaluation from
 		// evaluateCupPicks at settlement time, not recomputed on read.
 		expect(computeLivesGained({ lifeGained: 0 })).toBe(0)
 		expect(computeLivesGained({ lifeGained: 2 })).toBe(2)

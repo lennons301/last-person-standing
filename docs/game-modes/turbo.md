@@ -20,22 +20,21 @@ Each fixture transition settles its turbo picks immediately:
 sequenceDiagram
     participant Trigger as fixture.status → finished
     participant Settle as settleFixture
-    participant Settle1 as settleTurboPickRow
-    participant Complete as checkAndMaybeCompleteOrAdvance
+    participant Derive as deriveSettlement (turbo arm)
+    participant Apply as applyPlan (one transaction)
 
     Trigger->>Settle: fixtureId
-    Settle->>Settle1: per turbo pick on fixture
-    Settle1->>Settle1: pick.result = predictedResult === actualOutcome ? 'win' : 'loss'
-    Settle1->>Settle1: pick.goalsScored = pickedSide goals if correct (sum on draw)
-    Settle->>Complete: per game touched
-    Complete->>Complete: all round fixtures finished?
+    Settle->>Derive: SettlementFacts, per game touched
+    Derive->>Derive: pick.result = predictedResult === actualOutcome ? 'win' : 'loss'
+    Derive->>Derive: pick.goalsScored = pickedSide goals if correct (sum on draw)
+    Derive->>Derive: all round fixtures finished, no pick left pending?
     alt yes
-        Complete->>Complete: collectTurboPlayerResults (rank-ordered settled picks per player)
-        Complete->>Complete: checkTurboCompletion → resolveWipeout → turboTiebreaker
-        Complete->>Complete: applyAutoCompletion (winner) OR refund all (total wipeout)
-        Complete->>Complete: round.status = completed
+        Derive->>Derive: rank-ordered settled picks per alive player
+        Derive->>Derive: checkTurboCompletion → resolveWipeout → turboTiebreaker
+        Derive->>Apply: applyAutoCompletion (winner) OR refund all (total wipeout)
+        Apply->>Apply: round.status = completed
     else no
-        Complete->>Complete: wait for remaining fixtures
+        Derive->>Apply: pick results only — wait for remaining fixtures
     end
 ```
 

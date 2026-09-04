@@ -29,9 +29,9 @@ flowchart LR
     A[fixture row updated] --> B{status flipped<br/>non-finished → finished?}
     B -->|no| Z[done]
     B -->|yes| C[settleFixture]
-    C --> D[per-pick: settle pick.result + goals]
-    D --> E[classic: eliminate if non-win<br/>past starting round]
-    E --> F[cup: reevaluateCupGame — whole-game re-eval]
+    C --> D[gather rows → deriveSettlement — pure, one dispatch]
+    D --> E[classic: settle pick + eliminate if non-win<br/>past starting round]
+    E --> F[cup: whole-game re-eval in rank order]
     F --> G{game mode?}
     G -->|classic| Gc[alive=1 → winner; alive=0 → mass-extinction tiebreaker;<br/>alive≥2 + round fully settled → advance to next round]
     G -->|turbo / cup| J{round fully settled?}
@@ -83,7 +83,7 @@ stateDiagram-v2
 
 ### Pick state
 
-`pick.result` defaults to `pending`. Set by `settleFixture` (per-fixture) for classic + turbo, and by `reevaluateCupGame` (whole-game) for cup.
+`pick.result` defaults to `pending`. Planned by `deriveSettlement` and written by `applyPlan` — per-fixture for classic + turbo, whole-game for cup.
 
 ---
 
@@ -126,7 +126,7 @@ Safety nets for anything that slips through:
    - Telemetry note: `stuckFixturesSettled` counts void-only work too, so a non-zero value doesn't imply any pick was scored.
 6. **`/api/cron/process-rounds`** — manual ops endpoint (thin wrapper around `reconcileAllActiveGames`).
 
-All of these paths converge on `settleFixture` for the actual work. Advancement is double-gated on pending picks: neither the settle path (`checkAndMaybeCompleteOrAdvance`) nor the reconcile path (`advanceGameIfReady`) will advance a game while its current round has a pending pick for that game — a data-source-completed round can still hold a deferred knockout pick. And a late settle in a round the game already moved past never touches `game.currentRoundId` (the settle path only advances when the settled round IS the game's current round). Settlement is idempotent on every axis: re-running on a settled pick is a no-op (guard on `pick.result !== 'pending'`); re-running elimination guards on `gamePlayer.status === 'alive'`; cup re-eval is naturally idempotent (same inputs → same writes).
+All of these paths converge on `settleFixture` for the actual work. Advancement is one function, `advanceGame` (`settle.ts`), holding both the gate and the body: the settle path reaches it through `applyPlan` (in the same transaction that closed the round) and the reconcile path through `advanceGameIfReady`. It refuses while the current round has a pending pick for that game — a data-source-completed round can still hold a deferred knockout pick. And a late settle in a round the game already moved past never touches `game.currentRoundId` (the settle path only advances when the settled round IS the game's current round). Settlement is idempotent on every axis: re-running on a settled pick is a no-op (guard on `pick.result !== 'pending'`); re-running elimination guards on `gamePlayer.status === 'alive'`; cup re-eval is naturally idempotent (same inputs → same writes).
 
 ### The deadline no-pick lock
 
@@ -136,7 +136,7 @@ It is idempotent and internally gated on `round.deadline <= now`, so every surfa
 
 1. **QStash `deadline_lock` job** — scheduled by `openRoundForGame` for deadline+30s (same surface that pre-schedules auto-submits; dedup id collapses concurrent games opening the same round). This is the primary path: no-pick processing lands minutes after the deadline, before any fixture kicks off.
 2. **Daily-sync cron** — `syncCompetition` reports deadline-passed open rounds; the route runs the lock over them as the idempotent fallback.
-3. **Crown guard** — `checkAndMaybeCompleteOrAdvance` (the settle path's completion check) runs the lock for the settling round before evaluating ANY completion. No completion path (last-alive, mass-extinction, rounds-exhausted, turbo/cup crowning) can declare winners while an alive player's no-pick processing is outstanding — a pickless finalist is eliminated before the winner evaluation sees them (the WC LPS split-pot incident, which raced the final's settlement against the next morning's daily sync).
+3. **Crown guard** — `settleFixture` runs the lock for the settling round before evaluating ANY completion. No completion path (last-alive, mass-extinction, rounds-exhausted, turbo/cup crowning) can declare winners while an alive player's no-pick processing is outstanding — a pickless finalist is eliminated before the winner evaluation sees them (the WC LPS split-pot incident, which raced the final's settlement against the next morning's daily sync).
 
 ---
 

@@ -415,7 +415,7 @@ describe('buildGameView — live hero', () => {
 
 /**
  * Round 1 of a no-rebuys classic game can't put anyone out — the rule lives in
- * `settleClassicPickRow`, in `processDeadlineLock`'s round-1 branch and in the
+ * `settleClassicPick`, in `processDeadlineLock`'s round-1 branch and in the
  * standings' `projectClassicPlayer`. The hero reads the same scoreboard as those
  * standings, so a losing pick here must not say "Out" above a table saying alive.
  */
@@ -643,7 +643,7 @@ describe('buildGameView — round result', () => {
 		expect(view.hero).toMatchObject({ kind: 'round-result', result: 'eliminated' })
 	})
 
-	// A game can sit on a settled round for days (`advanceGameToNextRound` parks
+	// A game can sit on a settled round for days (`advanceGame` parks
 	// there when the next round is TBD), and a competition-scoped round can settle
 	// before this game advances. Someone who went out three rounds ago must not be
 	// told "you're out" again on a round they never picked in.
