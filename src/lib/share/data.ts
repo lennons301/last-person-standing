@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
-import { type GridSort, sortGridPlayers } from '@/lib/game/grid-sort'
+import { type GridSort, hasValidClassicPick, sortGridPlayers } from '@/lib/game/grid-sort'
 import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import {
 	type GridView,
@@ -204,7 +204,7 @@ async function buildHeader(gameId: string): Promise<ShareHeader | null> {
 export async function getShareStandingsData(
 	gameId: string,
 	viewerUserId: string,
-	options?: { sort?: GridSort; aliveOnly?: boolean },
+	options?: { sort?: GridSort; aliveOnly?: boolean; currentRoundPicks?: boolean },
 ): Promise<StandingsShareData | null> {
 	const header = await buildHeader(gameId)
 	if (!header) return null
@@ -215,9 +215,15 @@ export async function getShareStandingsData(
 		// Order + filter the players in the data layer so the layout is a dumb
 		// renderer. Default ordering matches the on-screen grid's default ('status').
 		const sort: GridSort = options?.sort ?? { key: 'status', dir: 'asc' }
-		const filtered = options?.aliveOnly
-			? grid.players.filter((p) => p.status === 'alive')
-			: grid.players
+		const filtered =
+			options?.currentRoundPicks && grid.currentRoundId
+				? grid.players.filter((p) => {
+						const cell = p.cellsByRoundId[grid.currentRoundId as string]
+						return cell != null && hasValidClassicPick(cell)
+					})
+				: options?.aliveOnly
+					? grid.players.filter((p) => p.status === 'alive')
+					: grid.players
 		const players = sortGridPlayers(filtered, sort)
 		// Only gameweeks whose picks are locked belong in a shared image (#225).
 		// The grid's column set is every round the game has TOUCHED, and an

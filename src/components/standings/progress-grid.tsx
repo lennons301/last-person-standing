@@ -13,6 +13,7 @@ import {
 	type GridSort,
 	type GridSortDir,
 	type GridSortKey,
+	hasValidClassicPick,
 	sortGridPlayers,
 } from '@/lib/game/grid-sort'
 import type { GridCell, GridPlayer, GridRound } from '@/lib/game/read/standings'
@@ -64,6 +65,8 @@ interface ProgressGridProps {
 	players: GridPlayer[]
 	aliveCount: number
 	eliminatedCount: number
+	/** The gameweek whose submitted picks the current-week filter shows. */
+	currentRoundId?: string | null
 	defaultFilter?: 'all' | 'last5' | 'last3'
 	gameId?: string
 	/** Called with the grid's current sort + filter encoded as a query string,
@@ -85,6 +88,7 @@ export function ProgressGrid({
 	players,
 	aliveCount,
 	eliminatedCount,
+	currentRoundId,
 	defaultFilter = 'all',
 	gameId,
 	onShare,
@@ -95,7 +99,7 @@ export function ProgressGrid({
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
 	const [sort, setSort] = useState<GridSort>({ key: 'status', dir: 'asc' })
 	const [showOpponents, setShowOpponents] = useState(false)
-	const [hideEliminated, setHideEliminated] = useState(false)
+	const [playerFilter, setPlayerFilter] = useState<'all' | 'alive' | 'current-round-picks'>('all')
 	const liveCtx = useLiveGame()
 	// Which cell (by player + round) opened the fixture-detail sheet. The ref
 	// keeps the sheet's content through the close animation instead of
@@ -120,7 +124,8 @@ export function ProgressGrid({
 	const buildShareQuery = () => {
 		const q = new URLSearchParams({ sort: sort.key, dir: sort.dir })
 		if (sort.roundId) q.set('round', sort.roundId)
-		if (hideEliminated) q.set('aliveOnly', '1')
+		if (playerFilter === 'alive') q.set('aliveOnly', '1')
+		if (playerFilter === 'current-round-picks') q.set('currentRoundPicks', '1')
 		return q.toString()
 	}
 
@@ -179,13 +184,16 @@ export function ProgressGrid({
 	const visibleRounds =
 		filter === 'all' ? rounds : filter === 'last5' ? rounds.slice(-5) : rounds.slice(-3)
 
-	const currentRoundId = rounds.at(-1)?.id
-
 	const sortedPlayers = sortGridPlayers(players, sort)
 
-	const visiblePlayers = hideEliminated
-		? sortedPlayers.filter((p) => p.status !== 'eliminated')
-		: sortedPlayers
+	const visiblePlayers = sortedPlayers.filter((p) => {
+		if (playerFilter === 'alive') return p.status !== 'eliminated'
+		if (playerFilter === 'current-round-picks') {
+			const currentCell = currentRoundId ? p.cellsByRoundId[currentRoundId] : undefined
+			return currentCell != null && hasValidClassicPick(currentCell)
+		}
+		return true
+	})
 
 	const activeTarget = sheetTarget ?? lastSheetTarget.current
 	const activePlayer = activeTarget
@@ -243,12 +251,35 @@ export function ProgressGrid({
 					<Button
 						variant="outline"
 						size="sm"
-						onClick={() => setHideEliminated((v) => !v)}
+						onClick={() => setPlayerFilter((v) => (v === 'alive' ? 'all' : 'alive'))}
 						className="gap-1.5"
 					>
-						{hideEliminated ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-						{hideEliminated ? 'Show eliminated' : 'Hide eliminated'}
+						{playerFilter === 'alive' ? (
+							<Eye className="h-3.5 w-3.5" />
+						) : (
+							<EyeOff className="h-3.5 w-3.5" />
+						)}
+						{playerFilter === 'alive' ? 'Show eliminated' : 'Hide eliminated'}
 					</Button>
+					{currentRoundId && (
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() =>
+								setPlayerFilter((v) =>
+									v === 'current-round-picks' ? 'all' : 'current-round-picks',
+								)
+							}
+							className="gap-1.5"
+						>
+							{playerFilter === 'current-round-picks' ? (
+								<Eye className="h-3.5 w-3.5" />
+							) : (
+								<EyeOff className="h-3.5 w-3.5" />
+							)}
+							{playerFilter === 'current-round-picks' ? 'Show all players' : 'Current week picks'}
+						</Button>
+					)}
 					{onShare && (
 						<Button
 							variant="outline"

@@ -18,6 +18,8 @@ const { getProgressGridDataMock, getCupStandingsDataMock, getTurboStandingsDataM
 	}),
 )
 vi.mock('@/lib/game/read/standings', () => ({
+	hasValidClassicPick: (cell: { result: string }) =>
+		cell.result !== 'empty' && cell.result !== 'no_pick' && cell.result !== 'skull',
 	getProgressGridData: getProgressGridDataMock,
 	getTurboStandingsData: getTurboStandingsDataMock,
 }))
@@ -111,6 +113,41 @@ describe('getShareStandingsData', () => {
 		const result = await getShareStandingsData('g1', 'u1', { aliveOnly: true })
 		if (result?.mode !== 'classic') throw new Error('expected classic')
 		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice'])
+	})
+
+	it('classic: currentRoundPicks keeps every player with a submitted current-gameweek pick', async () => {
+		makeHeaderMock('classic')
+		getProgressGridDataMock.mockResolvedValue({
+			currentRoundId: 'r2',
+			rounds: [],
+			players: [
+				{
+					id: 'a',
+					name: 'Alice',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r2: { result: 'win' } },
+				},
+				{
+					id: 'b',
+					name: 'Bob',
+					status: 'eliminated',
+					eliminatedRoundNumber: 2,
+					goals: 0,
+					cellsByRoundId: { r2: { result: 'loss' } },
+				},
+				{
+					id: 'c',
+					name: 'Carol',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r2: { result: 'no_pick' } },
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1', { currentRoundPicks: true })
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice', 'Bob'])
 	})
 
 	it('returns cup shape when mode is cup', async () => {

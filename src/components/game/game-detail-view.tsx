@@ -68,6 +68,7 @@ interface GameDetailViewProps {
 		players: GridPlayer[]
 		aliveCount: number
 		eliminatedCount: number
+		currentRoundId: string | null
 		/** Threaded to `ProgressGrid` so a tapped cell can open the fixture-detail sheet (#226). */
 		competitionId: string
 	} | null
@@ -240,6 +241,7 @@ export function GameDetailView({
 						players={classicGrid.players}
 						aliveCount={classicGrid.aliveCount}
 						eliminatedCount={classicGrid.eliminatedCount}
+						currentRoundId={classicGrid.currentRoundId}
 						gameId={game.id}
 						onShare={openShare}
 						showAdminActions={game.isAdmin}
