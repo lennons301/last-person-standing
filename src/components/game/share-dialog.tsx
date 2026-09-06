@@ -39,6 +39,10 @@ interface ShareDialogProps {
 	 * The latest locked round's summary as prose, from `formatRoundSummaryText`.
 	 * Null before any of this game's deadlines has passed (and for every mode but
 	 * classic), which is also when the block below doesn't render at all.
+	 *
+	 * What it *says* is the round's business, not this dialog's: the field and the
+	 * market's read on it until a picked fixture kicks off, and what has happened
+	 * from then on (#267). Nothing here inspects the string.
 	 */
 	roundSummaryText?: string | null
 }
@@ -62,8 +66,10 @@ export function captionFor(
 	switch (variant) {
 		case 'standings':
 			// The grid image and the round summary describe the same round, so the
-			// summary is the message that belongs with it. Without one — before any
-			// deadline has passed — the plain caption stands.
+			// summary is the message that belongs with it — the market read before a
+			// ball is kicked, the results once they are landing, which is the same
+			// switch the grid's own cells make. Without one — before any deadline has
+			// passed — the plain caption stands.
 			return roundSummaryText ?? `${gameName} — standings`
 		case 'live':
 			return `${gameName} — live update`

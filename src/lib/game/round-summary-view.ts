@@ -7,11 +7,23 @@
  * and the share dialog's text block — render what comes out and classify, order
  * and word nothing themselves.
  *
+ * The summary has **two halves, and the round decides which one is the story**
+ * (#267). Between the deadline and the first kick-off there are no results, so
+ * the whole summary is the field and the market's read on it. From the moment a
+ * *picked* fixture kicks off that read is being overtaken by what actually
+ * happened, so `results` fills in — who came through, who went down, who is
+ * still playing — and it is what the shared message says from then on. Both
+ * halves are built from one pass over the same rows; nothing here reads the
+ * clock to decide, only the fixtures' own state.
+ *
  * Deterministic by construction: same rows in, same view out. Nothing here reads
  * the clock, queries, or calls a model. The prices are the ones the daily sync
- * already persisted per fixture, frozen at the round's deadline.
+ * already persisted per fixture, frozen at the round's deadline; the scores are
+ * the ones the live poll writes.
  */
+import { type ClassicSurvivalFixture, resolveClassicPickResult } from '@/lib/game/classic-survival'
 import { arePicksLocked } from '@/lib/game/round-status'
+import type { PickResult } from '@/lib/game-logic/common'
 
 /** A team as the summary names it. */
 export interface RoundSummaryTeamRow {
@@ -35,11 +47,30 @@ export interface RoundSummaryOdds {
 	away: RoundSummaryPrice
 }
 
+/**
+ * A fixture as it currently stands — exactly the fields the classic survival
+ * rule scores a pick on, so the summary never decides a result of its own.
+ *
+ * Required on every fixture rather than nullable-for-not-started: "no score yet"
+ * is `status: 'scheduled'` with null scores, and a row source that forgot to
+ * read the scores would otherwise leave the summary quoting the market for a
+ * round that has already been played — which is the bug this half exists to fix.
+ */
+export interface RoundSummaryFixtureState {
+	/** `fixture.status` — 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'. */
+	status: string
+	homeScore: number | null
+	awayScore: number | null
+	/** Authoritative winner of a tie settled after a level 90 minutes. */
+	winner: 'home' | 'away' | null
+}
+
 export interface RoundSummaryFixtureRow {
 	id: string
 	home: RoundSummaryTeamRow
 	away: RoundSummaryTeamRow
 	odds: RoundSummaryOdds | null
+	state: RoundSummaryFixtureState
 }
 
 /**
@@ -97,7 +128,10 @@ export function formatTeamFigure(figure: RoundSummaryTeamFigure): string {
 export const ROUND_SUMMARY_COPY = {
 	/** The fold's sub-line; its title is the summary's own headline. */
 	cardSubtitle: 'Round summary — what the field picked',
+	/** The same sub-line once results are landing: the fold is about them now. */
+	cardSubtitleResults: 'Round summary — how it went',
 	tiles: {
+		results: 'How it went',
 		market: "The market's verdict",
 		mostBacked: 'Most backed',
 		boldest: 'Boldest calls',
@@ -105,16 +139,30 @@ export const ROUND_SUMMARY_COPY = {
 		headToHead: 'Head to head',
 		leftOnTable: 'Left on the table',
 	},
+	results: {
+		through: 'Through',
+		/** A beaten pick puts its backer out — the ordinary round. */
+		down: 'Out',
+		/** …except where a non-win eliminates nobody. */
+		downNoElimination: 'Beaten — but nobody goes out this round',
+		stillToPlay: 'Still to play',
+		/** Marks a pick whose fixture is under way but not over. */
+		inPlay: 'in play',
+		/** The headline's word for a beaten pick, which is only "out" where it eliminates. */
+		countOut: 'out',
+		countBeaten: 'beaten',
+	},
 	/** Why three tiles are missing, so the gap reads as deliberate. */
 	noOdds:
 		'This competition carries no bookmaker prices, so the market read sits this round out. The counts are the whole story.',
 	noUnderdogs: "Nobody backed an underdog — every pick was its match's favourite.",
 	pricesInPlay: 'Prices in play',
 	drawTakesAll: 'One side goes out — and a draw takes everyone in it.',
-	/** The opening round eliminates nobody on a draw in a no-rebuys game, so it claims nothing about draws. */
+	/** Where a non-win eliminates nobody (the opening round of a no-rebuys game), the stakes claim nothing about draws. */
 	drawStartingRound: 'One side goes out.',
 	noPickHeading: 'No pick at all',
 	expectedSurvivors: 'expected to survive',
+	stillStanding: 'still standing',
 } as const
 
 /** The minimum a round row needs for the anchor below. */
@@ -189,10 +237,23 @@ export function selectRoundSummaryRound<T extends RoundSummaryRoundRow>(
 export interface BuildRoundSummaryInput {
 	round: { label: string; longLabel: string }
 	/**
-	 * Is this the game's own starting round? A draw only eliminates *after* it, so
-	 * the head-to-head stakes read differently there.
+	 * Does a non-win put its backer out in this round?
+	 *
+	 * The starting-round exemption, as `settleClassicPick` resolves it —
+	 * `!(isGameStartingRound(game, round) && !allowRebuys)` — and not
+	 * "is this the starting round", which would call a rebuys-on opening round
+	 * harmless when it eliminates like any other. One flag, because the summary
+	 * asks the question twice: the head-to-head stakes ("a draw takes everyone in
+	 * it") and whether a beaten pick is a player leaving the game.
 	 */
-	isStartingRound: boolean
+	nonWinEliminates: boolean
+	/**
+	 * Is this round a knockout tie — a match that can't end level?
+	 * `isKnockoutRound(competition.type, round.number)`. A finished tie with no
+	 * winner reported is the provider's winner-lag, and the survival rule defers
+	 * it rather than scoring a draw, so the pick reads as still to play.
+	 */
+	knockout: boolean
 	/** Everyone alive going into the round — the denominator the card quotes. */
 	players: RoundSummaryPlayerRow[]
 	fixtures: RoundSummaryFixtureRow[]
@@ -306,8 +367,63 @@ export interface RoundSummaryHeadToHead {
 	fixtureId: string
 	home: RoundSummaryHeadToHeadSide
 	away: RoundSummaryHeadToHeadSide
-	/** False on the starting round, where a draw eliminates nobody. */
+	/** False where a non-win eliminates nobody — the starting-round exemption. */
 	drawTakesAll: boolean
+}
+
+/**
+ * One pick, with what the round has done to it so far.
+ *
+ * The result is `resolveClassicPickResult`'s and nothing else's — the same
+ * function the settle path, the progress grid and the live view read — so the
+ * summary can't call a knockout tie won on penalties a loss (#242).
+ */
+export interface RoundSummaryPickOutcome extends RoundSummaryTeamFigure {
+	player: RoundSummaryPlayerRef
+	/**
+	 * How the pick stands: null while there is nothing to say (not kicked off, or
+	 * a knockout tie level at full time with no winner reported yet). Provisional
+	 * on a fixture still playing — `finished` is what says it's settled.
+	 */
+	result: PickResult | null
+	/** Has the fixture finished? An in-flight lead is not a result. */
+	finished: boolean
+	/** "ARS 2-0 BRE", or null before a ball is kicked. */
+	scoreline: string | null
+	/** The same line with the clubs' full names, for prose. */
+	longScoreline: string | null
+}
+
+/**
+ * What the round has actually done — present from the moment a **picked**
+ * fixture kicks off, absent before it.
+ *
+ * The gate is a picked fixture rather than any fixture in the round: a match
+ * nobody backed kicking off first changes nothing about the field's story, and a
+ * results block whose every line reads "still to play" is a worse message than
+ * the market read it replaced.
+ */
+export interface RoundSummaryResults {
+	/** Every pick in the round has its answer — nothing left to play. */
+	complete: boolean
+	/** Picks whose team came through, biggest upset first. */
+	through: RoundSummaryPickOutcome[]
+	/** Picks that went down, the shortest price first — the biggest casualty leads. */
+	down: RoundSummaryPickOutcome[]
+	/**
+	 * Still playing, yet to kick off, or waiting on a knockout tie's winner. A
+	 * postponed or cancelled fixture sits here too: nothing has happened to it.
+	 */
+	stillToPlay: RoundSummaryPickOutcome[]
+	/** Does a beaten pick put its backer out? `BuildRoundSummaryInput.nonWinEliminates`. */
+	eliminates: boolean
+	/**
+	 * Of the players alive going into the round, how many the round hasn't put out.
+	 * Falls as results land, so it reads as a live figure mid-round and as the
+	 * survivors once `complete`. Counts the no-pick players out from the deadline,
+	 * which is when the lock eliminated them.
+	 */
+	stillStanding: number
 }
 
 export interface RoundSummaryView {
@@ -340,6 +456,12 @@ export interface RoundSummaryView {
 	 * when the field covered every team in it.
 	 */
 	leftOnTable: RoundSummaryTeamFigure | null
+	/**
+	 * What the round did, once it started doing it. Null until a picked fixture
+	 * kicks off — which is exactly when the surfaces switch from previewing the
+	 * round to reporting it.
+	 */
+	results: RoundSummaryResults | null
 }
 
 export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryView {
@@ -353,10 +475,18 @@ export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryVi
 
 	const mostBacked = buildMostBacked(picked, teamsById)
 	const oddsAvailable = hasPrices(fixtures)
+	const results = buildResults(picked, teamsById, {
+		playersAlive: players.length,
+		noPickPlayers: noPickPlayers.length,
+		nonWinEliminates: input.nonWinEliminates,
+		knockout: input.knockout,
+	})
 
 	return {
 		round: { label: round.label, longLabel: round.longLabel },
-		headline: buildHeadline(mostBacked, players.length),
+		headline: results
+			? buildResultsHeadline(results, players.length)
+			: buildHeadline(mostBacked, players.length),
 		playersAlive: players.length,
 		picksMade: picked.length,
 		noPickPlayers,
@@ -365,9 +495,124 @@ export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryVi
 		mostBacked,
 		boldest: oddsAvailable ? buildBoldest(picked, teamsById) : null,
 		lonePicks: buildLonePicks(mostBacked),
-		headToHead: buildHeadToHead(mostBacked, fixtures, input.isStartingRound),
+		headToHead: buildHeadToHead(mostBacked, fixtures, input.nonWinEliminates),
 		leftOnTable: buildLeftOnTable(mostBacked, teamsById),
+		results,
 	}
+}
+
+interface ResultsContext {
+	playersAlive: number
+	noPickPlayers: number
+	nonWinEliminates: boolean
+	knockout: boolean
+}
+
+/**
+ * The results half: every pick scored by the classic survival rule and sorted
+ * into what the round has done with it.
+ *
+ * Null until one of the picked fixtures has kicked off. Nothing here reads the
+ * clock — a fixture that has started says so itself, with a `live`/`finished`
+ * status or a score on the board.
+ */
+function buildResults(
+	picked: RoundSummaryPlayerRow[],
+	teamsById: Map<string, RoundSummaryTeamSlot>,
+	context: ResultsContext,
+): RoundSummaryResults | null {
+	const outcomes: RoundSummaryPickOutcome[] = []
+	let started = false
+
+	for (const player of picked) {
+		const pick = player.pick
+		if (!pick) continue
+		const slot = teamsById.get(pick.teamId)
+		if (!slot) continue
+		const fixture = survivalFixture(slot, context.knockout)
+		const resolution = resolveClassicPickResult({ teamId: pick.teamId }, fixture)
+		if (hasStarted(slot.fixture.state)) started = true
+		outcomes.push({
+			...figureFor(slot),
+			player: { name: player.name, isAuto: pick.isAuto },
+			result: resolution.defer ? null : resolution.result,
+			finished: slot.fixture.state.status === 'finished',
+			scoreline: scoreline(slot.fixture, (t) => t.shortName),
+			longScoreline: scoreline(slot.fixture, (t) => t.name),
+		})
+	}
+
+	if (!started) return null
+
+	// Only a finished fixture settles a pick. A team two goals up at half time is
+	// not through, and reporting it as through would name a survivor the grid
+	// beside it still shows pending.
+	const settled = outcomes.filter((o) => o.finished && o.result != null)
+	const through = settled
+		.filter((o) => o.result === 'win')
+		// Longest price first: the shock is the story, and an unpriced pick sinks
+		// below the priced ones rather than leading on a probability it hasn't got.
+		.sort((a, b) => byProbabilityAsc(a, b) || a.player.name.localeCompare(b.player.name))
+	const down = settled
+		.filter((o) => o.result !== 'win')
+		// Shortest price first: a favourite going down is the bigger casualty.
+		.sort((a, b) => byProbabilityDesc(a, b) || a.player.name.localeCompare(b.player.name))
+	const stillToPlay = outcomes
+		.filter((o) => !(o.finished && o.result != null))
+		.sort(
+			(a, b) =>
+				a.shortName.localeCompare(b.shortName) || a.player.name.localeCompare(b.player.name),
+		)
+
+	// A player the deadline caught with nothing was eliminated by the lock, not by
+	// a result, so they're out from the moment the round locked — where a non-win
+	// eliminates at all.
+	const out = context.nonWinEliminates ? down.length + context.noPickPlayers : 0
+
+	return {
+		complete: stillToPlay.length === 0,
+		through,
+		down,
+		stillToPlay,
+		eliminates: context.nonWinEliminates,
+		stillStanding: context.playersAlive - out,
+	}
+}
+
+/** The pick's fixture, in the shape the survival rule takes. */
+function survivalFixture(slot: RoundSummaryTeamSlot, knockout: boolean): ClassicSurvivalFixture {
+	return {
+		homeTeamId: slot.fixture.home.id,
+		awayTeamId: slot.fixture.away.id,
+		homeScore: slot.fixture.state.homeScore,
+		awayScore: slot.fixture.state.awayScore,
+		winner: slot.fixture.state.winner,
+		status: slot.fixture.state.status,
+		knockout,
+	}
+}
+
+/** Has this fixture kicked off? A score on the board says so as loudly as a status. */
+function hasStarted(state: RoundSummaryFixtureState): boolean {
+	if (state.status === 'live' || state.status === 'finished') return true
+	return state.homeScore != null && state.awayScore != null
+}
+
+function scoreline(
+	fixture: RoundSummaryFixtureRow,
+	name: (team: RoundSummaryTeamRow) => string,
+): string | null {
+	const { homeScore, awayScore } = fixture.state
+	if (homeScore == null || awayScore == null) return null
+	return `${name(fixture.home)} ${homeScore}-${awayScore} ${name(fixture.away)}`
+}
+
+/** Longest price first; a team we hold no price for sinks below the priced ones. */
+function byProbabilityAsc(a: RoundSummaryTeamFigure, b: RoundSummaryTeamFigure): number {
+	if (a.winProbability == null && b.winProbability == null) return 0
+	if (a.winProbability == null) return 1
+	if (b.winProbability == null) return -1
+	return a.winProbability - b.winProbability
 }
 
 /**
@@ -377,7 +622,7 @@ export function buildRoundSummary(input: BuildRoundSummaryInput): RoundSummaryVi
 function buildHeadToHead(
 	mostBacked: RoundSummaryBackedTeam[],
 	fixtures: RoundSummaryFixtureRow[],
-	isStartingRound: boolean,
+	nonWinEliminates: boolean,
 ): RoundSummaryHeadToHead[] {
 	const backedByTeam = new Map(mostBacked.map((t) => [t.teamId, t]))
 	const clashes: RoundSummaryHeadToHead[] = []
@@ -389,7 +634,7 @@ function buildHeadToHead(
 			fixtureId: fixture.id,
 			home: toSide(home),
 			away: toSide(away),
-			drawTakesAll: !isStartingRound,
+			drawTakesAll: nonWinEliminates,
 		})
 	}
 	return clashes.sort(
@@ -587,4 +832,18 @@ function buildHeadline(mostBacked: RoundSummaryBackedTeam[], playersAlive: numbe
 	const top = mostBacked[0]
 	if (!top) return 'No picks in'
 	return `${top.count} of ${playersAlive} on ${top.shortName}`
+}
+
+/**
+ * The trigger line once results are landing. Mid-round it counts what has come
+ * in; finished, it states the one figure the round was ever about — who is left.
+ */
+function buildResultsHeadline(results: RoundSummaryResults, playersAlive: number): string {
+	if (results.complete) {
+		return `${results.stillStanding} of ${playersAlive} ${ROUND_SUMMARY_COPY.stillStanding}`
+	}
+	const beaten = results.eliminates
+		? ROUND_SUMMARY_COPY.results.countOut
+		: ROUND_SUMMARY_COPY.results.countBeaten
+	return `${results.through.length} through, ${results.down.length} ${beaten}, ${results.stillToPlay.length} to play`
 }

@@ -5,6 +5,15 @@
  * string out. It classifies nothing — every count, order and inclusion decision
  * was already made by `buildRoundSummary` — it only chooses words.
  *
+ * **Two messages, and the round picks which one it is** (#267). Between the
+ * deadline and the first kick-off the message is the field and the market's read
+ * on it — who the crowd backed, who gambled, who is up against whom. From the
+ * moment a picked fixture kicks off that message is about to be contradicted by
+ * a scoreline everyone in the group chat can already see, so it is replaced
+ * wholesale by what has actually happened: who came through, who went down, who
+ * is left standing, what is still to play. The switch is `summary.results` being
+ * there, and nothing else; this function reads no clock.
+ *
  * Two rules it keeps:
  *
  * 1. **Probabilities only.** Decimal prices belong on the card, where there's
@@ -20,16 +29,23 @@
 import type {
 	RoundSummaryBoldCall,
 	RoundSummaryHeadToHead,
+	RoundSummaryPickOutcome,
 	RoundSummaryPlayerRef,
+	RoundSummaryResults,
 	RoundSummaryTeamFigure,
 	RoundSummaryView,
 } from '@/lib/game/round-summary-view'
-import { formatWinChance } from '@/lib/game/round-summary-view'
+import { ROUND_SUMMARY_COPY as COPY, formatWinChance } from '@/lib/game/round-summary-view'
 
 /** How many gambles the prose names before it summarises the rest as a count. */
 const BOLD_CALLS_NAMED = 3
 
 export function formatRoundSummaryText(summary: RoundSummaryView): string {
+	return summary.results ? formatResultsText(summary, summary.results) : formatPreviewText(summary)
+}
+
+/** The round before a ball is kicked: the field, and the market's read on it. */
+function formatPreviewText(summary: RoundSummaryView): string {
 	const paragraphs = [
 		fieldParagraph(summary),
 		gamblersParagraph(summary),
@@ -38,12 +54,97 @@ export function formatRoundSummaryText(summary: RoundSummaryView): string {
 	return [headline(summary), '', paragraphs.join('\n\n')].join('\n')
 }
 
+/** The round once it is being played: what has happened, and what is left. */
+function formatResultsText(summary: RoundSummaryView, results: RoundSummaryResults): string {
+	const paragraphs = [
+		stateParagraph(summary, results),
+		throughParagraph(results),
+		downParagraph(summary, results),
+		stillToPlayParagraph(results),
+	].filter((p): p is string => p != null && p.length > 0)
+	return [resultsHeadline(summary), '', paragraphs.join('\n\n')].join('\n')
+}
+
 function headline(summary: RoundSummaryView): string {
 	const top = summary.mostBacked[0]
 	const lead = top
 		? `${top.count} of ${summary.playersAlive} on ${top.name}`
 		: 'nobody got a pick in'
 	return `*${summary.round.longLabel} — ${lead}*`
+}
+
+/**
+ * The card's trigger line, verbatim. The message and the fold a player opens
+ * next to it lead on one figure or they disagree about the round.
+ */
+function resultsHeadline(summary: RoundSummaryView): string {
+	return `*${summary.round.longLabel} — ${summary.headline}*`
+}
+
+/** Where the round stands, in counts. */
+function stateParagraph(summary: RoundSummaryView, results: RoundSummaryResults): string {
+	const sentences: string[] = []
+	const settled = results.through.length + results.down.length
+
+	if (results.complete) {
+		sentences.push(`${summary.round.longLabel} is done.`)
+	} else {
+		const played = `${settled} of ${summary.picksMade} ${summary.picksMade === 1 ? 'pick' : 'picks'} settled`
+		sentences.push(
+			`${summary.round.longLabel} is under way — ${played}, ${results.stillToPlay.length} still to play.`,
+		)
+	}
+
+	if (!results.eliminates) {
+		sentences.push('Nobody goes out this round, whatever the results.')
+	} else if (results.stillStanding === 0) {
+		sentences.push(`Nobody is left — all ${summary.playersAlive} are out.`)
+	} else {
+		sentences.push(
+			`${results.stillStanding} of ${summary.playersAlive} still standing${
+				results.complete ? '' : ' so far'
+			}.`,
+		)
+	}
+
+	return sentences.join(' ')
+}
+
+function throughParagraph(results: RoundSummaryResults): string {
+	if (results.through.length === 0) return ''
+	return `Through: ${results.through.map(outcomeLine).join(', ')}.`
+}
+
+function downParagraph(summary: RoundSummaryView, results: RoundSummaryResults): string {
+	const sentences: string[] = []
+
+	if (results.down.length > 0) {
+		const label = results.eliminates ? 'Out' : 'Beaten, but still in'
+		sentences.push(`${label}: ${results.down.map(outcomeLine).join(', ')}.`)
+	}
+
+	if (summary.noPickPlayers.length > 0) {
+		sentences.push(
+			results.eliminates
+				? `${nameList(summary.noPickPlayers)} made no pick at all, and went out on it.`
+				: `${nameList(summary.noPickPlayers)} made no pick at all.`,
+		)
+	}
+
+	return sentences.join(' ')
+}
+
+function stillToPlayParagraph(results: RoundSummaryResults): string {
+	if (results.stillToPlay.length === 0) return ''
+	return `Still to play: ${results.stillToPlay.map(outcomeLine).join(', ')}.`
+}
+
+/** "Alex on Arsenal (Arsenal 2-0 Brentford)" — the scoreline only where there is one. */
+function outcomeLine(outcome: RoundSummaryPickOutcome): string {
+	const name = `${playerName(outcome.player)} on ${outcome.name}`
+	if (!outcome.longScoreline) return name
+	const state = outcome.finished ? '' : `, ${COPY.results.inPlay}`
+	return `${name} (${outcome.longScoreline}${state})`
 }
 
 /** The field, and what the market made of it. */

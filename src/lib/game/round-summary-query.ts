@@ -1,6 +1,8 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { isKnockoutRound } from '@/lib/game/classic-survival'
 import { activeField } from '@/lib/game/elimination'
+import { resolveModeConfig } from '@/lib/game/mode-config'
 import { roundLabel, roundLabelLong } from '@/lib/game/round-label'
 import {
 	buildRoundSummary,
@@ -77,6 +79,14 @@ export async function getRoundSummary(
 					away: { probability: fx.odds.awayProbability, price: fx.odds.awayPrice },
 				}
 			: null,
+		// The live scores as the poll last wrote them. What they mean for a pick is
+		// the survival rule's answer, not this function's.
+		state: {
+			status: fx.status,
+			homeScore: fx.homeScore,
+			awayScore: fx.awayScore,
+			winner: fx.winner,
+		},
 	}))
 
 	const playerRows = await db
@@ -127,12 +137,20 @@ export async function getRoundSummary(
 		})
 
 	const competitionType = game.competition.type
+	// The starting-round exemption, exactly as `settleClassicPick` resolves it:
+	// the game's own opening round with rebuys off is the one round a non-win
+	// doesn't put anybody out. With rebuys on it eliminates like any other.
+	const modeConfig = resolveModeConfig(game)
+	const allowRebuys = modeConfig.mode === 'classic' && modeConfig.allowRebuys
+	const nonWinEliminates = !(isGameStartingRound(game, round.id) && !allowRebuys)
+
 	return buildRoundSummary({
 		round: {
 			label: roundLabel(competitionType, round.number),
 			longLabel: round.name ?? roundLabelLong(competitionType, round.number),
 		},
-		isStartingRound: isGameStartingRound(game, round.id),
+		nonWinEliminates,
+		knockout: isKnockoutRound(competitionType, round.number),
 		players,
 		fixtures,
 	})

@@ -5,9 +5,24 @@ import {
 	type BuildRoundSummaryInput,
 	buildRoundSummary,
 	type RoundSummaryFixtureRow,
+	type RoundSummaryFixtureState,
 	type RoundSummaryPlayerRow,
 } from '@/lib/game/round-summary-view'
 import { RoundSummaryCard } from './round-summary-card'
+
+const SCHEDULED: RoundSummaryFixtureState = {
+	status: 'scheduled',
+	homeScore: null,
+	awayScore: null,
+	winner: null,
+}
+
+const finished = (homeScore: number, awayScore: number): RoundSummaryFixtureState => ({
+	status: 'finished',
+	homeScore,
+	awayScore,
+	winner: null,
+})
 
 const FIXTURES: RoundSummaryFixtureRow[] = [
 	{
@@ -19,6 +34,7 @@ const FIXTURES: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.24, price: 4.1 },
 			away: { probability: 0.16, price: 6.2 },
 		},
+		state: SCHEDULED,
 	},
 	{
 		id: 'fx-2',
@@ -29,6 +45,7 @@ const FIXTURES: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.25, price: 4 },
 			away: { probability: 0.25, price: 4 },
 		},
+		state: SCHEDULED,
 	},
 ]
 
@@ -47,7 +64,8 @@ function player(
 function summary(overrides: Partial<BuildRoundSummaryInput> = {}) {
 	return buildRoundSummary({
 		round: { label: 'GW12', longLabel: 'Gameweek 12' },
-		isStartingRound: false,
+		nonWinEliminates: true,
+		knockout: false,
 		fixtures: FIXTURES,
 		players: [
 			player('Alex', 't-ars'),
@@ -127,5 +145,36 @@ describe('RoundSummaryCard', () => {
 		render(<RoundSummaryCard summary={summary()} defaultOpen />)
 
 		expect(screen.getByText('Most backed')).toBeTruthy()
+	})
+})
+
+describe('RoundSummaryCard — once results are in', () => {
+	const withResults = () =>
+		summary({
+			fixtures: [{ ...FIXTURES[0], state: finished(2, 0) }, FIXTURES[1]],
+		})
+
+	it('leads its trigger with the state of the round, not the crowd', () => {
+		render(<RoundSummaryCard summary={withResults()} />)
+
+		expect(screen.getByText('2 through, 1 out, 1 to play')).toBeTruthy()
+		expect(screen.queryByText('2 of 5 on ARS')).toBeNull()
+	})
+
+	it('opens on the results, with the market read kept below them', () => {
+		render(<RoundSummaryCard summary={withResults()} />)
+		expand()
+
+		expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
+			'How it went',
+			"The market's verdict",
+			'Most backed',
+			'Boldest calls',
+			'Out on their own',
+			'Head to head',
+			'Left on the table',
+		])
+		expect(screen.getAllByText('ARS 2-0 BRE').length).toBeGreaterThan(0)
+		expect(screen.getByText('Still to play')).toBeTruthy()
 	})
 })
