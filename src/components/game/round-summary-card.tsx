@@ -6,7 +6,9 @@ import {
 	formatTeamFigure,
 	formatWinChance,
 	type RoundSummaryHeadToHead,
+	type RoundSummaryPickOutcome,
 	type RoundSummaryPlayerRef,
+	type RoundSummaryResults,
 	type RoundSummaryTeamFigure,
 	type RoundSummaryView,
 } from '@/lib/game/round-summary-view'
@@ -21,9 +23,14 @@ import {
  * rule with no test.
  *
  * It sits directly under the progress grid (the component that reveals the picks
- * it narrates) and it is **collapsed on load**, with the most-backed line in its
- * trigger: that one line is the whole headline, and it's the only figure that
- * exists even on a competition with no prices at all.
+ * it narrates) and it is **collapsed on load**, with the summary's headline in
+ * its trigger: the most-backed line before a ball is kicked, and the state of
+ * the round once results are landing (#267).
+ *
+ * The results tile leads when there is one, and the market's verdict keeps its
+ * place below it — unlike the shared message, which is one thing a group chat
+ * reads in passing, the card is a fold somebody opened on purpose, and what the
+ * market expected next to what happened is worth the scroll.
  *
  * `defaultOpen` exists for the `/preview` gallery, which has no way to click.
  * The page never passes it.
@@ -38,11 +45,19 @@ export function RoundSummaryCard({
 	return (
 		<Disclosure
 			title={summary.headline}
-			subtitle={`${summary.round.longLabel} · ${COPY.cardSubtitle}`}
+			subtitle={`${summary.round.longLabel} · ${
+				summary.results ? COPY.cardSubtitleResults : COPY.cardSubtitle
+			}`}
 			defaultOpen={defaultOpen}
 			className="mt-4"
 		>
 			<div className="divide-y divide-border">
+				{summary.results && (
+					<Tile heading={COPY.tiles.results}>
+						<ResultsTile results={summary.results} playersAlive={summary.playersAlive} />
+					</Tile>
+				)}
+
 				{summary.market && (
 					<Tile heading={COPY.tiles.market}>
 						<p className="text-sm">
@@ -155,6 +170,61 @@ export function RoundSummaryCard({
 				)}
 			</div>
 		</Disclosure>
+	)
+}
+
+/** Through, out and still to play — each list in the order the builder set. */
+function ResultsTile({
+	results,
+	playersAlive,
+}: {
+	results: RoundSummaryResults
+	playersAlive: number
+}) {
+	return (
+		<div className="space-y-2.5">
+			<p className="text-sm font-semibold tabular-nums">
+				{results.stillStanding} of {playersAlive} {COPY.stillStanding}
+			</p>
+			<OutcomeList heading={COPY.results.through} outcomes={results.through} />
+			<OutcomeList
+				heading={results.eliminates ? COPY.results.down : COPY.results.downNoElimination}
+				outcomes={results.down}
+			/>
+			<OutcomeList heading={COPY.results.stillToPlay} outcomes={results.stillToPlay} />
+		</div>
+	)
+}
+
+function OutcomeList({
+	heading,
+	outcomes,
+}: {
+	heading: string
+	outcomes: RoundSummaryPickOutcome[]
+}) {
+	if (outcomes.length === 0) return null
+	return (
+		<div>
+			<div className="text-2xs uppercase tracking-wide text-muted-foreground">{heading}</div>
+			<ul className="mt-1 space-y-1">
+				{outcomes.map((outcome) => (
+					<li
+						key={`${outcome.player.name}:${outcome.teamId}`}
+						className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+					>
+						<span className="text-sm font-semibold">{playerLabel(outcome.player)}</span>
+						<span className="text-sm">{outcome.shortName}</span>
+						{outcome.scoreline && (
+							<span className="text-xs text-muted-foreground tabular-nums">
+								{outcome.scoreline}
+								{outcome.finished ? '' : ` · ${COPY.results.inPlay}`}
+							</span>
+						)}
+					</li>
+				))}
+			</ul>
+		</div>
 	)
 }
 

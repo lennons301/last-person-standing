@@ -3,10 +3,37 @@ import {
 	type BuildRoundSummaryInput,
 	buildRoundSummary,
 	type RoundSummaryFixtureRow,
+	type RoundSummaryFixtureState,
 	type RoundSummaryPlayerRow,
 	type RoundSummaryRoundRow,
 	selectRoundSummaryRound,
 } from '@/lib/game/round-summary-view'
+
+/** A fixture nobody has kicked a ball in yet — the state a locked round opens in. */
+const SCHEDULED: RoundSummaryFixtureState = {
+	status: 'scheduled',
+	homeScore: null,
+	awayScore: null,
+	winner: null,
+}
+
+const finished = (
+	homeScore: number,
+	awayScore: number,
+	winner: 'home' | 'away' | null = null,
+): RoundSummaryFixtureState => ({ status: 'finished', homeScore, awayScore, winner })
+
+const live = (homeScore: number, awayScore: number): RoundSummaryFixtureState => ({
+	status: 'live',
+	homeScore,
+	awayScore,
+	winner: null,
+})
+
+/** The canonical round with results written onto the fixtures named. */
+function played(states: Record<string, RoundSummaryFixtureState>): RoundSummaryFixtureRow[] {
+	return FIXTURES.map((f) => (states[f.id] ? { ...f, state: states[f.id] } : f))
+}
 
 /**
  * A three-fixture priced round. Probabilities are the de-vigged 1X2 the sync
@@ -23,6 +50,7 @@ const FIXTURES: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.24, price: 4.1 },
 			away: { probability: 0.16, price: 6.2 },
 		},
+		state: SCHEDULED,
 	},
 	{
 		id: 'fx-2',
@@ -33,6 +61,7 @@ const FIXTURES: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.25, price: 4 },
 			away: { probability: 0.25, price: 4 },
 		},
+		state: SCHEDULED,
 	},
 	{
 		id: 'fx-3',
@@ -43,6 +72,7 @@ const FIXTURES: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.3, price: 3.3 },
 			away: { probability: 0.5, price: 2 },
 		},
+		state: SCHEDULED,
 	},
 ]
 
@@ -61,7 +91,8 @@ function player(
 function input(overrides: Partial<BuildRoundSummaryInput> = {}): BuildRoundSummaryInput {
 	return {
 		round: { label: 'GW12', longLabel: 'Gameweek 12' },
-		isStartingRound: false,
+		nonWinEliminates: true,
+		knockout: false,
 		fixtures: FIXTURES,
 		players: [
 			player('Alex', 't-ars'),
@@ -124,6 +155,7 @@ describe("buildRoundSummary — the market's verdict", () => {
 						home: { id: 't-new', shortName: 'NEW', name: 'Newcastle' },
 						away: { id: 't-ful', shortName: 'FUL', name: 'Fulham' },
 						odds: null,
+						state: SCHEDULED,
 					},
 				],
 				players: [
@@ -275,10 +307,10 @@ describe('buildRoundSummary — head to head', () => {
 		])
 	})
 
-	it('says a draw takes everyone in the fixture — once the starting round is behind them', () => {
+	it('says a draw takes everyone in the fixture — except where a non-win eliminates nobody', () => {
 		expect(buildRoundSummary(contested).headToHead[0].drawTakesAll).toBe(true)
 		expect(
-			buildRoundSummary({ ...contested, isStartingRound: true }).headToHead[0].drawTakesAll,
+			buildRoundSummary({ ...contested, nonWinEliminates: false }).headToHead[0].drawTakesAll,
 		).toBe(false)
 	})
 
@@ -339,6 +371,178 @@ describe('buildRoundSummary — a competition with no prices', () => {
 			['ARS', 0.6],
 			['MCI', null],
 		])
+	})
+})
+
+describe('buildRoundSummary — results', () => {
+	const field = [
+		player('Alex', 't-ars'), // home favourite, 0.60
+		player('Bea', 't-bre'), // away underdog, 0.16
+		player('Cass', 't-liv'), // away, 0.25
+		player('Dev', 't-che'), // away favourite, 0.50
+		player('Sam', null),
+	]
+
+	it('has nothing to report until a picked fixture has kicked off', () => {
+		const view = buildRoundSummary(input({ players: field }))
+
+		expect(view.results).toBeNull()
+		expect(view.headline).toBe('1 of 5 on ARS')
+	})
+
+	it('stays on the market read while only an unpicked fixture is under way', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-2': live(1, 0) }),
+				players: [player('Alex', 't-ars'), player('Dev', 't-che')],
+			}),
+		)
+
+		expect(view.results).toBeNull()
+	})
+
+	it('sorts the survivors by upset and the casualties by price', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({
+					'fx-1': finished(0, 1),
+					'fx-2': finished(0, 1),
+					'fx-3': finished(2, 0),
+				}),
+				players: field,
+			}),
+		)
+
+		// Longest price first among the winners; shortest price first among the losses.
+		expect(view.results?.through.map((o) => [o.player.name, o.shortName])).toEqual([
+			['Bea', 'BRE'],
+			['Cass', 'LIV'],
+		])
+		expect(view.results?.down.map((o) => [o.player.name, o.shortName])).toEqual([
+			['Alex', 'ARS'],
+			['Dev', 'CHE'],
+		])
+		expect(view.results?.complete).toBe(true)
+	})
+
+	it('carries the scoreline in both spellings, and only where there is one', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-1': finished(2, 0) }),
+				players: [player('Alex', 't-ars'), player('Cass', 't-liv')],
+			}),
+		)
+
+		expect(view.results?.through[0].scoreline).toBe('ARS 2-0 BRE')
+		expect(view.results?.through[0].longScoreline).toBe('Arsenal 2-0 Brentford')
+		expect(view.results?.stillToPlay[0].scoreline).toBeNull()
+	})
+
+	it('leaves a pick still to play while its fixture is in flight, however far ahead', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-1': live(3, 0) }),
+				players: [player('Alex', 't-ars')],
+			}),
+		)
+
+		expect(view.results?.through).toEqual([])
+		expect(view.results?.stillToPlay.map((o) => [o.player.name, o.result, o.finished])).toEqual([
+			['Alex', 'win', false],
+		])
+		expect(view.results?.complete).toBe(false)
+	})
+
+	it('leads the still-to-play list with the matches in flight', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-1': finished(2, 0), 'fx-3': live(0, 0) }),
+				players: field,
+			}),
+		)
+
+		// Dev's match is on; Cass's has not kicked off, whatever the alphabet says.
+		expect(view.results?.stillToPlay.map((o) => o.player.name)).toEqual(['Dev', 'Cass'])
+	})
+
+	it('defers a knockout tie the provider has not named a winner for', () => {
+		const level = input({
+			fixtures: played({ 'fx-1': finished(1, 1) }),
+			players: [player('Alex', 't-ars')],
+			knockout: true,
+		})
+
+		expect(buildRoundSummary(level).results?.stillToPlay.map((o) => o.player.name)).toEqual([
+			'Alex',
+		])
+		// …and settles it as a win the moment the winner lands, penalties and all.
+		expect(
+			buildRoundSummary({
+				...level,
+				fixtures: played({ 'fx-1': finished(1, 1, 'home') }),
+			}).results?.through.map((o) => o.player.name),
+		).toEqual(['Alex'])
+	})
+
+	it('counts the beaten and the no-pickers out, and leads on who is left', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({
+					'fx-1': finished(2, 0),
+					'fx-2': finished(1, 1),
+					'fx-3': finished(0, 3),
+				}),
+				players: field,
+			}),
+		)
+
+		// Alex through; Bea and Cass beaten; Dev through; Sam never picked.
+		expect(view.results?.stillStanding).toBe(2)
+		expect(view.headline).toBe('2 of 5 still standing')
+	})
+
+	it('counts nobody out where a non-win eliminates nobody', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({
+					'fx-1': finished(0, 1),
+					'fx-2': finished(1, 1),
+					'fx-3': finished(0, 3),
+				}),
+				players: field,
+				nonWinEliminates: false,
+			}),
+		)
+
+		expect(view.results?.eliminates).toBe(false)
+		expect(view.results?.down.map((o) => o.player.name)).toEqual(['Alex', 'Cass'])
+		expect(view.results?.stillStanding).toBe(5)
+		expect(view.headline).toBe('5 of 5 still standing')
+	})
+
+	it('counts what has landed while the round is still going', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-1': finished(2, 0), 'fx-2': live(0, 0) }),
+				players: field,
+			}),
+		)
+
+		expect(view.headline).toBe('1 through, 1 out, 2 to play')
+		expect(view.results?.complete).toBe(false)
+	})
+
+	it('keeps the market read beside the results rather than throwing it away', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-1': finished(2, 0) }),
+				players: field,
+			}),
+		)
+
+		expect(view.results).not.toBeNull()
+		expect(view.market?.picks).toBe(4)
+		expect(view.mostBacked).toHaveLength(4)
 	})
 })
 

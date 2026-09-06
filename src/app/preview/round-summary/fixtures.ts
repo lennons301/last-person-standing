@@ -2,6 +2,7 @@ import {
 	type BuildRoundSummaryInput,
 	buildRoundSummary,
 	type RoundSummaryFixtureRow,
+	type RoundSummaryFixtureState,
 	type RoundSummaryPlayerRow,
 	type RoundSummaryView,
 } from '@/lib/game/round-summary-view'
@@ -26,6 +27,28 @@ const CHE = { id: 't-che', shortName: 'CHE', name: 'Chelsea' }
 const NEW = { id: 't-new', shortName: 'NEW', name: 'Newcastle' }
 const FUL = { id: 't-ful', shortName: 'FUL', name: 'Fulham' }
 
+/** Nothing kicked off yet — the state the round locks in, and the preview half. */
+const SCHEDULED: RoundSummaryFixtureState = {
+	status: 'scheduled',
+	homeScore: null,
+	awayScore: null,
+	winner: null,
+}
+
+const finished = (homeScore: number, awayScore: number): RoundSummaryFixtureState => ({
+	status: 'finished',
+	homeScore,
+	awayScore,
+	winner: null,
+})
+
+const live = (homeScore: number, awayScore: number): RoundSummaryFixtureState => ({
+	status: 'live',
+	homeScore,
+	awayScore,
+	winner: null,
+})
+
 /** A priced gameweek: four matches, the whole de-vigged 1X2 on each. */
 const PRICED: RoundSummaryFixtureRow[] = [
 	{
@@ -37,6 +60,7 @@ const PRICED: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.24, price: 4.1 },
 			away: { probability: 0.16, price: 6.2 },
 		},
+		state: SCHEDULED,
 	},
 	{
 		id: 'fx-2',
@@ -47,6 +71,7 @@ const PRICED: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.25, price: 4 },
 			away: { probability: 0.25, price: 4 },
 		},
+		state: SCHEDULED,
 	},
 	{
 		id: 'fx-3',
@@ -57,6 +82,7 @@ const PRICED: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.3, price: 3.3 },
 			away: { probability: 0.5, price: 2 },
 		},
+		state: SCHEDULED,
 	},
 	{
 		id: 'fx-4',
@@ -67,11 +93,32 @@ const PRICED: RoundSummaryFixtureRow[] = [
 			draw: { probability: 0.27, price: 3.7 },
 			away: { probability: 0.28, price: 3.6 },
 		},
+		state: SCHEDULED,
 	},
 ]
 
 /** The same round with the prices taken away: a World Cup or FA Cup classic game. */
 const UNPRICED: RoundSummaryFixtureRow[] = PRICED.map((f) => ({ ...f, odds: null }))
+
+/** The same round with scores written onto the fixtures named. */
+function withResults(states: Record<string, RoundSummaryFixtureState>): RoundSummaryFixtureRow[] {
+	return PRICED.map((f) => (states[f.id] ? { ...f, state: states[f.id] } : f))
+}
+
+/** Saturday teatime: two matches done, one still on, one still to come. */
+const PART_PLAYED = withResults({
+	'fx-1': finished(2, 0), // ARS beat BRE
+	'fx-2': live(1, 1), // MCI v LIV in play
+	'fx-3': finished(1, 1), // EVE drew with CHE
+})
+
+/** Monday morning: every match in. */
+const ALL_PLAYED = withResults({
+	'fx-1': finished(2, 0), // ARS beat BRE
+	'fx-2': finished(0, 2), // LIV won at MCI
+	'fx-3': finished(1, 1), // EVE drew with CHE
+	'fx-4': finished(0, 1), // FUL won at NEW
+})
 
 function player(
 	name: string,
@@ -88,7 +135,8 @@ function player(
 function round(overrides: Partial<BuildRoundSummaryInput>): RoundSummaryView {
 	return buildRoundSummary({
 		round: { label: 'GW12', longLabel: 'Gameweek 12' },
-		isStartingRound: false,
+		nonWinEliminates: true,
+		knockout: false,
 		fixtures: PRICED,
 		players: [],
 		...overrides,
@@ -209,6 +257,58 @@ export const ROUND_SUMMARY_CASES: RoundSummaryFixtureCase[] = [
 				player('Cass', BRE.id),
 				player('Dev', CHE.id),
 				player('Sam', null),
+			],
+		}),
+	},
+	{
+		key: 'results-in-play',
+		title: 'Results coming in',
+		description:
+			'Two matches down, one still on, one still to come. The summary has stopped previewing the round and started reporting it: the trigger counts what has landed, and the market read moves below the results (#267).',
+		summary: round({
+			fixtures: PART_PLAYED,
+			players: [
+				player('Alex', ARS.id),
+				player('Bea', ARS.id),
+				player('Cass', BRE.id),
+				player('Dev', CHE.id),
+				player('Eve', LIV.id),
+				player('Fay', FUL.id),
+				player('Sam', null),
+			],
+		}),
+	},
+	{
+		key: 'results-complete',
+		title: 'The round is done',
+		description:
+			'Every pick has its answer, so the headline is the only figure the round was ever about — who is left. A draw goes down with the losses; the player the deadline caught with nothing went out at the deadline.',
+		summary: round({
+			fixtures: ALL_PLAYED,
+			players: [
+				player('Alex', ARS.id),
+				player('Bea', ARS.id),
+				player('Cass', BRE.id),
+				player('Dev', CHE.id),
+				player('Eve', LIV.id, { isAuto: true }),
+				player('Fay', NEW.id),
+				player('Sam', null),
+			],
+		}),
+	},
+	{
+		key: 'results-opening-round',
+		title: 'The opening round, where nobody goes out',
+		description:
+			'The same finished round in a game whose starting round it is, with rebuys off. Beaten picks are reported as beaten rather than out, and the standing count does not move.',
+		summary: round({
+			fixtures: ALL_PLAYED,
+			nonWinEliminates: false,
+			players: [
+				player('Alex', ARS.id),
+				player('Bea', BRE.id),
+				player('Cass', CHE.id),
+				player('Dev', NEW.id),
 			],
 		}),
 	},
