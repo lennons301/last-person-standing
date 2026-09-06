@@ -219,4 +219,50 @@ describe('ProgressGrid — current-week picks filter', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Share grid' }))
 		expect(onShare).toHaveBeenCalledWith(expect.stringContaining('currentRoundPicks=1'))
 	})
+
+	it('falls back to last week once the game has moved on to a round nobody has picked yet', () => {
+		const priorRound: GridRound = { ...ROUND, id: 'r12', number: 12, picksLocked: true }
+		const newRound: GridRound = {
+			...ROUND,
+			id: 'r13',
+			number: 13,
+			label: 'GW13',
+			picksLocked: false,
+		}
+		const players: GridPlayer[] = [
+			{
+				id: 'p1',
+				userId: 'u1',
+				name: 'Alice',
+				status: 'alive',
+				goals: 0,
+				cellsByRoundId: {
+					r12: { result: 'win', teamShortName: 'ARS' },
+					r13: { result: 'empty' },
+				},
+			},
+			{
+				id: 'p2',
+				userId: 'u2',
+				name: 'Bob',
+				status: 'eliminated',
+				eliminatedRoundNumber: 12,
+				goals: 0,
+				cellsByRoundId: { r12: { result: 'loss', teamShortName: 'CHE' } },
+			},
+		]
+		render(
+			<ProgressGrid
+				rounds={[priorRound, newRound]}
+				players={players}
+				aliveCount={1}
+				eliminatedCount={1}
+				currentRoundId="r13"
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Current week picks' }))
+		expect(screen.getByText('Alice')).toBeTruthy()
+		expect(screen.getByText('Bob')).toBeTruthy()
+	})
 })

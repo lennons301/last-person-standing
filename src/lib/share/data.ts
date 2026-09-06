@@ -2,7 +2,12 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
-import { type GridSort, hasValidClassicPick, sortGridPlayers } from '@/lib/game/grid-sort'
+import {
+	type GridSort,
+	hasValidClassicPick,
+	resolveCurrentWeekRoundId,
+	sortGridPlayers,
+} from '@/lib/game/grid-sort'
 import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import {
 	type GridView,
@@ -215,10 +220,19 @@ export async function getShareStandingsData(
 		// Order + filter the players in the data layer so the layout is a dumb
 		// renderer. Default ordering matches the on-screen grid's default ('status').
 		const sort: GridSort = options?.sort ?? { key: 'status', dir: 'asc' }
+		// Same fallback the on-screen filter applies: right after a gameweek
+		// settles, `grid.currentRoundId` has moved on to a round with no picks on
+		// it yet, so this drops back to the last locked round rather than sharing
+		// an empty grid for the whole gap before the next deadline.
+		const currentWeekRoundId = resolveCurrentWeekRoundId(
+			grid.rounds,
+			grid.players,
+			grid.currentRoundId,
+		)
 		const filtered =
-			options?.currentRoundPicks && grid.currentRoundId
+			options?.currentRoundPicks && currentWeekRoundId
 				? grid.players.filter((p) => {
-						const cell = p.cellsByRoundId[grid.currentRoundId as string]
+						const cell = p.cellsByRoundId[currentWeekRoundId]
 						return cell != null && hasValidClassicPick(cell)
 					})
 				: options?.aliveOnly

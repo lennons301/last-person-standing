@@ -150,6 +150,39 @@ describe('getShareStandingsData', () => {
 		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice', 'Bob'])
 	})
 
+	it('classic: currentRoundPicks falls back to the last locked gameweek right after one settles', async () => {
+		makeHeaderMock('classic')
+		// GW2 just settled and the game has moved on to GW3, which nobody has
+		// picked yet — the share should still speak about GW2, not an empty GW3.
+		getProgressGridDataMock.mockResolvedValue({
+			currentRoundId: 'r3',
+			rounds: [
+				{ id: 'r2', number: 2, label: 'GW2', picksLocked: true },
+				{ id: 'r3', number: 3, label: 'GW3', picksLocked: false },
+			],
+			players: [
+				{
+					id: 'a',
+					name: 'Alice',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r2: { result: 'win' }, r3: { result: 'empty' } },
+				},
+				{
+					id: 'b',
+					name: 'Bob',
+					status: 'eliminated',
+					eliminatedRoundNumber: 2,
+					goals: 0,
+					cellsByRoundId: { r2: { result: 'loss' } },
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1', { currentRoundPicks: true })
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice', 'Bob'])
+	})
+
 	it('returns cup shape when mode is cup', async () => {
 		makeHeaderMock('cup')
 		getCupStandingsDataMock.mockResolvedValue({
