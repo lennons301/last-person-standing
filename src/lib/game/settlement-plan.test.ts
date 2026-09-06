@@ -31,6 +31,7 @@ function player(id: string, over: Partial<SettlementPlayer> = {}): SettlementPla
 		status: 'alive',
 		eliminatedReason: null,
 		eliminatedRoundId: null,
+		eliminatedRoundNumber: null,
 		livesRemaining: 0,
 		...over,
 	}
@@ -174,6 +175,25 @@ describe('deriveSettlement — classic', () => {
 				countsAsElimination: true,
 			},
 		])
+	})
+
+	it('invalidates a pending advance pick instead of settling it after elimination', () => {
+		const plan = deriveSettlement(
+			facts(CLASSIC, {
+				players: [
+					player('gp-1', {
+						status: 'eliminated',
+						eliminatedReason: 'loss',
+						eliminatedRoundId: 'round-before',
+						eliminatedRoundNumber: 4,
+					}),
+				],
+			}),
+		)
+
+		expect(plan.pickWrites).toEqual([])
+		expect(plan.pickDeletes).toEqual(['pick-1'])
+		expect(plan.counters.classicSettled).toBe(0)
 	})
 
 	it("exempts a loss on the game's own starting round when rebuys are off (#203)", () => {
