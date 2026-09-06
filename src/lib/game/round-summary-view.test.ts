@@ -390,6 +390,27 @@ describe('buildRoundSummary — results', () => {
 		expect(view.headline).toBe('1 of 5 on ARS')
 	})
 
+	it('groups everyone on the same pick into one outcome instead of repeating it per player', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-1': finished(2, 0) }),
+				players: [
+					player('Alex', 't-ars'),
+					player('Bea', 't-ars'),
+					player('Cass', 't-ars', { isAuto: true }),
+				],
+			}),
+		)
+
+		expect(view.results?.through).toHaveLength(1)
+		expect(view.results?.through[0].shortName).toBe('ARS')
+		expect(view.results?.through[0].players.map((p) => [p.name, p.isAuto])).toEqual([
+			['Alex', false],
+			['Bea', false],
+			['Cass', true],
+		])
+	})
+
 	it('stays on the market read while only an unpicked fixture is under way', () => {
 		const view = buildRoundSummary(
 			input({
@@ -414,13 +435,13 @@ describe('buildRoundSummary — results', () => {
 		)
 
 		// Longest price first among the winners; shortest price first among the losses.
-		expect(view.results?.through.map((o) => [o.player.name, o.shortName])).toEqual([
-			['Bea', 'BRE'],
-			['Cass', 'LIV'],
+		expect(view.results?.through.map((o) => [o.players.map((p) => p.name), o.shortName])).toEqual([
+			[['Bea'], 'BRE'],
+			[['Cass'], 'LIV'],
 		])
-		expect(view.results?.down.map((o) => [o.player.name, o.shortName])).toEqual([
-			['Alex', 'ARS'],
-			['Dev', 'CHE'],
+		expect(view.results?.down.map((o) => [o.players.map((p) => p.name), o.shortName])).toEqual([
+			[['Alex'], 'ARS'],
+			[['Dev'], 'CHE'],
 		])
 		expect(view.results?.complete).toBe(true)
 	})
@@ -447,9 +468,9 @@ describe('buildRoundSummary — results', () => {
 		)
 
 		expect(view.results?.through).toEqual([])
-		expect(view.results?.stillToPlay.map((o) => [o.player.name, o.result, o.finished])).toEqual([
-			['Alex', 'win', false],
-		])
+		expect(
+			view.results?.stillToPlay.map((o) => [o.players.map((p) => p.name), o.result, o.finished]),
+		).toEqual([[['Alex'], 'win', false]])
 		expect(view.results?.complete).toBe(false)
 	})
 
@@ -462,7 +483,10 @@ describe('buildRoundSummary — results', () => {
 		)
 
 		// Dev's match is on; Cass's has not kicked off, whatever the alphabet says.
-		expect(view.results?.stillToPlay.map((o) => o.player.name)).toEqual(['Dev', 'Cass'])
+		expect(view.results?.stillToPlay.map((o) => o.players.map((p) => p.name))).toEqual([
+			['Dev'],
+			['Cass'],
+		])
 	})
 
 	it('defers a knockout tie the provider has not named a winner for', () => {
@@ -472,16 +496,16 @@ describe('buildRoundSummary — results', () => {
 			knockout: true,
 		})
 
-		expect(buildRoundSummary(level).results?.stillToPlay.map((o) => o.player.name)).toEqual([
-			'Alex',
-		])
+		expect(
+			buildRoundSummary(level).results?.stillToPlay.map((o) => o.players.map((p) => p.name)),
+		).toEqual([['Alex']])
 		// …and settles it as a win the moment the winner lands, penalties and all.
 		expect(
 			buildRoundSummary({
 				...level,
 				fixtures: played({ 'fx-1': finished(1, 1, 'home') }),
-			}).results?.through.map((o) => o.player.name),
-		).toEqual(['Alex'])
+			}).results?.through.map((o) => o.players.map((p) => p.name)),
+		).toEqual([['Alex']])
 	})
 
 	it('counts the beaten and the no-pickers out, and leads on who is left', () => {
@@ -515,7 +539,10 @@ describe('buildRoundSummary — results', () => {
 		)
 
 		expect(view.results?.eliminates).toBe(false)
-		expect(view.results?.down.map((o) => o.player.name)).toEqual(['Alex', 'Cass'])
+		expect(view.results?.down.map((o) => o.players.map((p) => p.name))).toEqual([
+			['Alex'],
+			['Cass'],
+		])
 		expect(view.results?.stillStanding).toBe(5)
 		expect(view.headline).toBe('5 of 5 still standing')
 	})

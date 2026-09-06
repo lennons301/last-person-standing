@@ -35,7 +35,11 @@ import type {
 	RoundSummaryTeamFigure,
 	RoundSummaryView,
 } from '@/lib/game/round-summary-view'
-import { ROUND_SUMMARY_COPY as COPY, formatWinChance } from '@/lib/game/round-summary-view'
+import {
+	ROUND_SUMMARY_COPY as COPY,
+	formatWinChance,
+	pickCount,
+} from '@/lib/game/round-summary-view'
 
 /** How many gambles the prose names before it summarises the rest as a count. */
 const BOLD_CALLS_NAMED = 3
@@ -84,14 +88,14 @@ function resultsHeadline(summary: RoundSummaryView): string {
 /** Where the round stands, in counts. */
 function stateParagraph(summary: RoundSummaryView, results: RoundSummaryResults): string {
 	const sentences: string[] = []
-	const settled = results.through.length + results.down.length
+	const settled = pickCount(results.through) + pickCount(results.down)
 
 	if (results.complete) {
 		sentences.push(`${summary.round.longLabel} is done.`)
 	} else {
 		const played = `${settled} of ${summary.picksMade} ${summary.picksMade === 1 ? 'pick' : 'picks'} settled`
 		sentences.push(
-			`${summary.round.longLabel} is under way — ${played}, ${results.stillToPlay.length} still to play.`,
+			`${summary.round.longLabel} is under way — ${played}, ${pickCount(results.stillToPlay)} still to play.`,
 		)
 	}
 
@@ -139,9 +143,13 @@ function stillToPlayParagraph(results: RoundSummaryResults): string {
 	return `Still to play: ${results.stillToPlay.map(outcomeLine).join(', ')}.`
 }
 
-/** "Alex on Arsenal (Arsenal 2-0 Brentford)" — the scoreline only where there is one. */
+/**
+ * "Alex and Bea on Arsenal (Arsenal 2-0 Brentford)" — the scoreline only where
+ * there is one, and named once for everyone on the pick rather than once per
+ * name repeating it.
+ */
 function outcomeLine(outcome: RoundSummaryPickOutcome): string {
-	const name = `${playerName(outcome.player)} on ${outcome.name}`
+	const name = `${nameList(outcome.players)} on ${outcome.name}`
 	if (!outcome.longScoreline) return name
 	const state = outcome.finished ? '' : `, ${COPY.results.inPlay}`
 	return `${name} (${outcome.longScoreline}${state})`

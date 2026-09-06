@@ -209,12 +209,20 @@ describe('formatRoundSummaryText — once results are in', () => {
 				'',
 				'Gameweek 12 is done. 4 of 5 still standing.',
 				'',
-				'Through: Dev on Chelsea (Everton 0-2 Chelsea), Alex on Arsenal (Arsenal 1-0 Brentford), Bea on Arsenal (Arsenal 1-0 Brentford), Cass on Arsenal (Arsenal 1-0 Brentford).',
+				'Through: Dev on Chelsea (Everton 0-2 Chelsea), Alex, Bea and Cass on Arsenal (Arsenal 1-0 Brentford).',
 				'',
 				'Sam made no pick at all, and went out on it.',
 			].join('\n'),
 		)
 		expect(text).not.toContain('the market expects')
+	})
+
+	it('names a shared scoreline once for the whole group, not once per backer', () => {
+		const text = formatRoundSummaryText(
+			summary({ fixtures: played({ 'fx-1': finished(1, 0), 'fx-3': finished(0, 2) }) }),
+		)
+
+		expect(text.match(/Arsenal 1-0 Brentford/g)).toHaveLength(1)
 	})
 
 	it('reports a round still going, marking what is still on', () => {
@@ -228,7 +236,7 @@ describe('formatRoundSummaryText — once results are in', () => {
 				'',
 				'Gameweek 12 is under way — 3 of 4 picks settled, 1 still to play. 1 of 5 still standing so far.',
 				'',
-				'Out: Alex on Arsenal (Arsenal 0-2 Brentford), Bea on Arsenal (Arsenal 0-2 Brentford), Cass on Arsenal (Arsenal 0-2 Brentford). Sam made no pick at all, and went out on it.',
+				'Out: Alex, Bea and Cass on Arsenal (Arsenal 0-2 Brentford). Sam made no pick at all, and went out on it.',
 				'',
 				'Still to play: Dev on Chelsea (Everton 1-1 Chelsea, in play).',
 			].join('\n'),

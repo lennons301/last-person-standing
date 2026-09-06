@@ -372,14 +372,20 @@ export interface RoundSummaryHeadToHead {
 }
 
 /**
- * One pick, with what the round has done to it so far.
+ * One team's pick, grouped, with what the round has done to it so far.
+ *
+ * Grouped by team rather than one row per player: everyone on the same pick
+ * shares the same fixture, the same result and the same scoreline, so listing
+ * them separately said "ARS 2-0 BRE" once per backer instead of once per
+ * fixture — the same score, over and over, for a field that mostly piles onto
+ * a handful of teams.
  *
  * The result is `resolveClassicPickResult`'s and nothing else's — the same
  * function the settle path, the progress grid and the live view read — so the
  * summary can't call a knockout tie won on penalties a loss (#242).
  */
 export interface RoundSummaryPickOutcome extends RoundSummaryTeamFigure {
-	player: RoundSummaryPlayerRef
+	players: RoundSummaryPlayerRef[]
 	/**
 	 * How the pick stands: null while there is nothing to say (not kicked off, or
 	 * a knockout tie level at full time with no winner reported yet). Provisional
@@ -522,7 +528,9 @@ function buildResults(
 	teamsById: Map<string, RoundSummaryTeamSlot>,
 	context: ResultsContext,
 ): RoundSummaryResults | null {
-	const outcomes: RoundSummaryPickOutcome[] = []
+	// One outcome per team, not per player: everyone who picked the same team
+	// shares its fixture, its result and its scoreline, so they're one row.
+	const outcomesByTeam = new Map<string, RoundSummaryPickOutcome>()
 	let started = false
 
 	for (const player of picked) {
@@ -530,21 +538,28 @@ function buildResults(
 		if (!pick) continue
 		const slot = teamsById.get(pick.teamId)
 		if (!slot) continue
-		const fixture = survivalFixture(slot, context.knockout)
-		const resolution = resolveClassicPickResult({ teamId: pick.teamId }, fixture)
 		if (hasStarted(slot.fixture.state)) started = true
-		outcomes.push({
-			...figureFor(slot),
-			player: { name: player.name, isAuto: pick.isAuto },
-			result: resolution.defer ? null : resolution.result,
-			finished: slot.fixture.state.status === 'finished',
-			scoreline: scoreline(slot.fixture, (t) => t.shortName),
-			longScoreline: scoreline(slot.fixture, (t) => t.name),
-		})
+
+		let outcome = outcomesByTeam.get(pick.teamId)
+		if (!outcome) {
+			const fixture = survivalFixture(slot, context.knockout)
+			const resolution = resolveClassicPickResult({ teamId: pick.teamId }, fixture)
+			outcome = {
+				...figureFor(slot),
+				players: [],
+				result: resolution.defer ? null : resolution.result,
+				finished: slot.fixture.state.status === 'finished',
+				scoreline: scoreline(slot.fixture, (t) => t.shortName),
+				longScoreline: scoreline(slot.fixture, (t) => t.name),
+			}
+			outcomesByTeam.set(pick.teamId, outcome)
+		}
+		outcome.players.push({ name: player.name, isAuto: pick.isAuto })
 	}
 
 	if (!started) return null
 
+	const outcomes = [...outcomesByTeam.values()]
 	// Only a finished fixture settles a pick. A team two goals up at half time is
 	// not through, and reporting it as through would name a survivor the grid
 	// beside it still shows pending.
@@ -553,11 +568,11 @@ function buildResults(
 		.filter((o) => o.result === 'win')
 		// Longest price first: the shock is the story, and an unpriced pick sinks
 		// below the priced ones rather than leading on a probability it hasn't got.
-		.sort((a, b) => byProbabilityAsc(a, b) || a.player.name.localeCompare(b.player.name))
+		.sort((a, b) => byProbabilityAsc(a, b) || a.shortName.localeCompare(b.shortName))
 	const down = settled
 		.filter((o) => o.result !== 'win')
 		// Shortest price first: a favourite going down is the bigger casualty.
-		.sort((a, b) => byProbabilityDesc(a, b) || a.player.name.localeCompare(b.player.name))
+		.sort((a, b) => byProbabilityDesc(a, b) || a.shortName.localeCompare(b.shortName))
 	// Matches in flight lead the ones still to come: something is happening in
 	// them, and a scoreline already on the board is the part worth reading first.
 	const stillToPlay = outcomes
@@ -565,14 +580,14 @@ function buildResults(
 		.sort(
 			(a, b) =>
 				Number(b.scoreline != null) - Number(a.scoreline != null) ||
-				a.shortName.localeCompare(b.shortName) ||
-				a.player.name.localeCompare(b.player.name),
+				a.shortName.localeCompare(b.shortName),
 		)
 
 	// A player the deadline caught with nothing was eliminated by the lock, not by
 	// a result, so they're out from the moment the round locked — where a non-win
 	// eliminates at all.
-	const out = context.nonWinEliminates ? down.length + context.noPickPlayers : 0
+	const beaten = down.reduce((n, o) => n + o.players.length, 0)
+	const out = context.nonWinEliminates ? beaten + context.noPickPlayers : 0
 
 	return {
 		complete: stillToPlay.length === 0,
@@ -840,6 +855,15 @@ function buildHeadline(mostBacked: RoundSummaryBackedTeam[], playersAlive: numbe
 }
 
 /**
+ * How many picks a list of (now team-grouped) outcomes actually covers — the
+ * sum of each group's players, not the number of groups. A round where three
+ * players all backed the same team going down is three picks beaten, not one.
+ */
+export function pickCount(outcomes: RoundSummaryPickOutcome[]): number {
+	return outcomes.reduce((sum, o) => sum + o.players.length, 0)
+}
+
+/**
  * The trigger line once results are landing. Mid-round it counts what has come
  * in; finished, it states the one figure the round was ever about — who is left.
  */
@@ -850,5 +874,5 @@ function buildResultsHeadline(results: RoundSummaryResults, playersAlive: number
 	const beaten = results.eliminates
 		? ROUND_SUMMARY_COPY.results.countOut
 		: ROUND_SUMMARY_COPY.results.countBeaten
-	return `${results.through.length} through, ${results.down.length} ${beaten}, ${results.stillToPlay.length} to play`
+	return `${pickCount(results.through)} through, ${pickCount(results.down)} ${beaten}, ${pickCount(results.stillToPlay)} to play`
 }
