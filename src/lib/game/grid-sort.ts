@@ -1,3 +1,5 @@
+import type { GridCell } from './read/standings'
+
 export type GridSortKey = 'status' | 'goals' | 'name' | 'round'
 export type GridSortDir = 'asc' | 'desc'
 
@@ -65,4 +67,9 @@ export function sortGridPlayers<T extends SortablePlayer>(players: T[], sort: Gr
 
 		return (sort.dir === 'desc' ? -prim : prim) || name
 	})
+}
+
+/** Whether a grid cell represents a submitted classic pick. */
+export function hasValidClassicPick(cell: GridCell): boolean {
+	return cell.result !== 'empty' && cell.result !== 'no_pick' && cell.result !== 'skull'
 }

@@ -93,11 +93,6 @@ export interface GridCell {
 	fixtureStatus?: FixtureRecordStatus
 }
 
-/** Whether a grid cell represents a submitted classic pick. */
-export function hasValidClassicPick(cell: GridCell): boolean {
-	return cell.result !== 'empty' && cell.result !== 'no_pick' && cell.result !== 'skull'
-}
-
 export interface GridPlayer {
 	id: string
 	/** Present in the live grid (used by admin remove); omitted in the share image. */

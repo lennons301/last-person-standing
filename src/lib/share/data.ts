@@ -2,13 +2,12 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import type { CupStandingsData } from '@/lib/game/cup-standings-queries'
 import { getCupStandingsData } from '@/lib/game/cup-standings-queries'
-import { type GridSort, sortGridPlayers } from '@/lib/game/grid-sort'
+import { type GridSort, hasValidClassicPick, sortGridPlayers } from '@/lib/game/grid-sort'
 import { resolvePickVisibility } from '@/lib/game/pick-visibility'
 import {
 	type GridView,
 	getProgressGridData,
 	getTurboStandingsData,
-	hasValidClassicPick,
 	type TurboStandings,
 } from '@/lib/game/read/standings'
 import { roundLabel } from '@/lib/game/round-label'

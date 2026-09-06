@@ -13,14 +13,10 @@ import {
 	type GridSort,
 	type GridSortDir,
 	type GridSortKey,
+	hasValidClassicPick,
 	sortGridPlayers,
 } from '@/lib/game/grid-sort'
-import {
-	type GridCell,
-	type GridPlayer,
-	type GridRound,
-	hasValidClassicPick,
-} from '@/lib/game/read/standings'
+import type { GridCell, GridPlayer, GridRound } from '@/lib/game/read/standings'
 import { cn } from '@/lib/utils'
 import { AdminPlayerActions } from './admin-player-actions'
 import { GridFilter } from './grid-filter'
