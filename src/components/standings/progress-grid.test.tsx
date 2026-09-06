@@ -169,3 +169,54 @@ describe('ProgressGrid — tapping a pick cell', () => {
 		expect(screen.queryByRole('button', { name: /^Open fixture details/ })).toBeNull()
 	})
 })
+
+describe('ProgressGrid — current-week picks filter', () => {
+	it('shows submitted current-week picks, including eliminated players, and shares that selection', () => {
+		const onShare = vi.fn()
+		const players: GridPlayer[] = [
+			{
+				id: 'p1',
+				userId: 'u1',
+				name: 'Alice',
+				status: 'alive',
+				goals: 0,
+				cellsByRoundId: { r1: { result: 'win', teamShortName: 'ARS' } },
+			},
+			{
+				id: 'p2',
+				userId: 'u2',
+				name: 'Bob',
+				status: 'eliminated',
+				eliminatedRoundNumber: 12,
+				goals: 0,
+				cellsByRoundId: { r1: { result: 'loss', teamShortName: 'CHE' } },
+			},
+			{
+				id: 'p3',
+				userId: 'u3',
+				name: 'Carol',
+				status: 'alive',
+				goals: 0,
+				cellsByRoundId: { r1: { result: 'no_pick' } },
+			},
+		]
+		render(
+			<ProgressGrid
+				rounds={[ROUND]}
+				players={players}
+				aliveCount={2}
+				eliminatedCount={1}
+				currentRoundId="r1"
+				onShare={onShare}
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Current week picks' }))
+		expect(screen.getByText('Alice')).toBeTruthy()
+		expect(screen.getByText('Bob')).toBeTruthy()
+		expect(screen.queryByText('Carol')).toBeNull()
+
+		fireEvent.click(screen.getByRole('button', { name: 'Share grid' }))
+		expect(onShare).toHaveBeenCalledWith(expect.stringContaining('currentRoundPicks=1'))
+	})
+})

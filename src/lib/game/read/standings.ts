@@ -93,6 +93,11 @@ export interface GridCell {
 	fixtureStatus?: FixtureRecordStatus
 }
 
+/** Whether a grid cell represents a submitted classic pick. */
+export function hasValidClassicPick(cell: GridCell): boolean {
+	return cell.result !== 'empty' && cell.result !== 'no_pick' && cell.result !== 'skull'
+}
+
 export interface GridPlayer {
 	id: string
 	/** Present in the live grid (used by admin remove); omitted in the share image. */
@@ -115,6 +120,8 @@ export interface GridView {
 	players: GridPlayer[]
 	aliveCount: number
 	eliminatedCount: number
+	/** The gameweek currently being played, if the game has not completed. */
+	currentRoundId: string | null
 	/** Threaded through so a tapped cell can open the fixture-detail sheet (#226). */
 	competitionId: string
 }
@@ -769,7 +776,14 @@ export async function getProgressGridData(
 
 	// No pot figure here on purpose: the page's stat line owns the pot headline,
 	// so the standings section neither queries nor prints one.
-	return { rounds, players, aliveCount, eliminatedCount, competitionId: gameData.competition.id }
+	return {
+		rounds,
+		players,
+		aliveCount,
+		eliminatedCount,
+		currentRoundId: gameData.currentRoundId,
+		competitionId: gameData.competition.id,
+	}
 }
 
 /**
