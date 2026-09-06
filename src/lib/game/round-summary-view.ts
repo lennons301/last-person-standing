@@ -411,8 +411,9 @@ export interface RoundSummaryResults {
 	/** Picks that went down, the shortest price first — the biggest casualty leads. */
 	down: RoundSummaryPickOutcome[]
 	/**
-	 * Still playing, yet to kick off, or waiting on a knockout tie's winner. A
-	 * postponed or cancelled fixture sits here too: nothing has happened to it.
+	 * Still playing, yet to kick off, or waiting on a knockout tie's winner, the
+	 * matches in flight first. A postponed or cancelled fixture sits here too:
+	 * nothing has happened to it.
 	 */
 	stillToPlay: RoundSummaryPickOutcome[]
 	/** Does a beaten pick put its backer out? `BuildRoundSummaryInput.nonWinEliminates`. */
@@ -557,11 +558,15 @@ function buildResults(
 		.filter((o) => o.result !== 'win')
 		// Shortest price first: a favourite going down is the bigger casualty.
 		.sort((a, b) => byProbabilityDesc(a, b) || a.player.name.localeCompare(b.player.name))
+	// Matches in flight lead the ones still to come: something is happening in
+	// them, and a scoreline already on the board is the part worth reading first.
 	const stillToPlay = outcomes
 		.filter((o) => !(o.finished && o.result != null))
 		.sort(
 			(a, b) =>
-				a.shortName.localeCompare(b.shortName) || a.player.name.localeCompare(b.player.name),
+				Number(b.scoreline != null) - Number(a.scoreline != null) ||
+				a.shortName.localeCompare(b.shortName) ||
+				a.player.name.localeCompare(b.player.name),
 		)
 
 	// A player the deadline caught with nothing was eliminated by the lock, not by

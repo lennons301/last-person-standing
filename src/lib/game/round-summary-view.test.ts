@@ -453,6 +453,18 @@ describe('buildRoundSummary — results', () => {
 		expect(view.results?.complete).toBe(false)
 	})
 
+	it('leads the still-to-play list with the matches in flight', () => {
+		const view = buildRoundSummary(
+			input({
+				fixtures: played({ 'fx-1': finished(2, 0), 'fx-3': live(0, 0) }),
+				players: field,
+			}),
+		)
+
+		// Dev's match is on; Cass's has not kicked off, whatever the alphabet says.
+		expect(view.results?.stillToPlay.map((o) => o.player.name)).toEqual(['Dev', 'Cass'])
+	})
+
 	it('defers a knockout tie the provider has not named a winner for', () => {
 		const level = input({
 			fixtures: played({ 'fx-1': finished(1, 1) }),
