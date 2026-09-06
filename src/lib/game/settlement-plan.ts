@@ -71,6 +71,7 @@ export interface SettlementPlayer {
 	status: PlayerStatus
 	eliminatedReason: EliminationReason | null
 	eliminatedRoundId: string | null
+	eliminatedRoundNumber: number | null
 	livesRemaining: number
 }
 
@@ -212,7 +213,10 @@ export interface SettlementPlan {
 	gameId: string
 	/** The round the settling fixture belongs to — what `completeRound` closes. */
 	roundId: string
+	roundNumber: number
 	pickWrites: PickWrite[]
+	/** Legacy advance picks found after their player was already eliminated. */
+	pickDeletes: string[]
 	playerWrites: PlayerWrite[]
 	/** What the writes above contribute to the `SettleResult` counters. */
 	counters: {
@@ -246,7 +250,9 @@ function emptyPlan(facts: SettlementFacts): SettlementPlan {
 	return {
 		gameId: facts.game.id,
 		roundId: facts.round.id,
+		roundNumber: facts.round.number,
 		pickWrites: [],
+		pickDeletes: [],
 		playerWrites: [],
 		counters: { classicSettled: 0, turboSettled: 0, picksVoided: 0, cupReevaluated: false },
 		roundSettled: false,
@@ -363,6 +369,15 @@ function deriveClassic(facts: SettlementFacts): SettlementPlan {
 	if (facts.fixture.status === 'finished') {
 		for (const p of facts.fixturePicks) {
 			if (p.result !== 'pending') continue
+			const player = facts.players.find((candidate) => candidate.id === p.gamePlayerId)
+			if (
+				player?.status === 'eliminated' &&
+				player.eliminatedRoundNumber != null &&
+				facts.round.number > player.eliminatedRoundNumber
+			) {
+				plan.pickDeletes.push(p.id)
+				continue
+			}
 			// THE classic survival rule, shared with both projections (#242): it reads
 			// `fixture.winner`, so a tie settled on penalties is a win rather than a
 			// draw; it defers an unresolved knockout tie (#107) rather than scoring
@@ -402,7 +417,10 @@ function deriveClassic(facts: SettlementFacts): SettlementPlan {
 	// Everything below reads the state the writes above will leave behind — the
 	// alive count decides the winner, so it has to see this fixture's exits.
 	let players = withPlayerWrites(facts.players, plan.playerWrites)
-	const roundPicks = withPickWrites(facts.roundPicks, plan.pickWrites)
+	const roundPicks = withPickWrites(
+		facts.roundPicks.filter((pick) => !plan.pickDeletes.includes(pick.id)),
+		plan.pickWrites,
+	)
 	plan.roundSettled = isRoundSettled({ fixtures: facts.roundFixtures, picks: roundPicks })
 
 	// World Cup auto-elim runs once the round is fully settled (it needs the full
@@ -416,7 +434,10 @@ function deriveClassic(facts: SettlementFacts): SettlementPlan {
 
 	const completion = checkClassicCompletion({
 		players,
-		picks: withGamePickWrites(facts.gamePicks, plan.pickWrites),
+		picks: withGamePickWrites(
+			facts.gamePicks.filter((pick) => !plan.pickDeletes.includes(pick.id)),
+			plan.pickWrites,
+		),
 		completedRoundId: facts.round.id,
 		roundFullySettled: plan.roundSettled,
 		hasNextRound: facts.hasNextRound,

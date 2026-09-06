@@ -127,6 +127,9 @@ export async function processDeadlineLock(roundIds: string[]): Promise<{
 					outcome,
 					gameId: g.id,
 					roundId,
+					futureRoundIds: gameRounds
+						.filter((candidate) => candidate.number > roundRow.number)
+						.map((candidate) => candidate.id),
 					player,
 					fallback,
 				})
@@ -237,10 +240,11 @@ async function applyNoPickOutcome(args: {
 	outcome: NoPickOutcome
 	gameId: string
 	roundId: string
+	futureRoundIds: string[]
 	player: { id: string; userId: string }
 	fallback: FallbackPick | null
 }): Promise<{ autoPicksInserted: number; playersEliminated: number; paymentsRefunded: number }> {
-	const { outcome, gameId, roundId, player, fallback } = args
+	const { outcome, gameId, roundId, futureRoundIds, player, fallback } = args
 	const nothing = { autoPicksInserted: 0, playersEliminated: 0, paymentsRefunded: 0 }
 
 	if (outcome.kind === 'exempt') return nothing
@@ -282,6 +286,17 @@ async function applyNoPickOutcome(args: {
 			.update(gamePlayer)
 			.set(eliminationUpdate(outcome.reason, roundId))
 			.where(eq(gamePlayer.id, player.id))
+		if (futureRoundIds.length > 0) {
+			await tx
+				.delete(pick)
+				.where(
+					and(
+						eq(pick.gamePlayerId, player.id),
+						inArray(pick.roundId, futureRoundIds),
+						eq(pick.result, 'pending'),
+					),
+				)
+		}
 
 		return outcome.refund ? await refundLatestEntry(tx, gameId, player.userId) : false
 	})
