@@ -216,7 +216,10 @@ async function gatherSettlementFacts(
 		db.query.pick.findMany({
 			where: and(eq(pick.gameId, g.id), eq(pick.roundId, fx.round.id)),
 		}),
-		db.query.gamePlayer.findMany({ where: eq(gamePlayer.gameId, g.id) }),
+		db.query.gamePlayer.findMany({
+			where: eq(gamePlayer.gameId, g.id),
+			with: { eliminatedRound: true },
+		}),
 		db.query.round.findFirst({
 			where: and(eq(round.competitionId, g.competitionId), gt(round.number, fx.round.number)),
 			orderBy: [asc(round.number)],
@@ -291,6 +294,7 @@ async function gatherSettlementFacts(
 			status: p.status,
 			eliminatedReason: p.eliminatedReason,
 			eliminatedRoundId: p.eliminatedRoundId,
+			eliminatedRoundNumber: p.eliminatedRound?.number ?? null,
 			livesRemaining: p.livesRemaining,
 		})),
 		gamePicks,
@@ -339,6 +343,7 @@ async function loadCupRound(gameId: string, roundId: string): Promise<Settlement
 function planIsEmpty(plan: SettlementPlan): boolean {
 	return (
 		plan.pickWrites.length === 0 &&
+		plan.pickDeletes.length === 0 &&
 		plan.playerWrites.length === 0 &&
 		plan.completion == null &&
 		!plan.completeRound &&
@@ -384,6 +389,9 @@ async function applyPlan(tx: Tx, plan: SettlementPlan): Promise<AppliedPlan> {
 	for (const write of plan.pickWrites) {
 		await tx.update(pick).set(write.set).where(eq(pick.id, write.pickId))
 	}
+	for (const pickId of plan.pickDeletes) {
+		await tx.delete(pick).where(eq(pick.id, pickId))
+	}
 
 	let eliminated = 0
 	for (const write of plan.playerWrites) {
@@ -397,6 +405,21 @@ async function applyPlan(tx: Tx, plan: SettlementPlan): Promise<AppliedPlan> {
 			)
 			.returning({ id: gamePlayer.id })
 		if (write.countsAsElimination && rows.length > 0) eliminated++
+		if (write.set.status === 'eliminated' && rows.length > 0 && write.set.eliminatedRoundId) {
+			const futureRounds = tx
+				.select({ id: round.id })
+				.from(round)
+				.where(gt(round.number, plan.roundNumber))
+			await tx
+				.delete(pick)
+				.where(
+					and(
+						eq(pick.gamePlayerId, write.gamePlayerId),
+						inArray(pick.roundId, futureRounds),
+						eq(pick.result, 'pending'),
+					),
+				)
+		}
 	}
 
 	if (plan.completion) {

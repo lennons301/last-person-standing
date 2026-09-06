@@ -631,8 +631,23 @@ export async function getProgressGridData(
 
 	const players: GridPlayer[] = gameData.players.map((p) => {
 		const cellsByRoundId: Record<string, GridCell> = {}
+		const eliminatedRoundNumber = p.eliminatedRoundId
+			? gameData.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number
+			: undefined
 		for (const { row, grid: r } of displayRounds) {
 			const thePick = gameData.picks.find((pk) => pk.gamePlayerId === p.id && pk.roundId === r.id)
+			const isAfterElimination =
+				p.status === 'eliminated' &&
+				eliminatedRoundNumber != null &&
+				r.number > eliminatedRoundNumber
+
+			// Advance picks stop belonging to the game when the player goes out.
+			// Keep the elimination-round pick as history, but never project a later
+			// row while asynchronous cleanup removes it from persistence.
+			if (isAfterElimination) {
+				cellsByRoundId[r.id] = { result: 'empty' }
+				continue
+			}
 
 			// Elimination round with NO pick (e.g. a no-pick elimination) → bare
 			// skull. With a pick, fall through and render the pick + result as
@@ -739,9 +754,6 @@ export async function getProgressGridData(
 			}
 		}
 
-		const eliminatedRoundNumber = p.eliminatedRoundId
-			? gameData.competition.rounds.find((r) => r.id === p.eliminatedRoundId)?.number
-			: undefined
 		// Total goals scored by this player's winning picks (the classic
 		// tiebreaker). settle persists goalsScored = picked team's goals on a
 		// win, 0 otherwise — so summing across all picks is the running total.

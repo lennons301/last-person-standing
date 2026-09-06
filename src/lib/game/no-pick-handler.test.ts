@@ -35,6 +35,7 @@ vi.mock('@/lib/db', () => {
 		update: vi.fn(() => ({
 			set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
 		})),
+		delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
 		transaction: vi.fn((callback: (tx: unknown) => unknown) => callback(dbMock)),
 	}
 	return { db: dbMock }
