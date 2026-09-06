@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { type GridSort, sortGridPlayers } from './grid-sort'
+import { type GridSort, resolveCurrentWeekRoundId, sortGridPlayers } from './grid-sort'
+import type { GridCell } from './read/standings'
 
 interface P {
 	name: string
@@ -107,5 +108,45 @@ describe('sortGridPlayers', () => {
 		const before = players.map((x) => x.name)
 		sortGridPlayers(players, { key: 'name', dir: 'asc' })
 		expect(players.map((x) => x.name)).toEqual(before)
+	})
+})
+
+describe('resolveCurrentWeekRoundId', () => {
+	const rounds = [
+		{ id: 'r11', number: 11, picksLocked: true },
+		{ id: 'r12', number: 12, picksLocked: false },
+	]
+
+	it('returns null when there is no current round', () => {
+		expect(resolveCurrentWeekRoundId(rounds, [], null)).toBeNull()
+	})
+
+	it('returns the current round as-is when anyone has a submitted pick on it', () => {
+		const players = [{ cellsByRoundId: { r12: { result: 'win' as const } } }]
+		expect(resolveCurrentWeekRoundId(rounds, players, 'r12')).toBe('r12')
+	})
+
+	it('falls back to the last locked round when the current round has nothing yet', () => {
+		const players: { cellsByRoundId: Record<string, GridCell> }[] = [
+			{ cellsByRoundId: { r11: { result: 'win' }, r12: { result: 'empty' } } },
+			{ cellsByRoundId: { r11: { result: 'loss' } } }, // no r12 entry at all
+		]
+		expect(resolveCurrentWeekRoundId(rounds, players, 'r12')).toBe('r11')
+	})
+
+	it('reports the current round again the moment a pick lands on it', () => {
+		const players = [{ cellsByRoundId: { r12: { result: 'pending' as const } } }]
+		expect(resolveCurrentWeekRoundId(rounds, players, 'r12')).toBe('r12')
+	})
+
+	it('stays on the current round when no earlier round is locked to fall back to', () => {
+		const soleRound = [{ id: 'r1', number: 1, picksLocked: false }]
+		const players = [{ cellsByRoundId: { r1: { result: 'no_pick' as const } } }]
+		expect(resolveCurrentWeekRoundId(soleRound, players, 'r1')).toBe('r1')
+	})
+
+	it('stays on the current round when it is unknown to the rounds list', () => {
+		const players = [{ cellsByRoundId: {} }]
+		expect(resolveCurrentWeekRoundId(rounds, players, 'unknown')).toBe('unknown')
 	})
 })

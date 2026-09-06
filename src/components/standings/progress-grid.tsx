@@ -14,6 +14,7 @@ import {
 	type GridSortDir,
 	type GridSortKey,
 	hasValidClassicPick,
+	resolveCurrentWeekRoundId,
 	sortGridPlayers,
 } from '@/lib/game/grid-sort'
 import type { GridCell, GridPlayer, GridRound } from '@/lib/game/read/standings'
@@ -186,10 +187,15 @@ export function ProgressGrid({
 
 	const sortedPlayers = sortGridPlayers(players, sort)
 
+	// Falls back to the last locked round when the game's actual current round
+	// has no submitted picks yet — the gap right after a gameweek settles and
+	// before the next one's deadline.
+	const currentWeekRoundId = resolveCurrentWeekRoundId(rounds, players, currentRoundId ?? null)
+
 	const visiblePlayers = sortedPlayers.filter((p) => {
 		if (playerFilter === 'alive') return p.status !== 'eliminated'
 		if (playerFilter === 'current-round-picks') {
-			const currentCell = currentRoundId ? p.cellsByRoundId[currentRoundId] : undefined
+			const currentCell = currentWeekRoundId ? p.cellsByRoundId[currentWeekRoundId] : undefined
 			return currentCell != null && hasValidClassicPick(currentCell)
 		}
 		return true

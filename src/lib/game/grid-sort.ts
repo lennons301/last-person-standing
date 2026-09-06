@@ -73,3 +73,55 @@ export function sortGridPlayers<T extends SortablePlayer>(players: T[], sort: Gr
 export function hasValidClassicPick(cell: GridCell): boolean {
 	return cell.result !== 'empty' && cell.result !== 'no_pick' && cell.result !== 'skull'
 }
+
+interface CurrentWeekRound {
+	id: string
+	number: number
+	picksLocked: boolean
+}
+
+interface CurrentWeekPlayer {
+	cellsByRoundId: Record<string, GridCell>
+}
+
+/**
+ * Which round the "current week" filter/share speaks about.
+ *
+ * `game.currentRoundId` moves to the next round in the same transaction that
+ * settles the one before it (`advanceGame`), so for the whole gap between
+ * that instant and the new round's own deadline, the game's current round has
+ * no submitted pick from anyone. Reading it verbatim flips the filter from a
+ * full house of freshly-revealed results to an empty one exactly when the
+ * results are newest — there'd be no way to share what just happened in the
+ * gameweek that closed a moment ago.
+ *
+ * Falls back to the most recent LOCKED round behind the current one when the
+ * current one has nothing yet — the same "most recent round with something to
+ * show" reasoning `selectRoundSummaryRound` applies to the round summary
+ * card. The moment anyone submits a pick for the new round, this reports that
+ * round again.
+ */
+export function resolveCurrentWeekRoundId(
+	rounds: CurrentWeekRound[],
+	players: CurrentWeekPlayer[],
+	currentRoundId: string | null,
+): string | null {
+	if (currentRoundId == null) return null
+
+	const hasCurrentPick = players.some((p) => {
+		const cell = p.cellsByRoundId[currentRoundId]
+		return cell != null && hasValidClassicPick(cell)
+	})
+	if (hasCurrentPick) return currentRoundId
+
+	const currentRound = rounds.find((r) => r.id === currentRoundId)
+	if (!currentRound) return currentRoundId
+
+	const fallback = rounds
+		.filter((r) => r.number < currentRound.number && r.picksLocked)
+		.reduce<CurrentWeekRound | null>(
+			(latest, r) => (latest == null || r.number > latest.number ? r : latest),
+			null,
+		)
+	return fallback?.id ?? currentRoundId
+}
