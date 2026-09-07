@@ -183,6 +183,75 @@ describe('getShareStandingsData', () => {
 		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice', 'Bob'])
 	})
 
+	it('classic: lastCompleteWeek keeps every player with a pick in the most recently locked gameweek', async () => {
+		makeHeaderMock('classic')
+		getProgressGridDataMock.mockResolvedValue({
+			currentRoundId: 'r2',
+			rounds: [{ id: 'r1', number: 1, label: 'GW1', picksLocked: true }],
+			players: [
+				{
+					id: 'a',
+					name: 'Alice',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r1: { result: 'win' } },
+				},
+				{
+					id: 'b',
+					name: 'Bob',
+					status: 'eliminated',
+					eliminatedRoundNumber: 1,
+					goals: 0,
+					cellsByRoundId: { r1: { result: 'loss' } },
+				},
+				{
+					id: 'c',
+					name: 'Carol',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r1: { result: 'no_pick' } },
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1', { lastCompleteWeek: true })
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice', 'Bob'])
+	})
+
+	it("classic: lastCompleteWeek stays on last week even once someone's advance pick lands on the new current round", async () => {
+		makeHeaderMock('classic')
+		// GW2 just settled; the game has moved on to GW3, and Alice already has
+		// an advance pick sitting there. `currentRoundPicks` would report GW3 for
+		// her — `lastCompleteWeek` must still report GW2 for both players (#273).
+		getProgressGridDataMock.mockResolvedValue({
+			currentRoundId: 'r3',
+			rounds: [
+				{ id: 'r2', number: 2, label: 'GW2', picksLocked: true },
+				{ id: 'r3', number: 3, label: 'GW3', picksLocked: false },
+			],
+			players: [
+				{
+					id: 'a',
+					name: 'Alice',
+					status: 'alive',
+					goals: 0,
+					cellsByRoundId: { r2: { result: 'win' }, r3: { result: 'locked' } },
+				},
+				{
+					id: 'b',
+					name: 'Bob',
+					status: 'eliminated',
+					eliminatedRoundNumber: 2,
+					goals: 0,
+					cellsByRoundId: { r2: { result: 'loss' }, r3: { result: 'empty' } },
+				},
+			],
+		})
+		const result = await getShareStandingsData('g1', 'u1', { lastCompleteWeek: true })
+		if (result?.mode !== 'classic') throw new Error('expected classic')
+		expect(result.classicGrid.players.map((p) => p.name)).toEqual(['Alice', 'Bob'])
+	})
+
 	it('returns cup shape when mode is cup', async () => {
 		makeHeaderMock('cup')
 		getCupStandingsDataMock.mockResolvedValue({

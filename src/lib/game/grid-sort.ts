@@ -125,3 +125,36 @@ export function resolveCurrentWeekRoundId(
 		)
 	return fallback?.id ?? currentRoundId
 }
+
+interface LastCompleteWeekRound {
+	id: string
+	number: number
+	picksLocked: boolean
+}
+
+/**
+ * Which round the "last complete week" filter/share speaks about: the most
+ * recent round whose picks are locked — full stop, never the game's current
+ * round even once someone has an advance pick sitting on it.
+ *
+ * This differs from `resolveCurrentWeekRoundId`'s fallback on purpose. That
+ * function reports the current round the moment ANY player has a submitted
+ * pick on it, which an advance pick can trigger long before its deadline —
+ * so right after a gameweek settles, "current week" can flip to a round
+ * whose picks are still hidden from everyone, for the one player who picked
+ * ahead. "Last complete week" always names the gameweek that just finished,
+ * so a share taken in that gap reports who survived it rather than an
+ * almost-empty next round.
+ */
+export function resolveLastCompleteWeekRoundId<T extends LastCompleteWeekRound>(
+	rounds: T[],
+): string | null {
+	return (
+		rounds
+			.filter((r) => r.picksLocked)
+			.reduce<T | null>(
+				(latest, r) => (latest == null || r.number > latest.number ? r : latest),
+				null,
+			)?.id ?? null
+	)
+}

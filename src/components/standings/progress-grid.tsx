@@ -15,6 +15,7 @@ import {
 	type GridSortKey,
 	hasValidClassicPick,
 	resolveCurrentWeekRoundId,
+	resolveLastCompleteWeekRoundId,
 	sortGridPlayers,
 } from '@/lib/game/grid-sort'
 import type { GridCell, GridPlayer, GridRound } from '@/lib/game/read/standings'
@@ -100,7 +101,9 @@ export function ProgressGrid({
 	const [filter, setFilter] = useState<'all' | 'last5' | 'last3'>(defaultFilter)
 	const [sort, setSort] = useState<GridSort>({ key: 'status', dir: 'asc' })
 	const [showOpponents, setShowOpponents] = useState(false)
-	const [playerFilter, setPlayerFilter] = useState<'all' | 'alive' | 'current-round-picks'>('all')
+	const [playerFilter, setPlayerFilter] = useState<
+		'all' | 'alive' | 'current-round-picks' | 'last-complete-week'
+	>('all')
 	const liveCtx = useLiveGame()
 	// Which cell (by player + round) opened the fixture-detail sheet. The ref
 	// keeps the sheet's content through the close animation instead of
@@ -127,6 +130,7 @@ export function ProgressGrid({
 		if (sort.roundId) q.set('round', sort.roundId)
 		if (playerFilter === 'alive') q.set('aliveOnly', '1')
 		if (playerFilter === 'current-round-picks') q.set('currentRoundPicks', '1')
+		if (playerFilter === 'last-complete-week') q.set('lastCompleteWeek', '1')
 		return q.toString()
 	}
 
@@ -191,12 +195,20 @@ export function ProgressGrid({
 	// has no submitted picks yet — the gap right after a gameweek settles and
 	// before the next one's deadline.
 	const currentWeekRoundId = resolveCurrentWeekRoundId(rounds, players, currentRoundId ?? null)
+	// Always the most recently LOCKED round, unlike `currentWeekRoundId` above —
+	// which can jump onto the game's new current round the moment one player
+	// has an advance pick on it, long before that round's own deadline.
+	const lastCompleteWeekRoundId = resolveLastCompleteWeekRoundId(rounds)
 
 	const visiblePlayers = sortedPlayers.filter((p) => {
 		if (playerFilter === 'alive') return p.status !== 'eliminated'
 		if (playerFilter === 'current-round-picks') {
 			const currentCell = currentWeekRoundId ? p.cellsByRoundId[currentWeekRoundId] : undefined
 			return currentCell != null && hasValidClassicPick(currentCell)
+		}
+		if (playerFilter === 'last-complete-week') {
+			const cell = lastCompleteWeekRoundId ? p.cellsByRoundId[lastCompleteWeekRoundId] : undefined
+			return cell != null && hasValidClassicPick(cell)
 		}
 		return true
 	})
@@ -284,6 +296,23 @@ export function ProgressGrid({
 								<EyeOff className="h-3.5 w-3.5" />
 							)}
 							{playerFilter === 'current-round-picks' ? 'Show all players' : 'Current week picks'}
+						</Button>
+					)}
+					{lastCompleteWeekRoundId && (
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() =>
+								setPlayerFilter((v) => (v === 'last-complete-week' ? 'all' : 'last-complete-week'))
+							}
+							className="gap-1.5"
+						>
+							{playerFilter === 'last-complete-week' ? (
+								<Eye className="h-3.5 w-3.5" />
+							) : (
+								<EyeOff className="h-3.5 w-3.5" />
+							)}
+							{playerFilter === 'last-complete-week' ? 'Show all players' : 'Last complete week'}
 						</Button>
 					)}
 					{onShare && (
