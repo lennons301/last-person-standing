@@ -209,11 +209,10 @@ function OutcomeList({
 			<div className="text-2xs uppercase tracking-wide text-muted-foreground">{heading}</div>
 			<ul className="mt-1 space-y-1">
 				{outcomes.map((outcome) => (
-					<li
-						key={`${outcome.player.name}:${outcome.teamId}`}
-						className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
-					>
-						<span className="text-sm font-semibold">{playerLabel(outcome.player)}</span>
+					<li key={outcome.teamId} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+						<span className="text-sm font-semibold">
+							{outcome.players.map(playerLabel).join(', ')}
+						</span>
 						<span className="text-sm">{outcome.shortName}</span>
 						{outcome.scoreline && (
 							<span className="text-xs text-muted-foreground tabular-nums">
