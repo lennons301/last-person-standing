@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { type GridSort, resolveCurrentWeekRoundId, sortGridPlayers } from './grid-sort'
+import {
+	type GridSort,
+	resolveCurrentWeekRoundId,
+	resolveLastCompleteWeekRoundId,
+	sortGridPlayers,
+} from './grid-sort'
 import type { GridCell } from './read/standings'
 
 interface P {
@@ -148,5 +153,31 @@ describe('resolveCurrentWeekRoundId', () => {
 	it('stays on the current round when it is unknown to the rounds list', () => {
 		const players = [{ cellsByRoundId: {} }]
 		expect(resolveCurrentWeekRoundId(rounds, players, 'unknown')).toBe('unknown')
+	})
+})
+
+describe('resolveLastCompleteWeekRoundId', () => {
+	it('returns null when no round is locked yet', () => {
+		const rounds = [{ id: 'r1', number: 1, picksLocked: false }]
+		expect(resolveLastCompleteWeekRoundId(rounds)).toBeNull()
+	})
+
+	it('returns the highest-numbered locked round', () => {
+		const rounds = [
+			{ id: 'r10', number: 10, picksLocked: true },
+			{ id: 'r11', number: 11, picksLocked: true },
+			{ id: 'r12', number: 12, picksLocked: false },
+		]
+		expect(resolveLastCompleteWeekRoundId(rounds)).toBe('r11')
+	})
+
+	it('ignores an advance pick landing on the new current round — it is never locked yet', () => {
+		// Same shape resolveCurrentWeekRoundId would treat as "current round has
+		// a pick" and jump onto — this selector must not follow it (#273).
+		const rounds = [
+			{ id: 'r11', number: 11, picksLocked: true },
+			{ id: 'r12', number: 12, picksLocked: false },
+		]
+		expect(resolveLastCompleteWeekRoundId(rounds)).toBe('r11')
 	})
 })

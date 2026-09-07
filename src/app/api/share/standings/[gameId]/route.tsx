@@ -38,6 +38,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ game
 		sort: parseSort(sp),
 		aliveOnly: sp.get('aliveOnly') === '1',
 		currentRoundPicks: sp.get('currentRoundPicks') === '1',
+		lastCompleteWeek: sp.get('lastCompleteWeek') === '1',
 	})
 	if (!data) return new Response('No data', { status: 404 })
 

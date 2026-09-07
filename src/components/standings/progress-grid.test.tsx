@@ -266,3 +266,103 @@ describe('ProgressGrid — current-week picks filter', () => {
 		expect(screen.getByText('Bob')).toBeTruthy()
 	})
 })
+
+describe('ProgressGrid — last-complete-week picks filter', () => {
+	it('shows players who had a pick in the most recently locked round, including anyone just eliminated, and shares that selection', () => {
+		const onShare = vi.fn()
+		const lockedRound: GridRound = { ...ROUND, id: 'r12', number: 12, picksLocked: true }
+		const players: GridPlayer[] = [
+			{
+				id: 'p1',
+				userId: 'u1',
+				name: 'Alice',
+				status: 'alive',
+				goals: 0,
+				cellsByRoundId: { r12: { result: 'win', teamShortName: 'ARS' } },
+			},
+			{
+				id: 'p2',
+				userId: 'u2',
+				name: 'Bob',
+				status: 'eliminated',
+				eliminatedRoundNumber: 12,
+				goals: 0,
+				cellsByRoundId: { r12: { result: 'loss', teamShortName: 'CHE' } },
+			},
+			{
+				id: 'p3',
+				userId: 'u3',
+				name: 'Carol',
+				status: 'alive',
+				goals: 0,
+				cellsByRoundId: { r12: { result: 'no_pick' } },
+			},
+		]
+		render(
+			<ProgressGrid
+				rounds={[lockedRound]}
+				players={players}
+				aliveCount={2}
+				eliminatedCount={1}
+				onShare={onShare}
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Last complete week' }))
+		expect(screen.getByText('Alice')).toBeTruthy()
+		expect(screen.getByText('Bob')).toBeTruthy()
+		expect(screen.queryByText('Carol')).toBeNull()
+
+		fireEvent.click(screen.getByRole('button', { name: 'Share grid' }))
+		expect(onShare).toHaveBeenCalledWith(expect.stringContaining('lastCompleteWeek=1'))
+	})
+
+	it("keeps reporting last week even once someone's advance pick lands on the new current round", () => {
+		const priorRound: GridRound = { ...ROUND, id: 'r12', number: 12, picksLocked: true }
+		const newRound: GridRound = {
+			...ROUND,
+			id: 'r13',
+			number: 13,
+			label: 'GW13',
+			picksLocked: false,
+		}
+		const players: GridPlayer[] = [
+			{
+				id: 'p1',
+				userId: 'u1',
+				name: 'Alice',
+				status: 'alive',
+				goals: 0,
+				cellsByRoundId: {
+					r12: { result: 'win', teamShortName: 'ARS' },
+					// Advance pick already in for the new round — this is exactly
+					// what makes "Current week picks" jump to r13 while "Last
+					// complete week" must stay on r12.
+					r13: { result: 'locked' },
+				},
+			},
+			{
+				id: 'p2',
+				userId: 'u2',
+				name: 'Bob',
+				status: 'eliminated',
+				eliminatedRoundNumber: 12,
+				goals: 0,
+				cellsByRoundId: { r12: { result: 'loss', teamShortName: 'CHE' }, r13: { result: 'empty' } },
+			},
+		]
+		render(
+			<ProgressGrid
+				rounds={[priorRound, newRound]}
+				players={players}
+				aliveCount={1}
+				eliminatedCount={1}
+				currentRoundId="r13"
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Last complete week' }))
+		expect(screen.getByText('Alice')).toBeTruthy()
+		expect(screen.getByText('Bob')).toBeTruthy()
+	})
+})

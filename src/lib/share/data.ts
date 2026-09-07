@@ -6,6 +6,7 @@ import {
 	type GridSort,
 	hasValidClassicPick,
 	resolveCurrentWeekRoundId,
+	resolveLastCompleteWeekRoundId,
 	sortGridPlayers,
 } from '@/lib/game/grid-sort'
 import { resolvePickVisibility } from '@/lib/game/pick-visibility'
@@ -209,7 +210,12 @@ async function buildHeader(gameId: string): Promise<ShareHeader | null> {
 export async function getShareStandingsData(
 	gameId: string,
 	viewerUserId: string,
-	options?: { sort?: GridSort; aliveOnly?: boolean; currentRoundPicks?: boolean },
+	options?: {
+		sort?: GridSort
+		aliveOnly?: boolean
+		currentRoundPicks?: boolean
+		lastCompleteWeek?: boolean
+	},
 ): Promise<StandingsShareData | null> {
 	const header = await buildHeader(gameId)
 	if (!header) return null
@@ -229,15 +235,26 @@ export async function getShareStandingsData(
 			grid.players,
 			grid.currentRoundId,
 		)
+		// Always the most recently LOCKED round — unlike `currentWeekRoundId`
+		// above, which reports the game's new current round the moment one
+		// player has an advance pick on it, before that round's own deadline.
+		// This is the round a "just settled, haven't picked the next one yet"
+		// share means by "last complete week" (#273).
+		const lastCompleteWeekRoundId = resolveLastCompleteWeekRoundId(grid.rounds)
 		const filtered =
 			options?.currentRoundPicks && currentWeekRoundId
 				? grid.players.filter((p) => {
 						const cell = p.cellsByRoundId[currentWeekRoundId]
 						return cell != null && hasValidClassicPick(cell)
 					})
-				: options?.aliveOnly
-					? grid.players.filter((p) => p.status === 'alive')
-					: grid.players
+				: options?.lastCompleteWeek && lastCompleteWeekRoundId
+					? grid.players.filter((p) => {
+							const cell = p.cellsByRoundId[lastCompleteWeekRoundId]
+							return cell != null && hasValidClassicPick(cell)
+						})
+					: options?.aliveOnly
+						? grid.players.filter((p) => p.status === 'alive')
+						: grid.players
 		const players = sortGridPlayers(filtered, sort)
 		// Only gameweeks whose picks are locked belong in a shared image (#225).
 		// The grid's column set is every round the game has TOUCHED, and an
