@@ -1,5 +1,6 @@
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AdapterFixture } from '@/lib/data/types'
 
 const {
 	dbQueryCompetitionFindFirst,
@@ -809,6 +810,112 @@ describe('syncCompetition deadline-lock trigger (deadlinePassedRoundIds)', () =>
 
 		// Finished rounds are not open anymore — no re-fire of the deadline lock.
 		expect(result.deadlinePassedRoundIds).toEqual([])
+	})
+})
+
+describe('syncCompetition late correction to a finished fixture (#275)', () => {
+	const pastDeadline = new Date(Date.now() - 48 * 3600 * 1000)
+
+	/**
+	 * The fixture as we already hold it: finished 2–0, its picks settled against
+	 * that score. The source published a goal it has since taken back.
+	 */
+	const storedFixture = {
+		id: 'fx-1',
+		roundId: 'round-1',
+		externalId: 'fpl-1',
+		status: 'finished',
+		homeScore: 2,
+		awayScore: 0,
+		regularHomeScore: null,
+		regularAwayScore: null,
+		winner: null,
+		externalIds: { fpl: 'fpl-1' },
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbQueryTeamFindMany.mockResolvedValue([])
+		dbQueryPlannedPickFindMany.mockResolvedValue([])
+		dbQueryFixtureFindMany.mockResolvedValue([])
+		// settleFixture's own fixture read: undefined, so the call this test is
+		// asserting the *trigger* of is a no-op.
+		dbQueryFixtureFindFirst.mockResolvedValue(undefined)
+		fplFetchStandings.mockResolvedValue([])
+		fplFetchTeams.mockResolvedValue([
+			{ externalId: 'h', name: 'Everton', shortName: 'EVE', badgeUrl: null },
+			{ externalId: 'a', name: 'Ipswich Town', shortName: 'IPS', badgeUrl: null },
+		])
+		dbQueryTeamFindFirst
+			.mockResolvedValueOnce({ id: 'team-home', name: 'Everton', externalIds: {} })
+			.mockResolvedValueOnce({ id: 'team-away', name: 'Ipswich Town', externalIds: {} })
+		dbQueryRoundFindMany.mockResolvedValue([{ id: 'round-1', fixtures: [storedFixture] }])
+		dbQueryRoundFindFirst.mockResolvedValue({
+			id: 'round-1',
+			status: 'completed',
+			deadline: pastDeadline,
+		})
+	})
+
+	/** One gameweek, one fixture, as the source now reports it. */
+	async function syncWith(incoming: Partial<AdapterFixture>) {
+		fplFetchRounds.mockResolvedValue([
+			{
+				number: 1,
+				name: 'Gameweek 1',
+				deadline: pastDeadline,
+				finished: true,
+				fixtures: [
+					{
+						externalId: 'fpl-1',
+						homeTeamExternalId: 'h',
+						awayTeamExternalId: 'a',
+						kickoff: pastDeadline,
+						status: 'finished',
+						homeScore: 2,
+						awayScore: 0,
+						...incoming,
+					},
+				],
+			},
+		])
+		return syncCompetition(
+			{ id: 'comp-1', dataSource: 'fpl', externalId: null, season: '2025/26' } as never,
+			{ footballDataApiKey: 'fd-key' },
+		)
+	}
+
+	it('re-settles a finished fixture whose score the source has corrected', async () => {
+		// The disallowed goal: 2–0 as settled, 1–0 as it now stands.
+		const result = await syncWith({ homeScore: 1 })
+
+		expect(result.settledFixtureIds).toEqual(['fx-1'])
+	})
+
+	it('re-settles when only the winner lands (a knockout resolved after the score)', async () => {
+		const result = await syncWith({ homeScore: 1, awayScore: 1, winner: 'home' })
+
+		expect(result.settledFixtureIds).toEqual(['fx-1'])
+	})
+
+	it('leaves an unchanged finished fixture alone — no re-settle on every daily sync', async () => {
+		const result = await syncWith({})
+
+		expect(result.settledFixtureIds).toEqual([])
+	})
+
+	it('does not treat a finished fixture going cancelled as a correction', async () => {
+		// A terminal→terminal move with no result to re-score. The transition
+		// branch above it owns cancellations; this one is about scores only.
+		const result = await syncWith({ status: 'cancelled', homeScore: null, awayScore: null })
+
+		expect(result.settledFixtureIds).toEqual([])
+	})
+
+	it('ignores a finished fixture the source has momentarily dropped the scores off', async () => {
+		const result = await syncWith({ homeScore: null, awayScore: null })
+
+		expect(result.settledFixtureIds).toEqual([])
 	})
 })
 
