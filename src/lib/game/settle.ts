@@ -54,6 +54,8 @@ export interface SettleResult {
 	turboSettled: number
 	cupGamesReevaluated: number
 	picksVoided: number
+	/** Settled picks whose stored goals were brought back into line (#275). */
+	goalsCorrected: number
 	roundsVoided: string[]
 	gamesCompleted: string[]
 	gamesAdvanced: string[]
@@ -68,6 +70,7 @@ function emptyResult(fixtureId: string): SettleResult {
 		turboSettled: 0,
 		cupGamesReevaluated: 0,
 		picksVoided: 0,
+		goalsCorrected: 0,
 		roundsVoided: [],
 		gamesCompleted: [],
 		gamesAdvanced: [],
@@ -360,6 +363,7 @@ async function applySettlementPlan(plan: SettlementPlan, result: SettleResult): 
 	result.classicSettled += plan.counters.classicSettled
 	result.turboSettled += plan.counters.turboSettled
 	result.picksVoided += plan.counters.picksVoided
+	result.goalsCorrected += plan.counters.goalsCorrected
 	if (plan.counters.cupReevaluated) result.cupGamesReevaluated++
 	result.classicEliminated += applied.eliminated
 	if (plan.gameCompleted) result.gamesCompleted.push(plan.gameId)

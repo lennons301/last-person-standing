@@ -2,7 +2,7 @@ import { and, eq, gt, inArray, isNull, lt } from 'drizzle-orm'
 import { type FdCurrentSeason, FootballDataAdapter } from '@/lib/data/football-data'
 import { FplAdapter, type FplPreFetched } from '@/lib/data/fpl'
 import { enqueuePollScoresAt } from '@/lib/data/qstash'
-import type { AdapterStanding, CompetitionAdapter } from '@/lib/data/types'
+import type { AdapterFixture, AdapterStanding, CompetitionAdapter } from '@/lib/data/types'
 import { WC_2026_POTS } from '@/lib/data/wc-pots'
 import { db } from '@/lib/db'
 import { PREMIER_LEAGUE_FAMILY_KEY, WORLD_CUP_FAMILY_KEY } from '@/lib/game/competition-family'
@@ -637,10 +637,11 @@ export async function syncCompetition(
 	const adapterRounds = await adapter.fetchRounds()
 	let totalFixtures = 0
 	const deadlinePassedRoundIds: string[] = []
-	// Fixtures whose status transitioned non-finished → finished during this
-	// sync run. Settled after the loop so the round/fixture writes are all
-	// committed first, then per-fixture pick settlement runs against the
-	// final state.
+	// Fixtures this run has to hand to settlement: the ones whose status
+	// transitioned non-finished → finished, and the ones already terminal whose
+	// score or winner the source has since corrected. Settled after the loop so
+	// the round/fixture writes are all committed first, then per-fixture pick
+	// settlement runs against the final state.
 	const transitionedToFinishedIds: string[] = []
 	for (const ar of adapterRounds) {
 		const existingRound = await db.query.round.findFirst({
@@ -741,6 +742,15 @@ export async function syncCompetition(
 					af.status === 'finished' || af.status === 'cancelled' || af.status === 'postponed'
 				if (!wasTerminal && nowTerminal) {
 					transitionedToFinishedIds.push(existingFixture.id)
+				} else if (wasTerminal && nowTerminal && terminalResultChanged(existingFixture, af)) {
+					// Late correction to a finished fixture — a disallowed goal the
+					// source published and then took back, or a knockout winner landing
+					// after the score did. The poll re-fires settlement on the same
+					// change; the daily sync has to as well, because the poll chain has
+					// long since self-terminated by the time a next-morning correction
+					// arrives and the corrected score would otherwise reach the fixture
+					// row and never the picks on it (#275).
+					transitionedToFinishedIds.push(existingFixture.id)
 				}
 			} else if (provisional) {
 				// Bind the provisional tie to the real match: adopt the source's
@@ -807,6 +817,38 @@ export async function syncCompetition(
 		deadlinePassedRoundIds,
 		settledFixtureIds: transitionedToFinishedIds,
 	}
+}
+
+/**
+ * Has a fixture we already hold as terminal come back from the source with a
+ * different result?
+ *
+ * Only a `finished` incoming state with both scores counts: a postponement or a
+ * cancellation has no result to re-settle, and a source that momentarily drops
+ * the scores off a finished match is reporting nothing worth re-deciding on.
+ * The same comparison the live poll makes on its own terminal→terminal branch,
+ * and it exists for the same reason — a corrected score has to reach the picks,
+ * not just the fixture row (#275).
+ */
+function terminalResultChanged(
+	existing: {
+		homeScore: number | null
+		awayScore: number | null
+		regularHomeScore: number | null
+		regularAwayScore: number | null
+		winner: 'home' | 'away' | null
+	},
+	incoming: AdapterFixture,
+): boolean {
+	if (incoming.status !== 'finished') return false
+	if (incoming.homeScore == null || incoming.awayScore == null) return false
+	return (
+		existing.homeScore !== incoming.homeScore ||
+		existing.awayScore !== incoming.awayScore ||
+		existing.regularHomeScore !== (incoming.regularHomeScore ?? null) ||
+		existing.regularAwayScore !== (incoming.regularAwayScore ?? null) ||
+		existing.winner !== (incoming.winner ?? null)
+	)
 }
 
 /**

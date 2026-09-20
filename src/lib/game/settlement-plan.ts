@@ -14,7 +14,7 @@ import type {
 	PlayerStatus,
 	RoundStatus,
 } from '@/lib/types'
-import { isKnockoutRound, settleClassicPick } from './classic-survival'
+import { isKnockoutRound, resolveClassicPickResult, settleClassicPick } from './classic-survival'
 import {
 	type CompletionCheckResult,
 	checkClassicCompletion,
@@ -224,6 +224,8 @@ export interface SettlementPlan {
 		turboSettled: number
 		picksVoided: number
 		cupReevaluated: boolean
+		/** Settled picks whose stored goals were brought back to the fixture's. */
+		goalsCorrected: number
 	}
 	/** Every fixture of the round is terminal and no pick of it is pending. */
 	roundSettled: boolean
@@ -254,7 +256,13 @@ function emptyPlan(facts: SettlementFacts): SettlementPlan {
 		pickWrites: [],
 		pickDeletes: [],
 		playerWrites: [],
-		counters: { classicSettled: 0, turboSettled: 0, picksVoided: 0, cupReevaluated: false },
+		counters: {
+			classicSettled: 0,
+			turboSettled: 0,
+			picksVoided: 0,
+			cupReevaluated: false,
+			goalsCorrected: 0,
+		},
 		roundSettled: false,
 		voidRound: false,
 		completion: null,
@@ -368,7 +376,17 @@ function deriveClassic(facts: SettlementFacts): SettlementPlan {
 
 	if (facts.fixture.status === 'finished') {
 		for (const p of facts.fixturePicks) {
-			if (p.result !== 'pending') continue
+			if (p.result !== 'pending') {
+				// Already settled — the only thing left to ask is whether the score it
+				// was settled against still stands (#275).
+				planGoalsCorrection(
+					facts.game.id,
+					p,
+					resolveClassicPickResult({ teamId: p.teamId }, settlingFixtureFor(facts)),
+					plan,
+				)
+				continue
+			}
 			const player = facts.players.find((candidate) => candidate.id === p.gamePlayerId)
 			if (
 				player?.status === 'eliminated' &&
@@ -518,7 +536,10 @@ function deriveTurbo(facts: SettlementFacts): SettlementPlan {
 
 	if (facts.fixture.status === 'finished') {
 		for (const p of facts.fixturePicks) {
-			if (p.result !== 'pending') continue
+			if (p.result !== 'pending') {
+				planGoalsCorrection(facts.game.id, p, settleTurboPick(p, facts.fixture), plan)
+				continue
+			}
 			plan.pickWrites.push({ pickId: p.id, set: settleTurboPick(p, facts.fixture) })
 			plan.counters.turboSettled++
 		}
@@ -792,6 +813,52 @@ function settleHistoryPicks(facts: SettlementFacts, plan: SettlementPlan): void 
 		// fixture whose only pending picks belong to non-active games.
 		plan.counters.classicSettled++
 	}
+}
+
+/**
+ * A settled pick, re-scored against the fixture as it now stands.
+ *
+ * `goals_scored` is a snapshot taken at the instant the fixture first read
+ * `finished`, and a provider can correct a final score after that: a goal given
+ * and then disallowed leaves the picked team's stored goals a goal above the
+ * score every surface prints beside them — a 1-0 win reading as two goals on
+ * the progress grid (#275). The goals are not decoration either: they are the
+ * classic tiebreak (`checkClassicCompletion`) and turbo's (`resolveWipeout`),
+ * so a stale one can hand the pot to the wrong player.
+ *
+ * The poll already re-fires settlement when a terminal fixture's score or
+ * winner changes, and `syncCompetition` does the same; this is the half that
+ * was missing, because both mode arms skip any pick that isn't `pending`.
+ *
+ * **Only the goals are corrected.** A correction that changes the *result* is a
+ * different and far larger event — it would put a player out after the fact, or
+ * revive one the game has already advanced past and possibly paid out on — so
+ * it is reported and left alone rather than applied under a fixture re-read. A
+ * completed game is untouched for the same reason: neither arm reaches here
+ * once `game.status` has moved off `active`.
+ */
+function planGoalsCorrection(
+	gameId: string,
+	p: SettlementPick,
+	rescored: { result: PickResult | null; goalsScored: number },
+	plan: SettlementPlan,
+): void {
+	// `void` holds a deliberate 0 that a re-read of the fixture must not undo,
+	// and `pending` has nothing settled to correct.
+	if (p.result === 'pending' || p.result === 'void') return
+	if (rescored.result == null) return
+	if (rescored.result !== p.result) {
+		console.warn(
+			`[deriveSettlement] game ${gameId}: pick ${p.id} settled '${p.result}' but the fixture's current score reads '${rescored.result}' — result left as settled, see #275`,
+		)
+		return
+	}
+	if ((p.goalsScored ?? 0) === rescored.goalsScored) return
+	plan.pickWrites.push({
+		pickId: p.id,
+		set: { result: p.result, goalsScored: rescored.goalsScored },
+	})
+	plan.counters.goalsCorrected++
 }
 
 function settlingFixtureFor(facts: SettlementFacts) {

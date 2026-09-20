@@ -662,3 +662,74 @@ describe('deriveSettlement — cup', () => {
 		expect(plan.completion).toBeNull()
 	})
 })
+
+/* ────────────────────────────────────────────────────────────────────── */
+
+describe('deriveSettlement — a corrected final score (#275)', () => {
+	/**
+	 * The same game as every case above, but the pick on the 2–1 has already
+	 * settled — against a score that has since been corrected down. Two alive
+	 * players, so nobody is crowned and the plan is just the pick writes.
+	 */
+	function alreadySettled(
+		modeConfig: ModeConfig,
+		over: Partial<SettlementPick> = {},
+	): SettlementFacts {
+		const settled = pick('pick-1', { result: 'win', goalsScored: 3, ...over })
+		return facts(modeConfig, {
+			fixturePicks: [settled],
+			roundPicks: [settled],
+			players: [player('gp-1'), player('gp-2')],
+		})
+	}
+
+	it('brings a classic pick back to the goals the fixture now shows', () => {
+		const plan = deriveSettlement(alreadySettled(CLASSIC))
+		// Stored 3 against a 2–1: the disallowed goal the source took back.
+		expect(plan.pickWrites).toEqual([{ pickId: 'pick-1', set: { result: 'win', goalsScored: 2 } }])
+		expect(plan.counters.goalsCorrected).toBe(1)
+		// A correction is not a settlement — the settle counters stay put.
+		expect(plan.counters.classicSettled).toBe(0)
+	})
+
+	it('writes nothing when the stored goals already match', () => {
+		const plan = deriveSettlement(alreadySettled(CLASSIC, { goalsScored: 2 }))
+		expect(plan.pickWrites).toEqual([])
+		expect(plan.counters.goalsCorrected).toBe(0)
+	})
+
+	it('reports a correction that would change the result, and leaves it settled', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		// Settled a win on the away side; the corrected 2–1 makes it a loss. That
+		// would put a player out after the fact, so it is reported, not applied.
+		const plan = deriveSettlement(alreadySettled(CLASSIC, { teamId: AWAY }))
+		expect(plan.pickWrites).toEqual([])
+		expect(plan.playerWrites).toEqual([])
+		expect(plan.counters.goalsCorrected).toBe(0)
+		expect(warn).toHaveBeenCalled()
+		warn.mockRestore()
+	})
+
+	it('leaves a voided pick alone', () => {
+		const plan = deriveSettlement(alreadySettled(CLASSIC, { result: 'void', goalsScored: 0 }))
+		expect(plan.pickWrites).toEqual([])
+		expect(plan.counters.goalsCorrected).toBe(0)
+	})
+
+	it('corrects a settled turbo pick the same way', () => {
+		const plan = deriveSettlement(
+			alreadySettled(TURBO, { confidenceRank: 1, predictedResult: 'home_win' }),
+		)
+		expect(plan.pickWrites).toEqual([{ pickId: 'pick-1', set: { result: 'win', goalsScored: 2 } }])
+		expect(plan.counters.goalsCorrected).toBe(1)
+		expect(plan.counters.turboSettled).toBe(0)
+	})
+
+	it('leaves a completed game untouched', () => {
+		const base = alreadySettled(CLASSIC)
+		base.game.status = 'completed'
+		const plan = deriveSettlement(base)
+		expect(plan.pickWrites).toEqual([])
+		expect(plan.counters.goalsCorrected).toBe(0)
+	})
+})
