@@ -13,12 +13,15 @@ export function GameCard({ game }: GameCardProps) {
 	const isEliminated = game.myStatus === 'eliminated'
 	const needsPick = !game.myPickSubmitted && game.myStatus === 'alive' && game.currentRoundName
 	const modeLabel = game.gameMode[0].toUpperCase() + game.gameMode.slice(1)
+	// A week-1 exit with the rebuy window still open isn't the dead end an
+	// eliminated card usually is — keep it looking alive and flag it (#277).
+	const dimmed = isCompleted || (isEliminated && !game.isRebuyEligible)
 
 	return (
 		<Link href={`/game/${game.id}`}>
 			<Card
 				className={`p-5 hover:shadow-md transition-shadow cursor-pointer ${
-					isCompleted || isEliminated ? 'opacity-60' : ''
+					dimmed ? 'opacity-60' : ''
 				}`}
 			>
 				<div className="flex justify-between items-start mb-2">
@@ -50,6 +53,14 @@ export function GameCard({ game }: GameCardProps) {
 								{formatDeadline(game.currentRoundDeadline)}
 							</span>
 						)}
+					</div>
+				)}
+
+				{isEliminated && game.isRebuyEligible && (
+					<div className="pt-3 border-t">
+						<span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-[var(--draw-bg)] text-[var(--draw)]">
+							⚡ Rebuy available
+						</span>
 					</div>
 				)}
 
