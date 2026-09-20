@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { requireSession } from '@/lib/auth-helpers'
 import { getDiscoverableGames } from '@/lib/game/discover-query'
 import { buildDiscoverView } from '@/lib/game/discover-view'
-import { getMyGames } from '@/lib/game/queries'
+import { getMyGames, isPastGame } from '@/lib/game/queries'
 
 export default async function DashboardPage() {
 	const session = await requireSession()
@@ -20,8 +20,8 @@ export default async function DashboardPage() {
 	// have started. Every rule about what's listed lives in the builder.
 	const discover = buildDiscoverView({ games: discoverable, now: new Date() })
 
-	const activeGames = games.filter((g) => g.status !== 'completed' && g.myStatus !== 'eliminated')
-	const inactiveGames = games.filter((g) => g.status === 'completed' || g.myStatus === 'eliminated')
+	const activeGames = games.filter((g) => !isPastGame(g))
+	const inactiveGames = games.filter(isPastGame)
 
 	const firstName = session.user.name.split(' ')[0]
 	const picksNeeded = activeGames.filter((g) => !g.myPickSubmitted).length
