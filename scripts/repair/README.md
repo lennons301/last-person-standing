@@ -14,6 +14,39 @@ All commands run from the repo root. WSL note: run outside any network
 sandbox (Neon DNS is blocked in it); Neon idle-suspends, so retry once on
 an initial `ETIMEDOUT`.
 
+## Issue #275 — settled picks carrying goals the fixture no longer shows
+
+`pick.goals_scored` was a snapshot taken when its fixture first read
+`finished`, and nothing rewrote it when the source corrected that score —
+a goal given and then disallowed left the picked team a goal up on the
+scoreline beside it (Everton 1-0 Ipswich rendering as two goals on the
+progress grid), and the same stale figure is the classic and turbo
+tiebreak. The code fix (`planGoalsCorrection` in `settlement-plan.ts`)
+stops it recurring; this script brings the rows that already drifted back
+into line.
+
+It is a scan, not a hand-written row: every settled pick on a finished
+fixture is re-scored by the rule that settled it, and only the goals are
+written. Result drift and completed games are printed and never written
+— both are human decisions, the first because it would eliminate or
+revive a player after the fact, the second because those goals are the
+tiebreak behind a pot already paid. Safe to re-run; idempotent by
+construction (a corrected row no longer drifts).
+
+```bash
+# 1a. Scan — read-only, prints every intended mutation
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/fix-stale-pick-goals.ts
+# 1b. ...then apply, if the ⚠ sections are empty or accounted for
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/fix-stale-pick-goals.ts --apply
+
+# 2. Re-run the scan — expect "Goals drift on live games — 0 row(s)"
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/fix-stale-pick-goals.ts
+```
+
+Then eyeball the reported game's progress grid: each player's goals total
+must equal the goals their winning picks' teams scored on the scorelines
+in their own row.
+
 ## Issue #122 — 2026/27 rollover execution + GW1 verification
 
 The auto-rollover itself is deployed code (#132): the daily-sync run detects

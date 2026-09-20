@@ -585,8 +585,14 @@ function deriveTurbo(facts: SettlementFacts): SettlementPlan {
 	return plan
 }
 
-/** Did the prediction come off, and how many goals does it count for? */
-function settleTurboPick(
+/**
+ * Did the prediction come off, and how many goals does it count for?
+ *
+ * Exported for the one repair script that re-scores settled turbo picks
+ * (`scripts/repair/fix-stale-pick-goals.ts`) — the rule has one home, the same
+ * way classic's lives in `classic-survival.ts`.
+ */
+export function settleTurboPick(
 	p: SettlementPick,
 	fx: SettlingFixture,
 ): { result: PickResult; goalsScored: number } {
