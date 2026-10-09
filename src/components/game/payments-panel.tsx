@@ -64,20 +64,27 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 		}
 		if (action === 'add-rebuy') {
 			// Record a rebuy (extra entry) at any stage — even after the rebuy
-			// window. Creates a pending entry; mark it paid (here or by the player)
-			// to grow the pot.
+			// window. Creates a pending entry and puts an eliminated player back in;
+			// mark it paid (here or by the player) to grow the pot.
 			const res = await fetch(`/api/games/${props.gameId}/admin/add-rebuy/${p.userId}`, {
 				method: 'POST',
 			})
 			if (res.ok) {
-				toast.success(`Rebuy added for ${p.userName} — mark it paid to grow the pot`)
+				const body = (await res.json().catch(() => ({}))) as { reinstated?: boolean }
+				toast.success(
+					body.reinstated
+						? `${p.userName} is back in — mark the rebuy paid to grow the pot`
+						: `Rebuy added for ${p.userName} — mark it paid to grow the pot`,
+				)
 				props.onChange?.()
 			} else {
 				const body = await res.json().catch(() => ({ error: 'failed' }))
 				toast.error(
 					body.error === 'pending-entry-exists'
 						? `${p.userName} already has an unpaid entry`
-						: 'Failed to add rebuy',
+						: body.error === 'player-removed'
+							? `${p.userName} was removed from this game`
+							: 'Failed to add rebuy',
 				)
 			}
 			return

@@ -158,7 +158,7 @@ describe('POST /api/picks/[gameId]/[roundId] — actingAs + un-elimination', () 
 		expect(body.error).toBe('actingAs-not-in-game')
 	})
 
-	it('un-eliminates target when reason is missed_rebuy_pick and sets unEliminated=true', async () => {
+	it('un-eliminates an eliminated target and sets unEliminated=true', async () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue(CLASSIC_GAME_ADMIN as never)
 		vi.mocked(db.query.gamePlayer.findFirst)
 			.mockResolvedValueOnce({ id: 'gp-self', userId: 'u-admin', status: 'alive' } as never)
@@ -193,7 +193,63 @@ describe('POST /api/picks/[gameId]/[roundId] — actingAs + un-elimination', () 
 		expect(setChain.where).toHaveBeenCalled()
 	})
 
-	it('does not un-eliminate when reason is not missed_rebuy_pick (unEliminated=false)', async () => {
+	it('accepts the pick and reinstates a target eliminated for a later-round loss (#280)', async () => {
+		// The admin sold this player a rebuy after a round-7 exit and marked it
+		// paid. The gate used to be `reason === 'missed_rebuy_pick'`, so the pick
+		// the entry had been paid for came back 400 "Player is not alive" — and no
+		// rebuy route would reactivate them either, because the second payment row
+		// makes `isRebuyEligible` false.
+		vi.mocked(db.query.game.findFirst).mockResolvedValue(CLASSIC_GAME_ADMIN as never)
+		vi.mocked(db.query.gamePlayer.findFirst)
+			.mockResolvedValueOnce({ id: 'gp-self', userId: 'u-admin', status: 'alive' } as never)
+			.mockResolvedValueOnce({
+				id: 'gp-target',
+				userId: 'u-target',
+				gameId: 'g1',
+				status: 'eliminated',
+				eliminatedReason: 'loss',
+				eliminatedRoundId: 'r-7',
+			} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue(OPEN_ROUND_FAR_FUTURE as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+		mockDeleteChain()
+		mockInsertReturning([{ id: 'p-new', teamId: 't-home' }])
+		const { chain } = mockUpdateChain()
+
+		const res = await POST(makeReq({ teamId: 't-home', actingAs: 'gp-target' }), params)
+		expect(res.status).toBe(201)
+		expect((await res.json()).unEliminated).toBe(true)
+		expect(chain.set).toHaveBeenCalledWith({
+			status: 'alive',
+			eliminatedReason: null,
+			eliminatedRoundId: null,
+		})
+	})
+
+	it('refuses a pick for an admin-removed target', async () => {
+		// A removal is a deliberate act with its own refund — it is undone by
+		// un-removing, not by the admin quietly picking for them.
+		vi.mocked(db.query.game.findFirst).mockResolvedValue(CLASSIC_GAME_ADMIN as never)
+		vi.mocked(db.query.gamePlayer.findFirst)
+			.mockResolvedValueOnce({ id: 'gp-self', userId: 'u-admin', status: 'alive' } as never)
+			.mockResolvedValueOnce({
+				id: 'gp-target',
+				userId: 'u-target',
+				gameId: 'g1',
+				status: 'eliminated',
+				eliminatedReason: 'admin_removed',
+				eliminatedRoundId: null,
+			} as never)
+		vi.mocked(db.query.round.findFirst).mockResolvedValue(OPEN_ROUND_FAR_FUTURE as never)
+		vi.mocked(db.query.pick.findMany).mockResolvedValue([] as never)
+
+		const res = await POST(makeReq({ teamId: 't-home', actingAs: 'gp-target' }), params)
+		expect(res.status).toBe(400)
+		expect((await res.json()).error).toBe('Player is not alive')
+		expect(db.update).not.toHaveBeenCalled()
+	})
+
+	it('does not un-eliminate a target who is already alive (unEliminated=false)', async () => {
 		vi.mocked(db.query.game.findFirst).mockResolvedValue(CLASSIC_GAME_ADMIN as never)
 		vi.mocked(db.query.gamePlayer.findFirst)
 			.mockResolvedValueOnce({ id: 'gp-self', userId: 'u-admin', status: 'alive' } as never)

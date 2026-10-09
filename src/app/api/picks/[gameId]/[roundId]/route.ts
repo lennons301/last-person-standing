@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { canAdminReinstate, reinstatementUpdate } from '@/lib/game/elimination'
 import { resolveModeConfig } from '@/lib/game/mode-config'
 import { computeTierDifference } from '@/lib/game-logic/cup-tier'
 import { validateWcClassicPick, wcRoundStage } from '@/lib/game-logic/wc-classic'
@@ -86,13 +87,13 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
 	const now = new Date()
 
-	// Helper: check if we need to un-eliminate. Returns true if conditions are met.
-	function shouldUnEliminate(): boolean {
-		if (!body.actingAs) return false
-		if (!targetGamePlayer) return false
-		if (targetGamePlayer.eliminatedReason !== 'missed_rebuy_pick') return false
-		return true
-	}
+	// An admin acting as an eliminated player is buying them back in: the pick is
+	// accepted past the alive gate and the player is reinstated as it lands. One
+	// reading of that, `canAdminReinstate`, shared with the admin rebuy routes —
+	// it used to be a `missed_rebuy_pick` comparison written out three times
+	// here, which refused the pick an admin-recorded rebuy had already been paid
+	// for (#280).
+	const adminReinstates = Boolean(body.actingAs && canAdminReinstate(targetGamePlayer))
 
 	if (gameData.gameMode === 'classic') {
 		const { teamId, fixtureId } = body as { teamId: string; fixtureId?: string }
@@ -130,10 +131,6 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			resolvedFixture = fx
 		}
 
-		const allowEliminatedRebuy = Boolean(
-			body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
-		)
-
 		const validation = validateClassicPick(
 			{
 				teamId,
@@ -150,7 +147,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			},
 			// Admin acting-as (verified above) may submit a pick after the round's
 			// deadline — fixing a missed/wrong pick. isPastRound stays enforced.
-			{ allowEliminatedRebuy, allowAdminLateSubmission: !!body.actingAs },
+			{ allowEliminatedRebuy: adminReinstates, allowAdminLateSubmission: !!body.actingAs },
 		)
 
 		if (!validation.valid) {
@@ -226,12 +223,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
 				.returning()
 			newPick = picks[0]
 
-			// If the admin was acting-as a player who was eliminated via `missed_rebuy_pick`,
-			// flip them back to alive (Phase 4c2 rule 1: rebuy is implicit on first admin pick).
-			if (shouldUnEliminate()) {
+			// The admin picked for an eliminated player: flip them back to alive
+			// (Phase 4c2 rule 1: the rebuy is implicit on the first admin pick).
+			if (adminReinstates) {
 				await tx
 					.update(gamePlayer)
-					.set({ status: 'alive', eliminatedReason: null, eliminatedRoundId: null })
+					.set(reinstatementUpdate())
 					.where(eq(gamePlayer.id, targetGamePlayer.id))
 				unEliminated = true
 			}
@@ -252,10 +249,6 @@ export async function POST(request: Request, { params }: { params: Params }) {
 	// (#248).
 	const modeConfig = resolveModeConfig(gameData)
 	const numberOfPicks = modeConfig.mode === 'classic' ? 1 : modeConfig.numberOfPicks
-
-	const allowEliminatedRebuyMulti = Boolean(
-		body.actingAs && targetGamePlayer.eliminatedReason === 'missed_rebuy_pick',
-	)
 
 	if (gameData.gameMode === 'cup') {
 		// Cup uses its own validator: partial rankings (1..numberOfPicks) allowed,
@@ -284,7 +277,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 				})),
 			},
 			{
-				allowEliminatedRebuy: allowEliminatedRebuyMulti,
+				allowEliminatedRebuy: adminReinstates,
 				allowAdminLateSubmission: !!body.actingAs,
 			},
 		)
@@ -303,7 +296,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 				picks: pickEntries,
 			},
 			{
-				allowEliminatedRebuy: allowEliminatedRebuyMulti,
+				allowEliminatedRebuy: adminReinstates,
 				allowAdminLateSubmission: !!body.actingAs,
 			},
 		)
@@ -356,12 +349,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
 			.returning()
 		newPicks = insertedPicks
 
-		// If the admin was acting-as a player who was eliminated via `missed_rebuy_pick`,
-		// flip them back to alive (Phase 4c2 rule 1: rebuy is implicit on first admin pick).
-		if (shouldUnEliminate()) {
+		// Same reinstatement as the classic arm above.
+		if (adminReinstates) {
 			await tx
 				.update(gamePlayer)
-				.set({ status: 'alive', eliminatedReason: null, eliminatedRoundId: null })
+				.set(reinstatementUpdate())
 				.where(eq(gamePlayer.id, targetGamePlayer.id))
 			unEliminated = true
 		}

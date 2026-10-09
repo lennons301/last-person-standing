@@ -9,6 +9,11 @@ interface HasEliminationReason {
 	eliminatedReason: EliminationReason | null
 }
 
+/** A player's standing in the game, as the `game_player` row records it. */
+interface HasPlayerStanding extends HasEliminationReason {
+	status: 'alive' | 'eliminated' | 'winner'
+}
+
 /**
  * An admin removal is a deliberate act, not a game outcome: the creator took
  * the player out and their entry was refunded. Every surface that counts,
@@ -53,4 +58,45 @@ export function eliminationUpdate(
 	eliminatedRoundId: string | null
 } {
 	return { status: 'eliminated', eliminatedReason: reason, eliminatedRoundId }
+}
+
+/**
+ * The mirror patch: the `game_player` update that puts a player back in. Every
+ * reinstatement writes it — the player's own rebuy, the admin's rebuy, the
+ * admin's acting-as pick — so a surface can't put someone back as `alive` while
+ * leaving the round and reason that took them out sitting on the row, which
+ * every reason-driven read (`activeField`, the rebuy window, the grid's
+ * elimination marker) would still believe.
+ */
+export function reinstatementUpdate(): {
+	status: 'alive'
+	eliminatedReason: null
+	eliminatedRoundId: null
+} {
+	return { status: 'alive', eliminatedReason: null, eliminatedRoundId: null }
+}
+
+/**
+ * Would an admin act on this player put them back in the game?
+ *
+ * THE single reading of "this player is out and the creator can undo that", and
+ * it answers for both halves of an admin rebuy: recording the extra entry
+ * (`POST .../admin/add-rebuy/[userId]`) and submitting the pick it bought
+ * (`POST /api/picks/...` with `actingAs`). It used to be a reason comparison
+ * spelled three times in the picks route and absent from `add-rebuy` entirely,
+ * which is how #280 happened: the admin recorded a rebuy for a player who went
+ * out in a later round, marked it paid, and nothing put the player back — the
+ * second payment row then made `isRebuyEligible` false, so every other route
+ * refused too and a paid-for entry bought a seat in no game at all.
+ *
+ * An alive player needs nothing undone. An `admin_removed` one is the one
+ * refusal: removal is a deliberate act with its own refund, and the surfaces
+ * that count the field drop those players rather than showing them eliminated
+ * (see `isAdminRemoved`), so it is not something a pick or a payment row should
+ * quietly reverse.
+ */
+export function canAdminReinstate(player: HasPlayerStanding): boolean {
+	if (player.status !== 'eliminated') return false
+	if (isAdminRemoved(player)) return false
+	return true
 }

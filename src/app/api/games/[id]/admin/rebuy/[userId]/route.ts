@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { reinstatementUpdate } from '@/lib/game/elimination'
 import { resolveModeConfig } from '@/lib/game/mode-config'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { resolveRoundAfterStarting, resolveStartingRound } from '@/lib/game/starting-round'
@@ -68,10 +69,7 @@ export async function POST(_request: Request, ctx: Ctx): Promise<Response> {
 			.returning()
 		insertedPaymentId = inserted.id
 
-		await tx
-			.update(gamePlayer)
-			.set({ status: 'alive', eliminatedRoundId: null, eliminatedReason: null })
-			.where(eq(gamePlayer.id, playerRow.id))
+		await tx.update(gamePlayer).set(reinstatementUpdate()).where(eq(gamePlayer.id, playerRow.id))
 	})
 
 	return NextResponse.json({ paymentId: insertedPaymentId, status: 'pending' })
