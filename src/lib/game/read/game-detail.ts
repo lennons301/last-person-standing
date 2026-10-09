@@ -1,6 +1,6 @@
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { activeField, isAdminRemoved } from '@/lib/game/elimination'
+import { activeField, canAdminReinstate, isAdminRemoved } from '@/lib/game/elimination'
 import { type ModeConfig, resolveModeConfig } from '@/lib/game/mode-config'
 import { isRebuyEligible } from '@/lib/game/rebuy'
 import { resolveRoundAfterStarting, resolveStartingRound } from '@/lib/game/starting-round'
@@ -55,6 +55,14 @@ export interface AdminPaymentRow {
 	status: 'pending' | 'claimed' | 'paid' | 'refunded' | 'unpaid'
 	isRebuy: boolean
 	isRebuyEligible: boolean
+	/**
+	 * The player is out and the creator can put them back without taking another
+	 * entry fee (`POST .../admin/reinstate/[userId]`). False wherever
+	 * `isRebuyEligible` is true, so the window's money-taking rebuy is the offer
+	 * while there is one and this is what is left afterwards — the #280 state,
+	 * where the entry has been paid and the player is still eliminated.
+	 */
+	canReinstate: boolean
 	claimedAt: Date | null
 	paidAt: Date | null
 }
@@ -255,6 +263,18 @@ export async function getGameDetail(gameId: string, userId: string): Promise<Gam
 		)
 	}
 
+	// Who the creator can put back in with no second entry fee: out, not removed,
+	// and past (or outside) the rebuy window that would otherwise sell them a
+	// fresh entry. One flag per user, resolved from the same `game_player` rows.
+	const reinstatableByUser = new Map<string, boolean>()
+	for (const uid of relevantUserIds) {
+		const userPlayer = gameData.players.find((p) => p.userId === uid)
+		reinstatableByUser.set(
+			uid,
+			!!userPlayer && canAdminReinstate(userPlayer) && !eligibilityByUser.get(uid),
+		)
+	}
+
 	// Viewer's primary (earliest) payment row — the one the claim endpoint targets.
 	const myPaymentRows = [...(paymentsByUser.get(userId) ?? [])].sort(
 		(a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
@@ -279,6 +299,7 @@ export async function getGameDetail(gameId: string, userId: string): Promise<Gam
 			status: row.status as 'pending' | 'claimed' | 'paid' | 'refunded',
 			isRebuy: idx > 0,
 			isRebuyEligible: idx === 0 ? (eligibilityByUser.get(uid) ?? false) : false,
+			canReinstate: idx === 0 ? (reinstatableByUser.get(uid) ?? false) : false,
 			claimedAt: row.claimedAt,
 			paidAt: row.paidAt,
 		}))
@@ -297,6 +318,7 @@ export async function getGameDetail(gameId: string, userId: string): Promise<Gam
 			status: 'unpaid' as const,
 			isRebuy: false,
 			isRebuyEligible: eligibilityByUser.get(p.userId) ?? false,
+			canReinstate: reinstatableByUser.get(p.userId) ?? false,
 			claimedAt: null,
 			paidAt: null,
 		}))

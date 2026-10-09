@@ -26,6 +26,7 @@ function row(overrides: Partial<AdminPayment>): AdminPayment {
 		status: 'paid',
 		isRebuy: false,
 		isRebuyEligible: false,
+		canReinstate: false,
 		claimedAt: null,
 		paidAt: null,
 		...overrides,
@@ -72,6 +73,56 @@ describe('PaymentsPanel synthetic (no-payment) rows', () => {
 		render(<PaymentsPanel {...baseProps} payments={[row({ id: 'p1', status: 'paid' })]} />)
 		expect(screen.queryByRole('button', { name: 'Mark paid' })).toBeNull()
 		expect(screen.getByRole('button', { name: 'Dispute' })).toBeTruthy()
+	})
+})
+
+describe('PaymentsPanel reinstatement (#280)', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks()
+	})
+	afterEach(() => {
+		vi.restoreAllMocks()
+	})
+
+	it('offers no reinstatement for a player who is in the game', () => {
+		render(<PaymentsPanel {...baseProps} payments={[row({ status: 'paid' })]} />)
+		expect(screen.queryByRole('button', { name: 'Put back in' })).toBeNull()
+	})
+
+	it('puts an eliminated player back in without creating an entry', async () => {
+		// The paid-rebuy dead end: the money is in, the player is out, and the
+		// rebuy routes refuse because a second payment row already exists.
+		const fetchMock = vi
+			.spyOn(globalThis, 'fetch')
+			.mockResolvedValue(new Response(JSON.stringify({ status: 'alive' }), { status: 200 }))
+		vi.spyOn(window, 'confirm').mockReturnValue(true)
+		render(
+			<PaymentsPanel
+				{...baseProps}
+				payments={[
+					row({ userId: 'u-martin', userName: 'Martin', status: 'paid', canReinstate: true }),
+				]}
+			/>,
+		)
+		fireEvent.click(screen.getByRole('button', { name: 'Put back in' }))
+		await waitFor(() =>
+			expect(fetchMock).toHaveBeenCalledWith('/api/games/g1/admin/reinstate/u-martin', {
+				method: 'POST',
+			}),
+		)
+		// Nothing else was called — in particular no add-rebuy, which would charge
+		// a second entry fee to undo the first one.
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+	})
+
+	it('does nothing if the admin backs out of the confirm', () => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch')
+		vi.spyOn(window, 'confirm').mockReturnValue(false)
+		render(
+			<PaymentsPanel {...baseProps} payments={[row({ status: 'paid', canReinstate: true })]} />,
+		)
+		fireEvent.click(screen.getByRole('button', { name: 'Put back in' }))
+		expect(fetchMock).not.toHaveBeenCalled()
 	})
 })
 

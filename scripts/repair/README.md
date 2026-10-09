@@ -14,6 +14,41 @@ All commands run from the repo root. WSL note: run outside any network
 sandbox (Neon DNS is blocked in it); Neon idle-suspends, so retry once on
 an initial `ETIMEDOUT`.
 
+## Issue #280 — a paid-for rebuy that bought a seat in no game
+
+The admin "Add rebuy" route recorded the extra entry and left the player's
+status alone, while every route that *could* reactivate them refuses once a
+second payment row exists (`isRebuyEligible` → `hasBoughtBackIn`). So an
+admin-recorded rebuy closed every door behind it: the player stayed
+eliminated with a paid entry, no rebuy button anywhere, and the admin's
+acting-as pick came back "Player is not alive". The code fix reinstates on
+the way in (and `canAdminReinstate` now lets the admin's pick reinstate any
+eliminated player, not only a `missed_rebuy_pick` one); this script puts
+back the players who already went through the old route.
+
+What it writes is one `game_player` patch per player — `alive`, with the
+elimination round and reason cleared. No payment row is touched, so the pot
+is unchanged. The test that separates a stuck player from one who bought
+back in and lost again is **no pick since the rebuy payment row was
+written**; a pending rebuy, a completed game, a player with only one live
+payment row and a player who did pick since are each printed and never
+written. Safe to re-run (a reinstated player no longer matches).
+
+```bash
+# 1a. Scan — read-only, prints every intended mutation
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/fix-unplayed-rebuys.ts
+# 1b. ...then apply, if the ⚠ sections are empty or accounted for
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/fix-unplayed-rebuys.ts --apply
+
+# 2. Re-run the scan — expect "0 to reinstate"
+doppler run -p last-person-standing -c prd -- pnpm exec tsx scripts/repair/fix-unplayed-rebuys.ts
+```
+
+Then eyeball the reported game's progress grid: the player must read as
+alive with no elimination marker, and be able to pick the current round
+(the admin can also pick for them via the ✎ acting-as link, which only
+appears for an alive player with no pick in).
+
 ## Issue #275 — settled picks carrying goals the fixture no longer shows
 
 `pick.goals_scored` was a snapshot taken when its fixture first read

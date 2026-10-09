@@ -40,6 +40,7 @@ const adminPayments: AdminPayment[] = [
 		status: 'pending',
 		isRebuy: false,
 		isRebuyEligible: false,
+		canReinstate: false,
 		claimedAt: null,
 		paidAt: null,
 	},

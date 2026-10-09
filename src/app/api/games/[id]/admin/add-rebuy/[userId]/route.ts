@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
+import { canAdminReinstate, isAdminRemoved, reinstatementUpdate } from '@/lib/game/elimination'
 import { game, gamePlayer } from '@/lib/schema/game'
 import { payment } from '@/lib/schema/payment'
 
@@ -9,13 +10,22 @@ type Ctx = { params: Promise<{ id: string; userId: string }> }
 
 /**
  * Admin-only: record a rebuy (an additional entry) for a player at ANY stage —
- * including after the round-2 rebuy window has closed, when the self-service
- * rebuy is no longer available. Creates a second `pending` payment row; it then
- * flows through the normal pay/mark-paid mechanics (admin "Mark paid", or the
- * player claiming) and increments the pot once paid.
+ * including after the rebuy window has closed, when the self-service rebuy is no
+ * longer available. Creates a second `pending` payment row; it then flows
+ * through the normal pay/mark-paid mechanics (admin "Mark paid", or the player
+ * claiming) and increments the pot once paid.
  *
- * Payment-only: it does NOT change the player's alive/eliminated status (that's
- * the separate self-service rebuy). Guarded so the admin can't stack multiple
+ * It also puts an eliminated player **back in the game**, in the same
+ * transaction, exactly as the player's own rebuy and the admin's windowed one
+ * do. It was payment-only until #280, on the reading that reactivating was the
+ * other routes' job — but those routes refuse once a second payment row exists
+ * (`isRebuyEligible` → `hasBoughtBackIn`), so recording a rebuy here closed
+ * every door behind it: the player stayed eliminated with a paid-for entry, no
+ * rebuy button anywhere, and the admin's acting-as pick refused too. An entry
+ * nobody can play is not an entry.
+ *
+ * The one player it won't reinstate is an `admin_removed` one — see
+ * `canAdminReinstate`. Guarded, too, so the admin can't stack multiple
  * outstanding entries — mark the existing one paid first.
  */
 export async function POST(_request: Request, ctx: Ctx): Promise<Response> {
@@ -46,16 +56,36 @@ export async function POST(_request: Request, ctx: Ctx): Promise<Response> {
 		return NextResponse.json({ error: 'pending-entry-exists' }, { status: 400 })
 	}
 
-	const [inserted] = await db
-		.insert(payment)
-		.values({
-			gameId,
-			userId: targetUserId,
-			amount: gameRow.entryFee ?? '0.00',
-			status: 'pending',
-			method: 'manual',
-		})
-		.returning()
+	// A removal is undone by un-removing, not by selling the player an entry:
+	// their payments were refunded on the way out and every surface that counts
+	// the field drops them. Refusing keeps that state the deliberate thing it is.
+	if (isAdminRemoved(playerRow)) {
+		return NextResponse.json({ error: 'player-removed' }, { status: 400 })
+	}
 
-	return NextResponse.json({ paymentId: inserted.id, status: 'pending' })
+	const reinstated = canAdminReinstate(playerRow)
+
+	let insertedPaymentId = ''
+	await db.transaction(async (tx) => {
+		const [inserted] = await tx
+			.insert(payment)
+			.values({
+				gameId,
+				userId: targetUserId,
+				amount: gameRow.entryFee ?? '0.00',
+				status: 'pending',
+				method: 'manual',
+			})
+			.returning()
+		insertedPaymentId = inserted.id
+
+		// The entry buys a seat back in the game, not just a line in the pot. The
+		// payment can stay pending — the windowed rebuy routes reactivate on the
+		// same terms, and the money is chased through the ordinary mark-paid flow.
+		if (reinstated) {
+			await tx.update(gamePlayer).set(reinstatementUpdate()).where(eq(gamePlayer.id, playerRow.id))
+		}
+	})
+
+	return NextResponse.json({ paymentId: insertedPaymentId, status: 'pending', reinstated })
 }

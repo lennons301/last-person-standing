@@ -15,6 +15,8 @@ export interface AdminPayment {
 	status: AdminPaymentStatus
 	isRebuy: boolean
 	isRebuyEligible: boolean
+	/** Out, and puttable back with no second entry fee — see `canAdminReinstate`. */
+	canReinstate: boolean
 	claimedAt: Date | null
 	paidAt: Date | null
 }
@@ -40,8 +42,42 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 
 	async function callAction(
 		p: AdminPayment,
-		action: 'dispute' | 'refund' | 'admin-rebuy' | 'mark-paid' | 'add-rebuy' | 'mark-entry-paid',
+		action:
+			| 'dispute'
+			| 'refund'
+			| 'admin-rebuy'
+			| 'mark-paid'
+			| 'add-rebuy'
+			| 'mark-entry-paid'
+			| 'reinstate',
 	) {
+		if (action === 'reinstate') {
+			// Put the player back in without taking another entry fee — for when
+			// the entry has already been settled and they are still out (#280).
+			if (
+				!window.confirm(
+					`Put ${p.userName} back in the game? No new entry is created — use "Add rebuy" if they still owe for one.`,
+				)
+			)
+				return
+			const res = await fetch(`/api/games/${props.gameId}/admin/reinstate/${p.userId}`, {
+				method: 'POST',
+			})
+			if (res.ok) {
+				toast.success(`${p.userName} is back in`)
+				props.onChange?.()
+			} else {
+				const body = (await res.json().catch(() => ({}))) as { error?: string }
+				toast.error(
+					body.error === 'not-eliminated'
+						? `${p.userName} is already in the game`
+						: body.error === 'player-removed'
+							? `${p.userName} was removed from this game`
+							: 'Failed to put the player back in',
+				)
+			}
+			return
+		}
 		if (action === 'mark-entry-paid') {
 			// A late-added player has no payment row at all (synthetic "unpaid"
 			// row, id === null) so the id-based override can't reach them. Create a
@@ -64,20 +100,27 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 		}
 		if (action === 'add-rebuy') {
 			// Record a rebuy (extra entry) at any stage — even after the rebuy
-			// window. Creates a pending entry; mark it paid (here or by the player)
-			// to grow the pot.
+			// window. Creates a pending entry and puts an eliminated player back in;
+			// mark it paid (here or by the player) to grow the pot.
 			const res = await fetch(`/api/games/${props.gameId}/admin/add-rebuy/${p.userId}`, {
 				method: 'POST',
 			})
 			if (res.ok) {
-				toast.success(`Rebuy added for ${p.userName} — mark it paid to grow the pot`)
+				const body = (await res.json().catch(() => ({}))) as { reinstated?: boolean }
+				toast.success(
+					body.reinstated
+						? `${p.userName} is back in — mark the rebuy paid to grow the pot`
+						: `Rebuy added for ${p.userName} — mark it paid to grow the pot`,
+				)
 				props.onChange?.()
 			} else {
 				const body = await res.json().catch(() => ({ error: 'failed' }))
 				toast.error(
 					body.error === 'pending-entry-exists'
 						? `${p.userName} already has an unpaid entry`
-						: 'Failed to add rebuy',
+						: body.error === 'player-removed'
+							? `${p.userName} was removed from this game`
+							: 'Failed to add rebuy',
 				)
 			}
 			return
@@ -192,6 +235,17 @@ export function PaymentsPanel(props: PaymentsPanelProps) {
 										className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 									>
 										Rebuy player
+									</button>
+								)}
+								{/* What's left once the rebuy window has gone: the player is out and
+								    any entry they owed has been settled, so this takes no money. */}
+								{p.canReinstate && (
+									<button
+										type="button"
+										onClick={() => callAction(p, 'reinstate')}
+										className="rounded border border-primary px-3 py-1.5 text-xs font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+									>
+										Put back in
 									</button>
 								)}
 								{p.id !== null && p.status === 'paid' ? (
