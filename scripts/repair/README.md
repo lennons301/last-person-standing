@@ -30,9 +30,9 @@ What it writes is one `game_player` patch per player — `alive`, with the
 elimination round and reason cleared. No payment row is touched, so the pot
 is unchanged. The test that separates a stuck player from one who bought
 back in and lost again is **no pick since the rebuy payment row was
-written**; a pending rebuy, a completed game and a player who did pick
-since are each printed and never written. Safe to re-run (a reinstated
-player no longer matches).
+written**; a pending rebuy, a completed game, a player with only one live
+payment row and a player who did pick since are each printed and never
+written. Safe to re-run (a reinstated player no longer matches).
 
 ```bash
 # 1a. Scan — read-only, prints every intended mutation

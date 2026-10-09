@@ -23,9 +23,12 @@
  *
  * Both directions of error are one-sided on purpose. An advance pick locked in
  * *before* the exit and sitting on a later round can make a genuinely stuck
- * player look like they played on, so the script misses them (a name the owner
- * can still see in the unpaid/review lists) rather than reviving anyone who used
- * their rebuy and lost it.
+ * player look like they played on, so the script misses them rather than
+ * reviving anyone who used their rebuy and lost it. For the same reason a player
+ * with only **one** live payment row is printed and never written: with the
+ * original entry refunded away the remaining row may well be a real rebuy, but
+ * nothing in the data separates that from the entry of someone who went out
+ * without ever picking.
  *
  * Completed games are printed and never written: their pot has been paid, and
  * reviving a player there is a human decision about money, not a repair.
@@ -55,13 +58,15 @@ interface Stuck {
 	rebuyAmount: string
 	rebuyCreatedAt: Date
 	picksSinceRebuy: number
+	livePaymentRows: number
 }
 
 function line(s: Stuck): string {
 	return (
 		`  ${s.gameName} [${s.gameStatus}] — player ${s.gamePlayerId.slice(0, 8)} (user ${s.userId.slice(0, 8)}), ` +
-		`out as '${s.eliminatedReason}': rebuy £${s.rebuyAmount} ${s.rebuyStatus} ` +
-		`on ${s.rebuyCreatedAt.toISOString().slice(0, 10)}, ${s.picksSinceRebuy} pick(s) since`
+		`out as '${s.eliminatedReason}': £${s.rebuyAmount} ${s.rebuyStatus} ` +
+		`on ${s.rebuyCreatedAt.toISOString().slice(0, 10)}, ${s.livePaymentRows} live payment row(s), ` +
+		`${s.picksSinceRebuy} pick(s) since`
 	)
 }
 
@@ -74,6 +79,7 @@ async function main() {
 	const completedGames: Stuck[] = []
 	const unpaidRebuy: Stuck[] = []
 	const pickedSince: Stuck[] = []
+	const singleRow: Stuck[] = []
 	let scanned = 0
 
 	for (const g of games) {
@@ -93,7 +99,7 @@ async function main() {
 			const live = payments
 				.filter((row) => row.status !== 'refunded')
 				.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-			const rebuyRow = live.length > 1 ? live[live.length - 1] : undefined
+			const rebuyRow = live[live.length - 1]
 			if (!rebuyRow) continue
 
 			const picksSinceRebuy = p.picks.filter(
@@ -112,10 +118,12 @@ async function main() {
 				rebuyAmount: rebuyRow.amount,
 				rebuyCreatedAt: rebuyRow.createdAt,
 				picksSinceRebuy,
+				livePaymentRows: live.length,
 			}
 
 			if (picksSinceRebuy > 0) pickedSince.push(stuck)
 			else if (rebuyRow.status === 'pending') unpaidRebuy.push(stuck)
+			else if (live.length < 2) singleRow.push(stuck)
 			else if (g.status === 'completed') completedGames.push(stuck)
 			else toReinstate.push(stuck)
 		}
@@ -132,6 +140,16 @@ async function main() {
 		console.log('  No money has moved on these. Mark the entry paid and re-run, or')
 		console.log('  reinstate the player through the admin rebuy if the window is open.')
 		for (const s of unpaidRebuy) console.log(line(s))
+	}
+
+	if (singleRow.length > 0) {
+		heading(`One payment row only — ${singleRow.length} row(s), NOT written`)
+		console.log('  Out, with a paid entry and no pick since it, but only one live payment')
+		console.log('  row — so there is nothing to say the row is a rebuy rather than the')
+		console.log('  entry of someone who went out without ever picking. Check these by')
+		console.log("  hand: if a refund emptied the player's original entry, the rebuy is")
+		console.log('  real and the admin rebuy (or an acting-as pick) puts them back.')
+		for (const s of singleRow) console.log(line(s))
 	}
 
 	if (completedGames.length > 0) {
